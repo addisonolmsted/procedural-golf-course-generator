@@ -1,0 +1,23 @@
+target/
+
+# Generated artifacts under output/: keep the folder structure (.gitkeep) and the
+# README, ignore everything else.
+output/**
+!output/**/
+!output/**/.gitkeep
+!output/README.md
+
+# Generated tool outputs (atlas collector cache/viewer, metric tables,
+# calibration campaigns — GBs of grids). Each regenerates per its README;
+# the packed atlas the app needs is committed at assets/atlas.bin.
+tools/*/out/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Local editor/agent state
+.claude/
+.DS_Store

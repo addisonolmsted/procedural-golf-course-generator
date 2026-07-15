@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "golf-core",
+    "golf-terrain",
+    "golf-atlas",
+    "golf-match",
+    "golf-routing",
+    "golf-holes",
+    "golf-viz",
+    "golf-viewer",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+golf-core = { path = "golf-core" }
+golf-terrain = { path = "golf-terrain" }
+golf-atlas = { path = "golf-atlas" }
+golf-match = { path = "golf-match" }
+golf-routing = { path = "golf-routing" }
+golf-holes = { path = "golf-holes" }
+golf-viz = { path = "golf-viz" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+eframe = { version = "0.31", features = ["wgpu"] }
+rand_core = "0.9"
+rand_chacha = "0.9"
+libm = "0.2"
+blake3 = "1"
+base64 = "0.22"
+rayon = "1.10"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# The seed search is noise-bound; thin LTO buys a real speedup for the 100k run.
+[profile.release]
+lto = "thin"

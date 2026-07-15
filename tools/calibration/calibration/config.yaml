@@ -1,0 +1,34 @@
+# Calibration campaign — sampling budget, forward settings, matching choices.
+seed: 12345
+
+sampling:
+  method: sobol           # sobol | lhs
+  n: 512                  # theta design points (scale up if the emulator is weak)
+  pilot_n: 64
+
+forward:
+  extent_m: 1500.0        # generated tile extent (m); cell = metrics common_cell_size (6 m)
+  seeds: [1, 2, 3, 4]     # >=3 replication seeds per theta (nuisance variance split)
+
+objective:
+  exclude_landcover: true # morphology-only: drop canopy_fraction / water_fraction
+                          # (generator vegetation/water calibrated in a parallel pass)
+
+emulator:
+  model: gbt              # HistGradientBoostingRegressor per metric
+  cv_folds: 5
+  r2_gate: 0.5            # metrics below this CV R^2 are flagged (not trusted in the inverse)
+
+sensitivity:
+  n_sobol: 1024           # SALib Saltelli base sample (on the emulator)
+
+inverse:
+  method: density_ratio   # density_ratio (recommended) | per_course
+  match_reach_min: 0.5    # only match on metrics the generator reaches for >=50% of real
+  temper: 0.5             # w = r^temper — avoids weight collapse under partial coverage
+  weight_clip_pct: 98     # cap per-theta weight at this percentile (keeps ESS usable)
+
+validation:
+  holdout_frac: 0.3       # real courses held out of the fit for round-trip scoring
+  n_roundtrip: 240        # theta ~ p(theta) draws to generate + measure
+  roundtrip_seeds: [11, 12]

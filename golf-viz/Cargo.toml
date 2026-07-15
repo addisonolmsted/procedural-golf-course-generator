@@ -1,0 +1,12 @@
+[package]
+name = "golf-viz"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+golf-core = { workspace = true }
+golf-terrain = { workspace = true }
+golf-routing = { workspace = true }
+golf-holes = { workspace = true }
+image = { workspace = true }

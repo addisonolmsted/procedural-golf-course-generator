@@ -1,0 +1,8 @@
+# Parkland Atlas collector — offline data-prep tool (NOT part of the Cargo workspace).
+# Python 3.11+.  numpy / Pillow / requests / scipy are usually already present;
+# rasterio is the one that must be installed (ships bundled GDAL wheels) and is
+# used only for the ESA WorldCover COG windowed reads (tree + water classes).
+numpy>=1.24
+Pillow>=10.0
+requests>=2.28
+rasterio>=1.3
