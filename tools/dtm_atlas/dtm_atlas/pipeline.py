@@ -262,7 +262,7 @@ def run(cmd: str, keys: list[str], force: bool, offline: bool) -> int:
     n_ok = n_fail = 0
     for i, key in enumerate(keys):
         if cmd == "fetch" and key in failed_before and not force:
-            print(f"[{i + 1}/{len(keys)}] {key}: skipped (failed.json; --force to retry)")
+            print(f"[{i + 1}/{len(keys)}] {key}: skipped (failed.json; --force to retry)", flush=True)
             continue
         try:
             for stage in seq:
@@ -270,12 +270,12 @@ def run(cmd: str, keys: list[str], force: bool, offline: bool) -> int:
                 if stage == "fetch" and len(keys) > 1:
                     time.sleep(config.COURTESY_SLEEP_S)
             n_ok += 1
-            print(f"[{i + 1}/{len(keys)}] {key}: ok")
+            print(f"[{i + 1}/{len(keys)}] {key}: ok", flush=True)
         except Exception as e:  # never abort the batch
             n_fail += 1
             why = f"{type(e).__name__}: {e}"
             log_fail(key, stage, why)
-            print(f"[{i + 1}/{len(keys)}] {key}: FAIL at {stage}: {why}")
+            print(f"[{i + 1}/{len(keys)}] {key}: FAIL at {stage}: {why}", flush=True)
     print(f"done: {n_ok} ok, {n_fail} failed"
           + (" (see out/failures.log)" if n_fail else ""))
     if cmd == "all":
