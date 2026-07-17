@@ -230,6 +230,103 @@ fn bowl_lake() -> MacroConfig {
     c
 }
 
+/// Three tributaries converging on a main river, the trunk widening after
+/// every confluence. The tilt AUTHORS the hydrology: terrain falls west->east
+/// along the trunk (grade_x < 0) and the north flank sits higher (grade_y > 0),
+/// so two tributaries descend from the northern upland and one comes in from
+/// the (gently higher, upstream) south-west. Every floor is accordant at its
+/// junction and stays below local terrain end to end.
+fn river_confluence() -> MacroConfig {
+    let mut c = base(2500.0);
+    c.tilt = Tilt { grade_x: -0.006, grade_y: 0.004, curve_m: 0.0 };
+    // trunk: enters west at ~109 m terrain, exits east at ~90 m
+    c.valleys.push(Valley {
+        path: Path::Meander(MeanderSpec {
+            entry: Vec2::new(-100.0, 1600.0),
+            exit: Vec2::new(2600.0, 900.0),
+            width_m: 120.0,
+            intensity: 0.35,
+            wavelength_mult: 12.0,
+            jitter: 0.25,
+            seed: 81,
+        }),
+        floor_z0_m: 104.5,
+        fall_gradient: 0.0055,
+        // half-width steps up after each confluence (~u 0.30 / 0.52 / 0.76)
+        floor_halfwidth: Profile::new(vec![
+            (0.0, 8.0), (0.26, 9.0), (0.34, 15.0), (0.48, 16.0),
+            (0.56, 22.0), (0.72, 23.0), (0.80, 30.0), (1.0, 34.0),
+        ]),
+        wall_grad_left: 0.16,
+        wall_grad_right: 0.13,
+        floor_round_m: 9.0,
+        shoulder_k_m: 3.5,
+        join_trunk: None,
+    });
+    // tributary A: northern upland, joins early
+    c.valleys.push(Valley {
+        path: Path::Meander(MeanderSpec {
+            entry: Vec2::new(500.0, 2600.0),
+            exit: Vec2::new(710.0, 1390.0),
+            width_m: 60.0,
+            intensity: 0.45,
+            wavelength_mult: 12.0,
+            jitter: 0.3,
+            seed: 82,
+        }),
+        floor_z0_m: 0.0, // accordant via join_trunk
+        fall_gradient: 0.006,
+        floor_halfwidth: Profile::new(vec![(0.0, 6.0), (1.0, 10.0)]),
+        wall_grad_left: 0.20,
+        wall_grad_right: 0.24,
+        floor_round_m: 6.0,
+        shoulder_k_m: 3.0,
+        join_trunk: Some(0),
+    });
+    // tributary B: from the (upstream-high) south-west, joins mid — gentle
+    // gradient so its head stays below the flatter southern terrain
+    c.valleys.push(Valley {
+        path: Path::Meander(MeanderSpec {
+            entry: Vec2::new(250.0, -150.0),
+            exit: Vec2::new(1304.0, 1236.0),
+            width_m: 50.0,
+            intensity: 0.45,
+            wavelength_mult: 12.0,
+            jitter: 0.3,
+            seed: 83,
+        }),
+        floor_z0_m: 0.0,
+        fall_gradient: 0.0015,
+        floor_halfwidth: Profile::new(vec![(0.0, 5.0), (1.0, 8.0)]),
+        wall_grad_left: 0.22,
+        wall_grad_right: 0.18,
+        floor_round_m: 6.0,
+        shoulder_k_m: 3.0,
+        join_trunk: Some(0),
+    });
+    // tributary C: northern upland, joins late
+    c.valleys.push(Valley {
+        path: Path::Meander(MeanderSpec {
+            entry: Vec2::new(1750.0, 2620.0),
+            exit: Vec2::new(1952.0, 1068.0),
+            width_m: 65.0,
+            intensity: 0.5,
+            wavelength_mult: 12.0,
+            jitter: 0.3,
+            seed: 84,
+        }),
+        floor_z0_m: 0.0,
+        fall_gradient: 0.005,
+        floor_halfwidth: Profile::new(vec![(0.0, 6.0), (1.0, 11.0)]),
+        wall_grad_left: 0.24,
+        wall_grad_right: 0.20,
+        floor_round_m: 6.0,
+        shoulder_k_m: 3.0,
+        join_trunk: Some(0),
+    });
+    c
+}
+
 pub fn presets() -> Vec<(&'static str, MacroConfig)> {
     vec![
         ("barranca", barranca()),
@@ -239,6 +336,7 @@ pub fn presets() -> Vec<(&'static str, MacroConfig)> {
         ("bluff_river", bluff_river()),
         ("bowl_spillway", bowl_spillway()),
         ("bowl_lake", bowl_lake()),
+        ("river_confluence", river_confluence()),
     ]
 }
 
