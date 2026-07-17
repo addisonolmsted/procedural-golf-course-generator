@@ -213,8 +213,12 @@ def stage_raster(key: str, force: bool) -> None:
                   "effective_res_m": best_res,
                   "projects": avail.get("layers", {}).get(best, []),
                   "texture_frac": round(tex, 4)},
+        # index tier when the (flaky) availability service answered; the
+        # empirical sub-2 m texture test is the backstop — upsampled 10 m
+        # source reads ~0 there, real 1 m lidar reads > 0.7
         "usable_for_calibration": bool(
-            best_res is not None and best_res <= config.USABLE_SOURCE_MAX_M),
+            (best_res is not None and best_res <= config.USABLE_SOURCE_MAX_M)
+            or tex >= 0.7),
         "boundary": {"type": "MultiPolygon",
                      "coordinates": [
                          [[[round(v, 7) for v in pt] for pt in ring]

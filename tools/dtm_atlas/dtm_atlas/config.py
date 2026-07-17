@@ -34,7 +34,12 @@ DEP3_INDEX = ("https://index.nationalmap.gov/arcgis/rest/services/"
               "3DEPElevationIndex/MapServer")
 # availability layers, best first: (layer id, label, approx res m)
 DEP3_INDEX_LAYERS = [(1, "1m", 1.0), (2, "19as", 3.0), (4, "13as", 10.0)]
-DEP3_MAX_PX = 7500     # service cap is 8000; tile below it defensively
+# The documented service cap is 8000 px per DIMENSION, but exports also 500
+# ("Error exporting image") above ~7M TOTAL pixels (server render budget) —
+# the 8 largest multi-course properties hit it at 1 m. 2500 px tiles keep the
+# typical course single-request (median window ~2300 px) and split the big
+# estates into a handful of safe requests.
+DEP3_MAX_PX = 2500
 USABLE_SOURCE_MAX_M = 3.0   # courses whose best source is coarser are flagged
 
 # --- Overpass --------------------------------------------------------------

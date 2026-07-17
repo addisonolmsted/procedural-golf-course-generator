@@ -89,12 +89,16 @@ def export_dem(bbox_utm, epsg: int, res_m: float, sess) -> np.ndarray:
         part = _export_once(bb, epsg, (pw, ph), sess)
         out[oy:oy + ph, ox:ox + pw] = part
         if prev is not None and prev[0] == oy and ox > 0:
-            # 16-px seam sanity: re-request a thin overlap strip and compare
-            strip_bb = (x0 + (ox - 8) * res_m, bb[1], x0 + (ox + 8) * res_m, bb[3])
-            strip = _export_once(strip_bb, epsg, (16, ph), sess)
-            got = out[oy:oy + ph, ox - 8:ox + 8]
-            if not np.allclose(strip, got, atol=0.05, equal_nan=True):
-                raise FetchError("tile seam mismatch beyond 5 cm")
+            # seam sanity: re-request a thin overlap strip and compare
+            # (clamped to the grid — the last tile column can be < 8 px)
+            lo = max(ox - 8, 0)
+            hi = min(ox + 8, w)
+            if hi - lo >= 4:
+                strip_bb = (x0 + lo * res_m, bb[1], x0 + hi * res_m, bb[3])
+                strip = _export_once(strip_bb, epsg, (hi - lo, ph), sess)
+                got = out[oy:oy + ph, lo:hi]
+                if not np.allclose(strip, got, atol=0.05, equal_nan=True):
+                    raise FetchError("tile seam mismatch beyond 5 cm")
         prev = (oy, ox)
         time.sleep(1.0)
     return out
@@ -117,11 +121,18 @@ def query_availability(bbox_ll, sess) -> dict:
             "returnGeometry": "false",
             "f": "json",
         }
-        try:
-            r = sess.get(url, params=params, headers=UA, timeout=60)
-            feats = r.json().get("features", []) if r.status_code == 200 else []
-        except (requests.RequestException, ValueError):
-            feats = []
+        feats = []
+        for attempt in range(3):
+            try:
+                r = sess.get(url, params=params, headers=UA, timeout=60)
+                if r.status_code == 200:
+                    j = r.json()
+                    if "error" not in j:
+                        feats = j.get("features", [])
+                        break
+            except (requests.RequestException, ValueError):
+                pass
+            time.sleep(2.0 * (attempt + 1))
         names = set()
         for f in feats:
             attrs = f.get("attributes") or {}

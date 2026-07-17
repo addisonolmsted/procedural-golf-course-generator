@@ -16,25 +16,40 @@ evidence here. Do not start stage N+1 before stage N is signed off.
   data stages ship static HTML QA galleries (server-rendered PNGs + JS toggles).
 - **Branch:** `terrain-v2`; the legacy pipeline stays untouched until Stage 9.
 
-## Stage 0 — Data Foundation & Naturalization — IN PROGRESS
+## Stage 0 — Data Foundation & Naturalization — AT GATE (user review pending)
 
 Tool: `tools/dtm_atlas/` (`python3 -m dtm_atlas <cmd>`; see its README).
+**135/135 US courses stored** (2 m working grids from 1 m 3DEP fetches; the 8
+largest multi-course properties needed tiled exports — the service 500s above
+~7 M px/request). Review entry point: `tools/dtm_atlas/out/qa/index.html`.
 
 | Gate item | Evidence | Status |
 |---|---|---|
-| Spot-check 20 QA pages (masks align; inpainting invents nothing) | `out/qa/{key}.html` + `{key}_diff.png`; reviewed keys + verdicts recorded below | ☐ |
-| Water bodies + berms fully excised in naturalized DTMs | automated per-course check `water_mask ⊆ inpaint` + bridge-component counts in meta | ☐ |
-| Exterior-margin coverage report | `out/reports/margin_coverage.csv` + index column | ☐ |
-| Idempotent + deterministic re-runs | `verify --write` → re-run derive stages `--force` → `verify` clean; MANIFEST hash pinned below | ☐ |
-| Store layout + ingestion CLI per spec | `out/store/{key}/{raw.tif,naturalized.tif,masks/*.tif,meta.json}` | ☐ |
+| Spot-check 20 QA pages (masks align; inpainting invents nothing) | seeded list (seed 2026) below; in-session deep review: riviera (barranca preserved, suburbs excised, bridge over barranca detected), wadehampton (mountain signal, 35% inpaint), wingedfoot (63% inpaint, diff confined to building/road/pond fabric), augusta/valhalla/skokie/castlepines metas; **user eyeball of the list pending** | ◐ |
+| Water bodies + berms fully excised | hard per-course assertion `water & valid ⊆ inpaint` (naturalize fails otherwise) — 135/135 pass; 2333 bridge-deck components additionally masked | ☑ |
+| Exterior-margin coverage report | `out/reports/margin_coverage.csv`: **135/135 have full 500 m margin DATA**; margin mostly-natural (≤30 % inpainted) on 24 (suburban US reality — `exterior_inpaint_frac` in meta quantifies per course); inpaint p50 52 % | ☑ |
+| Idempotent + deterministic re-runs | no-force re-run skips (cache-first); forced double-run on 12 seeded courses (seed 7): **216/216 files byte-identical** (+ earlier 54/54 on riviera/augusta/valhalla); store frozen in `MANIFEST.sha256`: **2430 files, store hash 4d8a76135fa87005** | ☑ |
+| Store layout + ingestion CLI per spec | `out/store/{key}/{raw.tif,naturalized.tif,masks/*.tif,meta.json}`; `python3 -m dtm_atlas {courses,fetch,raster,masks,artifacts,naturalize,qa,verify,all}` | ☑ |
 
-### Gate evidence (filled at gate time)
+### Gate evidence of record
 
-- Spot-checked keys + verdicts: _pending_
-- MANIFEST.sha256 (double-run): _pending_
-- Margin coverage summary: _pending_
-- Courses flagged `usable_for_calibration:false`: _pending_
-- Boundary fallbacks (`holes_hull_fallback`): _pending_
+- Spot-check list (seed 2026): aronimink, augusta, canterbury, cherryhills,
+  chicagoac, colonialct, creekclub, hershey, houstonoaks, inverness, minikahda,
+  newport, northberwick, roberttrent, sanfrancisco, skokie, stanford,
+  wadehampton, wilmington, wingedfoot.
+- Source tiers: 107 index-confirmed 1 m, 1 at 1/9 arc-sec, 20 "none" from a
+  3DEPElevationIndex outage mid-campaign — all 20 texture-verified as real 1 m
+  (sub-2 m texture fraction 0.83–0.99; the `usable_for_calibration` rule now
+  accepts index-tier OR texture ≥ 0.7). **135/135 usable.**
+- Boundary fallbacks (`holes_hull_fallback`): 51/135 — OSM lacks an acceptable
+  `leisure=golf_course` polygon there; flagged per course in QA. Consequence is
+  a hull-shaped (rather than property-shaped) margin, not missing data.
+- 8 courses carry seam-detector flags (rows/cols in meta); 2 m raw grids are
+  otherwise clean.
+- Known noted behaviors: curvature detector masks some natural sharp canyon
+  rims (thin bands; >2000 px components spared as cliffs); meta `params_hash`
+  values are mixed across courses fetched before/after the in-campaign fixes
+  (honest provenance — derive outputs themselves double-run byte-identical).
 
 ## Stage 1 — Metric Extraction — NOT STARTED
 
