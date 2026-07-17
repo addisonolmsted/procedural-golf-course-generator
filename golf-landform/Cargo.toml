@@ -1,0 +1,15 @@
+[package]
+name = "golf-landform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "terrain-v2 Stage 2: swept-profile landform primitives + composition (no noise, no erosion)"
+
+[dependencies]
+golf-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+golf-viz = { workspace = true }
+image = { workspace = true }

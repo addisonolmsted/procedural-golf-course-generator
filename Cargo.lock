@@ -1396,6 +1396,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "golf-landform"
+version = "0.0.0"
+dependencies = [
+ "golf-core",
+ "golf-viz",
+ "image",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "golf-match"
 version = "0.0.0"
 dependencies = [
@@ -3051,6 +3062,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "terrain-lab"
+version = "0.0.0"
+dependencies = [
+ "eframe",
+ "golf-core",
+ "golf-landform",
+ "golf-viz",
+ "image",
+ "serde_json",
 ]
 
 [[package]]

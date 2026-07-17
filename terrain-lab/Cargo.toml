@@ -1,0 +1,14 @@
+[package]
+name = "terrain-lab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "terrain-v2 interactive visualizer: landform primitives with live sliders (Stage 2+)"
+
+[dependencies]
+golf-core = { workspace = true }
+golf-landform = { workspace = true }
+golf-viz = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }
