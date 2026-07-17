@@ -69,10 +69,6 @@ pub(crate) struct ResolvedValley {
 }
 
 impl ResolvedValley {
-    pub fn new(v: &Valley, spine: Spine) -> Self {
-        Self::with_cap(v, spine, None)
-    }
-
     pub fn with_cap(v: &Valley, spine: Spine, arc_cap_m: Option<f64>) -> Self {
         let tail_rise = match arc_cap_m {
             Some(cap) => {

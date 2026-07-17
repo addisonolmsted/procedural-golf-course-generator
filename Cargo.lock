@@ -4088,6 +4088,7 @@ dependencies = [
  "golf-atlas",
  "golf-core",
  "golf-holes",
+ "golf-landform",
  "golf-match",
  "golf-routing",
  "golf-terrain",

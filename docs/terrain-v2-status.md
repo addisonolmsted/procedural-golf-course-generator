@@ -37,7 +37,27 @@ Tool: `tools/dtm_atlas/` (`python3 -m dtm_atlas <cmd>`; see its README).
 - Boundary fallbacks (`holes_hull_fallback`): _pending_
 
 ## Stage 1 — Metric Extraction — NOT STARTED
-## Stage 2 — Landform Primitive Library — NOT STARTED
+
+## Stage 2 — Landform Primitive Library — IN PROGRESS (parallel with Stage 0 per plan's parallelism note)
+
+Crates: `golf-landform` (primitives + versioned MacroConfig schema, SCHEMA_VERSION/
+LANDFORM_VERSION 1) and `terrain-lab` (egui visualizer: hillshade + contours, live
+sliders, preset buttons, 4x fast path — `cargo run -p terrain-lab --release`).
+Headless twin: `cargo run -p golf-landform --example dump_presets --release`
+→ `output/landform_presets/*.png`.
+
+| Gate item | Evidence | Status |
+|---|---|---|
+| Presets visually reproduce (barranca, floodplain, straight canyon, ridge spine, bluff+river, bowl spillway, bowl lake) | output/landform_presets/*.png — reviewed in-session (asymmetric walls, accordant tributary, spillway trench, terrace bluff all read); **user eyeball pending** | ◐ |
+| No SDF artifacts at max meander intensity; curvature clamp fuzz (10k, zero self-approach) | `meander_fuzz_10k` run in release: PASS (also 1k always-on) | ☑ |
+| Trunk floor monotonicity for all valley configs | `valley_floors_monotone_in_all_presets` + `authored_floor_strictly_monotone` (composed tolerance = smin dip k/4 ≤ 1.5 m, documented) | ☑ |
+| Deterministic; golden hashes checked in | in-crate golden + `xtask golden` landform arm (17039205586666270760), both match | ☑ |
+
+Notes of record: meander amplitude authority = curvature clamp (min radius
+≥ 2.5 widths); the plan doc's "A ≈ 2–3× wavelength at intensity 1" cannot satisfy
+its own clamp — intensity scales toward the clamp-allowed maximum instead.
+Bluffs take no bbox prefilter (a step's raised terrace is unbounded).
+Composed-floor scour dips ≤ k/4 at confluences are accepted physics.
 ## Stage 3 — Primitive Parameter Extraction — NOT STARTED
 ## Stage 4 — Noise Layer — NOT STARTED
 ## Stage 5 — Erosion as Finisher — NOT STARTED

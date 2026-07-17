@@ -69,6 +69,9 @@ fn main() -> ExitCode {
             let hh = holes_hash();
             std::fs::write(holes_golden_path(), format!("{hh}\n")).unwrap();
             println!("blessed holes golden: {hh}");
+            let lh = landform_hash();
+            std::fs::write(landform_golden_path(), format!("{lh}\n")).unwrap();
+            println!("blessed landform golden: {lh}");
             ExitCode::SUCCESS
         }
         "atlas-pack" => run_atlas_pack(&args[1..]),
@@ -3392,6 +3395,17 @@ fn golden_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/terrain.hash")
 }
 
+/// terrain-v2 landform golden: the barranca gate preset at 20 m (matches the
+/// in-crate pin in golf-landform/tests/property.rs).
+fn landform_hash() -> u64 {
+    let cfg = golf_landform::preset("barranca").expect("preset exists");
+    golf_landform::field_hash(&golf_landform::generate(&cfg, 20.0))
+}
+
+fn landform_golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/landform.hash")
+}
+
 fn run_golden() -> ExitCode {
     let mut ok = true;
     let mut check = |name: &str, path: PathBuf, hash: u64| match std::fs::read_to_string(&path) {
@@ -3412,6 +3426,7 @@ fn run_golden() -> ExitCode {
     check("pipeline", pipeline_golden_path(), pipeline_hash());
     check("routing", routing_golden_path(), routing_hash());
     check("holes", holes_golden_path(), holes_hash());
+    check("landform", landform_golden_path(), landform_hash());
     if ok {
         ExitCode::SUCCESS
     } else {
