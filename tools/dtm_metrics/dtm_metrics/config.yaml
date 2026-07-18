@@ -16,11 +16,11 @@ weights:
   margin_bonus: 1.0        # exterior clean cells: w = 1 + bonus*max(0, 1-ext_inpaint_frac)
 
 specwin:
-  window_m: 512.0
-  fallback_window_m: 256.0
+  window_cascade_m: [512.0, 256.0, 128.0]   # largest-first; per-band validity
+                                            # window >= 2x band long edge
   stride_frac: 0.5
   min_clean_frac: 0.90
-  min_windows: 4           # below -> low_confidence
+  min_windows: 4           # per tier; no 128 m tier -> low_confidence
   detrend: "planar"        # per-window (implicit high-pass)
 
 bands:

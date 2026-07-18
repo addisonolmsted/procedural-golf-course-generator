@@ -14,31 +14,33 @@ from __future__ import annotations
 import numpy as np
 
 
-def _hann2(n: int) -> np.ndarray:
-    w = np.hanning(n)
-    return np.outer(w, w)
+def _hann2(shape: tuple[int, int]) -> np.ndarray:
+    return np.outer(np.hanning(shape[0]), np.hanning(shape[1]))
 
 
 def _planar_detrend(x: np.ndarray) -> np.ndarray:
-    n = x.shape[0]
-    yy, xx = np.mgrid[0:n, 0:n].astype(np.float64)
-    A = np.stack([np.ones(n * n), xx.ravel() - xx.mean(), yy.ravel() - yy.mean()], 1)
+    ny, nx = x.shape
+    yy, xx = np.mgrid[0:ny, 0:nx].astype(np.float64)
+    A = np.stack([np.ones(ny * nx), xx.ravel() - xx.mean(), yy.ravel() - yy.mean()], 1)
     coef, *_ = np.linalg.lstsq(A, x.ravel(), rcond=None)
-    return x - (A @ coef).reshape(n, n)
+    return x - (A @ coef).reshape(ny, nx)
 
 
-def window_periodogram(x: np.ndarray, cell: float):
+def window_periodogram(x: np.ndarray, cell: float, pre_detrended: bool = False):
     """(P, f) — 2-D periodogram normalized so sum(P) ~= var(detrended x)
-    (Welch normalization: |FFT(h*x)|^2 / (N^2 * mean(h^2))), and the radial
-    frequency magnitude grid (cycles/m). DC bin zeroed."""
-    n = x.shape[0]
-    h = _hann2(n)
-    d = _planar_detrend(x) * h
+    (Welch normalization: |FFT(h*x)|^2 / (N * mean(h^2))), and the radial
+    frequency magnitude grid (cycles/m). Rectangular grids supported; DC
+    zeroed. `pre_detrended=True` skips the planar detrend (caller already
+    removed a trend, e.g. the global quadratic for macro bands)."""
+    ny, nx = x.shape
+    h = _hann2((ny, nx))
+    d = (x if pre_detrended else _planar_detrend(x)) * h
     F = np.fft.fft2(d)
-    P = (np.abs(F) ** 2) / (n * n * (h * h).mean() * n * n)
+    P = (np.abs(F) ** 2) / ((ny * nx) * (h * h).mean() * (ny * nx))
     P[0, 0] = 0.0
-    fr = np.fft.fftfreq(n, d=cell)
-    f = np.hypot(fr[:, None], fr[None, :])
+    fy = np.fft.fftfreq(ny, d=cell)
+    fx = np.fft.fftfreq(nx, d=cell)
+    f = np.hypot(fy[:, None], fx[None, :])
     return P, f
 
 
@@ -83,16 +85,22 @@ def iter_windows(shape: tuple[int, int], win_px: int, stride_px: int):
 
 
 def clean_window_bands(nat: np.ndarray, clean: np.ndarray, weightmap: np.ndarray,
-                       cell: float, bands_m, beta_band_m, window_m: float,
-                       fallback_window_m: float, stride_frac: float,
-                       min_clean_frac: float, min_windows: int) -> dict:
-    """Coverage-weighted clean-window band RMS values + beta.
+                       cell: float, bands_m, beta_band_m, window_cascade_m,
+                       stride_frac: float, min_clean_frac: float,
+                       min_windows: int) -> dict:
+    """Coverage-weighted clean-window band RMS values + beta, over a WINDOW
+    CASCADE: suburban courses' clean areas are shredded by cart-path masks, so
+    a course may support 128 m windows but no 512 m ones. Each band takes its
+    estimate from the LARGEST window size that (a) fits >= min_windows clean
+    windows and (b) can hold the band (window >= 2x the band's long-wavelength
+    edge). Long bands honestly go NaN on shredded courses instead of dragging
+    every band to NaN. beta needs window >= 2x its long edge too.
 
-    Returns {"bands": [rms...], "beta": float, "n_windows": int,
-    "window_m": used}. Falls back to the smaller window when the big one
-    doesn't fit enough clean windows; NaNs when even that fails.
+    Returns {"bands": [rms...], "beta", "n_windows" (largest tier used),
+    "window_m" (largest tier with windows)}.
     """
-    for wm in (window_m, fallback_window_m):
+    tiers = []
+    for wm in window_cascade_m:
         win = int(round(wm / cell))
         if win < 32 or win > min(nat.shape):
             continue
@@ -119,12 +127,29 @@ def clean_window_bands(nat: np.ndarray, clean: np.ndarray, weightmap: np.ndarray
             wsum += w
             n_win += 1
         if n_win >= min_windows:
-            rms = np.sqrt(var_sums / wsum)
-            return {
-                "bands": [float(v) for v in rms],
-                "beta": float(beta_sum / beta_w) if beta_w > 0 else float("nan"),
-                "n_windows": n_win,
+            tiers.append({
                 "window_m": wm,
-            }
-    return {"bands": [float("nan")] * len(bands_m), "beta": float("nan"),
-            "n_windows": 0, "window_m": 0.0}
+                "rms": np.sqrt(var_sums / wsum),
+                "beta": float(beta_sum / beta_w) if beta_w > 0 else float("nan"),
+                "n": n_win,
+            })
+    out_bands = []
+    for bi, (_lo, hi) in enumerate(bands_m):
+        need = 2.0 * (hi if np.isfinite(hi) else 1e9)
+        val = float("nan")
+        for t in tiers:  # cascade ordered largest-first
+            if t["window_m"] >= need:
+                val = float(t["rms"][bi])
+                break
+        out_bands.append(val)
+    beta = float("nan")
+    for t in tiers:
+        if t["window_m"] >= 2.0 * beta_band_m[1] and np.isfinite(t["beta"]):
+            beta = t["beta"]
+            break
+    return {
+        "bands": out_bands,
+        "beta": beta,
+        "n_windows": tiers[0]["n"] if tiers else 0,
+        "window_m": tiers[0]["window_m"] if tiers else 0.0,
+    }
