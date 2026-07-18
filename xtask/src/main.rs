@@ -72,6 +72,9 @@ fn main() -> ExitCode {
             let lh = landform_hash();
             std::fs::write(landform_golden_path(), format!("{lh}\n")).unwrap();
             println!("blessed landform golden: {lh}");
+            let nh = noiselab_hash();
+            std::fs::write(noiselab_golden_path(), format!("{nh}\n")).unwrap();
+            println!("blessed noiselab golden: {nh}");
             ExitCode::SUCCESS
         }
         "atlas-pack" => run_atlas_pack(&args[1..]),
@@ -133,6 +136,16 @@ fn main() -> ExitCode {
         // Batch forward pass for the calibration harness: read a JSON manifest
         // of {out, seed, cell, extent, terrain, erosion} items, generate each
         // with EXPLICIT params (generate_course_with, dry water), write HG01.
+        "noise-grid" => {
+            let manifest = args.get(1).map(PathBuf::from);
+            match manifest {
+                Some(m) => run_noise_grid(&m),
+                None => {
+                    eprintln!("usage: noise-grid <manifest.json>");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         "forward-grid" => {
             let manifest = args.get(1).cloned().unwrap_or_default();
             run_forward_grid(Path::new(&manifest))
@@ -3363,6 +3376,124 @@ fn run_dump_hole(dir: &Path, seed: u64, holes: &[usize]) -> ExitCode {
 }
 
 // ---------------------------------------------------------------------------
+// terrain-v2 noise lab (Stage-1 identifiability sandbox)
+// ---------------------------------------------------------------------------
+
+/// One noise-lab generation item (see golf_landform::noiselab).
+#[derive(serde::Deserialize)]
+struct NoiseLabItem {
+    out: String,
+    cell: f64,
+    extent: f64,
+    /// Stage-2 preset name to compose over (None = flat base).
+    skeleton: Option<String>,
+    /// Emit the bare skeleton grid instead of noise (for proxy-vs-truth).
+    #[serde(default)]
+    skeleton_only: bool,
+    params: golf_landform::noiselab::NoiseLabConfig,
+}
+
+fn write_hg01_grid(g: &golf_core::grid::Grid<f64>, out: &str, cell: f64) {
+    use std::io::Write;
+    let (nx, ny) = (g.spec.nx as usize, g.spec.ny as usize);
+    let mut buf: Vec<u8> = Vec::with_capacity(16 + ny * nx * 5);
+    buf.extend_from_slice(b"HG01");
+    buf.extend_from_slice(&(ny as u32).to_le_bytes());
+    buf.extend_from_slice(&(nx as u32).to_le_bytes());
+    buf.extend_from_slice(&(cell as f32).to_le_bytes());
+    // HG01 row 0 = north; the lab grid's row 0 is south -> flip
+    for iy in (0..ny).rev() {
+        for ix in 0..nx {
+            buf.extend_from_slice(&(*g.get(ix as u32, iy as u32) as f32).to_le_bytes());
+        }
+    }
+    buf.extend(std::iter::repeat(0u8).take(ny * nx)); // dry: no water plane
+    if let Some(dir) = std::path::Path::new(out).parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let mut f = std::fs::File::create(out).unwrap();
+    f.write_all(&buf).unwrap();
+}
+
+fn run_noise_grid(manifest: &Path) -> ExitCode {
+    use golf_landform::noiselab;
+    let text = match std::fs::read_to_string(manifest) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("read {}: {e}", manifest.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let items: Vec<NoiseLabItem> = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("parse manifest: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // precompute skeleton fields once per (preset, cell)
+    let mut skels: std::collections::HashMap<String, std::sync::Arc<noiselab::SkeletonFields>> =
+        std::collections::HashMap::new();
+    for it in &items {
+        if let Some(name) = &it.skeleton {
+            let key = format!("{name}@{}", it.cell);
+            skels.entry(key).or_insert_with(|| {
+                let cfg = golf_landform::preset(name)
+                    .unwrap_or_else(|| panic!("unknown skeleton preset {name}"));
+                std::sync::Arc::new(noiselab::skeleton_fields(&cfg, it.cell))
+            });
+        }
+    }
+    use rayon::prelude::*;
+    items.par_iter().for_each(|it| {
+        let sk = it.skeleton.as_ref()
+            .map(|n| skels[&format!("{n}@{}", it.cell)].clone());
+        if it.skeleton_only {
+            let s = sk.expect("skeleton_only needs a skeleton");
+            write_hg01_grid(&s.z, &it.out, it.cell);
+            return;
+        }
+        let g = noiselab::generate_noise(&it.params, it.extent,
+                                         sk.as_deref(), it.cell);
+        write_hg01_grid(&g, &it.out, it.cell);
+    });
+    println!("noise-grid: wrote {} grids", items.len());
+    ExitCode::SUCCESS
+}
+
+/// Fixed-config noiselab golden (flat base, all mechanisms exercised).
+fn noiselab_hash() -> u64 {
+    let cfg = golf_landform::noiselab::NoiseLabConfig {
+        seed: 2026,
+        base_amp: 14.0,
+        base_wavelength: 350.0,
+        octaves: 5,
+        gain: 0.52,
+        lacunarity: 2.0,
+        warp_amp: 80.0,
+        warp_wavelength: 500.0,
+        warp2_amp: 25.0,
+        ridged_mix: 0.35,
+        redistribution: 1.5,
+        tex_amp: 0.6,
+        tex_wavelength: 22.0,
+        tex_gain: 0.55,
+        nugget_amp: 0.06,
+        aniso_ratio: 1.7,
+        floor_damp: 1.0,
+        slope_gain: 0.0,
+        grain_align: 0.0,
+        dummy: 0.0,
+    };
+    let g = golf_landform::noiselab::generate_noise(&cfg, 1024.0, None, 4.0);
+    golf_landform::field_hash(&g)
+}
+
+fn noiselab_golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/noiselab.hash")
+}
+
+// ---------------------------------------------------------------------------
 // Determinism golden
 // ---------------------------------------------------------------------------
 
@@ -3427,6 +3558,7 @@ fn run_golden() -> ExitCode {
     check("routing", routing_golden_path(), routing_hash());
     check("holes", holes_golden_path(), holes_hash());
     check("landform", landform_golden_path(), landform_hash());
+    check("noiselab", noiselab_golden_path(), noiselab_hash());
     if ok {
         ExitCode::SUCCESS
     } else {

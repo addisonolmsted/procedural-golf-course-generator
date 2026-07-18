@@ -25,6 +25,7 @@ pub mod spline;
 
 mod bluff;
 mod bowl;
+pub mod noiselab;
 mod presets;
 mod valley;
 
