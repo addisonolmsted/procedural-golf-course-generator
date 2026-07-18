@@ -1,0 +1,77 @@
+# Stage-1 configuration — bands, scales, weights, gate thresholds, campaigns.
+# Every number that shapes a metric or a gate lives here.
+
+store:
+  # relative to repo root
+  dir: "tools/dtm_atlas/out/store"
+  verify_manifest: true
+
+surfaces:
+  # primitive-proxy low-pass: Gaussian sigma = L * 0.1874 (half-amplitude at L)
+  lowpass_L_m: 200.0
+  L_sensitivity_m: [100.0, 150.0, 300.0]   # recomputed on a subset for the report
+  tpi_window_m: 300.0                      # S3 landform-position predictor
+
+weights:
+  margin_bonus: 1.0        # exterior clean cells: w = 1 + bonus*max(0, 1-ext_inpaint_frac)
+
+specwin:
+  window_m: 512.0
+  fallback_window_m: 256.0
+  stride_frac: 0.5
+  min_clean_frac: 0.90
+  min_windows: 4           # below -> low_confidence
+  detrend: "planar"        # per-window (implicit high-pass)
+
+bands:
+  macro_m: [[800.0, .inf], [400.0, 800.0], [200.0, 400.0], [50.0, 200.0]]
+  char_m: [[100.0, 200.0], [50.0, 100.0], [20.0, 50.0], [8.0, 20.0]]
+  qa_m: [[4.0, 8.0]]       # diagnostic only (DTM-production artifacts)
+  beta_char_m: [16.0, 128.0]
+
+scales:
+  res_rms_windows_m: [25.0, 50.0, 100.0]
+  rough_org: {window_m: 25.0, moran_lag_m: 50.0, block_m: 250.0}
+  extrema_sigma_m: 8.0
+  variogram: {min_lag_m: 2.0, max_lag_m: 200.0, n_lags: 40}
+  sf_lags_m: [10.0, 25.0, 50.0, 100.0]
+  aniso: {macro_max_lag_m: 600.0, char_max_lag_m: 150.0, n_dir: 8}
+  drainage_block_m: 8.0
+  drainage_thresh_m2: 60000.0
+  tpi_valley_radius_m: 200.0
+  grain_lag_m: 20.0
+
+flags:
+  low_confidence_clean_frac: 0.20
+
+gates:
+  g1_macro_iqr_rel: 0.02       # doc: <2% worst-case injection movement
+  g1_char_popstd: 0.10
+  g1_n_courses: 10
+  g1_min_clean_frac: 0.75
+  g2_spearman: 0.90
+  g2_med_popstd: 0.15
+  g3_icc: 0.60
+  g3_theta_share: 0.50
+  g4_abs_rho: 0.90
+  g6_min_st: 0.10
+  g6_min_r2: 0.50
+
+injections:
+  pads: {height_m: 1.0, diameter_m: 30.0, count: 20}
+  ponds: {depth_m: -2.0, diameter_m: 80.0, count: 5}
+  spikes: {height_m: 1.5, count: 200}
+  seam_step_m: 0.3
+  seed: 20260718
+
+campaigns:
+  extent_flat_m: 2048.0
+  extent_skel_m: 2500.0
+  cell_m: 2.0
+  a: {n: 512, seeds: [11, 12, 13]}
+  b: {n: 256, seeds: [21, 22], skeletons: [barranca, river_confluence, ridge_spine]}
+  c: {n: 40, seeds: [31, 32, 33]}
+  emulator: {r2_gate: 0.5, saltelli_n: 1024}
+  escalate_r2_frac: 0.334
+
+seed: 20260101
