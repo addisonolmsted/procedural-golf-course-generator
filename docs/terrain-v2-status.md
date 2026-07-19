@@ -51,7 +51,100 @@ largest multi-course properties needed tiled exports — the service 500s above
   values are mixed across courses fetched before/after the in-campaign fixes
   (honest provenance — derive outputs themselves double-run byte-identical).
 
-## Stage 1 — Metric Extraction — NOT STARTED
+## Stage 1 — Metric Extraction + Parameter Identifiability — AT GATE (user review pending)
+
+Tool: `tools/dtm_metrics/` (`python3 -m dtm_metrics <cmd>`); Rust sandbox
+generator `golf-landform/src/noiselab.rs` + `cargo xtask noise-grid` (golden
+13743951878413972362 in `xtask golden`). Scope per the approved expanded plan:
+the metric battery AND a 19-parameter noise-identifiability study deciding
+which Stage-4 parameters are worth keeping.
+
+**Design spine (primitive-awareness):** metrics split S1 macro (primitives'
+domain — validation only, never noise-fit targets, else we double-count what
+primitives explain), S2 character (what Stage-4 noise must reproduce; the
+Stage-7b objective candidates), S3 modulation contract (texture conditioned on
+landform position). Primitive proxy until Stage 3 = Gaussian low-pass L=200 m,
+pluggable `macro_override`. Fine bands come from clean-window PSDs (median
+course is ~51% Laplace-inpainted; fill has no fine energy → global FFTs are
+biased there by construction).
+
+| Gate item (doc DoD + extension) | Evidence | Status |
+|---|---|---|
+| Robustness: macro metrics ≤2% under worst-case injection (pads/ponds/spikes/seam) | `out/reports/robustness_report.md` — S1 macro all ≤2% IQR-rel except pond-fragile valley metrics (demoted diagnostic); S2/S3 ≤0.10 pop-std except by-design detectors (QA band, laplacian, res_aniso — diagnostic) | ☑ |
+| Empirical relationships reproduce (G5) | stage1_metrics.md: water↔relief Spearman −0.25 (doc expects negative ✓); relief p25–p75 = 18–52 m vs doc's 30–60 m amplitude bracket (overlaps; parkland set skews flatter); beta_char p25–p75 = 3.80–4.67 — steeper than the doc's [3, 4.5] prior (2 m block-meaned lidar rolls off faster than the generic-terrain prior; recorded as a finding, β target ranges come from data not the prior) | ☑ |
+| No unexplained metric outliers | `out/reports/outlier_triage.md`: 161 flags = mountain-tail relief (belair/greenbrier/wadehampton 147–224 m vs median 31 m), water-dominated victoria, flat borderline-clean cohort; QA-band flags checked for seams (scattered extremes, max 1–4% on any row/col — no tile seams) → **no Stage-0 escalations** | ☑ |
+| metrics.parquet + distribution explorer | `out/metrics.parquet` (135 courses × 81 columns + `__clean` variants), `out/explorer/index.html` (hists, \|ρ\| matrix, outliers, availability) | ☑ |
+| EXTENSION: parameter decision table + recommended Stage-4 set | `out/reports/parameter_assessment.md` + `out/sandbox/stage4_recommended_params.json` — see verdicts below; **user review pending** | ◐ |
+
+### Metric classification (gates G1–G6 → `out/reports/stage1_metrics.md`)
+
+**6 fit_targets** (each a distinct character axis, G4-representative of its
+redundancy cluster): `s2_beta_char` (spectral shape), `s2_sf_rms_100`
+(amplitude — carries the 8-member cluster sf_rms_10/25/50/100 ≡ res_rms_* ≡
+res_slope_p90), `s2_res_extrema_ha` (landform granularity), `s2_res_slope_p50`
+(texture steepness), `s2_prof_curv_p90` (crease sharpness),
+`s3_floor_upland_log_rms_ratio` (modulation contract). **10 validation** = S1
+macro anchors (relief, lp_slope family, macro bands, aniso, tilt). **34
+diagnostic** with recorded reasons (QA-by-design, sparse, low-ICC
+heterogeneity, redundant non-representatives).
+
+Gate recalibrations of record (documented in config + report preamble):
+- G2 gates the masks_off variant only (ρ≥0.85); interior_only is descriptive —
+  removing the 500 m margin measures a designed regional difference, not
+  instability. Clean-window estimators (cw bands, beta_char) are G2-exempt:
+  masks are load-bearing for them; masks_off reproduces the inpaint bias the
+  estimator exists to avoid. Their stability evidence = sandbox θ-share
+  (0.996+) + ICC + G1.
+- G3-real ICC bar 0.3 (split-half ICC conflates within-course heterogeneity
+  with noise; the sandbox between-θ share ≥0.5 is the controlled-replication
+  stability gate — 28/31 pass).
+- v1's roughness-organization axes (rough_cv/top10/moran) are drivable and
+  robust but low-ICC → per-course diagnostic; flagged as candidate
+  DISTRIBUTION-level 7b objectives (population quantile matching).
+
+### Parameter verdicts (three evidence lines: Sobol ST influence ≥ max(0.05,
+2×dummy)=0.05; fit-recovery Spearman via emulator inversion of 40 known
+configs; leave-param-fixed coverage ≥ 0.145 self-calibrated floor)
+
+**KEEP 7** — base_amp (recovery ρ 0.945), base_wavelength (0.826),
+warp_wavelength (0.653), ridged_mix (0.820, +S5-check), redistribution
+(0.795, +S5-check), aniso_ratio (0.872), floor_damp (0.901 on
+truth-conditioned s3t ratio, ST 0.977 — the modulation contract is provably
+closed-loop). **MERGE-OR-CONSTRAIN** — gain (0.473; confounded with
+lacunarity exactly as pre-registered). **METRIC-GAP** (influential,
+unrecoverable — fine-band energy attribution is ambiguous across the texture
+stack): octaves, warp2_amp, tex_amp, tex_wavelength, nugget_amp, slope_gain.
+**DROP** — lacunarity, warp_amp, tex_gain, grain_align (undrivable, ST 0.004).
+Bounds JSON: `out/sandbox/stage4_recommended_params.json`; erosion-sensitivity
+addendum contract (rerun emulate/identify/coverage with Stage-5 knobs before
+7b) recorded in parameter_assessment.md.
+
+### Notes of record
+
+- Campaigns (all 2 m): A flat-base Sobol 512×3 seeds, B skeleton-on 256×2×3
+  Stage-2 presets, C fit-recovery 40×(3 flat + 2 skeleton) — 0 scoring errors;
+  grids generated/scored/deleted in batches. Emulators: 41/46 metrics CV
+  R²≥0.5 (median 0.72); dummy ST ceiling 0.0126.
+- Proxy-validation finding (campaign B): on sandbox fields the lowpass-proxy
+  S3 metrics decorrelate from truth-conditioned s3t twins (noise's own
+  low-frequency content dominates proxy TPI classes) → **Stage-7b must fit
+  modulation against truth-conditioned metrics** (skeleton known at fit time);
+  real-course s3 values remain valid measurements. s3 metrics draw sandbox
+  gate evidence from s3t twins accordingly.
+- `vg_nugget` ≈ 0 everywhere is honest (1 m→2 m block-mean killed sensor
+  noise); emulator R² −0.36 → dropped by G6 degeneracy as designed.
+- Determinism: extraction re-run on 10 courses byte-identical; noiselab golden
+  in `xtask golden`; campaigns keyed by (θ_id, seed) with fixed Sobol seeds.
+
+## Stage 1 follow-ups carried forward
+
+- Stage-3 replaces the L=200 m low-pass proxy via `macro_override` (surfaces
+  API already takes it); L-sensitivity table in `out/stability/`.
+- Stage-4 build order: the 7 KEEP params are the core; METRIC-GAP texture
+  params enter as fixed/derived until a separating metric exists (candidate:
+  per-band amplitude fitting once Stage-7b fits jointly with erosion).
+- Pre-7b: erosion-sensitivity addendum (re-run emulate/identify/coverage with
+  Stage-5 knobs; re-check ridged_mix/redistribution overlap).
 
 ## Stage 2 — Landform Primitive Library — IN PROGRESS (parallel with Stage 0 per plan's parallelism note)
 

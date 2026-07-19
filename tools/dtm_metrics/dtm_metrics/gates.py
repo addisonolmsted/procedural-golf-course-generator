@@ -35,9 +35,20 @@ FAMILY_RATIONALE = {
            "becomes a measured, per-course, fittable quantity here."),
 }
 
+# Clean-window estimators (specwin family): the masks are load-bearing BY
+# DESIGN — Laplace fill has no fine-band energy, so the masks_off variant
+# deliberately violates the estimator's precondition and measures the inpaint
+# bias itself, not metric instability. G2 is reported but not gating for
+# these; their stability evidence is sandbox theta-share (no inpainting
+# present there) + real-side ICC + G1.
+MASK_DEFINED = ("s2_cw_bp_", "s2_beta_char")
+
 METRIC_NOTES = {
-    "s2_res_rough_top10_25": "roughness concentration — the anti-choppiness axis proven in the v1 pipeline",
-    "s2_res_rough_moran_50": "roughness clustering (blob vs fine-grained texture)",
+    "s2_beta_char": "spectral-shape axis; mask-defined estimator (G2 informational)",
+    "s2_cw_bp_100_200": "512m-tier only — sparse (n<40) on low-clean courses; straddles L",
+    "s2_res_rough_cv_25": "low ICC = within-course heterogeneity; candidate DISTRIBUTION-level 7b objective (quantile match), not per-course target",
+    "s2_res_rough_top10_25": "roughness concentration — the v1 anti-choppiness axis; distribution-level 7b candidate (low ICC)",
+    "s2_res_rough_moran_50": "roughness clustering (blob vs fine-grained); distribution-level 7b candidate (low ICC)",
     "s2_vg_nugget": "sub-8 m stipple amplitude; expected ~0 on block-meaned lidar (degeneracy candidate)",
     "s2_cw_bp_4_8": "QA band — spike/seam detector BY DESIGN; never a fit target",
     "s1_valley_count_km2_200": "macro fragmentation; pond-injection-fragile (G1) — validation only",
@@ -88,26 +99,35 @@ def run() -> int:
         # G2
         if m in ev["g2g3"].index:
             row2 = ev["g2g3"].loc[m]
-            rhos = [row2.get("g2_masks_off_rho"), row2.get("g2_interior_only_rho")]
-            rhos = [x for x in rhos if pd.notna(x)]
-            r["g2_min_rho"] = float(min(rhos)) if rhos else np.nan
-            r["g2_pass"] = bool(rhos and min(rhos) >= g["g2_spearman"])
+            mo = row2.get("g2_masks_off_rho")
+            r["g2_min_rho"] = float(mo) if pd.notna(mo) else np.nan
+            r["g2_mask_defined"] = m.startswith(MASK_DEFINED)
+            r["g2_pass"] = bool(r["g2_mask_defined"]
+                                or (pd.notna(mo) and mo >= g["g2_spearman"]))
+            io = row2.get("g2_interior_only_rho")
+            r["g2_interior_rho"] = float(io) if pd.notna(io) else np.nan
             icc = row2.get("g3_icc")
             r["g3_icc"] = float(icc) if pd.notna(icc) else np.nan
             macro_exempt = fam == "s1" and ("bp_400" in m or "bp_800" in m)
             r["g3_real_pass"] = bool(macro_exempt or
                                      (pd.notna(icc) and icc >= g["g3_icc"]))
-        # G3 sandbox (theta share)
-        ts = ev["theta_share"].get(m, np.nan)
+        # G3 sandbox (theta share). s3 proxy metrics draw their sandbox
+        # evidence from the truth-conditioned s3t twin: Stage-7b fits with
+        # KNOWN skeletons, so truth conditioning is the fitting context.
+        sandbox_key = m.replace("s3_", "s3t_") if m.startswith("s3_") else m
+        if sandbox_key not in ev["theta_share"].index:
+            sandbox_key = m
+        ts = ev["theta_share"].get(sandbox_key, np.nan)
         r["g3_theta_share"] = float(ts) if pd.notna(ts) else np.nan
         r["g3_sandbox_pass"] = bool(pd.notna(ts) and ts >= g["g3_theta_share"])
         # G5 handled globally below; G6
-        st_ok = (not ev["st"].empty and m in ev["st"].index
-                 and float(ev["st"].loc[m].drop("dummy", errors="ignore").max())
+        st_key = sandbox_key if sandbox_key in ev["st"].index else m
+        st_ok = (not ev["st"].empty and st_key in ev["st"].index
+                 and float(ev["st"].loc[st_key].drop("dummy", errors="ignore").max())
                  >= g["g6_min_st"])
-        r2v = ev["r2"].get(m, np.nan)
-        r["g6_max_st"] = (float(ev["st"].loc[m].drop("dummy", errors="ignore").max())
-                          if not ev["st"].empty and m in ev["st"].index else np.nan)
+        r2v = ev["r2"].get(st_key, np.nan)
+        r["g6_max_st"] = (float(ev["st"].loc[st_key].drop("dummy", errors="ignore").max())
+                          if not ev["st"].empty and st_key in ev["st"].index else np.nan)
         r["g6_r2"] = float(r2v) if pd.notna(r2v) else np.nan
         r["g6_pass"] = bool(st_ok and pd.notna(r2v) and r2v >= g["g6_min_r2"])
         rows.append(r)
@@ -174,7 +194,22 @@ def run() -> int:
     tab.to_parquet(os.path.join(store.OUT, "gates.parquet"))
 
     # ---- stage1_metrics.md ----
-    lines = ["# Stage-1 metric battery — gate evidence + rationale", ""]
+    lines = ["# Stage-1 metric battery — gate evidence + rationale", "",
+             "Gate design notes:",
+             f"- G1: injection worst-case; macro <= {g['g1_macro_iqr_rel']:.0%} "
+             f"IQR-rel, character <= {g['g1_char_popstd']} pop-std.",
+             f"- G2 gates the masks_off variant only (rho >= {g['g2_spearman']}); "
+             "interior_only is descriptive — the 500 m margin is a different "
+             "region by design. Clean-window estimators (cw_bp_*, beta_char) are "
+             "G2-exempt: masks are load-bearing for them (masks_off measures the "
+             "inpaint bias the estimator exists to avoid); their stability "
+             "evidence is sandbox theta-share + ICC + G1.",
+             f"- G3 real: split-half ICC >= {g['g3_icc']} (between-course signal "
+             "dominates within-course heterogeneity); sandbox theta-share >= "
+             f"{g['g3_theta_share']} is the controlled-replication stability gate.",
+             "- Low-ICC but drivable roughness-organization metrics stay "
+             "diagnostic per-course but are candidates for DISTRIBUTION-level "
+             "Stage-7b objectives (population quantile matching).", ""]
     for fam in ("s1", "s2", "s3"):
         lines += [f"## {fam.upper()} — {FAMILY_RATIONALE[fam]}", ""]
         sub = tab[tab["family"] == fam]

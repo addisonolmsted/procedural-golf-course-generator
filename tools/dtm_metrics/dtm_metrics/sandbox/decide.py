@@ -30,6 +30,11 @@ def run() -> int:
 
     dummy_ceiling = float(st.get("dummy", pd.Series([0.0])).max())
     infl_floor = max(0.05, 2.0 * dummy_ceiling)
+    # the coverage evidence line has its own noise floor: the inert dummy's
+    # apparent reach-drop (emulated-percentile jitter). Critical threshold
+    # self-calibrates above it.
+    dummy_cov = float(cov.loc["dummy", "worst_reach_drop"]) if "dummy" in cov.index else 0.0
+    cov_floor = max(0.05, 2.0 * dummy_cov)
 
     rows = []
     for pname in P.NAMES:
@@ -37,8 +42,15 @@ def run() -> int:
             continue
         stmax = float(st[pname].max()) if pname in st.columns else 0.0
         st_best = st[pname].idxmax() if pname in st.columns and stmax > 0 else "-"
+        # Recovery evidence comes from the mode DESIGNED to identify the
+        # param: the flat campaign for base params (41 emulated metrics);
+        # the skeleton campaign only for the modulation trio (its 5 s3/s3t
+        # metrics cannot identify base params — that's not a failure of the
+        # base params, just the wrong instrument).
+        modes = (("skel",) if pname in ("floor_damp", "slope_gain", "grain_align")
+                 else ("flat",))
         rho = np.nan
-        for mode in ("skel", "flat"):
+        for mode in modes:
             try:
                 v = rec.loc[pname, (mode, "spearman")]
                 if np.isfinite(v):
@@ -51,7 +63,7 @@ def run() -> int:
         influential = stmax >= infl_floor
         recoverable = np.isfinite(rho) and rho >= 0.6
         partial = np.isfinite(rho) and 0.3 <= rho < 0.6
-        coverage_critical = drop >= 0.05
+        coverage_critical = drop >= cov_floor
 
         if influential and recoverable:
             verdict = "KEEP"
@@ -86,10 +98,20 @@ def run() -> int:
                    "erosion_addendum": sorted(EROSION_OVERLAP),
                    }, f, indent=1, sort_keys=True)
 
+    def md_table(df):
+        cols = list(df.columns)
+        out = ["| param | " + " | ".join(cols) + " |",
+               "|---" * (len(cols) + 1) + "|"]
+        for idx, row in df.iterrows():
+            out.append("| " + str(idx) + " | "
+                       + " | ".join(str(row[c]) for c in cols) + " |")
+        return "\n".join(out)
+
     md = ["# Parameter assessment — decision table", "",
           f"Influence floor: max(0.05, 2 x dummy ST {dummy_ceiling:.4f}) = "
-          f"{infl_floor:.4f}", "",
-          table.to_markdown(), "",
+          f"{infl_floor:.4f}; coverage floor: max(0.05, 2 x dummy drop "
+          f"{dummy_cov:.3f}) = {cov_floor:.3f}", "",
+          md_table(table), "",
           f"**Recommended Stage-4 set ({len(kept)}):** {', '.join(kept)}", "",
           "Erosion-sensitivity addendum (pre-7b): rerun emulate/identify/"
           "coverage with the Stage-5 erosion knobs appended; params flagged "

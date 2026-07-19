@@ -55,21 +55,29 @@ def run() -> int:
                 continue
 
             def loss(u):
-                tot = 0.0
+                # vectorized: u has shape (n_dims, S) -> return (S,)
+                U = u.T if u.ndim == 2 else u[None, :]
+                S = U.shape[0]
+                tot = np.zeros(S)
                 for k, m in enumerate(mets):
                     if not tfin[k]:
                         continue
                     model, mdims, extra = models[m]
-                    x = [u[dims.index(d)] if d in dims else 0.5 for d in mdims]
+                    cols = [dims.index(d) if d in dims else -1 for d in mdims]
+                    X = np.where(
+                        np.asarray(cols)[None, :] >= 0,
+                        U[:, [max(c, 0) for c in cols]],
+                        0.5)
                     if extra:
-                        x = x + [0.5] * extra
-                    pred = model.predict(np.asarray(x)[None, :])[0]
+                        X = np.hstack([X, np.full((S, extra), 0.5)])
+                    pred = model.predict(X)
                     tot += ((pred - target[k]) / sigma[m]) ** 2
-                return tot
+                return tot if u.ndim == 2 else float(tot[0])
 
             res = differential_evolution(
                 loss, bounds=[(0.0, 1.0)] * len(dims), seed=int(ti),
-                maxiter=40, popsize=16, tol=1e-6, polish=False)
+                maxiter=40, popsize=16, tol=1e-6, polish=False,
+                vectorized=True, updating="deferred")
             rec = {f"rec_{d}": res.x[i] for i, d in enumerate(dims)}
             true = {f"true_{d}": P.value_to_unit(d, row[d]) for d in dims}
             rec_rows.append({"theta_id": ti, **true, **rec})
