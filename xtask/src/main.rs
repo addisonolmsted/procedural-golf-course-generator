@@ -146,6 +146,18 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // Stage-3 round-trip: render arbitrary MacroConfig JSONs (fitted
+        // primitive records) to HG01 grids. Items: {out, cell, config}.
+        "landform-grid" => {
+            let manifest = args.get(1).map(PathBuf::from);
+            match manifest {
+                Some(m) => run_landform_grid(&m),
+                None => {
+                    eprintln!("usage: landform-grid <manifest.json>");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         "forward-grid" => {
             let manifest = args.get(1).cloned().unwrap_or_default();
             run_forward_grid(Path::new(&manifest))
@@ -3459,6 +3471,55 @@ fn run_noise_grid(manifest: &Path) -> ExitCode {
     });
     println!("noise-grid: wrote {} grids", items.len());
     ExitCode::SUCCESS
+}
+
+/// One Stage-3 landform render item: an arbitrary MacroConfig JSON file
+/// (e.g. a fitted primitive record's macro_config) -> HG01 grid.
+#[derive(serde::Deserialize)]
+struct LandformItem {
+    out: String,
+    cell: f64,
+    /// Path to a MacroConfig JSON (extent comes from its extent_m).
+    config: String,
+}
+
+fn run_landform_grid(manifest: &Path) -> ExitCode {
+    let text = match std::fs::read_to_string(manifest) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("read {}: {e}", manifest.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let items: Vec<LandformItem> = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("parse manifest: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    use rayon::prelude::*;
+    let failed = std::sync::atomic::AtomicUsize::new(0);
+    items.par_iter().for_each(|it| {
+        let cfg = match std::fs::read_to_string(&it.config)
+            .map_err(|e| e.to_string())
+            .and_then(|t| golf_landform::MacroConfig::from_json(&t)
+                .map_err(|e| e.to_string()))
+        {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}: {e}", it.config);
+                failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
+        };
+        let g = golf_landform::generate(&cfg, it.cell);
+        write_hg01_grid(&g, &it.out, it.cell);
+        println!("{} {}", golf_landform::field_hash(&g), it.out);
+    });
+    let nf = failed.load(std::sync::atomic::Ordering::Relaxed);
+    println!("landform-grid: wrote {} grids ({nf} failed)", items.len() - nf);
+    if nf > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }
 
 /// Fixed-config noiselab golden (flat base, all mechanisms exercised).
