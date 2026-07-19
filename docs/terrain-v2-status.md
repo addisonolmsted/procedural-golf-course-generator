@@ -15,6 +15,11 @@ evidence here. Do not start stage N+1 before stage N is signed off.
 - **Visualizer:** generator stages (2+) get a native egui `terrain-lab` app;
   data stages ship static HTML QA galleries (server-rendered PNGs + JS toggles).
 - **Branch:** `terrain-v2`; the legacy pipeline stays untouched until Stage 9.
+- **Working box (user direction, post-Stage-1):** 3 km × 3 km. Presets
+  re-spanned from the 2.5 km drafts (plan-view geometry ×1.2, cross-section
+  physics unchanged); landform golden re-blessed (9358560053144687790, in-crate
+  pin + xtask). The Stage-1 sandbox campaigns ran on the 2.5 km presets —
+  recorded results stand (they measure parameter structure, not the box).
 
 ## Stage 0 — Data Foundation & Naturalization — AT GATE (user review pending)
 
@@ -166,6 +171,13 @@ Notes of record: meander amplitude authority = curvature clamp (min radius
 its own clamp — intensity scales toward the clamp-allowed maximum instead.
 Bluffs take no bbox prefilter (a step's raised terrace is unbounded).
 Composed-floor scour dips ≤ k/4 at confluences are accepted physics.
+Post-Stage-1: presets re-spanned to the 3 km working box (goldens re-blessed;
+preset PNGs regenerated — the pending user eyeball is on the 3 km renders).
+terrain-lab grew a **Noise tab** (Stage-1/4 noiselab: full assessed parameter
+set with the KEEP-7 marked, seed control, Stage-2 preset as modulation
+skeleton, composed/residual views); headless twin
+`cargo run -p golf-landform --example dump_noise --release`
+→ `output/noiselab/{flat,river_confluence_composed,river_confluence_residual}.png`.
 ## Stage 3 — Primitive Parameter Extraction — NOT STARTED
 ## Stage 4 — Noise Layer — NOT STARTED
 ## Stage 5 — Erosion as Finisher — NOT STARTED

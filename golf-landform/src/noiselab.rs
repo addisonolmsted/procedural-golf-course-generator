@@ -387,13 +387,14 @@ mod tests {
     #[test]
     fn floor_damp_reduces_floor_texture_on_skeleton() {
         let skel_cfg = crate::preset("river_confluence").unwrap();
+        let ext = skel_cfg.extent_m; // noise grid must index-align with the skeleton
         let sk = skeleton_fields(&skel_cfg, 10.0);
         let mut damped = cfg();
         damped.floor_damp = 0.1;
         let mut full = cfg();
         full.floor_damp = 1.0;
-        let a = generate_noise(&damped, 2500.0, Some(&sk), 10.0);
-        let b = generate_noise(&full, 2500.0, Some(&sk), 10.0);
+        let a = generate_noise(&damped, ext, Some(&sk), 10.0);
+        let b = generate_noise(&full, ext, Some(&sk), 10.0);
         // residual variance in strong floors must shrink under damping
         let mut va = 0.0;
         let mut vb = 0.0;

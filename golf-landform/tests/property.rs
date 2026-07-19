@@ -208,5 +208,5 @@ fn deterministic_and_golden() {
     assert_eq!(h, GOLDEN_BARRANCA_20M, "landform golden drifted: {h}");
 }
 
-// Pinned on first bless of this crate (see test above).
-const GOLDEN_BARRANCA_20M: u64 = 17039205586666270760;
+// Pinned on first bless; re-blessed when the presets moved to the 3 km box.
+const GOLDEN_BARRANCA_20M: u64 = 9358560053144687790;

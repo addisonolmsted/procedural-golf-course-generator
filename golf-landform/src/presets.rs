@@ -1,5 +1,8 @@
-//! The Stage-2 gate presets — the seven target configurations the assessment
+//! The Stage-2 gate presets — the target configurations the assessment
 //! reviews by eye (docs/terrain-v2-plan.md Stage 2 definition of done).
+//!
+//! Authored on the 3 km x 3 km working box (plan-view geometry re-spanned
+//! from the original 2.5 km drafts; cross-section physics unchanged).
 
 use golf_core::math::Vec2;
 use golf_core::spline::Profile;
@@ -24,12 +27,12 @@ fn base(extent: f64) -> MacroConfig {
 /// Deep asymmetric barranca (Riviera-like): a winding canyon whose left wall
 /// is markedly steeper, cutting a gently tilted upland.
 fn barranca() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: -0.010, grade_y: -0.006, curve_m: 4.0 };
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(-120.0, 420.0),
-            exit: Vec2::new(2620.0, 2180.0),
+            entry: Vec2::new(-144.0, 504.0),
+            exit: Vec2::new(3144.0, 2616.0),
             width_m: 90.0,
             intensity: 0.55,
             wavelength_mult: 12.0,
@@ -51,12 +54,12 @@ fn barranca() -> MacroConfig {
 /// Broad low floodplain (Valhalla-like): a wide flat-floored valley with a
 /// gentle fall, plus a side tributary joining accordantly.
 fn floodplain() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: -0.002, grade_y: 0.003, curve_m: 2.0 };
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(-100.0, 2560.0),
-            exit: Vec2::new(2620.0, 180.0),
+            entry: Vec2::new(-120.0, 3072.0),
+            exit: Vec2::new(3144.0, 216.0),
             width_m: 260.0,
             intensity: 0.35,
             wavelength_mult: 11.0,
@@ -75,8 +78,8 @@ fn floodplain() -> MacroConfig {
     c.valleys.push(Valley {
         // side tributary entering from the north-east upland
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(2560.0, 2560.0),
-            exit: Vec2::new(1250.0, 1400.0),
+            entry: Vec2::new(3072.0, 3072.0),
+            exit: Vec2::new(1500.0, 1680.0),
             width_m: 70.0,
             intensity: 0.45,
             wavelength_mult: 12.0,
@@ -97,13 +100,13 @@ fn floodplain() -> MacroConfig {
 
 /// Straight steep canyon: no meander, hard incision.
 fn canyon_straight() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: 0.0, grade_y: -0.004, curve_m: 0.0 };
     c.valleys.push(Valley {
         path: Path::Points(vec![
-            Vec2::new(240.0, 2620.0),
-            Vec2::new(1150.0, 1500.0),
-            Vec2::new(2340.0, -120.0),
+            Vec2::new(288.0, 3144.0),
+            Vec2::new(1380.0, 1800.0),
+            Vec2::new(2808.0, -144.0),
         ]),
         floor_z0_m: 88.0,
         fall_gradient: 0.007,
@@ -119,14 +122,14 @@ fn canyon_straight() -> MacroConfig {
 
 /// Ridge spine: a tapered crest line organizing the upland.
 fn ridge_spine() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: -0.003, grade_y: -0.005, curve_m: 0.0 };
     c.ridges.push(Ridge {
         path: Path::Points(vec![
-            Vec2::new(250.0, 400.0),
-            Vec2::new(1000.0, 1050.0),
-            Vec2::new(1650.0, 1500.0),
-            Vec2::new(2300.0, 2150.0),
+            Vec2::new(300.0, 480.0),
+            Vec2::new(1200.0, 1260.0),
+            Vec2::new(1980.0, 1800.0),
+            Vec2::new(2760.0, 2580.0),
         ]),
         crest_z0_m: 148.0,
         fall_gradient: 0.008,
@@ -143,14 +146,14 @@ fn ridge_spine() -> MacroConfig {
 /// Bluff with a river at the toe: an eased scarp, the (last-carved) river
 /// hugging its low side.
 fn bluff_river() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: 0.002, grade_y: -0.003, curve_m: 0.0 };
     c.bluffs.push(Bluff {
         path: Path::Points(vec![
-            Vec2::new(-150.0, 1850.0),
-            Vec2::new(900.0, 1500.0),
-            Vec2::new(1650.0, 1450.0),
-            Vec2::new(2650.0, 1100.0),
+            Vec2::new(-180.0, 2220.0),
+            Vec2::new(1080.0, 1800.0),
+            Vec2::new(1980.0, 1740.0),
+            Vec2::new(3180.0, 1320.0),
         ]),
         height_m: 22.0,
         height: Profile::new(vec![(0.0, 1.0), (0.55, 0.85), (1.0, 1.0)]),
@@ -161,8 +164,8 @@ fn bluff_river() -> MacroConfig {
     c.valleys.push(Valley {
         // the river runs ~70 m south of (below) the bluff toe
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(-120.0, 1680.0),
-            exit: Vec2::new(2620.0, 1040.0),
+            entry: Vec2::new(-144.0, 2016.0),
+            exit: Vec2::new(3144.0, 1248.0),
             width_m: 60.0,
             intensity: 0.30,
             wavelength_mult: 12.0,
@@ -183,12 +186,12 @@ fn bluff_river() -> MacroConfig {
 
 /// Dry bowl with a spillway notch draining it to the south-west.
 fn bowl_spillway() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: -0.004, grade_y: -0.003, curve_m: 0.0 };
     c.bowls.push(Bowl {
         boundary: BowlBoundary::Blob {
-            center: Vec2::new(1300.0, 1350.0),
-            radius_m: 380.0,
+            center: Vec2::new(1560.0, 1620.0),
+            radius_m: 456.0,
             wobble: 0.16,
             cycles: 2.3,
             seed: 61,
@@ -201,19 +204,19 @@ fn bowl_spillway() -> MacroConfig {
         outer_grad: 0.30,
         blend_k_m: 2.5,
         // s along the blob boundary: 0 = +x axis going CCW; ~0.55 -> SW side
-        outlet: Outlet::Spillway { at_s: 0.58, halfwidth_m: 160.0, depth_m: 11.5 },
+        outlet: Outlet::Spillway { at_s: 0.58, halfwidth_m: 192.0, depth_m: 11.5 },
     });
     c
 }
 
 /// Bowl lake: the same landform, no outlet — an intentional lake basin.
 fn bowl_lake() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: 0.003, grade_y: -0.002, curve_m: 3.0 };
     c.bowls.push(Bowl {
         boundary: BowlBoundary::Blob {
-            center: Vec2::new(1200.0, 1250.0),
-            radius_m: 300.0,
+            center: Vec2::new(1440.0, 1500.0),
+            radius_m: 360.0,
             wobble: 0.18,
             cycles: 1.1,
             seed: 71,
@@ -237,13 +240,13 @@ fn bowl_lake() -> MacroConfig {
 /// the (gently higher, upstream) south-west. Every floor is accordant at its
 /// junction and stays below local terrain end to end.
 fn river_confluence() -> MacroConfig {
-    let mut c = base(2500.0);
+    let mut c = base(3000.0);
     c.tilt = Tilt { grade_x: -0.006, grade_y: 0.004, curve_m: 0.0 };
     // trunk: enters west at ~109 m terrain, exits east at ~90 m
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(-100.0, 1600.0),
-            exit: Vec2::new(2600.0, 900.0),
+            entry: Vec2::new(-120.0, 1920.0),
+            exit: Vec2::new(3120.0, 1080.0),
             width_m: 120.0,
             intensity: 0.35,
             wavelength_mult: 12.0,
@@ -266,8 +269,8 @@ fn river_confluence() -> MacroConfig {
     // tributary A: northern upland, joins early
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(500.0, 2600.0),
-            exit: Vec2::new(710.0, 1390.0),
+            entry: Vec2::new(600.0, 3120.0),
+            exit: Vec2::new(852.0, 1668.0),
             width_m: 60.0,
             intensity: 0.45,
             wavelength_mult: 12.0,
@@ -287,8 +290,8 @@ fn river_confluence() -> MacroConfig {
     // gradient so its head stays below the flatter southern terrain
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(250.0, -150.0),
-            exit: Vec2::new(1304.0, 1236.0),
+            entry: Vec2::new(300.0, -180.0),
+            exit: Vec2::new(1565.0, 1483.0),
             width_m: 50.0,
             intensity: 0.45,
             wavelength_mult: 12.0,
@@ -307,8 +310,8 @@ fn river_confluence() -> MacroConfig {
     // tributary C: northern upland, joins late
     c.valleys.push(Valley {
         path: Path::Meander(MeanderSpec {
-            entry: Vec2::new(1750.0, 2620.0),
-            exit: Vec2::new(1952.0, 1068.0),
+            entry: Vec2::new(2100.0, 3144.0),
+            exit: Vec2::new(2342.0, 1282.0),
             width_m: 65.0,
             intensity: 0.5,
             wavelength_mult: 12.0,
