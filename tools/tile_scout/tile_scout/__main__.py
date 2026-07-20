@@ -38,7 +38,13 @@ def main() -> int:
     if args.cmd == "regions":
         from . import regions
         return regions.run(cfg)
-    if args.cmd in ("f0", "f1", "f2", "finalize", "select", "report"):
+    if args.cmd == "f0":
+        from . import f0_coarse
+        return f0_coarse.run(cfg, only_region=args.region, force=args.force)
+    if args.cmd == "f1":
+        from . import f1_osm
+        return f1_osm.run(cfg, only_region=args.region, force=args.force)
+    if args.cmd in ("f2", "finalize", "select", "report"):
         print(f"{args.cmd}: not implemented yet (arrives in a later "
               "Stage-0T commit)")
         return 2
