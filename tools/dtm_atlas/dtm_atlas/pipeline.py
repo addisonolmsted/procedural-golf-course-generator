@@ -90,16 +90,49 @@ def _hull_fallback_polygons(rec: dict, epsg: int) -> list[dict]:
     return [{"type": "Polygon", "coordinates": [ring]}]
 
 
+def _window_features_bbox(window, epsg):
+    """Features bbox = working window +50 m so dilations don't clip."""
+    x0, y0, x1, y1 = window
+    corner_x = [x0 - 50, x1 + 50, x1 + 50, x0 - 50]
+    corner_y = [y0 - 50, y0 - 50, y1 + 50, y1 + 50]
+    lons, lats = grids.utm_to_ll(corner_x, corner_y, epsg)
+    return (min(lats), min(lons), max(lats), max(lons))
+
+
+def _fetch_features_only(key: str, cdir: str) -> None:
+    """Incremental path: DEM + boundary cached, only the (versioned) features
+    file is missing. One Overpass request; the DEM is deliberately NOT
+    re-exported — 3DEP re-processing must not leak into raw.tif."""
+    picked = json.load(open(os.path.join(cdir, "picked_boundary.json")))
+    fb = _window_features_bbox(tuple(picked["window_utm"]), picked["epsg"])
+    fresp = osm.overpass(osm.features_query(fb))
+    osm.save_json(os.path.join(cdir, config.FEATURES_FILE), fresp)
+    ppath = os.path.join(cdir, "provenance.json")
+    prov = json.load(open(ppath)) if os.path.exists(ppath) else {"requests": []}
+    prov["requests"].append({
+        "what": f"overpass_features:{config.FEATURES_FILE}",
+        "fetched_utc": datetime.datetime.now(datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "osm3s": fresp.get("osm3s", {}),
+    })
+    with open(ppath, "w") as f:
+        json.dump(prov, f, indent=1, sort_keys=True)
+
+
 def stage_fetch(key: str, force: bool) -> None:
     import requests
 
     cdir = os.path.join(config.FETCH_CACHE, key)
-    done = all(os.path.exists(os.path.join(cdir, f)) for f in
-               ("dem_1m.tif", "boundary.json", "features.json",
-                "availability.json", "provenance.json"))
-    if done and not force:
+    have = {f: os.path.exists(os.path.join(cdir, f)) for f in
+            ("dem_1m.tif", "boundary.json", "picked_boundary.json",
+             config.FEATURES_FILE, "availability.json", "provenance.json")}
+    if all(have.values()) and not force:
         return
     os.makedirs(cdir, exist_ok=True)
+    if (not force and not have[config.FEATURES_FILE]
+            and have["dem_1m.tif"] and have["picked_boundary.json"]):
+        _fetch_features_only(key, cdir)
+        return
     rec = _parkland_record(key)
     label = rec.get("label", key)
     la0, lo0, la1, lo1 = rec["bbox"]
@@ -137,15 +170,11 @@ def stage_fetch(key: str, force: bool) -> None:
     osm.save_json(os.path.join(cdir, "picked_boundary.json"), picked)
 
     # 2. mask-class features over the window (+50 m so dilations don't clip)
-    x0, y0, x1, y1 = window
-    corner_x = [x0 - 50, x1 + 50, x1 + 50, x0 - 50]
-    corner_y = [y0 - 50, y0 - 50, y1 + 50, y1 + 50]
-    lons2, lats2 = grids.utm_to_ll(corner_x, corner_y, epsg)
-    fb = (min(lats2), min(lons2), max(lats2), max(lons2))
+    fb = _window_features_bbox(window, epsg)
     time.sleep(config.COURTESY_SLEEP_S)
     fresp = osm.overpass(osm.features_query(fb))
-    osm.save_json(os.path.join(cdir, "features.json"), fresp)
-    prov["requests"].append({"what": "overpass_features",
+    osm.save_json(os.path.join(cdir, config.FEATURES_FILE), fresp)
+    prov["requests"].append({"what": f"overpass_features:{config.FEATURES_FILE}",
                              "osm3s": fresp.get("osm3s", {})})
 
     # 3. 3DEP availability + DEM

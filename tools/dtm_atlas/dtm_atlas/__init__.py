@@ -6,4 +6,4 @@ rasters + mask stack + meta), and emits the QA gallery that is the Stage 0
 assessment gate. See tools/dtm_atlas/README.md and docs/terrain-v2-plan.md.
 """
 
-DTM_ATLAS_VERSION = "0.1.0"
+DTM_ATLAS_VERSION = "0.2.0"

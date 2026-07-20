@@ -28,9 +28,13 @@ CLASS_COLORS = {
     "building": (170, 60, 200, 170),
     "road": (120, 120, 120, 170),
     "water": (40, 90, 255, 170),
+    "earthwork": (150, 100, 40, 170),
+    "disturbed": (200, 170, 60, 170),
+    "artifact_flat": (0, 220, 220, 170),
     "artifact_curvature": (255, 65, 54, 170),
     "artifact_seam": (255, 133, 27, 200),
     "artifact_bridge": (255, 0, 255, 200),
+    "consolidated": (255, 255, 255, 90),
 }
 
 

@@ -68,19 +68,66 @@ def _solve_component(z: np.ndarray, known: np.ndarray, comp: np.ndarray):
     return x, float(ring.min()), float(ring.max())
 
 
-def _pyramid_fill(z: np.ndarray, comp: np.ndarray, known: np.ndarray) -> np.ndarray:
-    """Fixed-iteration coarse-to-fine Jacobi fill for oversized components
-    (deterministic: fixed sweep counts, no convergence branching)."""
+def _jacobi_sweeps(out: np.ndarray, comp: np.ndarray,
+                   support: np.ndarray, sweeps: int) -> None:
+    """In-place masked Jacobi: each comp cell becomes the mean of its defined
+    (support) 4-neighbors. Padded-slice neighbors — no wrap-around. Convex
+    combinations only, so the range of support values is never escaped."""
+    for _ in range(sweeps):
+        val = np.where(support, out, 0.0)
+        cnt = support.astype(np.float64)
+        s = np.zeros_like(val)
+        c = np.zeros_like(cnt)
+        s[1:, :] += val[:-1, :]; c[1:, :] += cnt[:-1, :]
+        s[:-1, :] += val[1:, :]; c[:-1, :] += cnt[1:, :]
+        s[:, 1:] += val[:, :-1]; c[:, 1:] += cnt[:, :-1]
+        s[:, :-1] += val[:, 1:]; c[:, :-1] += cnt[:, 1:]
+        new = np.where(c > 0, s / np.maximum(c, 1.0), val)
+        out[comp] = new[comp]
+
+
+def _restrict(z: np.ndarray, known: np.ndarray, comp: np.ndarray):
+    """2x block-mean restriction. Coarse known = block had a known cell (and
+    no comp claim); coarse comp = block had a comp cell; coarse z = mean of
+    the block's known values where any, else 0 (never read)."""
+    h, w = z.shape
+    h2, w2 = (h + 1) // 2, (w + 1) // 2
+    zp = np.pad(z, ((0, h2 * 2 - h), (0, w2 * 2 - w)), mode="edge")
+    kp = np.pad(known, ((0, h2 * 2 - h), (0, w2 * 2 - w)), mode="constant")
+    cp = np.pad(comp, ((0, h2 * 2 - h), (0, w2 * 2 - w)), mode="constant")
+    zb = np.where(kp, zp, 0.0).reshape(h2, 2, w2, 2)
+    kb = kp.reshape(h2, 2, w2, 2)
+    kcnt = kb.sum(axis=(1, 3)).astype(np.float64)
+    zc = zb.sum(axis=(1, 3)) / np.maximum(kcnt, 1.0)
+    compc = cp.reshape(h2, 2, w2, 2).any(axis=(1, 3))
+    knownc = (kcnt > 0) & ~compc
+    return zc, knownc, compc
+
+
+def _multiscale_fill(z: np.ndarray, comp: np.ndarray,
+                     known: np.ndarray) -> np.ndarray:
+    """True coarse-to-fine Laplace for oversized components: restrict until the
+    component fits MG_COARSE_TARGET_CELLS, spsolve the coarsest level, then
+    bilinear-prolong + fixed Jacobi sweeps per level. Deterministic: level
+    count fixed by shape, fixed sweeps, no convergence branching. Every value
+    is a convex combination of in-view known values (max principle holds
+    against the view's known range)."""
+    if int(comp.sum()) <= config.MG_COARSE_TARGET_CELLS:
+        out = z.copy()
+        x, _rmin, _rmax = _solve_component(out, known, comp)
+        if x is None:
+            out[comp] = float(np.median(z[known])) if known.any() else 0.0
+        else:
+            ys, xs = np.nonzero(comp)
+            out[ys, xs] = x
+        return out
+    zc, knownc, compc = _restrict(z, known, comp)
+    filled_c = _multiscale_fill(zc, compc, knownc)
+    up = ndimage.zoom(filled_c, 2, order=1, mode="nearest",
+                      grid_mode=True)[: z.shape[0], : z.shape[1]]
     out = z.copy()
-    seed = np.where(known, z, 0.0)
-    wsum = ndimage.uniform_filter(np.where(known, z, 0.0), 31)
-    wcnt = ndimage.uniform_filter(known.astype(np.float64), 31)
-    approx = np.where(wcnt > 1e-6, wsum / np.maximum(wcnt, 1e-9), np.median(z[known]))
-    out[comp] = approx[comp]
-    for _ in range(config.PYRAMID_SWEEPS):
-        sm = (np.roll(out, 1, 0) + np.roll(out, -1, 0)
-              + np.roll(out, 1, 1) + np.roll(out, -1, 1)) / 4.0
-        out[comp] = sm[comp]
+    out[comp] = up[comp]
+    _jacobi_sweeps(out, comp, known | comp, config.MG_SMOOTH_SWEEPS)
     return out
 
 
@@ -104,9 +151,19 @@ def laplace_fill(raw: np.ndarray, inpaint: np.ndarray,
         zv = out[y0:y1, x0:x1]
         kv = known[y0:y1, x0:x1]
         if csize > config.PYRAMID_THRESHOLD_CELLS:
-            filled = _pyramid_fill(zv, comp, kv)
+            filled = _multiscale_fill(zv, comp, kv)
+            # max principle vs the view's known range (coarse Dirichlet draws
+            # on block means of these values; slack for float accumulation)
+            if kv.any():
+                kmin, kmax = float(zv[kv].min()), float(zv[kv].max())
+                fmin, fmax = float(filled[comp].min()), float(filled[comp].max())
+                slack = 1e-4 + 1e-9 * max(abs(kmin), abs(kmax))
+                if fmin < kmin - slack or fmax > kmax + slack:
+                    raise AssertionError(
+                        f"multigrid fill [{fmin:.3f},{fmax:.3f}] escapes known "
+                        f"range [{kmin:.3f},{kmax:.3f}]")
             zv[comp] = filled[comp]
-            solver = "laplace_spsolve+pyramid"
+            solver = "laplace_spsolve+multigrid"
             continue
         x, rmin, rmax = _solve_component(zv, kv, comp)
         if x is None:
@@ -149,6 +206,14 @@ def stage_naturalize(key: str, force: bool) -> None:
     uncovered = water.astype(bool) & valid & ~inpaint
     if uncovered.any():
         raise AssertionError(f"{int(uncovered.sum())} water cells not in inpaint")
+    # F1 gate: detected dead-flat surfaces (unmapped water/pavement) excised too
+    fpath = os.path.join(mdir, "artifact_flat.tif")
+    if os.path.exists(fpath):
+        flat, _tf5, _e5 = grids.read_gtiff(fpath)
+        unflat = flat.astype(bool) & valid & ~inpaint
+        if unflat.any():
+            raise AssertionError(
+                f"{int(unflat.sum())} flat-artifact cells not in inpaint")
 
     nat, stats = laplace_fill(raw, inpaint, valid)
     grids.write_gtiff(out_path, nat.astype(np.float32), tf, epsg,

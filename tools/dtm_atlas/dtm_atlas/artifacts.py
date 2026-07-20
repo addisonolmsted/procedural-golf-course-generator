@@ -1,13 +1,24 @@
 """Scan-artifact detectors on the 2 m raw grid (masked-cell-aware statistics):
 
-1. curvature outliers — Evans-Young profile curvature, robust z (median/MAD),
+1. flat surfaces — plane-detrended window std ~ 0: hydro-flattened water the
+   OSM masks missed (rivers/lakes/ocean) and large pavement slabs. The
+   OSM-independent backstop for the F1 unmapped-water failure.
+2. curvature outliers — Evans-Young profile curvature, robust z (median/MAD),
    |z| > threshold; big components are real cliffs (logged, not masked).
-2. tile seams — 3DEP project tiles are axis-aligned in the requested UTM, so a
+3. tile seams — 3DEP project tiles are axis-aligned in the requested UTM, so a
    seam is a full row/col of anomalous steps.
-3. bridge decks — ribbon-shaped components elevated above their water body.
+4. bridge decks — ribbon-shaped components elevated above their water body
+   (mapped water OR detected flat surfaces, so decks over unmapped rivers are
+   caught too).
+
+After the union, a consolidation pass demotes kept islands wherever the local
+NON-GOLF inpaint density is high: those cells are graded suburban lots that
+would pin the Laplace fill into a "building quilt". A confidence raster
+(1 - local inpaint fraction; 0 inside inpaint) records how trustworthy each
+kept cell's neighborhood is — downstream metrics weight by it.
 
 Flagged cells are written as masks and unioned into inpaint.tif (the final
-inpaint mask = class dilations + artifacts).
+inpaint mask = class dilations + artifacts + consolidation).
 """
 
 from __future__ import annotations
@@ -36,6 +47,86 @@ def profile_curvature(z: np.ndarray, res: float) -> np.ndarray:
     denom = g2 * np.power(1.0 + g2, 1.5) + 1e-12
     kp = -(p * p * r + 2 * p * q * s + q * q * t) / denom
     return np.where(g2 < 1e-10, 0.0, kp)
+
+
+def detrended_window_std(z: np.ndarray, win: int) -> np.ndarray:
+    """Std of the residual from the best-fit plane in each win x win window,
+    closed-form from uniform_filter moments. Window-local x/y are uncorrelated
+    and have variance (win^2-1)/12, so
+        var_resid = var(z) - cov(z,x)^2/var(x) - cov(z,y)^2/var(y).
+    Detrending matters: hydro-flattened rivers are planar but SLOPED — a raw
+    window std misses them."""
+    zz = z.astype(np.float64)
+    h, w = z.shape
+    ii, jj = np.mgrid[0:h, 0:w].astype(np.float64)
+    mz = ndimage.uniform_filter(zz, win)
+    mzz = ndimage.uniform_filter(zz * zz, win)
+    # E_w[z*(coord - center)] = uniform_filter(z*coord) - coord_center*E_w[z]
+    czx = ndimage.uniform_filter(zz * jj, win) - jj * mz
+    czy = ndimage.uniform_filter(zz * ii, win) - ii * mz
+    var_c = (win * win - 1) / 12.0
+    var = mzz - mz * mz - (czx * czx + czy * czy) / var_c
+    return np.sqrt(np.maximum(var, 0.0))
+
+
+def detect_flat(raw: np.ndarray, valid: np.ndarray,
+                water: np.ndarray) -> tuple[np.ndarray, dict]:
+    """Dead-flat components (>= FLAT_MIN_COMPONENT_HA) in VALID cells — run on
+    valid rather than eligible so a half-mapped lake forms one coherent
+    component; cells already masked cost nothing. Returns the UNDILATED mask
+    (truth); the inpaint contribution dilates by FLAT_DILATE_M."""
+    std = detrended_window_std(raw, config.FLAT_WIN_PX)
+    flat = (std < config.FLAT_DETREND_STD_M) & valid
+    stats = {"flat_components": 0, "flat_total_ha": 0.0,
+             "flat_max_ha": 0.0, "flat_water_overlap": 0.0}
+    if not flat.any():
+        return flat, stats
+    min_px = max(1, round(config.FLAT_MIN_COMPONENT_HA * 1e4
+                          / config.WORK_RES_M ** 2))
+    lab, n = ndimage.label(flat, structure=np.ones((3, 3), np.int8))
+    sizes = np.bincount(lab.ravel())
+    keep = sizes >= min_px
+    keep[0] = False
+    flat = keep[lab]
+    if flat.any():
+        px_ha = config.WORK_RES_M ** 2 / 1e4
+        stats = {
+            "flat_components": int(keep.sum()),
+            "flat_total_ha": round(float(flat.sum()) * px_ha, 2),
+            "flat_max_ha": round(float(sizes[keep].max()) * px_ha, 2),
+            "flat_water_overlap": round(
+                float((flat & water).sum()) / float(flat.sum()), 3),
+        }
+    return flat, stats
+
+
+def consolidate(inpaint_pre: np.ndarray, nongolf: np.ndarray,
+                golf_truth: np.ndarray,
+                valid: np.ndarray) -> tuple[np.ndarray, dict]:
+    """Demote kept islands where the local NON-GOLF inpaint density says the
+    neighborhood is urban fabric (graded lots that would pin the fill into a
+    building quilt). Single pass, no fixpoint — bounded + deterministic.
+    Undilated golf-class cells are never demoted (measured course ground)."""
+    win = max(3, int(round(config.CONSOLIDATE_WIN_M / config.WORK_RES_M)) | 1)
+    density = ndimage.uniform_filter(
+        (nongolf & valid).astype(np.float64), win)
+    demote = (valid & ~inpaint_pre & ~golf_truth
+              & (density > config.CONSOLIDATE_DENSITY))
+    return demote, {
+        "consolidated_cells": int(demote.sum()),
+        "consolidated_frac": round(
+            float(demote.sum()) / max(int(valid.sum()), 1), 4),
+    }
+
+
+def confidence_raster(inpaint: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    """float32 in [0,1]: 1 - local inpaint fraction for kept cells; exactly 0
+    inside inpaint and on nodata. Downstream metric weighting reads this."""
+    win = max(3, int(round(config.CONFIDENCE_WIN_M / config.WORK_RES_M)) | 1)
+    frac = ndimage.uniform_filter((inpaint & valid).astype(np.float64), win)
+    conf = np.clip(1.0 - frac, 0.0, 1.0).astype(np.float32)
+    conf[inpaint | ~valid] = 0.0
+    return conf
 
 
 def detect_curvature(raw: np.ndarray, eligible: np.ndarray) -> tuple[np.ndarray, dict]:
@@ -154,7 +245,10 @@ def stage_artifacts(key: str, force: bool) -> None:
     sdir = os.path.join(config.STORE, key)
     mdir = os.path.join(sdir, "masks")
     out_path = os.path.join(mdir, "inpaint.tif")
-    if os.path.exists(out_path) and not force:
+    # confidence.tif joins the sentinel so v1 store dirs re-run this stage
+    if (os.path.exists(out_path)
+            and os.path.exists(os.path.join(mdir, "confidence.tif"))
+            and not force):
         return
     m = meta.read_meta(os.path.join(sdir, "meta.json"))
     epsg = int(m["crs"].split(":")[1])
@@ -167,21 +261,68 @@ def stage_artifacts(key: str, force: bool) -> None:
     water, _t3, _e3 = grids.read_gtiff(os.path.join(mdir, "water.tif"))
     water = water.astype(bool)
 
-    eligible = valid & ~inp_classes    # stats unpolluted by known man-made cells
+    def _mask(name: str) -> np.ndarray:
+        arr, _tt, _ee = grids.read_gtiff(os.path.join(mdir, f"{name}.tif"))
+        return arr.astype(bool)
+
+    # flat first: water surfaces have ~zero curvature and would shrink the
+    # curvature MAD if left inside the detector statistics
+    from .masks import dilate_m
+    flat, flat_stats = detect_flat(raw, valid, water)
+    flat_d = dilate_m(flat, config.FLAT_DILATE_M, config.WORK_RES_M)
+
+    eligible = valid & ~inp_classes & ~flat_d   # stats unpolluted by man-made
     curv, curv_stats = detect_curvature(raw, eligible)
     seam, seam_stats = detect_seams(raw, eligible)
-    bridge, bridge_stats = detect_bridges(raw, water, valid)
+    # pseudo-water from the flat detector de-tethers bridge detection from OSM
+    bridge, bridge_stats = detect_bridges(raw, water | flat, valid)
 
-    for name, mask in (("artifact_curvature", curv), ("artifact_seam", seam),
-                       ("artifact_bridge", bridge)):
+    for name, mask in (("artifact_flat", flat), ("artifact_curvature", curv),
+                       ("artifact_seam", seam), ("artifact_bridge", bridge)):
         grids.write_gtiff(os.path.join(mdir, f"{name}.tif"),
                           mask.astype(np.uint8), tf, epsg)
-    inpaint = (inp_classes | curv | seam | bridge) & valid
+
+    inpaint_pre = (inp_classes | curv | seam | bridge | flat_d) & valid
+
+    # consolidation: driver = non-golf class dilations + everything the
+    # detectors found; protected = undilated golf-class ground
+    nongolf = _mask("inpaint_nongolf") | curv | seam | bridge | flat_d
+    golf_truth = (_mask("fairway") | _mask("green") | _mask("tee")
+                  | _mask("bunker"))
+    demote, cons_stats = consolidate(inpaint_pre, nongolf, golf_truth, valid)
+    inpaint = inpaint_pre | demote
+    # seal 1-px slivers between masked features (closing adds no new islands)
+    inpaint = ndimage.binary_closing(
+        inpaint, structure=np.ones((3, 3), np.int8)) & valid
+    grids.write_gtiff(os.path.join(mdir, "consolidated.tif"),
+                      (inpaint & ~inpaint_pre).astype(np.uint8), tf, epsg)
     grids.write_gtiff(out_path, inpaint.astype(np.uint8), tf, epsg)
 
-    m["artifacts"] = {**curv_stats, **seam_stats, **bridge_stats}
+    conf = confidence_raster(inpaint, valid)
+    grids.write_gtiff(os.path.join(mdir, "confidence.tif"), conf, tf, epsg)
+
+    interior = _mask("boundary_interior")
+    kept = valid & ~inpaint
+    residual_flat = flat & kept
+    m["artifacts"] = {**flat_stats, **curv_stats, **seam_stats, **bridge_stats,
+                      **cons_stats}
     m["inpaint"] = {
         "cells": int(inpaint.sum()),
         "frac": round(float(inpaint.sum()) / max(int(valid.sum()), 1), 4),
+    }
+    px_ha = config.WORK_RES_M ** 2 / 1e4
+    rf_max_ha = 0.0
+    if residual_flat.any():
+        rl, rn = ndimage.label(residual_flat, structure=np.ones((3, 3), np.int8))
+        rf_max_ha = round(float(np.bincount(rl.ravel())[1:].max()) * px_ha, 3)
+    m["confidence"] = {
+        "interior_kept_frac": round(
+            float((kept & interior).sum()) / max(int((valid & interior).sum()), 1), 4),
+        "exterior_kept_frac": round(
+            float((kept & ~interior).sum()) / max(int((valid & ~interior).sum()), 1), 4),
+        "residual_flat_frac": round(
+            float(residual_flat.sum()) / max(int(kept.sum()), 1), 5),
+        "residual_flat_ha_max": rf_max_ha,
+        "calib_confidence": round(float(conf[valid].mean()), 4) if valid.any() else 0.0,
     }
     meta.write_meta(os.path.join(sdir, "meta.json"), m)

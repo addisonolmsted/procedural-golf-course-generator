@@ -146,6 +146,18 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // Stage-3 synthcheck: dump every Stage-2 preset as MacroConfig JSON
+        // (ground truth for extractor param-recovery tests).
+        "landform-presets" => {
+            let dir = args.get(1).cloned().unwrap_or_else(|| "output/landform_presets".into());
+            std::fs::create_dir_all(&dir).unwrap();
+            for (name, cfg) in golf_landform::presets() {
+                let p = Path::new(&dir).join(format!("{name}.json"));
+                std::fs::write(&p, cfg.to_json()).unwrap();
+                println!("{}", p.display());
+            }
+            ExitCode::SUCCESS
+        }
         // Stage-3 round-trip: render arbitrary MacroConfig JSONs (fitted
         // primitive records) to HG01 grids. Items: {out, cell, config}.
         "landform-grid" => {

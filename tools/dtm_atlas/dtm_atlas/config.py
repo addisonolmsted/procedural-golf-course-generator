@@ -60,11 +60,55 @@ MASK_CLASSES = {
     "bunker": (15.0, False),   # spec lists the class without a radius; 15 m
     "fairway": (0.0, False),   # kept for later stages, never inpainted
     "building": (10.0, False),
-    "road": (10.0, True),      # highway=* incl. cart paths + parking + railway
+    "road": (10.0, True),      # parking/pitch polys +10 m; lines use per-class
+                               # half-widths (ROAD_HALFWIDTH_M), not this radius
     "water": (30.0, False),    # polygons; waterway lines rasterized all_touched
+    "earthwork": (15.0, True),  # embankment/dyke/levee/retaining_wall/dam lines
+    "disturbed": (10.0, False),  # quarry/landfill/construction/pitch/track polys
 }
 # classes whose dilated union joins the inpaint mask (fairway + exterior never do)
-INPAINT_CLASSES = ["green", "tee", "bunker", "building", "road", "water"]
+INPAINT_CLASSES = ["green", "tee", "bunker", "building", "road", "water",
+                   "earthwork", "disturbed"]
+# non-golf inpaint classes: the consolidation-density driver (golf-class
+# dilations would otherwise make every green complex read as "urban fabric")
+NONGOLF_CLASSES = ["building", "road", "water", "earthwork", "disturbed"]
+
+# road line half-widths (meters each side of the OSM centerline). A divided
+# highway is 20-40 m of pavement plus graded cut/fill; the old flat 10 m left
+# the outer carriageway and all embankment fill unmasked.
+ROAD_HALFWIDTH_M = {
+    "motorway": 20.0, "motorway_link": 20.0,
+    "trunk": 12.5, "trunk_link": 12.5, "primary": 12.5, "primary_link": 12.5,
+    "secondary": 9.0, "secondary_link": 9.0,
+    "tertiary": 9.0, "tertiary_link": 9.0,
+    "railway": 10.0,           # track(s) + ballast prism
+    "path": 4.0,               # footway/cycleway/path/cartpath
+    "default": 7.5,            # residential/service/unclassified
+}
+ROAD_WIDTH_TAG_PAD_M = 2.0     # explicit width tag: half = width/2 + pad
+ROAD_LANE_WIDTH_M = 3.5        # lanes tag: half = lanes*3.5/2 + pad
+ROAD_HALFWIDTH_MAX_M = 30.0    # sanity cap on tag-derived widths
+ROAD_EARTHWORK_HALFWIDTH_M = 15.0  # floor when way has embankment/cutting=yes
+PATH_HIGHWAYS = ("footway", "cycleway", "path", "bridleway", "steps", "track")
+
+# --- flat-surface detector (F1: unmapped water + pavement) ------------------
+# Hydro-flattened lidar water is planar to the centimeter; real ground
+# micro-relief over a 14 m window exceeds 5-10 cm even on graded turf.
+FLAT_WIN_PX = 7              # 14 m window at 2 m
+FLAT_DETREND_STD_M = 0.04    # plane-detrended window-std threshold
+FLAT_MIN_COMPONENT_HA = 0.10  # 250 cells at 2 m; 2.5x under the 0.25 ha gate
+FLAT_DILATE_M = 30.0         # berm ring, same rationale as the water class
+
+# --- consolidation + confidence (F3: urban membrane quilt) ------------------
+# Where the NON-GOLF inpaint density is high, the kept cells between masked
+# features are graded lots that would pin the fill into a building quilt —
+# demote them so whole neighborhoods fill from the regional trend.
+CONSOLIDATE_WIN_M = 128.0    # suburban-block scale (the observed quilt scale)
+CONSOLIDATE_DENSITY = 0.50   # quilt zones measure 0.8-0.98; corridors < 0.3
+CONFIDENCE_WIN_M = 128.0     # confidence = 1 - local inpaint fraction
+
+# --- geometry ---------------------------------------------------------------
+RING_SNAP_EPS_DEG = 1e-7     # ring-stitch endpoint tolerance (~1 cm)
 
 # --- artifact detectors ----------------------------------------------------
 CURV_Z_THRESH = 6.0          # robust |z| on Evans-Young profile curvature
@@ -79,8 +123,14 @@ BRIDGE_ASPECT = 2.5          # PCA aspect for ribbon-ness
 BRIDGE_AREA_PX = (20, 5000)
 
 # --- naturalization --------------------------------------------------------
-PYRAMID_THRESHOLD_CELLS = 1_500_000   # spsolve below this, pyramid fill above
-PYRAMID_SWEEPS = 60                   # fixed Jacobi sweeps per level (determinism)
+PYRAMID_THRESHOLD_CELLS = 1_500_000   # spsolve below this, multigrid above
+MG_COARSE_TARGET_CELLS = 200_000      # restrict /2 until the component fits this
+MG_SMOOTH_SWEEPS = 20                 # fixed Jacobi sweeps per level (determinism)
+
+# --- fetch cache ------------------------------------------------------------
+# versioned features artifact: bumping forces a features-only re-fetch (DEM and
+# boundary are reused byte-identical — 3DEP re-processing must not leak in)
+FEATURES_FILE = "features_v2.json"
 
 # --- QA --------------------------------------------------------------------
 QA_MAX_PX = 1600
