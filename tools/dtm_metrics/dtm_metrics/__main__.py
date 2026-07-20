@@ -23,7 +23,14 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--out", default="")
     ap.add_argument("--which", default="a", help="campaign: a|b|c")
+    ap.add_argument("--store", choices=["courses", "tiles"], default=None,
+                    help="which dtm_atlas store to read (default: courses, "
+                         "or $DTM_ATLAS_DATASET)")
     args = ap.parse_args()
+
+    if args.store:
+        from dtm_atlas import config as atlas_config
+        atlas_config.select_dataset(args.store)
 
     from . import store
     keys = None
@@ -34,7 +41,9 @@ def main() -> int:
 
     if args.cmd == "extract":
         from . import extract
-        out = args.out or os.path.join(store.OUT, "metrics.parquet")
+        default_name = ("metrics_tiles.parquet" if args.store == "tiles"
+                        else "metrics.parquet")
+        out = args.out or os.path.join(store.OUT, default_name)
         extract.run(keys, args.workers, out)
         return 0
     if args.cmd == "robustness":

@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from . import DTM_ATLAS_VERSION, config, grids, meta, osm, uscourses
+from . import DTM_ATLAS_VERSION, config, grids, meta, osm, tiles, uscourses
 
 DERIVE_ORDER = ["raster", "masks", "artifacts", "naturalize"]
 
@@ -25,7 +25,8 @@ DERIVE_ORDER = ["raster", "masks", "artifacts", "naturalize"]
 # --- course selection --------------------------------------------------------
 
 def select_courses(course_arg: str, limit: int) -> list[str]:
-    keys = uscourses.read_list()
+    keys = (tiles.read_list() if config.DATASET == "tiles"
+            else uscourses.read_list())
     if course_arg:
         want = [k.strip() for k in course_arg.split(",") if k.strip()]
         unknown = [k for k in want if k not in keys]
@@ -41,6 +42,14 @@ def _parkland_record(key: str) -> dict:
     path = os.path.join(config.PARKLAND, "out", "cache", f"{key}.json")
     with open(path) as f:
         return json.load(f)
+
+
+def _record(key: str) -> dict:
+    """Label/metadata record for either dataset (parkland cache for courses,
+    the committed tile manifest for tiles)."""
+    if config.DATASET == "tiles":
+        return tiles.record(key)
+    return _parkland_record(key)
 
 
 def log_fail(key: str, stage: str, why: str) -> None:
@@ -133,6 +142,9 @@ def stage_fetch(key: str, force: bool) -> None:
             and have["dem_1m.tif"] and have["picked_boundary.json"]):
         _fetch_features_only(key, cdir)
         return
+    if config.DATASET == "tiles":
+        _fetch_tile(key, cdir)
+        return
     rec = _parkland_record(key)
     label = rec.get("label", key)
     la0, lo0, la1, lo1 = rec["bbox"]
@@ -169,6 +181,13 @@ def stage_fetch(key: str, force: bool) -> None:
     picked["window_utm"] = list(window)
     osm.save_json(os.path.join(cdir, "picked_boundary.json"), picked)
 
+    _fetch_window_assets(cdir, window, epsg, prov, sess)
+
+
+def _fetch_window_assets(cdir: str, window, epsg: int, prov: dict,
+                         sess) -> None:
+    """The dataset-independent fetch tail: mask-class features, 3DEP
+    availability, and the 1 m DEM over an already-derived window."""
     # 2. mask-class features over the window (+50 m so dilations don't clip)
     fb = _window_features_bbox(window, epsg)
     time.sleep(config.COURTESY_SLEEP_S)
@@ -198,6 +217,38 @@ def stage_fetch(key: str, force: bool) -> None:
         json.dump(prov, f, indent=1, sort_keys=True)
 
 
+def _fetch_tile(key: str, cdir: str) -> None:
+    """Tile fetch: synthetic square boundary (no OSM golf query), then the
+    shared features/availability/DEM tail."""
+    import requests
+
+    rec = tiles.record(key)
+    lat_c, lon_c = rec["center_ll"]
+    side = float(rec.get("side_m", config.TILE_SIDE_M))
+    window, epsg, ring = tiles.tile_window_and_ring(
+        lat_c, lon_c, side, config.TILE_MARGIN_M)
+    sess = requests.Session()
+    prov: dict = {
+        "fetched_utc": datetime.datetime.now(datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "requests": [],
+    }
+    # uniform cache contract: a stub boundary.json (no OSM boundary query)
+    osm.save_json(os.path.join(cdir, "boundary.json"),
+                  {"elements": [], "note": "tile_square: synthetic boundary"})
+    picked = {
+        "polygons": [{"type": "Polygon", "coordinates": [ring]}],
+        "source": "tile_square",
+        "name": rec.get("label", key),
+        "name_score": 1.0,
+        "holes_bbox_overlap": 1.0,
+        "epsg": epsg,
+        "window_utm": list(window),
+    }
+    osm.save_json(os.path.join(cdir, "picked_boundary.json"), picked)
+    _fetch_window_assets(cdir, window, epsg, prov, sess)
+
+
 def dep3_availability(bbox_ll, sess) -> dict:
     from . import dep3
     return dep3.query_availability(bbox_ll, sess)
@@ -224,7 +275,7 @@ def stage_raster(key: str, force: bool) -> None:
     tex = dep3.texture_frac(dem)
     best = avail.get("best", "none")
     best_res = {lbl: res for (_l, lbl, res) in config.DEP3_INDEX_LAYERS}.get(best)
-    rec = _parkland_record(key)
+    rec = _record(key)
     valid = work != config.NODATA
     h, w = work.shape
     m = {

@@ -12,6 +12,9 @@ Subcommands (only `fetch` touches the network):
   all [--offline]        fetch (unless --offline) + every derive stage + qa
 
 Common options: --course k1,k2  --limit N  --force
+  --dataset {courses,tiles}   operate on the golf store (default) or the
+                              Stage-0T natural-tile store (out/store_tiles,
+                              keys from tiles_us.txt, synthetic boundaries)
 """
 
 from __future__ import annotations
@@ -35,7 +38,14 @@ def main() -> int:
                     help="recompute even when outputs exist")
     ap.add_argument("--offline", action="store_true",
                     help="all: skip fetch; error per-course if cache missing")
+    ap.add_argument("--dataset", choices=["courses", "tiles"], default=None,
+                    help="store to operate on (default: courses, or "
+                         "$DTM_ATLAS_DATASET)")
     args = ap.parse_args()
+
+    if args.dataset:
+        from . import config
+        config.select_dataset(args.dataset)
 
     if args.cmd == "courses":
         from . import uscourses

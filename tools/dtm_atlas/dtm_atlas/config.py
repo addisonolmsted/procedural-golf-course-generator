@@ -19,11 +19,38 @@ STORE = os.path.join(OUT, "store")
 QA = os.path.join(OUT, "qa")
 REPORTS = os.path.join(OUT, "reports")
 COURSES_US = os.path.join(ROOT, "courses_us.txt")
+TILES_US = os.path.join(ROOT, "tiles_us.txt")
+TILES_MANIFEST = os.path.join(ROOT, "tiles_us.json")
+
+# --- datasets ----------------------------------------------------------------
+# Two independent stores share the pipeline: "courses" (the frozen golf atlas,
+# out/store + out/qa) and "tiles" (Stage-0T natural-tile analogs,
+# out/store_tiles + out/qa_tiles, own MANIFEST). Tile keys come from
+# tiles_us.txt + tiles_us.json (center + side); their boundary is a synthetic
+# square (no OSM golf query). FETCH_CACHE is shared — keys are disjoint.
+DATASET = os.environ.get("DTM_ATLAS_DATASET", "courses")
+
+
+def select_dataset(name: str) -> None:
+    """Point STORE/QA at the named dataset (runtime-mutable; all modules
+    access config.STORE / config.QA at use time). Also exported via the
+    environment so ProcessPool SPAWN workers — which re-import this module
+    fresh — land on the same dataset as the parent."""
+    global DATASET, STORE, QA
+    if name not in ("courses", "tiles"):
+        raise SystemExit(f"unknown dataset: {name}")
+    DATASET = name
+    os.environ["DTM_ATLAS_DATASET"] = name
+    STORE = os.path.join(OUT, "store" if name == "courses" else "store_tiles")
+    QA = os.path.join(OUT, "qa" if name == "courses" else "qa_tiles")
+
 
 # --- grid ------------------------------------------------------------------
 FETCH_RES_M = 1.0      # 3DEP native over most of CONUS; one export per course
 WORK_RES_M = 2.0       # working resolution of the store (plan's recommendation)
 MARGIN_M = 500.0       # beyond the property boundary (least-disturbed signal)
+TILE_SIDE_M = 3000.0   # Stage-0T tile edge (the terrain-v2 working box)
+TILE_MARGIN_M = 0.0    # tiles are fetched EXACTLY as screened (no margin ring)
 NODATA = -9999.0
 SNAP_M = 2.0           # window corners snap to even meters -> 1 m maps 2:1 onto 2 m
 
@@ -157,8 +184,12 @@ def params_hash() -> str:
         k: v for k, v in sorted(globals().items())
         if k.isupper() and isinstance(v, (int, float, str, list, dict, tuple))
         and k not in ("HERE", "ROOT", "REPO", "PARKLAND", "OUT", "FETCH_CACHE",
-                      "STORE", "QA", "REPORTS", "COURSES_US")
+                      "STORE", "QA", "REPORTS", "COURSES_US", "TILES_US",
+                      "TILES_MANIFEST", "DATASET")
     }
     return "sha256:" + hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=list).encode()
     ).hexdigest()[:16]
+
+
+select_dataset(DATASET)
