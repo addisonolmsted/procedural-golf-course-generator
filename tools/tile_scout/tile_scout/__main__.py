@@ -21,8 +21,8 @@ import sys
 def main() -> int:
     ap = argparse.ArgumentParser(prog="tile_scout")
     ap.add_argument("cmd", choices=[
-        "archetypes", "regions", "f0", "f1", "f2", "finalize", "select",
-        "report",
+        "archetypes", "regions", "f0", "f1", "f2", "drift", "finalize",
+        "select", "report",
     ])
     ap.add_argument("--region", default="",
                     help="restrict a funnel stage to one region (pilot)")
@@ -44,7 +44,13 @@ def main() -> int:
     if args.cmd == "f1":
         from . import f1_osm
         return f1_osm.run(cfg, only_region=args.region, force=args.force)
-    if args.cmd in ("f2", "finalize", "select", "report"):
+    if args.cmd == "f2":
+        from . import f2_terrain
+        return f2_terrain.run(cfg, only_region=args.region, force=args.force)
+    if args.cmd == "drift":
+        from . import f2_terrain
+        return f2_terrain.drift_check(cfg)
+    if args.cmd in ("finalize", "select", "report"):
         print(f"{args.cmd}: not implemented yet (arrives in a later "
               "Stage-0T commit)")
         return 2

@@ -83,6 +83,9 @@ f2:
   budget_per_region_factor: 3          # cap entrants at 3 * quota by f0 rank
   overshoot_factor: 1.3                # finalists per region
   global_finalist_cap: 260
+  metric_weights:                      # drift-calibrated (out/reports/drift_10m.txt):
+    s1_drainage_density_coarse: 0.5    # raw-vs-naturalized flow routing drifts
+    s1_aniso_ratio_macro: 0.5          # noisy at 10 m / street-grid sensitive
 
 f3:
   n_select: 200
