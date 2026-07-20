@@ -17,7 +17,10 @@ def main() -> int:
     if cmd == "framecheck":
         from . import framecheck
         return framecheck.run()
-    if cmd in ("extract", "synthcheck", "qa", "roundtrip", "report"):
+    if cmd == "synthcheck":
+        from . import synthcheck
+        return synthcheck.run(rest or None)
+    if cmd in ("extract", "qa", "roundtrip", "report"):
         print(f"{cmd}: not implemented yet (arrives in a later Stage-3 commit)")
         return 2
     print(f"unknown command: {cmd}\n{__doc__}")

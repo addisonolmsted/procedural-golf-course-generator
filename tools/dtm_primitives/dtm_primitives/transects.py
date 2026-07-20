@@ -83,6 +83,10 @@ def stations(centerline: np.ndarray, spacing_m: float) -> Stations:
     s = np.arange(0.0, total + 1e-9, spacing_m)
     x = np.interp(s, cum, centerline[:, 0])
     y = np.interp(s, cum, centerline[:, 1])
+    if len(s) < 2:  # degenerate stub: single station, arbitrary tangent
+        return Stations(s=s, xy=np.stack([x, y], 1),
+                        tangent=np.tile([[1.0, 0.0]], (len(s), 1)),
+                        normal=np.tile([[0.0, 1.0]], (len(s), 1)))
     # central-difference tangents on the station points themselves
     tx = np.gradient(x)
     ty = np.gradient(y)
@@ -181,7 +185,10 @@ def keep_mask(tr: Transects, cfg: dict,
     n, m = tr.z.shape
     inner = np.abs(tr.d) <= tr.d.max() / 2
     floor_zone = np.abs(tr.d) <= cfg["road_floor_halfwidth_m"]
-    valid_frac = np.isfinite(tr.z).mean(axis=1)
+    # validity is required over the INNER half (the carved zone); truncated
+    # far-field (window edge) is fine — the fit uses finite samples only
+    valid_frac = (np.isfinite(tr.z) & inner[None, :]).sum(1) \
+        / max(inner.sum(), 1)
     inpaint_inner = (tr.inpaint & inner[None, :]).sum(1) / max(inner.sum(), 1)
     road_in_floor = (tr.road & floor_zone[None, :]).any(axis=1)
     keep = ((valid_frac >= cfg["min_valid_frac"])

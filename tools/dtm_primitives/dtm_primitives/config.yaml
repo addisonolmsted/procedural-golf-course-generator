@@ -8,6 +8,9 @@ network:
   trib_min_len_m: 150.0
   max_depth: 2                 # tributary recursion depth
   max_tributaries: 6
+  junction_donor_floor_m2: 15000.0  # >=2 donors above this = a junction ->
+                                    # keyed choice (valley width, continuity,
+                                    # area); corner-clipped trunks can be tiny
   osm_match_tol_m: 30.0        # cKDTree agreement tolerance
   osm_min_line_len_m: 200.0    # ignore trivial OSM stubs
   osm_divergent_frac: 0.4      # below this within-frac -> osm_divergent flag
@@ -23,7 +26,9 @@ centerline:
 
 transects:
   spacing_m: 25.0
-  halflen_m: 150.0
+  halflen_m: 300.0             # pass-B default; adaptive to 1.4 x top width
+  halflen_max_m: 600.0         # pass-A probe + adaptivity ceiling (floodplains)
+  search_frac_hw: 0.6          # recenter search scales with provisional hw
   sample_step_m: 2.0
   min_valid_frac: 0.9
   inpaint_frac_max: 0.4        # inner-half inpaint fraction discard
