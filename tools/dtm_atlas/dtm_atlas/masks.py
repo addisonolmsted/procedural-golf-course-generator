@@ -144,8 +144,13 @@ def stage_masks(key: str, force: bool) -> None:
         if cls == "road":
             dilated[cls] = dilate_by_width(road_halfwidth, config.WORK_RES_M)
         else:
-            dilated[cls] = dilate_m(class_masks[cls],
-                                    config.MASK_CLASSES[cls][0],
+            radius = config.MASK_CLASSES[cls][0]
+            if config.DATASET == "tiles":
+                # natural stream banks are signal, not berms — tiles dilate
+                # water modestly (the 30 m course rationale is man-made
+                # pond berms)
+                radius = config.TILE_MASK_DILATE_OVERRIDES.get(cls, radius)
+            dilated[cls] = dilate_m(class_masks[cls], radius,
                                     config.WORK_RES_M)
     inp = np.zeros(shape, bool)
     for cls in config.INPAINT_CLASSES:

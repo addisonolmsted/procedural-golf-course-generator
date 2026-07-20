@@ -123,6 +123,14 @@ PATH_HIGHWAYS = ("footway", "cycleway", "path", "bridleway", "steps", "track")
 # micro-relief over a 14 m window exceeds 5-10 cm even on graded turf.
 FLAT_WIN_PX = 7              # 14 m window at 2 m
 FLAT_DETREND_STD_M = 0.04    # plane-detrended window-std threshold
+# Tiles: under closed canopy the DTM is TIN-interpolation-smooth and the
+# course threshold reads whole forests as "flat" (observed 79% on a sandhills
+# pilot tile). Only true water-planarity joins the tile inpaint; the broad
+# fraction is recorded as meta.artifacts.canopy_smooth_frac (an S2-texture
+# comparability diagnostic).
+TILE_FLAT_STD_M = 0.010
+TILE_FLAT_DILATE_M = 10.0    # modest berm ring on tiles
+TILE_MASK_DILATE_OVERRIDES = {"water": 10.0}  # natural banks are signal
 FLAT_MIN_COMPONENT_HA = 0.10  # 250 cells at 2 m; 2.5x under the 0.25 ha gate
 FLAT_DILATE_M = 30.0         # berm ring, same rationale as the water class
 

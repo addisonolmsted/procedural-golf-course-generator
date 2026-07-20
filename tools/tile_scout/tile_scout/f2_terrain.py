@@ -171,6 +171,11 @@ def run(cfg: dict, only_region: str = "", force: bool = False) -> int:
     df = df[df["f1_pass"] & df["f0_keep"]]
     if only_region:
         df = df[df["region"] == only_region]
+    if df.empty:
+        print(f"f2: no F1 survivors"
+              + (f" in {only_region}" if only_region else "")
+              + " — nothing to score (region needs the relaxation ladder)")
+        return 0
     # budget: top 3x quota per region by f0 rank
     parts = []
     for rname, sub in df.groupby("region"):

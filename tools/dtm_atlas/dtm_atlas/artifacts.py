@@ -69,14 +69,18 @@ def detrended_window_std(z: np.ndarray, win: int) -> np.ndarray:
     return np.sqrt(np.maximum(var, 0.0))
 
 
-def detect_flat(raw: np.ndarray, valid: np.ndarray,
-                water: np.ndarray) -> tuple[np.ndarray, dict]:
+def detect_flat(raw: np.ndarray, valid: np.ndarray, water: np.ndarray,
+                std_m: float | None = None) -> tuple[np.ndarray, dict]:
     """Dead-flat components (>= FLAT_MIN_COMPONENT_HA) in VALID cells — run on
     valid rather than eligible so a half-mapped lake forms one coherent
     component; cells already masked cost nothing. Returns the UNDILATED mask
-    (truth); the inpaint contribution dilates by FLAT_DILATE_M."""
+    (truth); the inpaint contribution dilates by FLAT_DILATE_M.
+    `std_m` overrides the threshold (tiles use the strict TILE_FLAT_STD_M:
+    under closed canopy the DTM is TIN-interpolation-smooth, and the course
+    threshold would swallow whole forests)."""
     std = detrended_window_std(raw, config.FLAT_WIN_PX)
-    flat = (std < config.FLAT_DETREND_STD_M) & valid
+    flat = (std < (std_m if std_m is not None
+                   else config.FLAT_DETREND_STD_M)) & valid
     stats = {"flat_components": 0, "flat_total_ha": 0.0,
              "flat_max_ha": 0.0, "flat_water_overlap": 0.0}
     if not flat.any():
@@ -266,10 +270,21 @@ def stage_artifacts(key: str, force: bool) -> None:
         return arr.astype(bool)
 
     # flat first: water surfaces have ~zero curvature and would shrink the
-    # curvature MAD if left inside the detector statistics
+    # curvature MAD if left inside the detector statistics. On TILES the
+    # inpaint contribution uses the strict water-planarity threshold; the
+    # course-threshold fraction is recorded as a canopy-smoothness
+    # diagnostic instead of masking whole forests.
     from .masks import dilate_m
-    flat, flat_stats = detect_flat(raw, valid, water)
-    flat_d = dilate_m(flat, config.FLAT_DILATE_M, config.WORK_RES_M)
+    if config.DATASET == "tiles":
+        flat, flat_stats = detect_flat(raw, valid, water,
+                                       std_m=config.TILE_FLAT_STD_M)
+        broad, _bs = detect_flat(raw, valid, water)
+        flat_stats["canopy_smooth_frac"] = round(
+            float(broad.sum()) / max(int(valid.sum()), 1), 4)
+        flat_d = dilate_m(flat, config.TILE_FLAT_DILATE_M, config.WORK_RES_M)
+    else:
+        flat, flat_stats = detect_flat(raw, valid, water)
+        flat_d = dilate_m(flat, config.FLAT_DILATE_M, config.WORK_RES_M)
 
     eligible = valid & ~inp_classes & ~flat_d   # stats unpolluted by man-made
     curv, curv_stats = detect_curvature(raw, eligible)
@@ -282,18 +297,34 @@ def stage_artifacts(key: str, force: bool) -> None:
         grids.write_gtiff(os.path.join(mdir, f"{name}.tif"),
                           mask.astype(np.uint8), tf, epsg)
 
-    inpaint_pre = (inp_classes | curv | seam | bridge | flat_d) & valid
-
-    # consolidation: driver = non-golf class dilations + everything the
-    # detectors found; protected = undilated golf-class ground
-    nongolf = _mask("inpaint_nongolf") | curv | seam | bridge | flat_d
-    golf_truth = (_mask("fairway") | _mask("green") | _mask("tee")
-                  | _mask("bunker"))
-    demote, cons_stats = consolidate(inpaint_pre, nongolf, golf_truth, valid)
+    # TILES: the curvature detector and urban consolidation are COURSE
+    # instruments (post-construction damage, suburban membrane quilts).
+    # On natural tiles the curvature z-score is self-referential against
+    # interpolation-smooth forest floor and fires on real creek banks and
+    # bluff edges — the very signal the tiles exist to provide. Curvature
+    # stays recorded as a diagnostic; only mapped classes, true-flat water,
+    # seams, and bridge decks join the tile inpaint.
+    if config.DATASET == "tiles":
+        inpaint_pre = (inp_classes | seam | bridge | flat_d) & valid
+        demote = np.zeros_like(inpaint_pre)
+        cons_stats = {"consolidated_frac": 0.0}
+    else:
+        inpaint_pre = (inp_classes | curv | seam | bridge | flat_d) & valid
+        # consolidation: driver = non-golf class dilations + everything the
+        # detectors found; protected = undilated golf-class ground
+        nongolf = _mask("inpaint_nongolf") | curv | seam | bridge | flat_d
+        golf_truth = (_mask("fairway") | _mask("green") | _mask("tee")
+                      | _mask("bunker"))
+        demote, cons_stats = consolidate(inpaint_pre, nongolf, golf_truth,
+                                         valid)
     inpaint = inpaint_pre | demote
-    # seal 1-px slivers between masked features (closing adds no new islands)
+    # seal 1-px slivers between masked features. border_value=1: the default
+    # (0) ERODES mask pixels touching the array edge — harmless on courses
+    # (the 500 m margin keeps water off borders) but a 3 km tile cuts through
+    # streams at its edge, and eroded border water broke the excision
+    # invariant.
     inpaint = ndimage.binary_closing(
-        inpaint, structure=np.ones((3, 3), np.int8)) & valid
+        inpaint, structure=np.ones((3, 3), np.int8), border_value=1) & valid
     grids.write_gtiff(os.path.join(mdir, "consolidated.tif"),
                       (inpaint & ~inpaint_pre).astype(np.uint8), tf, epsg)
     grids.write_gtiff(out_path, inpaint.astype(np.uint8), tf, epsg)

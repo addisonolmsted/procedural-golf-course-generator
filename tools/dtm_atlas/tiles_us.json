@@ -1,0 +1,86 @@
+{
+ "t26917_00628_03858": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   34.875055,
+   -79.580707
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 2.1451,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00629_03857": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   34.86134,
+   -79.564534
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 2.2186,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00635_03863": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   34.914634,
+   -79.49793
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 1.966,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00637_03887": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   35.130772,
+   -79.477509
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 2.3826,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00644_03876": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   35.035065,
+   -79.397072
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 2.1268,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00646_03881": {
+  "best_course": "pinehurst2",
+  "center_ll": [
+   35.075409,
+   -79.379832
+  ],
+  "cfg_hash": "sha256:7525248aa9495cd6",
+  "f2_dist": 1.8021,
+  "label": "r_pinehurst2 analog of pinehurst2",
+  "region": "r_pinehurst2",
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ }
+}

@@ -25,7 +25,9 @@ def main() -> int:
         "select", "report",
     ])
     ap.add_argument("--region", default="",
-                    help="restrict a funnel stage to one region (pilot)")
+                    help="restrict a funnel stage to region(s), comma-sep")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="finalize: cap the number of tiles (pilot)")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
@@ -50,7 +52,11 @@ def main() -> int:
     if args.cmd == "drift":
         from . import f2_terrain
         return f2_terrain.drift_check(cfg)
-    if args.cmd in ("finalize", "select", "report"):
+    if args.cmd == "finalize":
+        from . import manifest
+        return manifest.finalize(cfg, only_region=args.region,
+                                 limit=args.limit)
+    if args.cmd in ("select", "report"):
         print(f"{args.cmd}: not implemented yet (arrives in a later "
               "Stage-0T commit)")
         return 2

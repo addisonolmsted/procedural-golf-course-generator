@@ -13,6 +13,10 @@ import numpy as np
 from . import config, grids
 
 
+def grids_snap() -> float:
+    return config.SNAP_M
+
+
 def read_list() -> list[str]:
     with open(config.TILES_US) as f:
         return [ln.strip() for ln in f
@@ -38,7 +42,10 @@ def tile_window_and_ring(lat_c: float, lon_c: float, side_m: float,
     Pure math — unit-testable without network."""
     epsg = grids.utm_epsg(lon_c, lat_c)
     xs, ys = grids.ll_to_utm([lon_c], [lat_c], epsg)
-    xc, yc = float(np.asarray(xs)[0]), float(np.asarray(ys)[0])
+    # snap the CENTER to the grid first: snapping the corners of a
+    # fractional-center window grows it by one snap step (1501 px tiles)
+    xc = round(float(np.asarray(xs)[0]) / grids_snap()) * grids_snap()
+    yc = round(float(np.asarray(ys)[0]) / grids_snap()) * grids_snap()
     h = side_m / 2.0
     window = grids.snap_window(xc - h, yc - h, xc + h, yc + h,
                                margin_m=margin_m)
