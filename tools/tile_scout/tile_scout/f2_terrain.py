@@ -168,21 +168,32 @@ def run(cfg: dict, only_region: str = "", force: bool = False) -> int:
     cands = pd.read_parquet(sconfig.out_path("f0_candidates.parquet"))
     f1 = pd.read_parquet(sconfig.out_path("f1_survivors.parquet"))
     df = cands.merge(f1, on="key", how="inner")
-    df = df[df["f1_pass"] & df["f0_keep"]]
+    df = df[df["f0_keep"]]
     if only_region:
         df = df[df["region"] == only_region]
-    if df.empty:
-        print(f"f2: no F1 survivors"
-              + (f" in {only_region}" if only_region else "")
-              + " — nothing to score (region needs the relaxation ladder)")
-        return 0
-    # budget: top 3x quota per region by f0 rank
+    if "f1_pass_relaxed" not in df.columns:
+        df = df.assign(f1_pass_relaxed=df["f1_pass"])
+    # budget: top 3x quota per region by f0 rank; shortfall regions top up
+    # from the RELAXED tier (big roads/rail/residential/dev stay hard zeros)
     parts = []
     for rname, sub in df.groupby("region"):
         cap = f2["budget_per_region_factor"] * regs[rname].quota
-        parts.append(sub.sort_values(["f0_dist", "key"]).head(cap))
+        strict = sub[sub["f1_pass"]].sort_values(["f0_dist", "key"])
+        take = strict.head(cap).assign(f1_relaxed=False)
+        if len(take) < cap:
+            extra = sub[~sub["f1_pass"] & sub["f1_pass_relaxed"]] \
+                .sort_values(["f0_dist", "key"]) \
+                .head(cap - len(take)).assign(f1_relaxed=True)
+            if len(extra):
+                print(f"  {rname}: +{len(extra)} relaxed-tier entrants")
+            take = pd.concat([take, extra])
+        parts.append(take)
     df = pd.concat(parts).sort_values("key").reset_index(drop=True)
-    print(f"f2: scoring {len(df)} candidates")
+    if df.empty:
+        print("f2: no entrants — nothing to score")
+        return 0
+    print(f"f2: scoring {len(df)} candidates "
+          f"({int(df['f1_relaxed'].sum())} relaxed-tier)")
 
     targets = course_targets(cfg)
     a = archetypes.load(sconfig.out_path("archetypes.json"))
@@ -210,6 +221,7 @@ def run(cfg: dict, only_region: str = "", force: bool = False) -> int:
             "key": row.key, "region": row.region,
             "f2_dist": round(float(dists[j] + row.f1_penalty), 4),
             "f2_best_course": reg.members[j],
+            "f1_relaxed": bool(row.f1_relaxed),
             "lat": row.lat, "lon": row.lon, "epsg": row.epsg,
             "x0": row.x0, "y0": row.y0,
         })

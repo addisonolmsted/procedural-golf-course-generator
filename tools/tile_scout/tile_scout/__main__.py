@@ -56,10 +56,12 @@ def main() -> int:
         from . import manifest
         return manifest.finalize(cfg, only_region=args.region,
                                  limit=args.limit)
-    if args.cmd in ("select", "report"):
-        print(f"{args.cmd}: not implemented yet (arrives in a later "
-              "Stage-0T commit)")
-        return 2
+    if args.cmd == "select":
+        from . import select
+        return select.run(cfg)
+    if args.cmd == "report":
+        from . import report
+        return report.run(cfg)
     return 2
 
 

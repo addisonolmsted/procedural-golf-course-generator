@@ -55,6 +55,18 @@ def gates(counts: dict, f1: dict) -> bool:
             and counts["agr"] <= f1["max_agriculture"])
 
 
+def gates_relaxed(counts: dict, f1: dict) -> bool:
+    """Shortfall-region tier: more small roads/farms tolerated; big roads,
+    rail, residential streets, and developed landuse remain hard zeros."""
+    r = f1["relaxed"]
+    return (counts["bld"] <= r["max_buildings"]
+            and counts["big"] + counts["rail"] <= f1["max_big_road_rail"]
+            and counts["res"] <= f1["max_residential"]
+            and counts["loc"] <= r["max_local_roads"]
+            and counts["dev"] <= f1["max_dev_landuse"]
+            and counts["agr"] <= r["max_agriculture"])
+
+
 def _cache_path(key: str) -> str:
     return sconfig.out_path("cache", "f1", f"{key}.json")
 
@@ -102,6 +114,7 @@ def run(cfg: dict, only_region: str = "", force: bool = False) -> int:
             counts = json.load(f)["counts"]
         recs.append({"key": row.key, **{f"f1_{g}": counts[g] for g in GROUPS},
                      "f1_pass": gates(counts, f1),
+                     "f1_pass_relaxed": gates_relaxed(counts, f1),
                      "f1_penalty": f1["agri_penalty"] * counts["agr"]})
     out = pd.DataFrame(recs).sort_values("key").reset_index(drop=True)
     out_p = sconfig.out_path("f1_survivors.parquet")

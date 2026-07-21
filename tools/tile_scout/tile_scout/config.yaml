@@ -77,6 +77,10 @@ f1:
   max_dev_landuse: 0                   # residential|commercial|industrial|...
   max_agriculture: 4                   # farmland|orchard|vineyard|farmyard
   agri_penalty: 0.25                   # added to f2 distance per agri way
+  relaxed:                             # ladder tier for shortfall regions
+    max_buildings: 8                   # (offline re-eval of cached counts;
+    max_local_roads: 4                 #  big roads/rail/residential/dev stay 0)
+    max_agriculture: 8
 
 f2:
   res_m: 10.0
