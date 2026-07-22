@@ -27,7 +27,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="dtm_atlas")
     ap.add_argument("cmd", choices=[
         "courses", "fetch", "raster", "masks", "artifacts", "naturalize",
-        "qa", "verify", "all",
+        "qa", "verify", "all", "nhd",
     ])
     ap.add_argument("--write", action="store_true",
                     help="courses: write the list; verify: write the manifest")
@@ -53,6 +53,9 @@ def main() -> int:
 
     from . import pipeline
     keys = pipeline.select_courses(args.course, args.limit)
+    if args.cmd == "nhd":
+        from . import nhd
+        return nhd.run(keys, force=args.force)
     if args.cmd == "verify":
         from . import meta
         return meta.verify(write=args.write)
