@@ -1,6 +1,6 @@
 """CLI: python3 -m dtm_primitives <cmd>
 
-Commands: framecheck | extract | synthcheck | qa | roundtrip | report
+Commands: framecheck | extract | synthcheck | geopilot | qa | roundtrip | report
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ def main() -> int:
     if cmd == "synthcheck":
         from . import synthcheck
         return synthcheck.run(rest or None)
+    if cmd == "geopilot":
+        from . import geopilot
+        return geopilot.run()
     if cmd in ("extract", "qa", "roundtrip", "report"):
         print(f"{cmd}: not implemented yet (arrives in a later Stage-3 commit)")
         return 2
