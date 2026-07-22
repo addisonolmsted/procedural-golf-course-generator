@@ -1,28 +1,2235 @@
 {
- "t26917_00628_03858": {
-  "best_course": "pinehurst2",
+ "t26910_00663_04131": {
+  "best_course": "stanford",
   "center_ll": [
-   34.875055,
-   -79.580707
+   37.328004,
+   -121.142411
   ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
-  "f2_dist": 2.1451,
-  "label": "r_pinehurst2 analog of pinehurst2",
-  "region": "r_pinehurst2",
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.3668,
+  "label": "r_stanford analog of stanford",
+  "region": "r_stanford",
+  "relaxed_tier": true,
   "selected": false,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
- "t26917_00629_03857": {
-  "best_course": "pinehurst2",
+ "t26910_00664_04125": {
+  "best_course": "sanfrancisco",
   "center_ll": [
-   34.86134,
-   -79.564534
+   37.273682,
+   -121.12683
   ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
-  "f2_dist": 2.2186,
-  "label": "r_pinehurst2 analog of pinehurst2",
-  "region": "r_pinehurst2",
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.4937,
+  "label": "r_stanford analog of sanfrancisco",
+  "region": "r_stanford",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26910_00676_04087": {
+  "best_course": "stanford",
+  "center_ll": [
+   36.933636,
+   -121.000458
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.2122,
+  "label": "r_stanford analog of stanford",
+  "region": "r_stanford",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00301_04239": {
+  "best_course": "laketahoe",
+  "center_ll": [
+   38.293854,
+   -119.247931
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.8372,
+  "label": "r_laketahoe analog of laketahoe",
+  "region": "r_laketahoe",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00304_04332": {
+  "best_course": "laketahoe",
+  "center_ll": [
+   39.131969,
+   -119.239643
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.4576,
+  "label": "r_laketahoe analog of laketahoe",
+  "region": "r_laketahoe",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00321_04347": {
+  "best_course": "laketahoe",
+  "center_ll": [
+   39.270559,
+   -119.052798
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.6306,
+  "label": "r_laketahoe analog of laketahoe",
+  "region": "r_laketahoe",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00343_03849": {
+  "best_course": "losangeles",
+  "center_ll": [
+   34.792456,
+   -118.693262
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.9773,
+  "label": "r_belair analog of losangeles",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00348_03846": {
+  "best_course": "belair",
+  "center_ll": [
+   34.766088,
+   -118.643556
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.6413,
+  "label": "r_belair analog of belair",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00406_03756": {
+  "best_course": "belair",
+  "center_ll": [
+   33.96151,
+   -117.994791
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9218,
+  "label": "r_belair analog of belair",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00412_03749": {
+  "best_course": "losangeles",
+  "center_ll": [
+   33.894383,
+   -117.929123
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0688,
+  "label": "r_belair analog of losangeles",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00412_03750": {
+  "best_course": "losangeles",
+  "center_ll": [
+   33.90791,
+   -117.92927
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.5473,
+  "label": "r_belair analog of losangeles",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00418_03762": {
+  "best_course": "brookside",
+  "center_ll": [
+   34.016598,
+   -117.865471
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.1981,
+  "label": "r_belair analog of brookside",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00420_03770": {
+  "best_course": "brookside",
+  "center_ll": [
+   34.084345,
+   -117.849902
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.2386,
+  "label": "r_belair analog of brookside",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00421_03827": {
+  "best_course": "brookside",
+  "center_ll": [
+   34.598452,
+   -117.838746
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.1916,
+  "label": "r_belair analog of brookside",
+  "region": "r_belair",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26911_00551_03573": {
+  "best_course": "torreypines",
+  "center_ll": [
+   32.314288,
+   -116.433266
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 8.0819,
+  "label": "r_torreypines analog of torreypines",
+  "region": "r_torreypines",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26913_00570_04423": {
+  "best_course": "cherryhills",
+  "center_ll": [
+   39.968998,
+   -104.160199
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.37,
+  "label": "r_castlepines analog of cherryhills",
+  "region": "r_castlepines",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26913_00573_04432": {
+  "best_course": "cherryhills",
+  "center_ll": [
+   40.049817,
+   -104.124038
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.7235,
+  "label": "r_castlepines analog of cherryhills",
+  "region": "r_castlepines",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26913_00585_04399": {
+  "best_course": "cherryhills",
+  "center_ll": [
+   39.751386,
+   -103.987759
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.56,
+  "label": "r_castlepines analog of cherryhills",
+  "region": "r_castlepines",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26913_00585_04412": {
+  "best_course": "cherryhills",
+  "center_ll": [
+   39.873004,
+   -103.985973
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4616,
+  "label": "r_castlepines analog of cherryhills",
+  "region": "r_castlepines",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00681_03973": {
+  "best_course": "oaktree",
+  "center_ll": [
+   35.900431,
+   -96.970209
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2345,
+  "label": "r_oaktree analog of oaktree",
+  "region": "r_oaktree",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00682_03621": {
+  "best_course": "prestonwood",
+  "center_ll": [
+   32.729855,
+   -97.034366
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8183,
+  "label": "r_colonial analog of prestonwood",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00687_03570": {
+  "best_course": "colonial",
+  "center_ll": [
+   32.2693,
+   -96.996593
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.4605,
+  "label": "r_colonial analog of colonial",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00691_03542": {
+  "best_course": "prestonwood",
+  "center_ll": [
+   32.011583,
+   -96.954587
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.203,
+  "label": "r_colonial analog of prestonwood",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00693_03968": {
+  "best_course": "oaktree",
+  "center_ll": [
+   35.857567,
+   -96.838425
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5912,
+  "label": "r_oaktree analog of oaktree",
+  "region": "r_oaktree",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00694_03548": {
+  "best_course": "prestonwood",
+  "center_ll": [
+   32.065161,
+   -96.921621
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.2102,
+  "label": "r_colonial analog of prestonwood",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00694_03648": {
+  "best_course": "prestonwood",
+  "center_ll": [
+   32.971175,
+   -96.900653
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1113,
+  "label": "r_colonial analog of prestonwood",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26914_00694_03669": {
+  "best_course": "prestonwood",
+  "center_ll": [
+   33.160473,
+   -96.896152
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.7188,
+  "label": "r_colonial analog of prestonwood",
+  "region": "r_colonial",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00240_03972": {
+  "best_course": "southernhills",
+  "center_ll": [
+   35.873109,
+   -95.856687
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.708,
+  "label": "r_southernhills analog of southernhills",
+  "region": "r_southernhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00245_03260": {
+  "best_course": "houstonoaks",
+  "center_ll": [
+   29.465484,
+   -95.605341
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.3123,
+  "label": "r_houstonoaks analog of houstonoaks",
+  "region": "r_houstonoaks",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00245_03305": {
+  "best_course": "houstonoaks",
+  "center_ll": [
+   29.871189,
+   -95.615825
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 5.185,
+  "label": "r_houstonoaks analog of houstonoaks",
+  "region": "r_houstonoaks",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00250_03242": {
+  "best_course": "houstonoaks",
+  "center_ll": [
+   29.304089,
+   -95.554916
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 5.255,
+  "label": "r_houstonoaks analog of houstonoaks",
+  "region": "r_houstonoaks",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00260_04021": {
+  "best_course": "southernhills",
+  "center_ll": [
+   36.323854,
+   -95.655888
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.6776,
+  "label": "r_southernhills analog of southernhills",
+  "region": "r_southernhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00308_03906": {
+  "best_course": "southernhills",
+  "center_ll": [
+   35.293872,
+   -95.094027
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.4846,
+  "label": "r_southernhills analog of southernhills",
+  "region": "r_southernhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00354_04982": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.996912,
+   -94.828658
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8055,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00354_04996": {
+  "best_course": "interlachen",
+  "center_ll": [
+   45.118375,
+   -94.832535
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5914,
+  "label": "r_interlachen analog of interlachen",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00366_04967": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.864276,
+   -94.672556
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8619,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00412_04897": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.236806,
+   -94.072373
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8258,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00423_04891": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.183953,
+   -93.940043
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4167,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00423_04975": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.94007,
+   -93.9523
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2501,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00489_05033": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   45.470574,
+   -93.116852
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8257,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00489_05035": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   45.484076,
+   -93.11688
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3395,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00489_05062": {
+  "best_course": "windsong",
+  "center_ll": [
+   45.727101,
+   -93.117385
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9371,
+  "label": "r_interlachen analog of windsong",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00490_05065": {
+  "best_course": "interlachen",
+  "center_ll": [
+   45.754122,
+   -93.098155
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7158,
+  "label": "r_interlachen analog of interlachen",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00495_04894": {
+  "best_course": "tpctwincities",
+  "center_ll": [
+   44.214823,
+   -93.039232
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8361,
+  "label": "r_interlachen analog of tpctwincities",
+  "region": "r_interlachen",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00717_04280": {
+  "best_course": "bellerive",
+  "center_ll": [
+   38.662912,
+   -90.484211
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0661,
+  "label": "r_bellerive analog of bellerive",
+  "region": "r_bellerive",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00738_04285": {
+  "best_course": "bellerive",
+  "center_ll": [
+   38.69798,
+   -90.241545
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.429,
+  "label": "r_bellerive analog of bellerive",
+  "region": "r_bellerive",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26915_00738_04286": {
+  "best_course": "bellerive",
+  "center_ll": [
+   38.711482,
+   -90.241026
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9729,
+  "label": "r_bellerive analog of bellerive",
+  "region": "r_bellerive",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00326_04598": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.535923,
+   -89.066415
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5234,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00326_04663": {
+  "best_course": "olympia",
+  "center_ll": [
+   42.116488,
+   -89.085177
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5837,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00327_04594": {
+  "best_course": "onwentsia",
+  "center_ll": [
+   41.495737,
+   -89.047168
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3735,
+  "label": "r_butlernational analog of onwentsia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00327_04801": {
+  "best_course": "erin",
+  "center_ll": [
+   43.360809,
+   -89.115193
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9438,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00331_04798": {
+  "best_course": "erin",
+  "center_ll": [
+   43.334826,
+   -89.058782
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.527,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00334_04798": {
+  "best_course": "browndeer",
+  "center_ll": [
+   43.335486,
+   -89.021797
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.1382,
+  "label": "r_blackwolf analog of browndeer",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00336_04663": {
+  "best_course": "onwentsia",
+  "center_ll": [
+   42.118726,
+   -88.958238
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9954,
+  "label": "r_butlernational analog of onwentsia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00395_04535": {
+  "best_course": "valparaiso",
+  "center_ll": [
+   40.980451,
+   -88.228828
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9427,
+  "label": "r_butlernational analog of valparaiso",
+  "region": "r_butlernational",
+  "relaxed_tier": true,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00402_04619": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.73786,
+   -88.152971
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.7071,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00402_04879": {
+  "best_course": "erin",
+  "center_ll": [
+   44.076337,
+   -88.203875
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3685,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00403_04735": {
+  "best_course": "erin",
+  "center_ll": [
+   42.780169,
+   -88.160115
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7424,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00404_04631": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.846102,
+   -88.136845
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.3126,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00404_04637": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.900132,
+   -88.137803
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8765,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00404_04640": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.927147,
+   -88.138283
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0487,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00404_04646": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.981177,
+   -88.139245
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4311,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00404_04655": {
+  "best_course": "olympia",
+  "center_ll": [
+   42.062221,
+   -88.140692
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5982,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00432_04657": {
+  "best_course": "butlernational",
+  "center_ll": [
+   42.078636,
+   -87.796437
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.6068,
+  "label": "r_butlernational analog of butlernational",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00434_04078": {
+  "best_course": "nashville",
+  "center_ll": [
+   36.864178,
+   -87.721066
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.9725,
+  "label": "r_nashville analog of nashville",
+  "region": "r_nashville",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00434_04576": {
+  "best_course": "chicagoac",
+  "center_ll": [
+   41.349251,
+   -87.769553
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8045,
+  "label": "r_butlernational analog of chicagoac",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00434_04586": {
+  "best_course": "chicagoac",
+  "center_ll": [
+   41.443822,
+   -87.770669
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5277,
+  "label": "r_butlernational analog of chicagoac",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00434_04588": {
+  "best_course": "chicagoac",
+  "center_ll": [
+   41.457332,
+   -87.770829
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8619,
+  "label": "r_butlernational analog of chicagoac",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00435_04228": {
+  "best_course": "victoria",
+  "center_ll": [
+   38.217394,
+   -87.718796
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.6984,
+  "label": "r_victoria analog of victoria",
+  "region": "r_victoria",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00435_04571": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.308838,
+   -87.751158
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1625,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00444_04561": {
+  "best_course": "onwentsia",
+  "center_ll": [
+   41.214913,
+   -87.642721
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2028,
+  "label": "r_butlernational analog of onwentsia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00445_04885": {
+  "best_course": "erin",
+  "center_ll": [
+   44.134786,
+   -87.661262
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9868,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00446_04577": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.363631,
+   -87.626248
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9751,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00447_04568": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.282662,
+   -87.607561
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7325,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00447_04888": {
+  "best_course": "erin",
+  "center_ll": [
+   44.161901,
+   -87.642805
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.3413,
+  "label": "r_blackwolf analog of erin",
+  "region": "r_blackwolf",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00449_04564": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.242222,
+   -87.589285
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4932,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00449_04565": {
+  "best_course": "olympia",
+  "center_ll": [
+   41.255733,
+   -87.589406
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2288,
+  "label": "r_butlernational analog of olympia",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00483_03936": {
+  "best_course": "nashville",
+  "center_ll": [
+   35.581531,
+   -87.163044
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0646,
+  "label": "r_nashville analog of nashville",
+  "region": "r_nashville",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00483_04576": {
+  "best_course": "valparaiso",
+  "center_ll": [
+   41.351686,
+   -87.177854
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3906,
+  "label": "r_butlernational analog of valparaiso",
+  "region": "r_butlernational",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00484_04363": {
+  "best_course": "crookedstick",
+  "center_ll": [
+   39.437715,
+   -87.157828
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5442,
+  "label": "r_crookedstick analog of crookedstick",
+  "region": "r_crookedstick",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00485_04080": {
+  "best_course": "nashville",
+  "center_ll": [
+   36.879794,
+   -87.14893
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0802,
+  "label": "r_nashville analog of nashville",
+  "region": "r_nashville",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00489_04192": {
+  "best_course": "victoria",
+  "center_ll": [
+   37.89509,
+   -87.101476
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5775,
+  "label": "r_victoria analog of victoria",
+  "region": "r_victoria",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00490_04443": {
+  "best_course": "crookedstick",
+  "center_ll": [
+   40.154092,
+   -87.089025
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6756,
+  "label": "r_crookedstick analog of crookedstick",
+  "region": "r_crookedstick",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00495_04278": {
+  "best_course": "victoria",
+  "center_ll": [
+   38.665695,
+   -87.033587
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0868,
+  "label": "r_victoria analog of victoria",
+  "region": "r_victoria",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00573_04963": {
+  "best_course": "crystal",
+  "center_ll": [
+   44.834224,
+   -86.054278
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.6893,
+  "label": "r_crystal analog of crystal",
+  "region": "r_crystal",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00576_04990": {
+  "best_course": "crystal",
+  "center_ll": [
+   45.076921,
+   -86.012168
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8612,
+  "label": "r_crystal analog of crystal",
+  "region": "r_crystal",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00577_04993": {
+  "best_course": "crystal",
+  "center_ll": [
+   45.103756,
+   -85.992639
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.701,
+  "label": "r_crystal analog of crystal",
+  "region": "r_crystal",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00578_04257": {
+  "best_course": "valhalla",
+  "center_ll": [
+   38.479313,
+   -86.085546
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1865,
+  "label": "r_valhalla analog of valhalla",
+  "region": "r_valhalla",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00579_03853": {
+  "best_course": "honors",
+  "center_ll": [
+   34.829831,
+   -86.118999
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 9.3971,
+  "label": "r_honors analog of honors",
+  "region": "r_honors",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00631_04863": {
+  "best_course": "grandrapids",
+  "center_ll": [
+   43.927653,
+   -85.343007
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4418,
+  "label": "r_grandrapids analog of grandrapids",
+  "region": "r_grandrapids",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00633_04359": {
+  "best_course": "crookedstick",
+  "center_ll": [
+   39.386726,
+   -85.433382
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.029,
+  "label": "r_crookedstick analog of crookedstick",
+  "region": "r_crookedstick",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00633_04556": {
+  "best_course": "sycamore",
+  "center_ll": [
+   41.162706,
+   -85.394176
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.7095,
+  "label": "r_sycamore analog of sycamore",
+  "region": "r_sycamore",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00633_04865": {
+  "best_course": "grandrapids",
+  "center_ll": [
+   43.94088,
+   -85.323949
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7387,
+  "label": "r_grandrapids analog of grandrapids",
+  "region": "r_grandrapids",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00634_04682": {
+  "best_course": "grandrapids",
+  "center_ll": [
+   42.29341,
+   -85.350138
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4907,
+  "label": "r_grandrapids analog of grandrapids",
+  "region": "r_grandrapids",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00637_04477": {
+  "best_course": "sycamore",
+  "center_ll": [
+   40.446064,
+   -85.3583
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5942,
+  "label": "r_sycamore analog of sycamore",
+  "region": "r_sycamore",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00637_04585": {
+  "best_course": "sycamore",
+  "center_ll": [
+   41.418559,
+   -85.334042
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6826,
+  "label": "r_sycamore analog of sycamore",
+  "region": "r_sycamore",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00713_03705": {
+  "best_course": "druidhills",
+  "center_ll": [
+   33.48211,
+   -84.683934
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9964,
+  "label": "r_atlanta analog of druidhills",
+  "region": "r_atlanta",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00719_03690": {
+  "best_course": "eastlake",
+  "center_ll": [
+   33.345707,
+   -84.623094
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1769,
+  "label": "r_atlanta analog of eastlake",
+  "region": "r_atlanta",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00723_04335": {
+  "best_course": "ncr",
+  "center_ll": [
+   39.149483,
+   -84.393866
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.239,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00726_04327": {
+  "best_course": "ncr",
+  "center_ll": [
+   39.08119,
+   -84.361705
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7885,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00729_04329": {
+  "best_course": "ncr",
+  "center_ll": [
+   39.093902,
+   -84.326547
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.5225,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00730_03735": {
+  "best_course": "druidhills",
+  "center_ll": [
+   33.748992,
+   -84.498692
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0071,
+  "label": "r_atlanta analog of druidhills",
+  "region": "r_atlanta",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00794_04323": {
+  "best_course": "ncr",
+  "center_ll": [
+   39.02046,
+   -83.584449
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.3904,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00795_04302": {
+  "best_course": "ncr",
+  "center_ll": [
+   38.83105,
+   -83.576255
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0494,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00795_04327": {
+  "best_course": "moraine",
+  "center_ll": [
+   39.06043,
+   -83.565191
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.3221,
+  "label": "r_camargo analog of moraine",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00797_03684": {
+  "best_course": "druidhills",
+  "center_ll": [
+   33.272815,
+   -83.787911
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8434,
+  "label": "r_atlanta analog of druidhills",
+  "region": "r_atlanta",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00797_04317": {
+  "best_course": "ncr",
+  "center_ll": [
+   38.965471,
+   -83.552479
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5255,
+  "label": "r_camargo analog of ncr",
+  "region": "r_camargo",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00802_03668": {
+  "best_course": "druidhills",
+  "center_ll": [
+   33.122968,
+   -83.745175
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.2494,
+  "label": "r_atlanta analog of druidhills",
+  "region": "r_atlanta",
+  "relaxed_tier": true,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26916_00820_03669": {
+  "best_course": "druidhills",
+  "center_ll": [
+   33.131288,
+   -83.552028
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1213,
+  "label": "r_atlanta analog of druidhills",
+  "region": "r_atlanta",
+  "relaxed_tier": true,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00261_04609": {
+  "best_course": "oaklandhills",
+  "center_ll": [
+   41.615928,
+   -83.850529
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.2342,
+  "label": "r_bartonhills analog of oaklandhills",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00261_04674": {
+  "best_course": "meadowbrookmi",
+  "center_ll": [
+   42.196141,
+   -83.876478
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8268,
+  "label": "r_bartonhills analog of meadowbrookmi",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00262_04674": {
+  "best_course": "meadowbrookmi",
+  "center_ll": [
+   42.196595,
+   -83.858333
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4279,
+  "label": "r_bartonhills analog of meadowbrookmi",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00262_04723": {
+  "best_course": "meadowbrookmi",
+  "center_ll": [
+   42.641833,
+   -83.878643
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.1746,
+  "label": "r_bartonhills analog of meadowbrookmi",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00262_04782": {
+  "best_course": "detroit",
+  "center_ll": [
+   43.167967,
+   -83.903249
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.4584,
+  "label": "r_bartonhills analog of detroit",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00264_04449": {
+  "best_course": "muirfieldvillage",
+  "center_ll": [
+   40.179742,
+   -83.752328
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4132,
+  "label": "r_muirfieldvillage analog of muirfieldvillage",
+  "region": "r_muirfieldvillage",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00264_04603": {
+  "best_course": "detroit",
+  "center_ll": [
+   41.562836,
+   -83.812219
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.871,
+  "label": "r_bartonhills analog of detroit",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00264_04675": {
+  "best_course": "meadowbrookmi",
+  "center_ll": [
+   42.210539,
+   -83.840792
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6354,
+  "label": "r_bartonhills analog of meadowbrookmi",
+  "region": "r_bartonhills",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00313_03670": {
+  "best_course": "sagevalley",
+  "center_ll": [
+   33.174854,
+   -82.980338
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1683,
+  "label": "r_augusta analog of sagevalley",
+  "region": "r_augusta",
+  "relaxed_tier": true,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00380_03942": {
+  "best_course": "wadehampton",
+  "center_ll": [
+   35.630705,
+   -82.307079
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 5.2192,
+  "label": "r_wadehampton analog of wadehampton",
+  "region": "r_wadehampton",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00381_03065": {
+  "best_course": "bayhill",
+  "center_ll": [
+   27.720082,
+   -82.183959
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2617,
+  "label": "r_streamsong analog of bayhill",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00383_03096": {
+  "best_course": "bayhill",
+  "center_ll": [
+   28.004517,
+   -82.171799
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.7582,
+  "label": "r_streamsong analog of bayhill",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00384_03095": {
+  "best_course": "bayhill",
+  "center_ll": [
+   27.991108,
+   -82.156402
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.271,
+  "label": "r_streamsong analog of bayhill",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00384_04527": {
+  "best_course": "canterbury",
+  "center_ll": [
+   40.905702,
+   -82.349736
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1338,
+  "label": "r_canterbury analog of canterbury",
+  "region": "r_canterbury",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00387_03321": {
+  "best_course": "sawgrass",
+  "center_ll": [
+   30.030626,
+   -82.154164
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.8097,
+  "label": "r_sawgrass analog of sawgrass",
+  "region": "r_sawgrass",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00390_03307": {
+  "best_course": "sawgrass",
+  "center_ll": [
+   29.909086,
+   -82.121686
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.5567,
+  "label": "r_sawgrass analog of sawgrass",
+  "region": "r_sawgrass",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00398_03086": {
+  "best_course": "bayhill",
+  "center_ll": [
+   27.910961,
+   -82.018371
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.6244,
+  "label": "r_streamsong analog of bayhill",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00399_02991": {
+  "best_course": "calusa",
+  "center_ll": [
+   27.058283,
+   -82.002108
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 7.8293,
+  "label": "r_calusa analog of calusa",
+  "region": "r_calusa",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00399_03084": {
+  "best_course": "streamsong",
+  "center_ll": [
+   27.897533,
+   -82.003005
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5953,
+  "label": "r_streamsong analog of streamsong",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00401_03101": {
+  "best_course": "bayhill",
+  "center_ll": [
+   28.046572,
+   -81.989124
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.535,
+  "label": "r_streamsong analog of bayhill",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00404_03927": {
+  "best_course": "wadehampton",
+  "center_ll": [
+   35.498062,
+   -82.040322
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.7219,
+  "label": "r_wadehampton analog of wadehampton",
+  "region": "r_wadehampton",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00405_03060": {
+  "best_course": "streamsong",
+  "center_ll": [
+   27.681331,
+   -81.940182
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8807,
+  "label": "r_streamsong analog of streamsong",
+  "region": "r_streamsong",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00405_03255": {
+  "best_course": "sawgrass",
+  "center_ll": [
+   29.436568,
+   -81.961808
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.7305,
+  "label": "r_sawgrass analog of sawgrass",
+  "region": "r_sawgrass",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00408_04541": {
+  "best_course": "canterbury",
+  "center_ll": [
+   41.030275,
+   -82.066786
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1097,
+  "label": "r_canterbury analog of canterbury",
+  "region": "r_canterbury",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00459_03000": {
+  "best_course": "calusa",
+  "center_ll": [
+   27.142546,
+   -81.397375
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 7.0929,
+  "label": "r_calusa analog of calusa",
+  "region": "r_calusa",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00460_02987": {
+  "best_course": "calusa",
+  "center_ll": [
+   27.020706,
+   -81.381824
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 7.074,
+  "label": "r_calusa analog of calusa",
+  "region": "r_calusa",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00514_03768": {
+  "best_course": "sagevalley",
+  "center_ll": [
+   34.069877,
+   -80.822742
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9303,
+  "label": "r_augusta analog of sagevalley",
+  "region": "r_augusta",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00560_04365": {
+  "best_course": "pete",
+  "center_ll": [
+   39.453451,
+   -80.27982
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.7341,
+  "label": "r_pete analog of pete",
+  "region": "r_pete",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00563_04484": {
+  "best_course": "sunnehanna",
+  "center_ll": [
+   40.518266,
+   -80.231436
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.8723,
+  "label": "r_oakmont analog of sunnehanna",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00564_02873": {
+  "best_course": "doral",
+  "center_ll": [
+   25.99574,
+   -80.341664
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.8462,
+  "label": "r_doral analog of doral",
+  "region": "r_doral",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00566_04290": {
+  "best_course": "pete",
+  "center_ll": [
+   38.777224,
+   -80.217598
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.6501,
+  "label": "r_pete analog of pete",
+  "region": "r_pete",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00566_04292": {
+  "best_course": "pete",
+  "center_ll": [
+   38.79074,
+   -80.21745
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.5664,
+  "label": "r_pete analog of pete",
+  "region": "r_pete",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00570_02944": {
+  "best_course": "doral",
+  "center_ll": [
+   26.631982,
+   -80.277781
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.8612,
+  "label": "r_doral analog of doral",
+  "region": "r_doral",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00571_02840": {
+  "best_course": "doral",
+  "center_ll": [
+   25.697412,
+   -80.268566
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.8946,
+  "label": "r_doral analog of doral",
+  "region": "r_doral",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00591_04164": {
+  "best_course": "greenbrier",
+  "center_ll": [
+   37.637877,
+   -79.944356
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 6.3965,
+  "label": "r_greenbrier analog of greenbrier",
+  "region": "r_greenbrier",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00593_04562": {
+  "best_course": "sunnehanna",
+  "center_ll": [
+   41.217891,
+   -79.865418
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.9456,
+  "label": "r_oakmont analog of sunnehanna",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00598_04487": {
+  "best_course": "oakmont",
+  "center_ll": [
+   40.541862,
+   -79.823766
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 5.2167,
+  "label": "r_oakmont analog of oakmont",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00604_04452": {
+  "best_course": "oakmont",
+  "center_ll": [
+   40.230375,
+   -79.758646
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.4889,
+  "label": "r_oakmont analog of oakmont",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00604_04581": {
+  "best_course": "sunnehanna",
+  "center_ll": [
+   41.392197,
+   -79.736799
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.4459,
+  "label": "r_oakmont analog of sunnehanna",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00605_04445": {
+  "best_course": "sunnehanna",
+  "center_ll": [
+   40.162629,
+   -79.742268
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 5.3028,
+  "label": "r_oakmont analog of sunnehanna",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
   "selected": false,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
@@ -33,24 +2240,11 @@
    34.914634,
    -79.49793
   ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
+  "cfg_hash": "sha256:b1f60208e0370e07",
   "f2_dist": 1.966,
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
-  "selected": false,
-  "side_m": 3000.0,
-  "tile_scout": "0.1.0"
- },
- "t26917_00637_03887": {
-  "best_course": "pinehurst2",
-  "center_ll": [
-   35.130772,
-   -79.477509
-  ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
-  "f2_dist": 2.3826,
-  "label": "r_pinehurst2 analog of pinehurst2",
-  "region": "r_pinehurst2",
+  "relaxed_tier": false,
   "selected": false,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
@@ -61,10 +2255,11 @@
    35.035065,
    -79.397072
   ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
+  "cfg_hash": "sha256:b1f60208e0370e07",
   "f2_dist": 2.1268,
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
+  "relaxed_tier": false,
   "selected": false,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
@@ -75,10 +2270,806 @@
    35.075409,
    -79.379832
   ],
-  "cfg_hash": "sha256:7525248aa9495cd6",
+  "cfg_hash": "sha256:b1f60208e0370e07",
   "f2_dist": 1.8021,
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26917_00719_04503": {
+  "best_course": "sunnehanna",
+  "center_ll": [
+   40.666854,
+   -78.384229
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.53,
+  "label": "r_oakmont analog of sunnehanna",
+  "region": "r_oakmont",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00162_04718": {
+  "best_course": "oakhill",
+  "center_ll": [
+   42.561287,
+   -79.093243
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5761,
+  "label": "r_buffalocc analog of oakhill",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00166_04720": {
+  "best_course": "oakhill",
+  "center_ll": [
+   42.576705,
+   -79.039431
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4906,
+  "label": "r_buffalocc analog of oakhill",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00169_04721": {
+  "best_course": "oakhill",
+  "center_ll": [
+   42.591463,
+   -79.003828
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5017,
+  "label": "r_buffalocc analog of oakhill",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00169_04723": {
+  "best_course": "oakhill",
+  "center_ll": [
+   42.604938,
+   -79.004693
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8836,
+  "label": "r_buffalocc analog of oakhill",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00183_04298": {
+  "best_course": "congressional",
+  "center_ll": [
+   38.789115,
+   -78.632109
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4583,
+  "label": "r_congressional analog of congressional",
+  "region": "r_congressional",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00190_04310": {
+  "best_course": "congressional",
+  "center_ll": [
+   38.899697,
+   -78.551288
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0028,
+  "label": "r_congressional analog of congressional",
+  "region": "r_congressional",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00192_04311": {
+  "best_course": "congressional",
+  "center_ll": [
+   38.913713,
+   -78.534692
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3365,
+  "label": "r_congressional analog of congressional",
+  "region": "r_congressional",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00192_04762": {
+  "best_course": "rochester",
+  "center_ll": [
+   42.964653,
+   -78.752142
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3086,
+  "label": "r_buffalocc analog of rochester",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00253_04280": {
+  "best_course": "congressional",
+  "center_ll": [
+   38.649509,
+   -77.815142
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8658,
+  "label": "r_congressional analog of congressional",
+  "region": "r_congressional",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00255_04762": {
+  "best_course": "oakhill",
+  "center_ll": [
+   42.987364,
+   -77.980852
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.2602,
+  "label": "r_buffalocc analog of oakhill",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00256_04197": {
+  "best_course": "kinloch",
+  "center_ll": [
+   37.903338,
+   -77.749839
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.1207,
+  "label": "r_kinloch analog of kinloch",
+  "region": "r_kinloch",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00258_04137": {
+  "best_course": "kinloch",
+  "center_ll": [
+   37.36354,
+   -77.713069
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4958,
+  "label": "r_kinloch analog of kinloch",
+  "region": "r_kinloch",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00258_04784": {
+  "best_course": "rochester",
+  "center_ll": [
+   43.190659,
+   -77.953819
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 4.056,
+  "label": "r_buffalocc analog of rochester",
+  "region": "r_buffalocc",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00259_04123": {
+  "best_course": "kinloch",
+  "center_ll": [
+   37.242374,
+   -77.69181
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.4572,
+  "label": "r_kinloch analog of kinloch",
+  "region": "r_kinloch",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00396_04451": {
+  "best_course": "hershey",
+  "center_ll": [
+   40.224982,
+   -76.20435
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4333,
+  "label": "r_lancaster analog of hershey",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00397_04411": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.860348,
+   -76.180414
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.3084,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00403_04402": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.779965,
+   -76.108975
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4082,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00405_04421": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.955794,
+   -76.094249
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.9885,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00406_04411": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.861371,
+   -76.075211
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9449,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00418_04418": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.930152,
+   -75.935852
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.7265,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00420_04420": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.943805,
+   -75.91848
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2065,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00420_04423": {
+  "best_course": "wilmington",
+  "center_ll": [
+   39.970831,
+   -75.918842
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2303,
+  "label": "r_lancaster analog of wilmington",
+  "region": "r_lancaster",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00502_04433": {
+  "best_course": "galloway",
+  "center_ll": [
+   40.068488,
+   -74.949293
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9093,
+  "label": "r_galloway analog of galloway",
+  "region": "r_galloway",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00503_04454": {
+  "best_course": "piping",
+  "center_ll": [
+   40.253501,
+   -74.935586
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4848,
+  "label": "r_hamiltonfarm analog of piping",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00503_04455": {
+  "best_course": "piping",
+  "center_ll": [
+   40.267015,
+   -74.935573
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2733,
+  "label": "r_hamiltonfarm analog of piping",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00505_04440": {
+  "best_course": "wingedfoot",
+  "center_ll": [
+   40.131862,
+   -74.918094
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5815,
+  "label": "r_hamiltonfarm analog of wingedfoot",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00506_04467": {
+  "best_course": "merion",
+  "center_ll": [
+   40.375102,
+   -74.900131
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.0665,
+  "label": "r_hamiltonfarm analog of merion",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00507_04433": {
+  "best_course": "galloway",
+  "center_ll": [
+   40.068453,
+   -74.896522
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6406,
+  "label": "r_galloway analog of galloway",
+  "region": "r_galloway",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00507_04435": {
+  "best_course": "galloway",
+  "center_ll": [
+   40.081967,
+   -74.896502
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9667,
+  "label": "r_galloway analog of galloway",
+  "region": "r_galloway",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00508_04445": {
+  "best_course": "montclair",
+  "center_ll": [
+   40.172375,
+   -74.882811
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.46,
+  "label": "r_hamiltonfarm analog of montclair",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00508_04446": {
+  "best_course": "westchester",
+  "center_ll": [
+   40.185889,
+   -74.882788
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2217,
+  "label": "r_hamiltonfarm analog of westchester",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00508_04451": {
+  "best_course": "wingedfoot",
+  "center_ll": [
+   40.226432,
+   -74.882718
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2853,
+  "label": "r_hamiltonfarm analog of wingedfoot",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00508_04454": {
+  "best_course": "wingedfoot",
+  "center_ll": [
+   40.25346,
+   -74.882671
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.948,
+  "label": "r_hamiltonfarm analog of wingedfoot",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00509_04452": {
+  "best_course": "wingedfoot",
+  "center_ll": [
+   40.239927,
+   -74.86506
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.4443,
+  "label": "r_hamiltonfarm analog of wingedfoot",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00509_04473": {
+  "best_course": "meadowbrook",
+  "center_ll": [
+   40.429121,
+   -74.864683
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.8106,
+  "label": "r_hamiltonfarm analog of meadowbrook",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00515_04482": {
+  "best_course": "westchester",
+  "center_ll": [
+   40.510098,
+   -74.7937
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5129,
+  "label": "r_hamiltonfarm analog of westchester",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00517_04463": {
+  "best_course": "piping",
+  "center_ll": [
+   40.334388,
+   -74.776577
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.8644,
+  "label": "r_hamiltonfarm analog of piping",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00517_04496": {
+  "best_course": "westchester",
+  "center_ll": [
+   40.631684,
+   -74.775589
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.5481,
+  "label": "r_hamiltonfarm analog of westchester",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00517_04497": {
+  "best_course": "westchester",
+  "center_ll": [
+   40.645197,
+   -74.775544
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6562,
+  "label": "r_hamiltonfarm analog of westchester",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00518_04463": {
+  "best_course": "meadowbrook",
+  "center_ll": [
+   40.334352,
+   -74.758918
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.145,
+  "label": "r_hamiltonfarm analog of meadowbrook",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26918_00518_04484": {
+  "best_course": "westchester",
+  "center_ll": [
+   40.523542,
+   -74.758241
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2434,
+  "label": "r_hamiltonfarm analog of westchester",
+  "region": "r_hamiltonfarm",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00343_04672": {
+  "best_course": "salem",
+  "center_ll": [
+   42.203217,
+   -70.87206
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0551,
+  "label": "r_worcester analog of salem",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00349_04615": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.691247,
+   -70.785039
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.6148,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00349_04662": {
+  "best_course": "salem",
+  "center_ll": [
+   42.109859,
+   -70.79674
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.7025,
+  "label": "r_worcester analog of salem",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00351_04626": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.786055,
+   -70.769617
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.2396,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00351_04627": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.799559,
+   -70.769988
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.903,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00351_04654": {
+  "best_course": "salem",
+  "center_ll": [
+   42.042625,
+   -70.776721
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.629,
+  "label": "r_worcester analog of salem",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00352_04648": {
+  "best_course": "bostongc",
+  "center_ll": [
+   41.98889,
+   -70.757117
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.808,
+  "label": "r_worcester analog of bostongc",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00355_04624": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.773372,
+   -70.715126
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.5423,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00394_04611": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.657851,
+   -70.243662
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 1.9964,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00396_04612": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.671552,
+   -70.225907
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 2.1247,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
+  "selected": false,
+  "side_m": 3000.0,
+  "tile_scout": "0.1.0"
+ },
+ "t26919_00415_04632": {
+  "best_course": "tpcboston",
+  "center_ll": [
+   41.849423,
+   -69.994398
+  ],
+  "cfg_hash": "sha256:b1f60208e0370e07",
+  "f2_dist": 3.0699,
+  "label": "r_worcester analog of tpcboston",
+  "region": "r_worcester",
+  "relaxed_tier": false,
   "selected": false,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
