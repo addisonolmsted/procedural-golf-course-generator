@@ -153,11 +153,83 @@ def check_preset(name: str, truth: dict, verbose: bool = True) -> list[str]:
     return fails
 
 
+def check_ridge_preset(verbose: bool = True) -> list[str]:
+    """Recover ridge_spine crest params through the inverted pipeline."""
+    from dtm_metrics.sandbox.campaign import read_hg01
+    from .ridgepipe import extract_ridges
+    pdir = os.path.join(SYNTH, "presets")
+    cfg_path = os.path.join(pdir, "ridge_spine.json")
+    hg = os.path.join(SYNTH, "ridge_spine.hg01")
+    if not os.path.exists(hg):
+        subprocess.run(["cargo", "run", "--release", "-p", "xtask", "--",
+                        "landform-presets", pdir],
+                       cwd=REPO, check=True, capture_output=True, text=True)
+        manifest = os.path.join(SYNTH, "ridge_manifest.json")
+        with open(manifest, "w") as f:
+            json.dump([{"out": hg, "cell": CELL, "config": cfg_path}], f)
+        subprocess.run(["cargo", "run", "--release", "-p", "xtask", "--",
+                        "landform-grid", manifest],
+                       cwd=REPO, check=True, capture_output=True, text=True)
+    with open(cfg_path) as f:
+        truth = json.load(f)["ridges"][0]
+    h, cell = read_hg01(hg)
+    nat = h[::-1]
+    valid = np.ones(nat.shape, bool)
+    cfg = bridge.load_config()
+    ridges, _res = extract_ridges(nat, valid, cell, cfg)
+    fails: list[str] = []
+    if not ridges:
+        return ["ridge_spine: no ridge recovered"]
+    r = max(ridges, key=lambda x: x.length_m)
+    fl_t, fr_t = truth["flank_grad_left"], truth["flank_grad_right"]
+    # flank L/R may swap with trace direction — compare the sorted pair
+    got = sorted([r.flank_l, r.flank_r])
+    want = sorted([fl_t, fr_t])
+    for g, w, nm in zip(got, want, ("flank_lo", "flank_hi")):
+        if not _rel_ok(g, w, 0.15):
+            fails.append(f"ridge_spine: {nm} {g:.3f} vs {w:.3f}")
+    # arc-uniform hw median (knot-value medians aren't comparable across
+    # different knot placements — same rule as the valley checks)
+    from .profiles import profile_sample
+    uu = np.linspace(0.05, 0.95, 61)
+    hw_t = float(np.median(profile_sample(
+        [tuple(k) for k in truth["crest_halfwidth"]["knots"]], uu)))
+    if not _rel_ok(r.crest_hw_med, hw_t, 0.20, 3.0):
+        fails.append(f"ridge_spine: crest hw {r.crest_hw_med:.1f} "
+                     f"vs arc-median {hw_t:.1f}")
+    # crest_z0_m in the config is the UNTAPERED s=0 reference; the rendered
+    # crest is emphasis-tapered + falling. Internal-consistency check
+    # instead: recorded crest_z0 vs the rendered maximum near the trimmed
+    # high end.
+    from .frame import bilinear_tif
+    zline = bilinear_tif(nat, r.centerline[:, 0], r.centerline[:, 1], cell)
+    zmax = float(np.nanmax(zline))
+    if abs(r.crest_z0 - zmax) > 2.0:
+        fails.append(f"ridge_spine: crest_z0 {r.crest_z0:.1f} vs rendered "
+                     f"max {zmax:.1f}")
+    if not (8.0 <= r.prominence_med <= 60.0):
+        fails.append(f"ridge_spine: prominence {r.prominence_med:.1f} "
+                     "outside sane band")
+    if r.geomorphon_frac < 0.6:
+        fails.append(f"ridge_spine: geomorphon confirm {r.geomorphon_frac}")
+    if verbose:
+        ok = "PASS" if not fails else "FAIL"
+        print(f"[{ok}] ridge_spine: flanks {r.flank_l:.3f}/{r.flank_r:.3f} "
+              f"(truth {fl_t:.3f}/{fr_t:.3f}), hw {r.crest_hw_med:.1f} vs "
+              f"{hw_t:.1f}, crest_z0 {r.crest_z0:.1f} vs "
+              f"{truth['crest_z0_m']:.1f}, geomorph {r.geomorphon_frac}")
+        for fmsg in fails:
+            print("   ", fmsg)
+    return fails
+
+
 def run(names: list[str] | None = None) -> int:
     os.makedirs(SYNTH, exist_ok=True)
     truth = _render_presets()
     fails = []
     for name in names or VALLEY_PRESETS:
         fails += check_preset(name, truth[name])
+    if not names or "ridge_spine" in (names or []):
+        fails += check_ridge_preset()
     print(f"synthcheck: {'PASS' if not fails else f'{len(fails)} failures'}")
     return 0 if not fails else 1

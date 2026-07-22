@@ -77,12 +77,12 @@ bowl:
   boundary_max_pts: 96
   n_rays: 72
 
-ridge:                          # evidence-only in v1 (no config emission)
-  tpi_radius_m: 200.0
-  tpi_thresh_sigma: 0.7
-  elong_min: 3.0
-  min_len_m: 300.0
-  min_prominence_m: 4.0
+ridgefit:                       # inverted-surface valley machinery + geomorphons
+  lookup_m: 500.0               # geomorphon scale (frozen by geopilot sweep)
+  flat_deg: 1.0
+  confirm_frac: 0.6             # within-trimmed-run confirmation floor
+  confirm_radius_m: 30.0
+  min_len_m: 200.0              # trimmed confirmed run must be a real ridge
 
 tilt:
   margin_bonus: 2.0            # exterior-preferred (vs Stage-1's 1.0)
