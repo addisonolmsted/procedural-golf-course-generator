@@ -170,13 +170,34 @@ def _trace_upstream(flow: Flow, outlet_lin: int, min_area: float,
             # straight through confluences), accumulation second — never CSR
             # index order. Continuity outranks area because in-window basins
             # mislead when the true trunk enters the window truncated.
-            keyed = []
-            for c in cand:
-                v = lookahead(int(c))
-                cos = float(v @ u) if v is not None else -2.0
-                keyed.append((round(cos, 1),
-                              float(flow.area_m2.ravel()[c]), int(c)))
-            best = max(keyed)[2]
+            def keyed_pick(pool):
+                cos_of = {}
+                for c in pool:
+                    v = lookahead(int(c))
+                    cos_of[int(c)] = float(v @ u) if v is not None else -2.0
+                # a HUGELY smaller donor (junction-tangle rill) may only
+                # compete on continuity when its direction advantage is
+                # DECISIVE — a 0.1-cos edge must not beat a 40x area ratio
+                amax_p = max(float(flow.area_m2.ravel()[c]) for c in pool)
+                big_cos = max(cos_of[int(c)] for c in pool
+                              if flow.area_m2.ravel()[c] >= amax_p / 25.0)
+                keyed = []
+                for c in pool:
+                    a_c = float(flow.area_m2.ravel()[c])
+                    if a_c < amax_p / 25.0 \
+                            and cos_of[int(c)] < big_cos + 0.35:
+                        continue
+                    keyed.append((round(cos_of[int(c)], 1), a_c, int(c)))
+                return max(keyed)[2]
+
+            best = keyed_pick(cand)
+            # never TERMINATE the trace on a sub-threshold pick while a
+            # continuable candidate exists — junction tangles offer
+            # straight-looking rills, and choosing one cuts the river in two
+            if flow.area_m2.ravel()[best] < min_area:
+                big = cand[flow.area_m2.ravel()[cand] >= min_area]
+                if big.size:
+                    best = keyed_pick(big)
         else:
             best = int(dn[np.argmax(areas)])
         a = float(flow.area_m2.ravel()[best])

@@ -141,6 +141,35 @@ def check_preset(name: str, truth: dict, verbose: bool = True) -> list[str]:
             fails.append(f"{name}: floor line@s_med {line_at:.2f} vs measured "
                          f"{float(np.median(zk)):.2f}")
 
+    # ---- meander recovery (Meander-path trunks only) ----
+    if "Meander" in trunk_truth["path"]:
+        from .meanderfit import decompose
+        spec = trunk_truth["path"]["Meander"]
+        lam_truth = spec["wavelength_mult"] * spec["width_m"]
+        # top width from the trunk's ok crossfits (the shared W basis)
+        oks = [cf for cf in trunk.crossfits if cf.ok]
+        if oks:
+            W = float(np.median([cf.hw + cf.inc / max(min(cf.ml, cf.mr),
+                                                      0.05) + cf.r
+                                 for cf in oks]))
+            mf = decompose(trunk.centerline, W, cfg)
+            if mf is None or not np.isfinite(mf.wavelength_m):
+                if spec["intensity"] > 0.2:
+                    fails.append(f"{name}: meander wavelength unmeasurable "
+                                 f"(intensity {spec['intensity']})")
+            else:
+                if not _rel_ok(mf.wavelength_m, lam_truth, 0.25):
+                    fails.append(f"{name}: meander wavelength "
+                                 f"{mf.wavelength_m:.0f} vs {lam_truth:.0f}")
+                if spec["intensity"] > 0.2 and mf.sinuosity < 1.01:
+                    fails.append(f"{name}: sinuosity {mf.sinuosity} too "
+                                 "straight for authored meander")
+                if verbose:
+                    print(f"      meander: lambda {mf.wavelength_m:.0f} vs "
+                          f"{lam_truth:.0f}, A {mf.amplitude_m:.1f} m, "
+                          f"sinuosity {mf.sinuosity}, intensity(W-basis) "
+                          f"{mf.intensity}")
+
     if verbose:
         ok = "PASS" if not fails else "FAIL"
         print(f"[{ok}] {name}: walls {got['wall_grad_left']:.3f}/"

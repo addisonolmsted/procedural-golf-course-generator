@@ -79,11 +79,15 @@ def _top_width(crossfits: list[V.CrossFit], default: float = 40.0) -> float:
 
 def extract_valleys(nat_nan: np.ndarray, valid: np.ndarray,
                     masks: dict[str, np.ndarray], cell: float,
-                    osm_lines: list[np.ndarray], cfg: dict
+                    osm_lines: list[np.ndarray], cfg: dict,
+                    network: N.Network | None = None
                     ) -> tuple[list[BranchResult], N.Network | None]:
+    """network: an externally supplied truth network (NHD) skips D8 tracing;
+    everything downstream (smoothing, transects, fits) is identical."""
     ncfg, ccfg, tcfg, vcfg = (cfg["network"], cfg["centerline"],
                               cfg["transects"], cfg["valleyfit"])
-    net = N.extract_network(nat_nan, valid, cell, osm_lines, ncfg)
+    net = network if network is not None \
+        else N.extract_network(nat_nan, valid, cell, osm_lines, ncfg)
     if net is None:
         return [], None
     h, w = nat_nan.shape
@@ -110,10 +114,35 @@ def extract_valleys(nat_nan: np.ndarray, valid: np.ndarray,
             moved = st.xy + st.normal * off[:, None]
             cls[i] = N.smooth_centerline(moved, ccfg)
 
+    # BRAID SUPPRESSION: a wide flat floor hosts several D8 threads; the
+    # extra threads fit the SAME valley (hw ~ the larger branch's hw) while
+    # running inside its top width — phantom duplicates whose foreign
+    # corridors would annihilate the real branch's stations. Drop them.
+    from . import profiles as P
+    braid = set()
+    order_by_w = sorted(range(len(cls)), key=lambda i: -widths[i])
+    for i in range(len(cls)):
+        for j in order_by_w:
+            if j == i or widths[j] <= widths[i] or j in braid:
+                continue
+            if abs(hw_provs[i] - hw_provs[j]) > 0.4 * hw_provs[j]:
+                continue
+            _u, dist, _s, _t = P.polyline_project(
+                cls[j], cls[i][::4, 0], cls[i][::4, 1])
+            if np.median(dist) < widths[j]:
+                braid.add(i)
+                break
+    if braid:
+        # re-parent children of dropped braids to the braid's parent
+        for b in net.branches:
+            while b.parent is not None and b.parent in braid:
+                b.parent = net.branches[b.parent].parent
+    active = [i for i in range(len(cls)) if i not in braid]
+
     # junction points: each tributary's mouth on its parent
     junctions_of: dict[int, list] = {i: [] for i in range(len(net.branches))}
     for i, b in enumerate(net.branches):
-        if b.parent is None:
+        if b.parent is None or i in braid:
             continue
         mouth = cls[i][-1]
         pad = max(tcfg["junction_pad_m"], widths[b.parent] / 2 + widths[i] / 2)
@@ -122,8 +151,13 @@ def extract_valleys(nat_nan: np.ndarray, valid: np.ndarray,
 
     results: list[BranchResult] = []
     for i, b in enumerate(net.branches):
-        foreign = [(cls[j], widths[j]) for j in range(len(cls)) if j != i]
-        halflen = float(np.clip(1.4 * widths[i], tcfg["halflen_m"],
+        if i in braid:
+            continue
+        # foreign corridor = the OTHER branch's FLOOR halfwidth (+pad in
+        # keep_mask) — its walls/upland are legitimately shared terrain that
+        # this branch's transects must be allowed to cross
+        foreign = [(cls[j], hw_provs[j]) for j in active if j != i]
+        halflen = float(np.clip(2.0 * widths[i], tcfg["halflen_m"],
                                 tcfg["halflen_max_m"]))
         search = max(tcfg["recenter_search_m"],
                      tcfg["search_frac_hw"] * hw_provs[i])
