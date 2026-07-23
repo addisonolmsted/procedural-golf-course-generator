@@ -312,7 +312,8 @@ def _lin_rc(flow: Flow, lins: np.ndarray) -> np.ndarray:
 
 
 def _has_kept_child(b: Branch, branches: list[Branch], keep: set) -> bool:
-    i = branches.index(b)
+    # NOTE: no list.index/== here — Branch holds numpy arrays and dataclass
+    # equality over them is ambiguous
     return any(id(c) in keep for c in branches
                if c.parent is not None and branches[c.parent] is b)
 

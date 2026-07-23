@@ -22,6 +22,7 @@ SYNTH = os.path.join(bridge.OUT, "synth")
 CELL = 2.0
 VALLEY_PRESETS = ["barranca", "floodplain", "canyon_straight",
                   "river_confluence"]
+EXTRA_PRESETS = ["bluff_river", "bowl_spillway", "bowl_lake"]
 
 
 def _render_presets() -> dict[str, dict]:
@@ -31,7 +32,7 @@ def _render_presets() -> dict[str, dict]:
                    cwd=REPO, check=True, capture_output=True, text=True)
     items = []
     truth = {}
-    for name in VALLEY_PRESETS:
+    for name in VALLEY_PRESETS + EXTRA_PRESETS:
         cfg_path = os.path.join(pdir, f"{name}.json")
         with open(cfg_path) as f:
             truth[name] = json.load(f)
@@ -252,13 +253,101 @@ def check_ridge_preset(verbose: bool = True) -> list[str]:
     return fails
 
 
+def _load_grid(name: str):
+    from dtm_metrics.sandbox.campaign import read_hg01
+    h, cell = read_hg01(os.path.join(SYNTH, f"{name}.hg01"))
+    nat = h[::-1]
+    return nat, np.ones(nat.shape, bool), cell
+
+
+def check_bluff_preset(truth: dict, verbose: bool = True) -> list[str]:
+    from .blufffit import detect_and_fit
+    nat, valid, cell = _load_grid("bluff_river")
+    cfg = bridge.load_config()
+    # the river at the toe must be excluded as a valley wall, so extract it
+    res, _net = extract_valleys(nat, valid, {"valid": valid.astype(np.uint8)},
+                                cell, [], cfg)
+    corridors = [(r.centerline, r.top_width_m) for r in res
+                 if r.valley is not None]
+    recs = detect_and_fit(nat, valid, cell, cfg, valley_corridors=corridors)
+    tb = truth["bluffs"][0]
+    fails: list[str] = []
+    if not recs:
+        return ["bluff_river: no bluff detected"]
+    r = max(recs, key=lambda x: x.length_m)
+    if not _rel_ok(r.height_m, tb["height_m"], 0.12, 2.0):
+        fails.append(f"bluff_river: height {r.height_m} vs {tb['height_m']}")
+    if not _rel_ok(r.face_grad, tb["face_grad"], 0.20):
+        fails.append(f"bluff_river: face {r.face_grad} vs {tb['face_grad']}")
+    # side self-consistency (polyline direction is arbitrary): the record's
+    # raised side must actually be higher on the grid
+    from .frame import bilinear_tif
+    mid = r.centerline[len(r.centerline) // 2]
+    t = r.centerline[len(r.centerline) // 2 + 1] - \
+        r.centerline[len(r.centerline) // 2 - 1]
+    t = t / max(np.hypot(*t), 1e-9)
+    nrm = np.array([-t[1], t[0]])
+    zl = bilinear_tif(nat, [mid[0] + nrm[0] * 60], [mid[1] + nrm[1] * 60],
+                      cell)[0]
+    zr = bilinear_tif(nat, [mid[0] - nrm[0] * 60], [mid[1] - nrm[1] * 60],
+                      cell)[0]
+    if bool(zl > zr) != r.raise_left:
+        fails.append("bluff_river: raised-side record inconsistent with grid")
+    if verbose:
+        ok = "PASS" if not fails else "FAIL"
+        print(f"[{ok}] bluff_river: h {r.height_m} vs {tb['height_m']}, "
+              f"face {r.face_grad} vs {tb['face_grad']}, len {r.length_m}, "
+              f"n_bluffs {len(recs)}")
+        for f_ in fails:
+            print("   ", f_)
+    return fails
+
+
+def check_bowl_presets(truth: dict, verbose: bool = True) -> list[str]:
+    from .bowlfit import detect_and_fit
+    cfg = bridge.load_config()
+    fails: list[str] = []
+    for name in ("bowl_spillway", "bowl_lake"):
+        nat, valid, cell = _load_grid(name)
+        tb = truth[name]["bowls"][0]
+        recs = detect_and_fit(nat, valid, cell, cfg)
+        if not recs:
+            fails.append(f"{name}: no bowl detected")
+            continue
+        r = max(recs, key=lambda x: x.radius_m)
+        if not _rel_ok(r.depth_m, tb["depth_m"], 0.15, 1.5):
+            fails.append(f"{name}: depth {r.depth_m} vs {tb['depth_m']}")
+        rad_t = tb["boundary"]["Blob"]["radius_m"]
+        if not _rel_ok(r.radius_m, rad_t, 0.15, 30.0):
+            fails.append(f"{name}: radius {r.radius_m} vs {rad_t}")
+        # no water mask on synthetic renders -> both classify spillway;
+        # lake classification is exercised on real tiles (mapped water)
+        if name == "bowl_spillway" and r.is_lake:
+            fails.append(f"{name}: classified lake without water")
+        if verbose:
+            ok = "PASS" if not any(f_.startswith(name) for f_ in fails) \
+                else "FAIL"
+            print(f"[{ok}] {name}: depth {r.depth_m} vs {tb['depth_m']}, "
+                  f"radius {r.radius_m} vs {rad_t}, "
+                  f"outlet {'lake' if r.is_lake else 'spillway'}, "
+                  f"wobble {r.wobble}")
+    for f_ in fails:
+        print("   ", f_)
+    return fails
+
+
 def run(names: list[str] | None = None) -> int:
     os.makedirs(SYNTH, exist_ok=True)
     truth = _render_presets()
     fails = []
     for name in names or VALLEY_PRESETS:
-        fails += check_preset(name, truth[name])
+        if name in VALLEY_PRESETS:
+            fails += check_preset(name, truth[name])
     if not names or "ridge_spine" in (names or []):
         fails += check_ridge_preset()
+    if not names or "bluff_river" in (names or []):
+        fails += check_bluff_preset(truth["bluff_river"])
+    if not names or any(n.startswith("bowl") for n in (names or [])):
+        fails += check_bowl_presets(truth)
     print(f"synthcheck: {'PASS' if not fails else f'{len(fails)} failures'}")
     return 0 if not fails else 1
