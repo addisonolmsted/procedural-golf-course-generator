@@ -94,10 +94,13 @@ f2:
 f3:
   n_select: 200
   region_cap_factor: 1.8
-  max_inpaint_frac: 0.10   # river/floodplain analogs intrinsically excise ~8-12% water
+  max_inpaint_frac: 0.15   # clean-subset bar (Stage-0T contamination triage: developed/flat tiles gated out)
   max_water_fraction: 0.25
   max_nodata_frac: 0.01
   qa_band_z_max: 3.0                   # s2_cw_bp_4_8 z vs courses (veg noise)
 
 pilot:
   n_ingest: 8
+
+qa:
+  max_px: 1600

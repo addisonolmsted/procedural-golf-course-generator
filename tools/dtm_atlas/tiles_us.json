@@ -10,7 +10,7 @@
   "label": "r_stanford analog of stanford",
   "region": "r_stanford",
   "relaxed_tier": true,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -25,7 +25,7 @@
   "label": "r_stanford analog of sanfrancisco",
   "region": "r_stanford",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -40,7 +40,7 @@
   "label": "r_stanford analog of stanford",
   "region": "r_stanford",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -70,7 +70,7 @@
   "label": "r_laketahoe analog of laketahoe",
   "region": "r_laketahoe",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -100,7 +100,7 @@
   "label": "r_belair analog of losangeles",
   "region": "r_belair",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -115,7 +115,7 @@
   "label": "r_belair analog of belair",
   "region": "r_belair",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -190,7 +190,7 @@
   "label": "r_belair analog of brookside",
   "region": "r_belair",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -325,7 +325,7 @@
   "label": "r_colonial analog of colonial",
   "region": "r_colonial",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -340,7 +340,7 @@
   "label": "r_colonial analog of prestonwood",
   "region": "r_colonial",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -370,7 +370,7 @@
   "label": "r_colonial analog of prestonwood",
   "region": "r_colonial",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -415,7 +415,7 @@
   "label": "r_southernhills analog of southernhills",
   "region": "r_southernhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -430,7 +430,7 @@
   "label": "r_houstonoaks analog of houstonoaks",
   "region": "r_houstonoaks",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -490,7 +490,7 @@
   "label": "r_southernhills analog of southernhills",
   "region": "r_southernhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -580,7 +580,7 @@
   "label": "r_interlachen analog of tpctwincities",
   "region": "r_interlachen",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -595,7 +595,7 @@
   "label": "r_interlachen analog of tpctwincities",
   "region": "r_interlachen",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -610,7 +610,7 @@
   "label": "r_interlachen analog of tpctwincities",
   "region": "r_interlachen",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -625,7 +625,7 @@
   "label": "r_interlachen analog of windsong",
   "region": "r_interlachen",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -640,7 +640,7 @@
   "label": "r_interlachen analog of interlachen",
   "region": "r_interlachen",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -700,7 +700,7 @@
   "label": "r_bellerive analog of bellerive",
   "region": "r_bellerive",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -865,7 +865,7 @@
   "label": "r_blackwolf analog of erin",
   "region": "r_blackwolf",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -880,7 +880,7 @@
   "label": "r_butlernational analog of olympia",
   "region": "r_butlernational",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -895,7 +895,7 @@
   "label": "r_butlernational analog of olympia",
   "region": "r_butlernational",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -970,7 +970,7 @@
   "label": "r_nashville analog of nashville",
   "region": "r_nashville",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1000,7 +1000,7 @@
   "label": "r_butlernational analog of chicagoac",
   "region": "r_butlernational",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1045,7 +1045,7 @@
   "label": "r_butlernational analog of olympia",
   "region": "r_butlernational",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1075,7 +1075,7 @@
   "label": "r_blackwolf analog of erin",
   "region": "r_blackwolf",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1120,7 +1120,7 @@
   "label": "r_blackwolf analog of erin",
   "region": "r_blackwolf",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1165,7 +1165,7 @@
   "label": "r_nashville analog of nashville",
   "region": "r_nashville",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1210,7 +1210,7 @@
   "label": "r_nashville analog of nashville",
   "region": "r_nashville",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1255,7 +1255,7 @@
   "label": "r_victoria analog of victoria",
   "region": "r_victoria",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1315,7 +1315,7 @@
   "label": "r_valhalla analog of valhalla",
   "region": "r_valhalla",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1330,7 +1330,7 @@
   "label": "r_honors analog of honors",
   "region": "r_honors",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1345,7 +1345,7 @@
   "label": "r_grandrapids analog of grandrapids",
   "region": "r_grandrapids",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1375,7 +1375,7 @@
   "label": "r_sycamore analog of sycamore",
   "region": "r_sycamore",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1390,7 +1390,7 @@
   "label": "r_grandrapids analog of grandrapids",
   "region": "r_grandrapids",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1405,7 +1405,7 @@
   "label": "r_grandrapids analog of grandrapids",
   "region": "r_grandrapids",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1435,7 +1435,7 @@
   "label": "r_sycamore analog of sycamore",
   "region": "r_sycamore",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1465,7 +1465,7 @@
   "label": "r_atlanta analog of eastlake",
   "region": "r_atlanta",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1540,7 +1540,7 @@
   "label": "r_camargo analog of ncr",
   "region": "r_camargo",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1555,7 +1555,7 @@
   "label": "r_camargo analog of ncr",
   "region": "r_camargo",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1570,7 +1570,7 @@
   "label": "r_camargo analog of moraine",
   "region": "r_camargo",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1585,7 +1585,7 @@
   "label": "r_atlanta analog of druidhills",
   "region": "r_atlanta",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1600,7 +1600,7 @@
   "label": "r_camargo analog of ncr",
   "region": "r_camargo",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1615,7 +1615,7 @@
   "label": "r_atlanta analog of druidhills",
   "region": "r_atlanta",
   "relaxed_tier": true,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1630,7 +1630,7 @@
   "label": "r_atlanta analog of druidhills",
   "region": "r_atlanta",
   "relaxed_tier": true,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1660,7 +1660,7 @@
   "label": "r_bartonhills analog of meadowbrookmi",
   "region": "r_bartonhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1675,7 +1675,7 @@
   "label": "r_bartonhills analog of meadowbrookmi",
   "region": "r_bartonhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1690,7 +1690,7 @@
   "label": "r_bartonhills analog of meadowbrookmi",
   "region": "r_bartonhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1720,7 +1720,7 @@
   "label": "r_muirfieldvillage analog of muirfieldvillage",
   "region": "r_muirfieldvillage",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1735,7 +1735,7 @@
   "label": "r_bartonhills analog of detroit",
   "region": "r_bartonhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1750,7 +1750,7 @@
   "label": "r_bartonhills analog of meadowbrookmi",
   "region": "r_bartonhills",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1765,7 +1765,7 @@
   "label": "r_augusta analog of sagevalley",
   "region": "r_augusta",
   "relaxed_tier": true,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1795,7 +1795,7 @@
   "label": "r_streamsong analog of bayhill",
   "region": "r_streamsong",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1840,7 +1840,7 @@
   "label": "r_canterbury analog of canterbury",
   "region": "r_canterbury",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1870,7 +1870,7 @@
   "label": "r_sawgrass analog of sawgrass",
   "region": "r_sawgrass",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1945,7 +1945,7 @@
   "label": "r_wadehampton analog of wadehampton",
   "region": "r_wadehampton",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1975,7 +1975,7 @@
   "label": "r_sawgrass analog of sawgrass",
   "region": "r_sawgrass",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -1990,7 +1990,7 @@
   "label": "r_canterbury analog of canterbury",
   "region": "r_canterbury",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2005,7 +2005,7 @@
   "label": "r_calusa analog of calusa",
   "region": "r_calusa",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2020,7 +2020,7 @@
   "label": "r_calusa analog of calusa",
   "region": "r_calusa",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2035,7 +2035,7 @@
   "label": "r_augusta analog of sagevalley",
   "region": "r_augusta",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2050,7 +2050,7 @@
   "label": "r_pete analog of pete",
   "region": "r_pete",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2095,7 +2095,7 @@
   "label": "r_pete analog of pete",
   "region": "r_pete",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2110,7 +2110,7 @@
   "label": "r_pete analog of pete",
   "region": "r_pete",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2155,7 +2155,7 @@
   "label": "r_greenbrier analog of greenbrier",
   "region": "r_greenbrier",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2170,7 +2170,7 @@
   "label": "r_oakmont analog of sunnehanna",
   "region": "r_oakmont",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2215,7 +2215,7 @@
   "label": "r_oakmont analog of sunnehanna",
   "region": "r_oakmont",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2245,7 +2245,7 @@
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2260,7 +2260,7 @@
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2275,7 +2275,7 @@
   "label": "r_pinehurst2 analog of pinehurst2",
   "region": "r_pinehurst2",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2290,7 +2290,7 @@
   "label": "r_oakmont analog of sunnehanna",
   "region": "r_oakmont",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2320,7 +2320,7 @@
   "label": "r_buffalocc analog of oakhill",
   "region": "r_buffalocc",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2335,7 +2335,7 @@
   "label": "r_buffalocc analog of oakhill",
   "region": "r_buffalocc",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2350,7 +2350,7 @@
   "label": "r_buffalocc analog of oakhill",
   "region": "r_buffalocc",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2365,7 +2365,7 @@
   "label": "r_congressional analog of congressional",
   "region": "r_congressional",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2380,7 +2380,7 @@
   "label": "r_congressional analog of congressional",
   "region": "r_congressional",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2395,7 +2395,7 @@
   "label": "r_congressional analog of congressional",
   "region": "r_congressional",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2425,7 +2425,7 @@
   "label": "r_congressional analog of congressional",
   "region": "r_congressional",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2455,7 +2455,7 @@
   "label": "r_kinloch analog of kinloch",
   "region": "r_kinloch",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2470,7 +2470,7 @@
   "label": "r_kinloch analog of kinloch",
   "region": "r_kinloch",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2500,7 +2500,7 @@
   "label": "r_kinloch analog of kinloch",
   "region": "r_kinloch",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2530,7 +2530,7 @@
   "label": "r_lancaster analog of wilmington",
   "region": "r_lancaster",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2545,7 +2545,7 @@
   "label": "r_lancaster analog of wilmington",
   "region": "r_lancaster",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2575,7 +2575,7 @@
   "label": "r_lancaster analog of wilmington",
   "region": "r_lancaster",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2590,7 +2590,7 @@
   "label": "r_lancaster analog of wilmington",
   "region": "r_lancaster",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2605,7 +2605,7 @@
   "label": "r_lancaster analog of wilmington",
   "region": "r_lancaster",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2665,7 +2665,7 @@
   "label": "r_hamiltonfarm analog of piping",
   "region": "r_hamiltonfarm",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2695,7 +2695,7 @@
   "label": "r_hamiltonfarm analog of merion",
   "region": "r_hamiltonfarm",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2785,7 +2785,7 @@
   "label": "r_hamiltonfarm analog of wingedfoot",
   "region": "r_hamiltonfarm",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2845,7 +2845,7 @@
   "label": "r_hamiltonfarm analog of piping",
   "region": "r_hamiltonfarm",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2875,7 +2875,7 @@
   "label": "r_hamiltonfarm analog of westchester",
   "region": "r_hamiltonfarm",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2980,7 +2980,7 @@
   "label": "r_worcester analog of tpcboston",
   "region": "r_worcester",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
@@ -2995,7 +2995,7 @@
   "label": "r_worcester analog of salem",
   "region": "r_worcester",
   "relaxed_tier": false,
-  "selected": false,
+  "selected": true,
   "side_m": 3000.0,
   "tile_scout": "0.1.0"
  },
