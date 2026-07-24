@@ -21,6 +21,43 @@ evidence here. Do not start stage N+1 before stage N is signed off.
   pin + xtask). The Stage-1 sandbox campaigns ran on the 2.5 km presets —
   recorded results stand (they measure parameter structure, not the box).
 
+## Stage 0T — Natural-Tile Analog Dataset — AT GATE (clean subset shipped)
+
+Pivot of record (user direction): the golf store is too contaminated for
+calibration (median ~51% inpainted); ~200 natural 3 km × 3 km tiles matching
+the courses' terrain character replace it as the calibration store; courses
+remain the matching TARGET + validation. Stage-1 parameter-tuning conclusions
+are ROLLED BACK pending re-run against tiles. Tools: `tools/tile_scout`
+(campaign) + `dtm_atlas --dataset tiles` (ingestion, store_tiles).
+
+Funnel evidence: soft archetypes (GMM over course S1; barranca/sandhills/
+mountain/flat families legible) → 50 disc-cover regions → F0 60 m screen
+(831,348 lattice candidates → 1,846) → F1 batched OSM development screen
+(265 strict + relaxed ladder) → F2 10 m full-S1 match (206 finalists;
+fetched-vs-derived drift median |Δz| 0.20, drainage/aniso down-weighted) →
+empirical 1 m probes (index service mid-outage) → 205 indexed/ingested,
+0 failures; NHD flowline+VAA+cliff caches 205/205; store frozen
+2269eba669dc8e69; 2 m metrics extracted (205×83).
+
+| Gate item | Evidence | Status |
+|---|---|---|
+| ~200 tiles stored + frozen, usable | 205 stored; **93 pass the 0.15-inpaint cleanliness bar** (see triage) | ◐ |
+| Contamination bounded | clean subset p50 well under the bar; store-wide p50 0.167 (fleet let in developed/flat tiles — funnel was blind to building AREA and 2 m flatness) | ◐ |
+| Screening validity | pilot 10 m-vs-2 m rank Spearman 0.943 (gate 0.8) | ☑ |
+| Coverage of the 135 courses | p50 nearest-analog 3.08 / p90 4.75 vs course-NN median 2.75; coverage@r_cover 37% — mid-distribution covered, extreme archetypes (belair 8.81, torreypines 7.53 — SoCal regions yielded developed tiles) under-served | ◐ |
+| Distributional match | energy 0.393 vs course split-half 0.172 (2.3×; bar 2×) | ◐ |
+| Galleries + index | `tile_scout/out/reports/match_gallery/index.html` (91 side-by-side course↔analog pairs), `dtm_atlas/out/qa_tiles/index.html` (205 tile pages), tiles_us.{txt,json} committed | ☑ |
+
+**Decision of record (user): ship the clean subset now.** 93 tiles across 36
+regions are the interim calibration store — every one far cleaner than the
+course median. Recorded follow-up for the top-up to ~200: add building
+FOOTPRINT-AREA and 2 m flatness gates to the screener, re-rank the 1,846 F0
+survivors, target the under-covered courses (SoCal barranca archetype
+first). Landform extraction (Stage 3T) proceeds on ALL 205 — NHD-truth
+transect fitting is mask-aware and tolerates moderate inpaint; the clean 93
+gate S2/noise calibration only. canopy_smooth_frac (p50 0.41) recorded per
+tile as the S2-texture comparability advisory.
+
 ## Stage 0 — Data Foundation & Naturalization — AT GATE (user review pending)
 
 Tool: `tools/dtm_atlas/` (`python3 -m dtm_atlas <cmd>`; see its README).
