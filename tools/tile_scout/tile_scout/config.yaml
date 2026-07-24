@@ -104,3 +104,17 @@ pilot:
 
 qa:
   max_px: 1600
+
+topup:                               # screener v2 top-up campaign
+  max_building_area_m2: 2000.0       # ~a barn + outbuilding; warehouses OUT
+  max_paved_len_m: 250.0             # essentially road-free (tracks/paths OK)
+  protected_bonus: 1.0               # subtracted from f2_dist x protected_frac
+  courtesy_sleep_s: 1.0
+  starved_dist: 3.5                  # courses with best-analog worse than this
+  radius_ladder_km: [200.0, 300.0]   # extended discs for starved courses
+  deepen_rank_max: 40                # per-region f0 rank window to re-mine
+  linear_hp_sigma_m: 30.0            # unmapped-road detector: highpass scale
+  linear_abs_m: 0.35                 #   |residual| threshold
+  linear_min_len_m: 400.0            #   min linear-component length
+  linear_elong_min: 8.0
+  n_new_max: 120                     # ingest cap for the top-up

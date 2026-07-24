@@ -23,7 +23,16 @@ def main() -> int:
     if cmd == "geopilot":
         from . import geopilot
         return geopilot.run()
-    if cmd in ("extract", "qa", "roundtrip", "report"):
+    if cmd == "extract":
+        import argparse
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--workers", type=int, default=6)
+        ap.add_argument("--course", default="")
+        ns = ap.parse_args(rest)
+        keys = [k for k in ns.course.split(",") if k] or None
+        from . import extract
+        return extract.run(keys, ns.workers)
+    if cmd in ("qa", "roundtrip", "report"):
         print(f"{cmd}: not implemented yet (arrives in a later Stage-3 commit)")
         return 2
     print(f"unknown command: {cmd}\n{__doc__}")
