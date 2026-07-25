@@ -146,6 +146,40 @@ fn polyline_crosses(poly: &[Vec2], other: &[Vec2], ignore_near: Option<(Vec2, f6
     false
 }
 
+/// Tightest stay-incised fall cap along a channel control polyline: the
+/// accordant floor rises from `f_junction` (at the polyline END) at the fall
+/// gradient, and at EVERY station — control points and segment midpoints,
+/// not just the head, because a bowed path dips across tilt contours — the
+/// tilt-plane terrain must stay `margin` above the floor or the channel
+/// daylights there. Near-junction stations (< 50 m of arc) are excluded:
+/// incision there is the trunk's own.
+fn stay_incised_cap(
+    ctrl: &[Vec2],
+    f_junction: f64,
+    margin: f64,
+    tilt_z: impl Fn(Vec2) -> f64,
+) -> f64 {
+    let mut prefix = vec![0.0f64];
+    for w in ctrl.windows(2) {
+        prefix.push(prefix.last().unwrap() + w[0].distance(w[1]));
+    }
+    let total = *prefix.last().unwrap();
+    let mut cap = f64::INFINITY;
+    let mut consider = |p: Vec2, arc_from_head: f64| {
+        let arc_j = total - arc_from_head;
+        if arc_j > 50.0 {
+            cap = cap.min((tilt_z(p) - f_junction - margin) / arc_j);
+        }
+    };
+    for k in 0..ctrl.len() {
+        consider(ctrl[k], prefix[k]);
+        if k + 1 < ctrl.len() {
+            consider(ctrl[k].lerp(ctrl[k + 1], 0.5), 0.5 * (prefix[k] + prefix[k + 1]));
+        }
+    }
+    cap
+}
+
 /// One correlated cross-section draw (the copula ties incision, halfwidth,
 /// wall gradient, asymmetry and floor rounding together per valley).
 struct CrossSection {
@@ -402,11 +436,19 @@ pub fn sample_macro(
         .incision
         .eval(area_at(0.0), cs.inc_u, 1.0)
         .clamp((inc_med / 3.0).max(1.5), (inc_med * 3.0).min(60.0));
+    // couple the channel slope to the regional slope so the trunk stays
+    // incised end to end: incision downstream = inc_entry + (fall − g_along)
+    // · arc must hold ≥ 1.5 m at the exit (fall and tilt are drawn from
+    // separate tables; in real equilibrium terrain they covary)
+    let g_along = (tilt_z(entry_p) - tilt_z(exit_p)) / trunk_len;
+    let fall_keep_incised = g_along - (inc_entry - 1.5) / trunk_len;
     let trunk_fall = block
         .hydraulic
         .fall_gradient
         .eval(area_at(0.5), fall_u, 1.0)
+        .max(fall_keep_incised)
         .clamp(MIN_FALL_GRADIENT, 0.05);
+    let trunk_floor_z0 = tilt_z(entry_p) - inc_entry;
     let trunk_hw = Profile::new(vec![
         (0.0, hw_at(area_at(0.0), cs.hw_u)),
         (0.5, hw_at(area_at(0.5), cs.hw_u)),
@@ -415,7 +457,7 @@ pub fn sample_macro(
     let trunk_hw_max = trunk_hw.knots.iter().map(|k| k.1).fold(0.0, f64::max);
     let trunk = Valley {
         path: trunk_path,
-        floor_z0_m: tilt_z(entry_p) - inc_entry,
+        floor_z0_m: trunk_floor_z0,
         fall_gradient: trunk_fall,
         floor_halfwidth: trunk_hw,
         wall_grad_left: wl,
@@ -484,6 +526,15 @@ pub fn sample_macro(
             ctrl = straight;
         }
 
+        // stay-incised cap: the accordant floor rises from the junction at
+        // the trib's fall gradient; every station of the path must remain
+        // below the terrain or the channel daylights mid-path
+        let f_junction = trunk_floor_z0 - trunk_fall * (plan.u_on_trunk * trunk_len);
+        let fall_cap = stay_incised_cap(&ctrl, f_junction, 1.5, &tilt_z);
+        if fall_cap < MIN_FALL_GRADIENT {
+            ctx.drops.push(format!("trib{i}: head below junction grade — dropped"));
+            continue;
+        }
         let mut xr = DetRng::new(seed, format!("lf4t/xsec/{}/v1", valleys.len()).as_bytes());
         let tcs = draw_cross_section(&ctx, &mut xr);
         let tfall_u = xr.next_f64();
@@ -493,7 +544,8 @@ pub fn sample_macro(
             .hydraulic
             .fall_gradient
             .eval(a_trib, tfall_u, 1.0)
-            .clamp(MIN_FALL_GRADIENT, 0.05);
+            .clamp(MIN_FALL_GRADIENT, 0.05)
+            .min(fall_cap);
         let idx = valleys.len();
         valleys.push(Valley {
             path: Path::Points(ctrl.clone()),
@@ -547,8 +599,13 @@ pub fn sample_macro(
                 };
                 polyline_crosses(&sub_ctrl, poly, ignore)
             });
+            // same stay-incised cap against the parent's rising floor
+            let f_j2 = f_junction + tfall * (0.55 * len_eff);
+            let fall_cap2 = stay_incised_cap(&sub_ctrl, f_j2, 1.5, &tilt_z);
             if sub_crosses {
                 ctx.drops.push(format!("trib{i}: depth-2 crosses a channel — dropped"));
+            } else if fall_cap2 < MIN_FALL_GRADIENT {
+                ctx.drops.push(format!("trib{i}: depth-2 head below grade — dropped"));
             } else if h2.distance(j2) >= 250.0 {
                 let mut x2 = DetRng::new(seed, format!("lf4t/xsec/{}/v1", valleys.len()).as_bytes());
                 let cs2 = draw_cross_section(&ctx, &mut x2);
@@ -563,7 +620,8 @@ pub fn sample_macro(
                         .hydraulic
                         .fall_gradient
                         .eval(a2, f2u, 1.0)
-                        .clamp(MIN_FALL_GRADIENT, 0.05),
+                        .clamp(MIN_FALL_GRADIENT, 0.05)
+                        .min(fall_cap2),
                     floor_halfwidth: Profile::new(vec![(0.0, 0.7 * hw2), (1.0, hw2)]),
                     wall_grad_left: l2w,
                     wall_grad_right: r2w,
@@ -830,14 +888,17 @@ pub fn sample_macro(
                 let cx = rng.range_f64(inset, EXTENT_M - inset);
                 let cy = rng.range_f64(inset, EXTENT_M - inset);
                 let c = Vec2::new(cx, cy);
-                let clear_v = radius + trunk_corridor.min(220.0) + 50.0;
+                // clearance uses the WOBBLED reach — a lobe extends up to
+                // radius·(1+wobble) and would pocket a channel floor
+                let r_reach = radius * (1.0 + wobble);
+                let clear_v = r_reach + trunk_corridor.min(220.0) + 50.0;
                 if dist_to_valleys(c) < clear_v {
                     continue;
                 }
                 let mut near_ridge = false;
                 for rc in &ridge_ctrls {
                     for p in rc {
-                        if p.distance(c) < radius + 60.0 {
+                        if p.distance(c) < r_reach + 60.0 {
                             near_ridge = true;
                             break;
                         }

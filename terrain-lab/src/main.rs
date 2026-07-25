@@ -13,10 +13,27 @@
 use eframe::egui;
 use golf_core::grid::Grid;
 use golf_landform::noiselab::{generate_noise, skeleton_fields, NoiseLabConfig, SkeletonFields};
-use golf_landform::{generate, preset_names, presets, MacroConfig, Outlet, Path};
+use golf_landform::{
+    generate, preset_names, presets, sample_macro, LandformPrior, MacroConfig, Outlet, Path,
+    SampleReport,
+};
 
 /// The terrain-v2 working box (presets are authored on the same square).
 const EXTENT_M: f64 = 3000.0;
+
+/// Noise-tab skeleton sentinel: use the CURRENT Landform-tab config (preset
+/// or sampled, including live slider edits) as the modulation skeleton.
+const SKEL_CURRENT: &str = "· current landform config";
+
+/// FNV over the config JSON — cache key for the live-config skeleton.
+fn cfg_fingerprint(cfg: &MacroConfig) -> u64 {
+    let mut h = 1469598103934665603u64;
+    for b in cfg.to_json().as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    h
+}
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -37,11 +54,42 @@ enum Tab {
     Noise,
 }
 
-/// Skeleton predictor fields cached per (preset, resolution).
+/// Skeleton predictor fields cached per (source, resolution[, config]).
 struct SkelCache {
     preset: String,
     res_m: f64,
+    /// Config fingerprint (only meaningful for the SKEL_CURRENT source).
+    cfg_fp: u64,
     fields: SkeletonFields,
+}
+
+/// Where the Landform tab's config comes from.
+#[derive(PartialEq, Clone, Copy)]
+enum Source {
+    Preset,
+    Sampled,
+}
+
+/// Stage-4T sampled-source state (seed scrubbing over the calibrated prior).
+struct Sampled {
+    prior: LandformPrior,
+    seed: u64,
+    /// None = drawn from the calibrated archetype weights.
+    archetype: Option<usize>,
+    tau: f64,
+    report: Option<SampleReport>,
+}
+
+impl Default for Sampled {
+    fn default() -> Self {
+        Sampled {
+            prior: LandformPrior::builtin(),
+            seed: 7,
+            archetype: None,
+            tau: 1.0,
+            report: None,
+        }
+    }
 }
 
 struct NoiseLab {
@@ -90,6 +138,8 @@ struct Lab {
     tab: Tab,
     cfg: MacroConfig,
     preset_name: String,
+    source: Source,
+    sampled: Sampled,
     noise: NoiseLab,
     fast: bool,
     contours: bool,
@@ -106,6 +156,8 @@ impl Default for Lab {
             tab: Tab::Landform,
             cfg,
             preset_name: name.to_string(),
+            source: Source::Preset,
+            sampled: Sampled::default(),
             noise: NoiseLab::default(),
             fast: true,
             contours: true,
@@ -161,20 +213,28 @@ impl Lab {
         self.tex = Some(ctx.load_texture("terrain", ci, egui::TextureOptions::LINEAR));
     }
 
-    /// Noise field on the working box; skeleton fields cached per (preset, res).
+    /// Noise field on the working box; skeleton fields cached per source/res
+    /// (the live-config source additionally keys on the config fingerprint,
+    /// so Landform-tab edits invalidate it).
     fn gen_noise(&mut self) -> Grid<f64> {
         let res = self.res_m();
         if let Some(name) = &self.noise.skeleton {
+            let fp = if name == SKEL_CURRENT { cfg_fingerprint(&self.cfg) } else { 0 };
             let stale = self
                 .noise
                 .cache
                 .as_ref()
-                .map_or(true, |c| c.preset != *name || c.res_m != res);
+                .map_or(true, |c| c.preset != *name || c.res_m != res || c.cfg_fp != fp);
             if stale {
-                let cfg = golf_landform::preset(name).expect("preset exists");
+                let cfg = if name == SKEL_CURRENT {
+                    self.cfg.clone()
+                } else {
+                    golf_landform::preset(name).expect("preset exists")
+                };
                 self.noise.cache = Some(SkelCache {
                     preset: name.clone(),
                     res_m: res,
+                    cfg_fp: fp,
                     fields: skeleton_fields(&cfg, res),
                 });
             }
@@ -260,22 +320,121 @@ fn overlay_contours(img: &mut image::RgbaImage, g: &Grid<f64>, step: f64) {
 }
 
 impl Lab {
+    /// Draw a fresh config from the prior into self.cfg (Sampled source).
+    fn resample(&mut self) {
+        let (cfg, rep) = sample_macro(
+            &self.sampled.prior,
+            self.sampled.seed,
+            self.sampled.archetype,
+            self.sampled.tau,
+        );
+        self.cfg = cfg;
+        self.sampled.report = Some(rep);
+    }
+
     fn landform_panel(&mut self, ui: &mut egui::Ui, dirty: &mut bool, ctx: &egui::Context) {
-        ui.label("Stage 2: landform primitives (no noise, no erosion)");
+        ui.label("Stage 2/4T: landform primitives (no noise, no erosion)");
         ui.separator();
 
-        ui.horizontal_wrapped(|ui| {
-            for name in preset_names() {
-                if ui
-                    .selectable_label(self.preset_name == name, name)
-                    .clicked()
-                {
-                    self.preset_name = name.to_string();
-                    self.cfg = golf_landform::preset(name).unwrap();
+        ui.horizontal(|ui| {
+            for (src, label) in [(Source::Preset, "presets"), (Source::Sampled, "sampled (4T)")] {
+                if ui.selectable_label(self.source == src, label).clicked() && self.source != src {
+                    self.source = src;
+                    match self.source {
+                        Source::Preset => {
+                            self.cfg = golf_landform::preset(&self.preset_name).unwrap();
+                        }
+                        Source::Sampled => self.resample(),
+                    }
                     *dirty = true;
                 }
             }
         });
+        ui.separator();
+
+        match self.source {
+            Source::Preset => {
+                ui.horizontal_wrapped(|ui| {
+                    for name in preset_names() {
+                        if ui
+                            .selectable_label(self.preset_name == name, name)
+                            .clicked()
+                        {
+                            self.preset_name = name.to_string();
+                            self.cfg = golf_landform::preset(name).unwrap();
+                            *dirty = true;
+                        }
+                    }
+                });
+            }
+            Source::Sampled => {
+                let mut resample = false;
+                ui.horizontal(|ui| {
+                    let mut seed = self.sampled.seed as i64;
+                    ui.label("seed");
+                    if ui.add(egui::DragValue::new(&mut seed).range(0..=i64::MAX)).changed() {
+                        self.sampled.seed = seed.max(0) as u64;
+                        resample = true;
+                    }
+                    if ui.button("next").clicked() {
+                        self.sampled.seed = self.sampled.seed.wrapping_add(1);
+                        resample = true;
+                    }
+                });
+                let arch_label = match self.sampled.archetype {
+                    None => "drawn from weights".to_string(),
+                    Some(i) => self.sampled.prior.archetype_names[i].clone(),
+                };
+                egui::ComboBox::from_label("archetype")
+                    .selected_text(&arch_label)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(self.sampled.archetype.is_none(), "drawn from weights")
+                            .clicked()
+                        {
+                            self.sampled.archetype = None;
+                            resample = true;
+                        }
+                        let names = self.sampled.prior.archetype_names.clone();
+                        for (i, name) in names.iter().enumerate() {
+                            if ui
+                                .selectable_label(self.sampled.archetype == Some(i), name)
+                                .clicked()
+                            {
+                                self.sampled.archetype = Some(i);
+                                resample = true;
+                            }
+                        }
+                    });
+                let mut tau = self.sampled.tau;
+                if ui
+                    .add(egui::Slider::new(&mut tau, 0.5..=1.2).text("temperature τ"))
+                    .changed()
+                {
+                    self.sampled.tau = tau;
+                    resample = true;
+                }
+                if resample {
+                    self.resample();
+                    *dirty = true;
+                }
+                if let Some(rep) = &self.sampled.report {
+                    ui.weak(format!(
+                        "{} | A {:.1} km² | {} tribs +{} d2, {} ridges, {} bluffs, {} bowls | {} drops",
+                        rep.archetype_name,
+                        rep.a_mouth_km2,
+                        rep.n_tribs,
+                        rep.n_depth2,
+                        rep.n_ridges,
+                        rep.n_bluffs,
+                        rep.n_bowls,
+                        rep.drops.len()
+                    ));
+                    ui.weak(format!("palette: {}", rep.palette_id));
+                }
+                ui.weak("sliders below edit the sampled config live");
+            }
+        }
         if ui.button("copy config JSON").clicked() {
             ctx.copy_text(self.cfg.to_json());
         }
@@ -355,7 +514,8 @@ impl Lab {
         ui.label("Stage 1/4: noiselab — the assessed parameter set on the 3 km box");
         ui.separator();
 
-        // skeleton selection + view mode
+        // skeleton selection + view mode (presets, or the live Landform-tab
+        // config — which is the sampled one when the source is Sampled)
         let current = self.noise.skeleton.clone().unwrap_or_else(|| "flat (none)".into());
         egui::ComboBox::from_label("skeleton")
             .selected_text(&current)
@@ -365,6 +525,16 @@ impl Lab {
                     .clicked()
                 {
                     self.noise.skeleton = None;
+                    *dirty = true;
+                }
+                if ui
+                    .selectable_label(
+                        self.noise.skeleton.as_deref() == Some(SKEL_CURRENT),
+                        SKEL_CURRENT,
+                    )
+                    .clicked()
+                {
+                    self.noise.skeleton = Some(SKEL_CURRENT.to_string());
                     *dirty = true;
                 }
                 for name in preset_names() {
@@ -377,6 +547,29 @@ impl Lab {
                     }
                 }
             });
+        if let Some(rep) = &self.sampled.report {
+            if ui
+                .button("apply sampled noise defaults + seed")
+                .on_hover_text("KEEP-7 mids of the sampled archetype, noise-channel seed")
+                .clicked()
+            {
+                let c = &mut self.noise.cfg;
+                c.seed = rep.noise_seed;
+                for (k, v) in &rep.noise_defaults {
+                    match k.as_str() {
+                        "aniso_ratio" => c.aniso_ratio = *v,
+                        "base_amp" => c.base_amp = *v,
+                        "base_wavelength" => c.base_wavelength = *v,
+                        "floor_damp" => c.floor_damp = *v,
+                        "redistribution" => c.redistribution = *v,
+                        "ridged_mix" => c.ridged_mix = *v,
+                        "warp_wavelength" => c.warp_wavelength = *v,
+                        _ => {}
+                    }
+                }
+                *dirty = true;
+            }
+        }
         if self.noise.skeleton.is_some() {
             if ui
                 .checkbox(&mut self.noise.compose, "compose with skeleton z")

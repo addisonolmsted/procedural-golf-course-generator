@@ -101,6 +101,10 @@ pub struct SkeletonFields {
     pub tpi: Grid<f64>,
     pub aspect: Grid<f64>,
     pub tpi_sigma: f64,
+    /// Valley carve depth (z without valleys − z with, ≥ 0): the riparian-
+    /// corridor mask. TPI alone cannot see WIDE floors (the floor becomes
+    /// its own local reference), so floor damping keys on this too.
+    pub carve: Grid<f64>,
 }
 
 /// Build skeleton + smoothed predictor fields at `res_m` (box-blur chain
@@ -108,12 +112,19 @@ pub struct SkeletonFields {
 /// sandbox only needs a plausible, deterministic macro conditioning field).
 pub fn skeleton_fields(cfg: &MacroConfig, res_m: f64) -> SkeletonFields {
     let r = resolve(cfg);
+    let mut no_valleys = cfg.clone();
+    no_valleys.valleys.clear();
+    let rnv = resolve(&no_valleys);
     let n = (cfg.extent_m / res_m).round().max(2.0) as u32;
     let spec = GridSpec::new(Vec2::new(res_m / 2.0, res_m / 2.0), res_m, n, n);
     let mut z = Grid::filled(spec, 0.0f64);
+    let mut carve = Grid::filled(spec, 0.0f64);
     for y in 0..n {
         for x in 0..n {
-            z.set(x, y, r.height_at(spec.world_of(x, y)));
+            let p = spec.world_of(x, y);
+            let zv = r.height_at(p);
+            z.set(x, y, zv);
+            carve.set(x, y, (rnv.height_at(p) - zv).max(0.0));
         }
     }
     // three box blurs ~ Gaussian; radius for L=200 m half-amplitude
@@ -145,7 +156,7 @@ pub fn skeleton_fields(cfg: &MacroConfig, res_m: f64) -> SkeletonFields {
     }
     let nn = lp.data.len() as f64;
     let var = (sum2 / nn - (sum / nn) * (sum / nn)).max(0.0);
-    SkeletonFields { z, slope, tpi, aspect, tpi_sigma: var.sqrt() }
+    SkeletonFields { z, slope, tpi, aspect, tpi_sigma: var.sqrt(), carve }
 }
 
 fn box_blur3(g: &Grid<f64>, r: i32) -> Grid<f64> {
@@ -297,12 +308,20 @@ pub fn generate_noise(cfg: &NoiseLabConfig, extent_m: f64,
                 let slope = sk.slope.bilinear(p);
                 // slope_gain: amplitude scales with macro slope
                 amp_mod *= golf_core::math::pow(1.0 + slope / 0.05, cfg.slope_gain);
-                // floor_damp: smooth ramp over TPI in [-1.5, -0.5] sigma
+                // floor_damp: smooth ramp over TPI in [-1.5, -0.5] sigma,
+                // OR carved-and-flat (wide floors are their own local TPI
+                // reference, so TPI alone never sees them) — stronger wins
+                let mut w = 0.0;
                 if sk.tpi_sigma > 0.0 {
                     let t = sk.tpi.bilinear(p) / sk.tpi_sigma;
-                    let w = smooth01((-0.5 - t) / 1.0); // 1 deep in floors
-                    amp_mod *= 1.0 + (cfg.floor_damp - 1.0) * w;
+                    w = smooth01((-0.5 - t) / 1.0); // 1 deep in floors
                 }
+                // no slope gate here: the 200 m lowpass smears wall slope
+                // onto narrow floors, and a slope-gated damp would die
+                // exactly where the corridor needs it
+                let w_carve = smooth01(sk.carve.bilinear(p) / 1.5);
+                w = w.max(w_carve);
+                amp_mod *= 1.0 + (cfg.floor_damp - 1.0) * w;
             }
 
             let tex = if cfg.tex_amp != 0.0 {
