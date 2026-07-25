@@ -72,6 +72,9 @@ fn main() -> ExitCode {
             let lh = landform_hash();
             std::fs::write(landform_golden_path(), format!("{lh}\n")).unwrap();
             println!("blessed landform golden: {lh}");
+            let lsh = landform_sample_hash();
+            std::fs::write(landform_sample_golden_path(), format!("{lsh}\n")).unwrap();
+            println!("blessed landform-sample golden: {lsh}");
             let nh = noiselab_hash();
             std::fs::write(noiselab_golden_path(), format!("{nh}\n")).unwrap();
             println!("blessed noiselab golden: {nh}");
@@ -146,6 +149,8 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // Stage-4T: draw a MacroConfig from the calibrated landform prior.
+        "landform-sample" => run_landform_sample(&args[1..]),
         // Stage-3 synthcheck: dump every Stage-2 preset as MacroConfig JSON
         // (ground truth for extractor param-recovery tests).
         "landform-presets" => {
@@ -3610,6 +3615,129 @@ fn landform_golden_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/landform.hash")
 }
 
+/// Stage-4T sampler golden: seeds 1–4 with the builtin prior — config JSON
+/// ⊕ rendered field, with SAMPLER_VERSION and the PRIOR FINGERPRINT folded
+/// in so a re-fit of landform_prior.json cannot silently keep this green
+/// (re-fit → re-bless is an explicit, reviewed step).
+fn landform_sample_hash() -> u64 {
+    let prior = golf_landform::LandformPrior::builtin();
+    let mut h = 1469598103934665603u64;
+    let fold = |h: &mut u64, v: u64| {
+        for b in v.to_le_bytes() {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(1099511628211);
+        }
+    };
+    fold(&mut h, golf_landform::SAMPLER_VERSION as u64);
+    fold(&mut h, prior.fingerprint());
+    for seed in 1..=4u64 {
+        let (cfg, _rep) = golf_landform::sample_macro(&prior, seed, None, 1.0);
+        let mut cj = 1469598103934665603u64;
+        for b in cfg.to_json().as_bytes() {
+            cj ^= *b as u64;
+            cj = cj.wrapping_mul(1099511628211);
+        }
+        fold(&mut h, cj);
+        fold(&mut h, golf_landform::field_hash(&golf_landform::generate(&cfg, 20.0)));
+    }
+    h
+}
+
+fn landform_sample_golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/landform_sample.hash")
+}
+
+/// `landform-sample <seed> [--prior p.json] [--archetype i] [--tau x]
+/// [--out dir] [--render]` — draw a MacroConfig from the calibrated prior,
+/// write config + report JSON (and optionally a height PNG).
+fn run_landform_sample(args: &[String]) -> ExitCode {
+    let mut seed: u64 = 7;
+    let mut prior_path: Option<PathBuf> = None;
+    let mut archetype: Option<usize> = None;
+    let mut tau = 1.0f64;
+    let mut out = PathBuf::from("output/landform_sample");
+    let mut render = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--prior" => {
+                i += 1;
+                prior_path = args.get(i).map(PathBuf::from);
+            }
+            "--archetype" => {
+                i += 1;
+                archetype = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--tau" => {
+                i += 1;
+                tau = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+            }
+            "--out" => {
+                i += 1;
+                if let Some(p) = args.get(i) {
+                    out = PathBuf::from(p);
+                }
+            }
+            "--render" => render = true,
+            s => {
+                if let Ok(v) = s.parse() {
+                    seed = v;
+                }
+            }
+        }
+        i += 1;
+    }
+    let prior = match &prior_path {
+        Some(p) => match std::fs::read_to_string(p) {
+            Ok(s) => match golf_landform::LandformPrior::from_json(&s) {
+                Ok(pr) => pr,
+                Err(e) => {
+                    eprintln!("bad prior {}: {e}", p.display());
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(e) => {
+                eprintln!("cannot read {}: {e}", p.display());
+                return ExitCode::FAILURE;
+            }
+        },
+        None => golf_landform::LandformPrior::builtin(),
+    };
+    if let Err(e) = std::fs::create_dir_all(&out) {
+        eprintln!("cannot create {}: {e}", out.display());
+        return ExitCode::FAILURE;
+    }
+    let (cfg, rep) = golf_landform::sample_macro(&prior, seed, archetype, tau);
+    let cfg_p = out.join(format!("seed{seed}_config.json"));
+    std::fs::write(&cfg_p, cfg.to_json()).unwrap();
+    let rep_p = out.join(format!("seed{seed}_report.json"));
+    std::fs::write(&rep_p, serde_json::to_string_pretty(&rep).unwrap()).unwrap();
+    println!(
+        "seed {seed}: archetype {} ({}), A_mouth {:.2} km², {} valleys ({} tribs, {} depth-2), {} ridges, {} bluffs, {} bowls{}",
+        rep.archetype,
+        rep.archetype_name,
+        rep.a_mouth_km2,
+        cfg.valleys.len(),
+        rep.n_tribs,
+        rep.n_depth2,
+        rep.n_ridges,
+        rep.n_bluffs,
+        rep.n_bowls,
+        if rep.drops.is_empty() { String::new() } else { format!(", {} drops", rep.drops.len()) }
+    );
+    for d in &rep.drops {
+        println!("  drop: {d}");
+    }
+    println!("wrote {} + {}", cfg_p.display(), rep_p.display());
+    if render {
+        let g = golf_landform::generate(&cfg, 10.0);
+        let png = out.join(format!("seed{seed}_height.png"));
+        golf_viz::render_height_grid(&g, 600, None).save(&png).unwrap();
+        println!("wrote {} (field hash {})", png.display(), golf_landform::field_hash(&g));
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_golden() -> ExitCode {
     let mut ok = true;
     let mut check = |name: &str, path: PathBuf, hash: u64| match std::fs::read_to_string(&path) {
@@ -3631,6 +3759,7 @@ fn run_golden() -> ExitCode {
     check("routing", routing_golden_path(), routing_hash());
     check("holes", holes_golden_path(), holes_hash());
     check("landform", landform_golden_path(), landform_hash());
+    check("landform-sample", landform_sample_golden_path(), landform_sample_hash());
     check("noiselab", noiselab_golden_path(), noiselab_hash());
     if ok {
         ExitCode::SUCCESS

@@ -37,6 +37,10 @@ pub fn atan2(y: f64, x: f64) -> f64 {
     libm::atan2(y, x)
 }
 
+pub fn erf(x: f64) -> f64 {
+    libm::erf(x)
+}
+
 /// Clamp to [0, 1].
 pub fn clamp01(x: f64) -> f64 {
     x.clamp(0.0, 1.0)

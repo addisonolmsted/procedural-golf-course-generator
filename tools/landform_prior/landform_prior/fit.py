@@ -167,6 +167,19 @@ def fit() -> dict:
         / np.maximum(nets.n_junctions.to_numpy(float) + 1.0, 1.0))
     nets["trunk_mouth_logA"] = np.log10(np.maximum(
         trunk_a.reindex(nets.tile).to_numpy(float), 1e-3))
+    # spacing of junctions ON the trunk specifically (the max-area root):
+    # its in-window length over its direct-children count — the statistic the
+    # sampler's junction walk actually needs (the network-wide figure above
+    # mixes every branch's length into the numerator)
+    trunk_rows = roots.sort_values("area_mouth_km2") \
+        .groupby("tile").tail(1)[["tile", "branch", "len_m"]]
+    nchild = kids.groupby(["tile", "parent"]).size()
+    trunk_rows["n_child"] = [
+        int(nchild.get((t, b), 0))
+        for t, b in zip(trunk_rows.tile, trunk_rows.branch)]
+    tjs = (trunk_rows.len_m / (trunk_rows.n_child + 1.0))
+    tjs.index = trunk_rows.tile
+    nets["trunk_junction_spacing_m"] = tjs.reindex(nets.tile).to_numpy(float)
 
     rid = params[(params.kind == "ridge") & params.ok] \
         .sort_values(["tile", "branch"]).reset_index(drop=True)
@@ -324,12 +337,19 @@ def fit() -> dict:
             "junction_spacing_m_deciles": T(nets.junction_spacing_m, wn,
                                             "network",
                                             "junction_spacing_m_deciles"),
+            "trunk_junction_spacing_m_deciles": T(
+                nets.trunk_junction_spacing_m, wn,
+                "network", "trunk_junction_spacing_m_deciles"),
             "n_junctions_deciles": T(nets.n_junctions, wn, "network",
                                      "n_junctions_deciles"),
             "trunk_mouth_logA_deciles": T(nets.trunk_mouth_logA, wn,
                                           "network",
                                           "trunk_mouth_logA_deciles"),
             "depth2_frac": _wfrac(depth2, wk),
+            # in-WINDOW branch length — the right statistic for a 3 km
+            # generator (real branches are window-truncated the same way)
+            "branch_len_m_deciles": T(natural.len_m, wb, "network",
+                                      "branch_len_m_deciles"),
             # side of trunk a tributary joins on — not recorded by the
             # extractor in v0.1; uninformative Beta(1,1) documented default
             "side_balance_beta": [1.0, 1.0],
@@ -368,6 +388,8 @@ def fit() -> dict:
                                  "per_km2_deciles"),
             "depth_deciles": T(bwl.incision, wbo, "bowls", "depth_deciles"),
             "radius_deciles": T(bwl.hw, wbo, "bowls", "radius_deciles"),
+            "inner_grad_deciles": T(bwl.wall_l, wbo, "bowls",
+                                    "inner_grad_deciles"),
             "wobble_deciles": T(bwl.wobble, wbo, "bowls", "wobble_deciles"),
             "cycles_deciles": T(bwl.cycles, wbo, "bowls", "cycles_deciles"),
             "lake_frac": _wfrac((bwl.source == "lake").to_numpy(), wbo),

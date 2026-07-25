@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub mod ease;
 pub mod meander;
 pub mod noise;
+pub mod prior;
+pub mod sampler;
 pub mod spline;
 
 mod bluff;
@@ -33,6 +35,8 @@ pub use bluff::Bluff;
 pub use bowl::{Bowl, BowlBoundary, Outlet};
 pub use meander::MeanderSpec;
 pub use presets::{preset, preset_names, presets};
+pub use prior::LandformPrior;
+pub use sampler::{sample_macro, SampleReport, SAMPLER_VERSION};
 pub use valley::{Ridge, Valley, MIN_FALL_GRADIENT};
 
 /// Serialized config schema version (bump on breaking schema change).
