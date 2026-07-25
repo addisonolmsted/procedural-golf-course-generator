@@ -26,6 +26,12 @@ use crate::{
 /// Fold into golden identity together with the prior fingerprint.
 pub const SAMPLER_VERSION: u32 = 1;
 
+/// Composition operating point for in-corridor noise damping. The Stage-1
+/// archetype mid (~0.5) matches TILE texture statistics, but real floors
+/// are carved by real hydrology — above this cap the synthetic floor noise
+/// builds dams (see tests/composed.rs). Re-fit pending Stage 7b.
+pub const COMPOSED_FLOOR_DAMP_CAP: f64 = 0.1;
+
 const EXTENT_M: f64 = 3000.0;
 const BASE_ELEV_M: f64 = 100.0;
 const PI: f64 = std::f64::consts::PI;
@@ -33,7 +39,9 @@ const PI: f64 = std::f64::consts::PI;
 /// Authoring budgets — MacroConfig cost is per-primitive; these caps bound
 /// the config size, not the statistics (counts inside the caps come from the
 /// calibrated per-km² tables).
-const MAX_TRIBS: usize = 6;
+// closure evidence: at 6 the cap SATURATES (generated n_junctions pinned
+// q50=q90=6 vs real q90=9) — the budget must sit above the calibrated tail
+const MAX_TRIBS: usize = 10;
 const MAX_DEPTH2: usize = 2;
 const MAX_RIDGES: usize = 5;
 const MAX_BLUFFS: usize = 3;
@@ -66,6 +74,40 @@ pub struct SampleReport {
     pub noise_seed: u64,
     /// The archetype's calibrated noise defaults (KEEP-7 interim).
     pub noise_defaults: std::collections::BTreeMap<String, f64>,
+}
+
+impl SampleReport {
+    /// The noise config the composed pipeline runs for this sample: the
+    /// archetype's calibrated KEEP-7 defaults + the sample's noise-channel
+    /// seed, remaining fields at the lab mids, floor_damp capped at the
+    /// composition operating point.
+    pub fn composed_noise_config(&self) -> crate::noiselab::NoiseLabConfig {
+        let get = |k: &str, fallback: f64| {
+            self.noise_defaults.get(k).copied().unwrap_or(fallback)
+        };
+        crate::noiselab::NoiseLabConfig {
+            seed: self.noise_seed,
+            base_amp: get("base_amp", 10.0),
+            base_wavelength: get("base_wavelength", 300.0),
+            octaves: 5,
+            gain: 0.5,
+            lacunarity: 2.0,
+            warp_amp: 80.0,
+            warp_wavelength: get("warp_wavelength", 500.0),
+            warp2_amp: 20.0,
+            ridged_mix: get("ridged_mix", 0.2),
+            redistribution: get("redistribution", 1.3),
+            tex_amp: 0.4,
+            tex_wavelength: 25.0,
+            tex_gain: 0.55,
+            nugget_amp: 0.0,
+            aniso_ratio: get("aniso_ratio", 1.5),
+            floor_damp: get("floor_damp", 0.5).min(COMPOSED_FLOOR_DAMP_CAP),
+            slope_gain: 0.3,
+            grain_align: 0.0,
+            dummy: 0.0,
+        }
+    }
 }
 
 struct Ctx<'a> {

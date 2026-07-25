@@ -215,8 +215,84 @@ set with the KEEP-7 marked, seed control, Stage-2 preset as modulation
 skeleton, composed/residual views); headless twin
 `cargo run -p golf-landform --example dump_noise --release`
 → `output/noiselab/{flat,river_confluence_composed,river_confluence_residual}.png`.
-## Stage 3 — Primitive Parameter Extraction — NOT STARTED
-## Stage 4 — Noise Layer — NOT STARTED
+## Stage 3T — Landform Calibration (tiles + NHD) — AT GATE
+
+Instruments (tools/dtm_primitives, all synthcheck-verified 8/8): NHD-truth
+valley networks (levelpath chains, VAA areas, junction wiring) + two-pass
+transect cross-section fits; meander two-band decomposition; geomorphons
+(L=500 m frozen by pilot); inverted-surface ridge pipeline; bluff PAIR-test
+step fits; bowl spill-contour fits. Campaign: 205/205 tiles, 0 failures →
+4,358 records (963 ok NHD reaches w/ drainage areas, 1,856 branches, 1,021
+junction angles, 485 meander fits, 293 ridges, 345 bluffs, 272 bowls).
+
+Calibration product (tools/landform_prior → repo-committed
+golf-landform/data/landform_prior.json): per-archetype 11-pt quantile
+tables + ln-A hydraulic regressions (pooled hw=12.4·A^0.30,
+S=0.0133·A^−0.43 — textbook exponents) + Gaussian copula over reach
+residuals + Kish-n shrinkage (n/(n+25)) toward pooled. Calibration report
+(w–A, S–A, λ–W, angles, per-archetype tables + effective-n audit):
+tools/landform_prior/out/report/index.html.
+
+| Gate item | Evidence | Status |
+|---|---|---|
+| NHD caches + coverage | 205/205 fetched; 203 NHD-truth, 2 D8-fallback | ☑ |
+| synthcheck green (valleys+meander+ridge+bluff+bowl recovery) | 8/8 presets | ☑ |
+| Extraction ≥80% reaches ok-or-classified | 963 ok + classified reasons on the rest | ☑ |
+| Prior effective-n ≥30 or documented shrinkage | per-table Kish n in JSON; 2 thin archetypes shrunk (documented) | ☑ |
+| Findings of record | incision ~flat in A inside 3 km windows; floor_round censored at 20 m bound; side_balance Beta(1,1) default | ☑ |
+
+## Stage 4T — Seeded Macro Authoring — AT GATE (closure loop run; erosion is the evidenced critical path)
+
+Sampler (golf-landform/src/{prior,sampler}.rs): sample_macro(prior, seed,
+archetype?, τ) — DetRng channels lf4t/*/v1, 10-step authoring (tilt authors
+hydrology → boundary trunk w/ calibrated meander → junction walk with
+drainage-area bookkeeping → tribs + depth-2 w/ correlated copula
+cross-sections + accordant joins → interfluve/flank ridges → outer-bend
+bluffs → bowls → noise channel). Bounded rejection everywhere
+(drop-and-record; a seed never fails); stay-incised coupling (channel fall
+vs tilt) keeps floors ≥1.5 m below terrain at every station; channels never
+cross. xtask landform-sample / landform-sample-grid; goldens (seeds 1–4,
+config+field FNV, prior fingerprint + SAMPLER_VERSION folded); 500-seed
+fuzz green. terrain-lab: Preset | Sampled(4T) source, live-editable sampled
+configs, '· current landform config' noise skeleton, one-click archetype
+noise defaults. Composed no-dam property GREEN (100 seeds: max dam ≤1.5 m
+at floor_damp ≤0.1 via the new carve-mask damping; walks end where a deeper
+carve takes over).
+
+Closure loop (tools/landform_check): 205 population-matched + 5×41 panel,
+composed renders at 2.5 m re-measured by the SAME instruments (D8 mode) +
+SAME 10 m S1 estimator vs the 205 real tiles.
+
+| Family | energy | split-half | ratio (bar ≤2×) | verdict |
+|---|---|---|---|---|
+| reach cross-sections | 0.0247 | 0.0080 | 3.1× | ✗ (near; KS 0.05–0.10 per field) |
+| network / per-tile | 5.69 | 0.0595 | 95.6× | ✗ |
+| S1 (10 m, 17 metrics) | 0.102 | 0.0209 | 4.9× | ✗ |
+
+Variety (IQR ≥60% of real): PASS on cross-sections, angles, tilt,
+ridge/bluff counts; FAIL on drainage density, junction count, geomorphon
+fractions. Galleries: tools/landform_check/out/gallery/index.html.
+
+**Diagnosis (the loop's purpose — gaps localized, not smeared):**
+1. **Closed depressions**: generated q50 16 bowls/tile vs real 0 (KS 0.77)
+   — composed noise is not fluvially drained. The classic un-eroded-noise
+   signature.
+2. **Drainage density** locked at ~1.0 km/km² (real 0.86–3.50, KS 0.82) —
+   only authored channels exist; noise does not dissect interfluves. Same
+   root cause as (1). n_junctions narrowness is this too (the D8
+   instrument's branch budget on undissected terrain), NOT the authoring
+   cap — verified by a cap-doubling A/B (bit-identical fleet).
+3. **No flat tiles**: real geo_flat_frac reaches 0.69 (floodplain
+   archetype); generated tops out at 0.09 — noise amplitude is a single
+   mid-bounds default. Per-archetype noise re-fit (7b) owns this; the flat
+   innisbrook archetype is the worst per-archetype energy (7.5).
+
+**Conclusion of record: Stage 5 (erosion as finisher) is now EVIDENCED as
+the critical path** — it is the mechanism for (1) and (2); the 7b
+per-archetype noise fit owns (3). Reach-level geometry (the calibrated
+authored landforms themselves) is nearly closed at 3.1× (bar 2×) with
+per-field KS ≤0.10. User eyeball on galleries + terrain-lab seed scrub
+pending.
 ## Stage 5 — Erosion as Finisher — NOT STARTED
 ## Stage 6 — Hydrology Graph — NOT STARTED
 ## Stage 7 — Calibration & Fitting — NOT STARTED

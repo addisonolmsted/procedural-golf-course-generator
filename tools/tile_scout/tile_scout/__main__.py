@@ -22,7 +22,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="tile_scout")
     ap.add_argument("cmd", choices=[
         "archetypes", "regions", "f0", "f1", "f2", "drift", "finalize",
-        "select", "report", "topup",
+        "select", "report", "topup", "linear",
     ])
     ap.add_argument("--region", default="",
                     help="restrict a funnel stage to region(s), comma-sep")
@@ -65,6 +65,9 @@ def main() -> int:
     if args.cmd == "topup":
         from . import topup
         return topup.run(cfg)
+    if args.cmd == "linear":
+        from . import linear_check
+        return linear_check.run(cfg, force=args.force)
     return 2
 
 

@@ -13,12 +13,6 @@ use golf_core::grid::Grid;
 use golf_landform::noiselab::{generate_noise, skeleton_fields, NoiseLabConfig};
 use golf_landform::{resolve, sample_macro, LandformPrior};
 
-/// Composition operating point for in-corridor noise. The Stage-1 archetype
-/// mid (0.525) matches TILE texture statistics, but real tiles' floors are
-/// carved by real hydrology — at 0.525 the synthetic floor noise builds
-/// multi-meter dams on gentle trunks. Pending the Stage-7b per-archetype
-/// re-fit against clean tiles, composition caps floor_damp here.
-const NO_DAM_FLOOR_DAMP: f64 = 0.1;
 const MAX_DAM_M: f64 = 1.5;
 const RES_M: f64 = 12.0;
 const SEEDS: u64 = 100;
@@ -39,30 +33,9 @@ fn bilinear(g: &Grid<f64>, p: golf_core::math::Vec2) -> f64 {
 }
 
 fn noise_cfg_for(rep: &golf_landform::SampleReport) -> NoiseLabConfig {
-    let d = &rep.noise_defaults;
-    let get = |k: &str, fallback: f64| d.get(k).copied().unwrap_or(fallback);
-    NoiseLabConfig {
-        seed: rep.noise_seed,
-        base_amp: get("base_amp", 10.0),
-        base_wavelength: get("base_wavelength", 300.0),
-        octaves: 5,
-        gain: 0.5,
-        lacunarity: 2.0,
-        warp_amp: 80.0,
-        warp_wavelength: get("warp_wavelength", 500.0),
-        warp2_amp: 20.0,
-        ridged_mix: get("ridged_mix", 0.2),
-        redistribution: get("redistribution", 1.3),
-        tex_amp: 0.4,
-        tex_wavelength: 25.0,
-        tex_gain: 0.55,
-        nugget_amp: 0.0,
-        aniso_ratio: get("aniso_ratio", 1.5),
-        floor_damp: get("floor_damp", 0.5).min(NO_DAM_FLOOR_DAMP),
-        slope_gain: 0.3,
-        grain_align: 0.0,
-        dummy: 0.0,
-    }
+    // the shared composed-pipeline mapping (floor_damp capped at the
+    // operating point) — xtask landform-sample-grid uses exactly this too
+    rep.composed_noise_config()
 }
 
 #[test]

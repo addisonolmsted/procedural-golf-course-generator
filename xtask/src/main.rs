@@ -151,6 +151,19 @@ fn main() -> ExitCode {
         }
         // Stage-4T: draw a MacroConfig from the calibrated landform prior.
         "landform-sample" => run_landform_sample(&args[1..]),
+        // Stage-4T closure fleet: render SAMPLED (optionally composed with
+        // the archetype's noise) grids from a manifest of
+        // {out, seed, cell, archetype?, tau?, composed?, report?}.
+        "landform-sample-grid" => {
+            let manifest = args.get(1).map(PathBuf::from);
+            match manifest {
+                Some(m) => run_landform_sample_grid(&m),
+                None => {
+                    eprintln!("usage: landform-sample-grid <manifest.json>");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         // Stage-3 synthcheck: dump every Stage-2 preset as MacroConfig JSON
         // (ground truth for extractor param-recovery tests).
         "landform-presets" => {
@@ -3537,6 +3550,63 @@ fn run_landform_grid(manifest: &Path) -> ExitCode {
     let nf = failed.load(std::sync::atomic::Ordering::Relaxed);
     println!("landform-grid: wrote {} grids ({nf} failed)", items.len() - nf);
     if nf > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+#[derive(serde::Deserialize)]
+struct LfSampleItem {
+    out: String,
+    seed: u64,
+    cell: f64,
+    #[serde(default)]
+    archetype: Option<usize>,
+    #[serde(default)]
+    tau: Option<f64>,
+    /// true (default): skeleton + calibrated noise; false: bare skeleton.
+    #[serde(default)]
+    composed: Option<bool>,
+    #[serde(default)]
+    report: Option<String>,
+}
+
+fn run_landform_sample_grid(manifest: &Path) -> ExitCode {
+    let text = match std::fs::read_to_string(manifest) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("read {}: {e}", manifest.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    let items: Vec<LfSampleItem> = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("parse manifest: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let prior = golf_landform::LandformPrior::builtin();
+    use rayon::prelude::*;
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    items.par_iter().for_each(|it| {
+        let (cfg, rep) =
+            golf_landform::sample_macro(&prior, it.seed, it.archetype, it.tau.unwrap_or(1.0));
+        let g = if it.composed.unwrap_or(true) {
+            let skel = golf_landform::noiselab::skeleton_fields(&cfg, it.cell);
+            let ncfg = rep.composed_noise_config();
+            golf_landform::noiselab::generate_noise(&ncfg, cfg.extent_m, Some(&skel), it.cell)
+        } else {
+            golf_landform::generate(&cfg, it.cell)
+        };
+        write_hg01_grid(&g, &it.out, it.cell);
+        if let Some(rp) = &it.report {
+            std::fs::write(rp, serde_json::to_string_pretty(&rep).unwrap()).unwrap();
+        }
+        let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if k % 25 == 0 || k == items.len() {
+            println!("... {k}/{}", items.len());
+        }
+    });
+    println!("landform-sample-grid: wrote {} grids", items.len());
+    ExitCode::SUCCESS
 }
 
 /// Fixed-config noiselab golden (flat base, all mechanisms exercised).
