@@ -13,6 +13,7 @@ golf-routing = { workspace = true }
 golf-holes = { workspace = true }
 golf-landform = { workspace = true }
 golf-viz = { workspace = true }
+course-contracts = { workspace = true }
 image = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }

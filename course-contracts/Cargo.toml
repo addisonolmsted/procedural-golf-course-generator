@@ -1,0 +1,13 @@
+[package]
+name = "course-contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "archetype-pipeline shared contracts: artifact types, grid IO, store, fixtures"
+
+[dependencies]
+golf-core = { workspace = true }
+serde = { workspace = true }
+# float_roundtrip: JSON artifacts must reload bit-identically (store contract).
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+blake3 = { workspace = true }

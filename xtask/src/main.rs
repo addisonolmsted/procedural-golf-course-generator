@@ -78,8 +78,12 @@ fn main() -> ExitCode {
             let nh = noiselab_hash();
             std::fs::write(noiselab_golden_path(), format!("{nh}\n")).unwrap();
             println!("blessed noiselab golden: {nh}");
+            let cfh = course_fixture_hash();
+            std::fs::write(course_fixture_golden_path(), format!("{cfh}\n")).unwrap();
+            println!("blessed course-fixtures golden: {cfh}");
             ExitCode::SUCCESS
         }
+        "course-dump" => run_course_dump(&args[1..]),
         "atlas-pack" => run_atlas_pack(&args[1..]),
         "atlas-stats" => run_atlas_stats(args.get(1).map(PathBuf::from)),
         "calibrate" => {
@@ -236,7 +240,8 @@ fn main() -> ExitCode {
         other => {
             eprintln!(
                 "unknown command: {other} (dump | dump-sampled | stats | golden | bless | \
-                 atlas-pack | atlas-stats | calibrate | sampler-check | search | match-dump)"
+                 atlas-pack | atlas-stats | calibrate | sampler-check | search | match-dump | \
+                 course-dump)"
             );
             ExitCode::FAILURE
         }
@@ -3831,6 +3836,7 @@ fn run_golden() -> ExitCode {
     check("landform", landform_golden_path(), landform_hash());
     check("landform-sample", landform_sample_golden_path(), landform_sample_hash());
     check("noiselab", noiselab_golden_path(), noiselab_hash());
+    check("course-fixtures", course_fixture_golden_path(), course_fixture_hash());
     if ok {
         ExitCode::SUCCESS
     } else {
@@ -3900,4 +3906,138 @@ fn holes_hash() -> u64 {
 
 fn holes_golden_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/holes.hash")
+}
+
+// ---------------------------------------------------------------------------
+// archetype pipeline (course-*) — fixture golden + headless dump
+// ---------------------------------------------------------------------------
+
+/// Fixture golden: all five archetypes at 24 m, seed 7 — heights ⊕ flow ⊕
+/// cover ⊕ gate/routing JSON, with the placeholder-prior fingerprint folded in
+/// so a prior edit cannot silently keep this green (edit → re-bless is an
+/// explicit, reviewed step).
+fn course_fixture_hash() -> u64 {
+    use course_contracts::fixtures::run_fixture_pipeline;
+    let mut h = 1469598103934665603u64;
+    let fold = |h: &mut u64, v: u64| {
+        for b in v.to_le_bytes() {
+            *h ^= b as u64;
+            *h = h.wrapping_mul(1099511628211);
+        }
+    };
+    fold(&mut h, course_contracts::PIPELINE_VERSION as u64);
+    fold(&mut h, course_contracts::ArchetypePriors::builtin().fingerprint());
+    for a in course_contracts::ArchetypeId::ALL {
+        let b = run_fixture_pipeline(7, a, 24.0);
+        fold(&mut h, fnv(&b.composed.height.data));
+        fold(&mut h, fnv(&b.hydro.flow.flow_area_m2.data));
+        let class_f: Vec<f64> = b.cover.class.data.iter().map(|c| *c as f64).collect();
+        fold(&mut h, fnv(&class_f));
+        let gate_json = serde_json::to_string(&b.gate).unwrap();
+        let route_json = serde_json::to_string(&b.routing).unwrap();
+        fold(&mut h, course_contracts::fnv_bytes(gate_json.as_bytes()));
+        fold(&mut h, course_contracts::fnv_bytes(route_json.as_bytes()));
+    }
+    h
+}
+
+fn course_fixture_golden_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/course_fixtures.hash")
+}
+
+/// Headless twin of the course-lab views: renders each archetype's fixture
+/// pipeline (hillshade+spine, hydro overlay, cover map, routing overlay) into
+/// output/course_fixtures/. Usage: course-dump [seed] [res_m]
+fn run_course_dump(args: &[String]) -> ExitCode {
+    use course_contracts::fixtures::run_fixture_pipeline;
+    use course_contracts::stages::CoverClass;
+    let seed: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(7);
+    let res_m: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(8.0);
+    let dir = PathBuf::from("output/course_fixtures");
+    std::fs::create_dir_all(&dir).unwrap();
+    let px = 900u32;
+    for a in course_contracts::ArchetypeId::ALL {
+        let b = run_fixture_pipeline(seed, a, res_m);
+        let key = a.key();
+
+        let mut img = golf_viz::render_height_grid(&b.composed.height, px, None);
+        for s in &b.hydro.graph.streams {
+            course_draw_polyline(&mut img, &s.pts, [40, 90, 220, 255]);
+        }
+        for l in &b.hydro.graph.lakes {
+            course_draw_polyline(&mut img, &l.outline, [30, 70, 200, 255]);
+        }
+        course_draw_core(&mut img);
+        img.save(dir.join(format!("{key}_terrain_hydro.png"))).unwrap();
+
+        let s = b.cover.class.spec;
+        let mut cov = image::RgbaImage::new(px, px);
+        for py in 0..px {
+            for gx in 0..px {
+                let cx = ((gx as f64 / px as f64 * s.nx as f64) as u32).min(s.nx - 1);
+                let row = ((py as f64 / px as f64 * s.ny as f64) as u32).min(s.ny - 1);
+                let cy = s.ny - 1 - row;
+                let c = match CoverClass::from_u8(*b.cover.class.get(cx, cy)) {
+                    Some(CoverClass::Turf) => [120, 190, 90, 255],
+                    Some(CoverClass::Rough) => [90, 140, 70, 255],
+                    Some(CoverClass::Sand) => [225, 205, 150, 255],
+                    Some(CoverClass::Wetland) => [110, 160, 140, 255],
+                    Some(CoverClass::Water) => [60, 110, 200, 255],
+                    Some(CoverClass::Rock) => [140, 135, 130, 255],
+                    Some(CoverClass::Forest) => [45, 95, 55, 255],
+                    None => [255, 0, 255, 255],
+                };
+                cov.put_pixel(gx, py, image::Rgba(c));
+            }
+        }
+        cov.save(dir.join(format!("{key}_cover.png"))).unwrap();
+
+        let mut route = golf_viz::render_height_grid(&b.composed.height, px, None);
+        for hpl in &b.routing.holes {
+            course_draw_polyline(&mut route, &hpl.corridor, [235, 235, 235, 255]);
+        }
+        course_draw_core(&mut route);
+        route.save(dir.join(format!("{key}_routing.png"))).unwrap();
+
+        println!(
+            "{key}: gate {} | streams {} lakes {} | {}",
+            if b.gate.pass { "PASS" } else { "FAIL" },
+            b.hydro.graph.streams.len(),
+            b.hydro.graph.lakes.len(),
+            b.gate.reasons.join("; ")
+        );
+    }
+    println!("wrote output/course_fixtures/");
+    ExitCode::SUCCESS
+}
+
+fn course_draw_polyline(img: &mut image::RgbaImage, pts: &[golf_core::Vec2], c: [u8; 4]) {
+    let ext = course_contracts::EXTENT_M;
+    let (w, h) = (img.width() as i64, img.height() as i64);
+    let to_px = |p: &golf_core::Vec2| ((p.x / ext * w as f64) as i64, ((1.0 - p.y / ext) * h as f64) as i64);
+    for seg in pts.windows(2) {
+        let (a, b) = (to_px(&seg[0]), to_px(&seg[1]));
+        let n = (b.0 - a.0).abs().max((b.1 - a.1).abs()).max(1);
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let x = a.0 + ((b.0 - a.0) as f64 * t).round() as i64;
+            let y = a.1 + ((b.1 - a.1) as f64 * t).round() as i64;
+            if x >= 0 && y >= 0 && x < w && y < h {
+                img.put_pixel(x as u32, y as u32, image::Rgba(c));
+            }
+        }
+    }
+}
+
+fn course_draw_core(img: &mut image::RgbaImage) {
+    use golf_core::Vec2;
+    let (lo, hi) = (course_contracts::CORE_MIN_M, course_contracts::CORE_MAX_M);
+    let corners = [
+        Vec2 { x: lo, y: lo },
+        Vec2 { x: hi, y: lo },
+        Vec2 { x: hi, y: hi },
+        Vec2 { x: lo, y: hi },
+        Vec2 { x: lo, y: lo },
+    ];
+    course_draw_polyline(img, &corners, [255, 255, 255, 255]);
 }

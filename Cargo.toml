@@ -11,6 +11,8 @@ members = [
     "golf-viewer",
     "golf-landform",
     "terrain-lab",
+    "course-contracts",
+    "course-lab",
     "xtask",
 ]
 
@@ -28,6 +30,7 @@ golf-routing = { path = "golf-routing" }
 golf-holes = { path = "golf-holes" }
 golf-viz = { path = "golf-viz" }
 golf-landform = { path = "golf-landform" }
+course-contracts = { path = "course-contracts" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
