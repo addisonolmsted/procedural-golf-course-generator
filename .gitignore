@@ -1,0 +1,8 @@
+# Build/data junk from this and other branches' working trees.
+target/
+output/
+out/
+__pycache__/
+.pytest_cache/
+.DS_Store
+.claude/
