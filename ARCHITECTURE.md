@@ -14,11 +14,19 @@ PLAN.md              — project goal, phases, milestones, parallelization proto
 steps/01-seed.md     — one contract doc per pipeline step (01…10);
 …                      each step's owning agent builds out that step and
 steps/10-drainage.md   keeps its doc current
+Cargo.toml           — Rust workspace root (resolver 2, edition 2024)
+crates/course-seed/  — step 01: DetRng determinism kit, stream registry,
+                       RunIdentity, reroll rule — the determinism substrate
+                       every step crate depends on
+crates/course-spec/  — step 02: archetype selection + prior sampling →
+                       spec.json (CourseSpec); data/archetype_priors.json is
+                       the committed, fingerprinted prior (the knob registry
+                       — adding a knob is a data edit + golden re-bless)
 ```
 
-No code yet. Language/stack for each step is decided when the step is built;
-nothing in this branch's contracts assumes a specific language — contracts are
-data shapes, requirements, and file formats.
+The determinism substrate is Rust; language/stack for each remaining step is
+decided when the step is built — the contracts themselves stay
+language-agnostic (data shapes, requirements, file formats).
 
 ## The separation principle (the reason this branch exists)
 
@@ -58,9 +66,26 @@ artifact contract**:
 1. **Determinism.** One master `seed: u64`. Same seed + same params + same
    resolution ⇒ byte-identical artifacts, on every platform. All randomness
    is drawn from domain-split streams named per step and purpose
-   (`<step>/<purpose>/v1`); a registry of stream names will live here once
-   code exists. No wall-clock, no unordered parallel reductions, no
-   data-dependent draw order.
+   (`<step>/<purpose>/v1`), opened only via `RunIdentity::stream(name)`.
+   No wall-clock, no unordered parallel reductions, no data-dependent draw
+   order. The stream registry (source of truth:
+   `crates/course-seed/src/streams.rs`; this table is test-enforced to
+   mirror it — adding a stream is a doc+code+review event):
+
+   | Stream | Owner | Purpose |
+   |---|---|---|
+   | `arch/select/v1` | step 02 | archetype draw (when not forced) |
+   | `arch/params/v1` | step 02 | prior quantile sampling |
+   | `macro/place/v1` | step 03 | primitive placement (counts, frames, phases) |
+   | `noise/field/v1` | step 04 | noise-field lattice offsets |
+   | `hydro/v1` | step 05 | stochastic erosion/hydrology components (if any) |
+   | `cover/clump/v1` | step 06 | cover clumping |
+   | `route/v1` | step 08 | routing search |
+   | `earthworks/v1` | step 09 | earthworks jitter (bunker shapes etc.) |
+   | `reroll/v1` | step 01 | INTERNAL: gate-fail reroll sub-seeds (master-seed keyed) |
+   | `fixture/v1` | fixtures | tests/fixtures only, never real steps |
+
+   Steps 07 and 10 are RNG-free by contract.
 2. **Versioned artifacts.** Every artifact carries a version; any shape
    change bumps it and the global pipeline version, updates the step doc, and
    is an explicit reviewed event.

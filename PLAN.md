@@ -78,5 +78,9 @@ Parameters per archetype must come from real courses, not intuition:
 
 ## Current status
 
-P0. All docs seeded from the M0 design on `archetype-pipeline`; refinement
-with the user in progress. No steps claimed.
+P0 (doc refinement) continues for steps 03–10. P1 has begun: the determinism
+kit — step 01, `crates/course-seed` (DetRng, stream registry, RunIdentity,
+reroll rule) — is built and tested; remaining P1 items (artifact store + grid
+format, fixture set, viewer harness) not started. Steps 01–02 built (step 02:
+`crates/course-spec` — weighted archetype draw + data-driven prior sampling,
+placeholder priors pending the data campaign); steps 03–10 unclaimed.
