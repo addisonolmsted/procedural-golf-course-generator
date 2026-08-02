@@ -1,0 +1,16 @@
+[package]
+name = "tile-lab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "campaign tile QA viewer: real DTM tiles with the extractor's landform classifications overlaid"
+
+[dependencies]
+course-spec = { workspace = true }
+course-world = { workspace = true }
+course-macro = { workspace = true }
+course-viz = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

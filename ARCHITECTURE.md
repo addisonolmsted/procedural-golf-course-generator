@@ -14,19 +14,61 @@ PLAN.md              — project goal, phases, milestones, parallelization proto
 steps/01-seed.md     — one contract doc per pipeline step (01…10);
 …                      each step's owning agent builds out that step and
 steps/10-drainage.md   keeps its doc current
-Cargo.toml           — Rust workspace root (resolver 2, edition 2024)
+Cargo.toml           — Rust workspace root (resolver 2, edition 2024;
+                       dev/test profiles build at opt-level 2 — the macro
+                       raster is ~30x slower unoptimized)
 crates/course-seed/  — step 01: DetRng determinism kit, stream registry,
                        RunIdentity, reroll rule — the determinism substrate
                        every step crate depends on
 crates/course-spec/  — step 02: archetype selection + prior sampling →
                        spec.json (CourseSpec); data/archetype_priors.json is
                        the committed, fingerprinted prior (the knob registry
-                       — adding a knob is a data edit + golden re-bless)
+                       — adding a knob is a data edit + golden re-bless;
+                       examples/bless_golden.rs regenerates the golden)
+crates/course-world/ — P1 substrate: Grid/GridSpec (+bilinear), Vec2 + libm
+                       math, ease/noise, Profile, arc-length Spine, the
+                       CGRID1 binary grid format, world constants
+                       (EXTENT/CORE/RES, world_spec) — ported from
+                       terrain-v2:golf-core + golf-landform geometry +
+                       archetype-pipeline:course-contracts. No RNG here.
+crates/course-macro/ — step 03: macro landform. prims/ (Valley/Ridge/Bluff/
+                       Bowl/Meander analytic engine, ported verbatim from
+                       terrain-v2:golf-landform), planner (params →
+                       MacroPlan staged IR → MacroConfig; all macro/place/v1
+                       draws), budget (core-relief cap solve: staged
+                       bisections on core-localized knobs — never the box),
+                       raster+fields (analytic,
+                       resolution-consistent), artifact (macro_skeleton/
+                       dir: contract grids+structure + advisory plan/config
+                       sidecars)
+crates/course-viz/   — shared render helpers (hypsometric×hillshade,
+                       scalar/direction fields, NaN-tolerant terrain render,
+                       alpha-blended class-mask + axis-band overlays) for
+                       step viewers; from terrain-v2:golf-viz, no pipeline deps
+crates/macro-lab/    — the STEP-03-ONLY viewer (per-construction-stage tabs,
+                       seed scrub, knob overrides); later steps build their
+                       own viewers on course-viz
+crates/tile-lab/     — the CAMPAIGN-DATA viewer: real DTM tiles with the
+                       extractor's landform classifications overlaid, knobs
+                       vs the committed quantiles, and the QA cull that
+                       writes out/exclude.json (read-only over campaign
+                       artifacts — it measures nothing itself)
+tools/               — the data-campaign Python stack: dtm_atlas,
+                       dtm_primitives, landform_prior, tile_scout,
+                       dtm_metrics, metrics (ported from terrain-v2) +
+                       macro_campaign (step-03 archetype exemplar landscape
+                       tiles — 3DEP fetch → OSM development screen → knob
+                       extraction → shape-tier transect fits → prior quantile
+                       fit → generated-vs-real compare; out/ is local-only.
+                       Exemplar centers must be protected/unpopulated land;
+                       `develop` measures and auto-culls the rest)
 ```
 
-The determinism substrate is Rust; language/stack for each remaining step is
-decided when the step is built — the contracts themselves stay
-language-agnostic (data shapes, requirements, file formats).
+The determinism substrate and pipeline steps are Rust; the data campaign is
+Python — the contracts themselves stay language-agnostic (data shapes,
+requirements, file formats). CGRID1 (`crates/course-world/src/gridio.rs`,
+mirrored by `tools/macro_campaign/macro_campaign/cgrid.py`) is now the fixed
+grid sidecar format of invariant 3.
 
 ## The separation principle (the reason this branch exists)
 

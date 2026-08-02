@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/course-seed", "crates/course-spec"]
+members = [
+    "crates/course-seed",
+    "crates/course-spec",
+    "crates/course-world",
+    "crates/course-macro",
+    "crates/course-viz",
+    "crates/macro-lab",
+    "crates/tile-lab",
+]
 
 [workspace.package]
 version = "0.0.0"
@@ -10,6 +18,12 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 course-seed = { path = "crates/course-seed" }
 course-spec = { path = "crates/course-spec" }
+course-world = { path = "crates/course-world" }
+course-macro = { path = "crates/course-macro" }
+course-viz = { path = "crates/course-viz" }
+libm = "0.2"
+eframe = { version = "0.31", features = ["wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }
 # float_roundtrip: exact f64 parsing, so artifact JSON round-trips
 # byte-identically (determinism invariant 1).
@@ -18,3 +32,11 @@ rand_core = "0.9"
 rand_chacha = "0.9"
 blake3 = "1"
 getrandom = "0.3"
+
+# The macro raster samples analytic primitives per cell — unoptimized builds
+# are ~30x slower, so tests (and dev runs of the lab) build with opt.
+[profile.dev]
+opt-level = 2
+
+[profile.test]
+opt-level = 2

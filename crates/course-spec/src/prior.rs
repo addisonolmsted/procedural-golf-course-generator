@@ -73,7 +73,22 @@ pub struct PriorEntry {
 #[serde(deny_unknown_fields)]
 pub struct Priors {
     pub prior_version: String,
+    /// How the values were produced (campaign corpus provenance). Advisory
+    /// metadata — it rides in the fingerprinted bytes so a prior version is
+    /// traceable to the tile set it was fitted from, but nothing reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit_provenance: Option<FitProvenance>,
     pub archetypes: BTreeMap<String, PriorEntry>,
+}
+
+/// Corpus provenance for a fitted prior (see `tools/macro_campaign`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FitProvenance {
+    /// Tiles the QA cull removed before fitting.
+    pub n_excluded: u32,
+    /// Digest of `out/exclude.json` — pins which cull produced these values.
+    pub exclude_digest: String,
 }
 
 #[derive(Debug)]
@@ -410,20 +425,30 @@ mod tests {
         let (lo, hi) = rng(ArchetypeId::Sandhills, "landform.dune_wavelength_m");
         assert!(lo >= 150.0 && hi <= 400.0);
 
-        // Florida: relief < 10 m, water table ≤ 1.5 m.
-        assert!(rng(ArchetypeId::FloridaLowland, "landform.relief_amp_m").1 < 10.0);
+        // Florida: flattest archetype (campaign: FL lake-district tiles carry
+        // more relief than the flatwoods stereotype), water table ≤ 1.5 m.
+        assert!(med(ArchetypeId::FloridaLowland, "landform.relief_amp_m") < 20.0);
         assert!(med(ArchetypeId::FloridaLowland, "hydro.water_table_depth_m") <= 1.5);
 
-        // Mountain: relief 80–180 m, 2–5 benches.
-        let (lo, hi) = rng(ArchetypeId::MountainBench, "landform.relief_amp_m");
-        assert!(lo >= 80.0 && hi <= 180.0);
-        let (lo, hi) = rng(ArchetypeId::MountainBench, "landform.bench_count");
-        assert!(lo >= 2.0 && hi <= 5.0);
+        // Mountain: dominant relief, 2–5 benches at the median.
+        let m_relief = med(ArchetypeId::MountainBench, "landform.relief_amp_m");
+        assert!((90.0..=160.0).contains(&m_relief));
+        let m_bench = med(ArchetypeId::MountainBench, "landform.bench_count");
+        assert!((2.0..=5.0).contains(&m_bench));
 
-        // Moraine: basins 4–14, depression_keep ≈ 1.
-        let (lo, hi) = rng(ArchetypeId::GlacialMoraine, "landform.basin_count");
-        assert!(lo >= 4.0 && hi <= 14.0);
+        // Moraine: kettled. The band widened at campaign-pilot-3: the pilot
+        // corpus sat in farmed Kettle Moraine country and measured ~12
+        // kettles/tile, while genuinely pitted protected outwash (Hiawatha
+        // NF) measures ~37. The anchor's job is "moraine is kettled", not a
+        // ground truth on density.
+        let g_basins = med(ArchetypeId::GlacialMoraine, "landform.basin_count");
+        assert!((10.0..=60.0).contains(&g_basins));
         assert!(med(ArchetypeId::GlacialMoraine, "hydro.depression_keep") >= 0.9);
+
+        // Sandhills: blowout field (campaign: ~47 basins/tile median — the
+        // densest basin archetype).
+        let s_basins = med(ArchetypeId::Sandhills, "landform.basin_count");
+        assert!(s_basins > g_basins);
 
         // Piedmont: the fluvial midpoint — between florida and mountain on
         // relief, no dunes, no forced depressions.
@@ -447,6 +472,52 @@ mod tests {
 
     // Re-blessed 2026-07-26: step-03 landform knob expansion (placeholder-2,
     // +12 landform.* knobs with provisional quantiles for the macro planner).
+    // Re-blessed 2026-07-27: campaign-pilot-1 — 37 landform tables fitted from
+    // the 27-tile exemplar pilot (tools/macro_campaign, winsorized p10–p90);
+    // design/quarantined/identity-zero knobs keep provisional tables.
+    // Re-blessed 2026-07-28: campaign-pilot-2 — same corpus, extract v3
+    // estimators. 50 tables fitted: valley_fall_grad (now measured on the raw
+    // surface, not the depression-filled one) and ridge_count/ridge_len_m
+    // (traced crests gated to major ridges, not geomorphon spurs) left
+    // quarantine; dune_wavelength_m stays provisional (falsified — see
+    // fit_knobs.QUARANTINED). Adds `fit_provenance` (corpus cull digest) and
+    // the `landform.ridge_crest_hw_m` knob the de-mesa shaping reads.
+    // Re-blessed 2026-07-30: campaign-pilot-3 — the corpus itself was
+    // rebuilt. tile-lab QA found the exemplar tiles were 5-64% developed and
+    // three detectors were measuring in the wrong place (see steps/03); the
+    // centers moved onto protected land, an OSM screen auto-culls built-up
+    // tiles, and the geometry/routing/scarp fixes landed. 51 tables fitted
+    // from the usable tiles, after both an OSM development cull and an
+    // archetype-MEMBERSHIP cull (macro_campaign/character.py).
+    // Re-blessed 2026-07-31: campaign-pilot-4 — detector sensitivity. Ridge
+    // transects were 300 m (a valley setting) on interfluves 200-600 m
+    // apart, so ridge branches arrived with no usable cross-sections;
+    // at 120 m ridge_count rose ~3x with placement quality UP (91.5%
+    // on-mask vs 42.3% chance). Scarps: the 300 m length gate was rejecting
+    // 98 of 138 candidates on length alone and none on height. bench_count
+    // now counts contour-parallel cascade LEVELS, not scarp segments.
+    // Re-blessed 2026-08-02: campaign-m4 — the prior gains the drainage
+    // NETWORK family (junction angle/spacing, branch length, junction area
+    // ratio, Strahler order, slope-area theta and its pivot intercept,
+    // channel half-width at the pivot, sinuosity) that M0 measured and M5
+    // will grow the network from, and `core_relief_cap_m` is now sourced
+    // from REAL GOLF COURSES rather than kept provisional. That last one is
+    // the change with teeth: a built course is routable by definition, and
+    // 12 courses per region say the authored caps were tight by 1.2x
+    // (piedmont) to 2.2x (sandhills), so generated cores were flatter than
+    // anything anyone has built. Also fixes a corpus defect — piedmont's
+    // course box overlapped the sandhills box, so all six of its "piedmont"
+    // courses were Pinehurst; with a disjoint box it is 12 real piedmont
+    // courses and the median moves 30.5 -> 35.1 m.
+    // Re-blessed 2026-08-02: campaign-m5 — adds `landform.drainage_density_fine`,
+    // the target the M5 network grower sizes itself against. Fitted from the
+    // METRICS block (`drainage_density_0p25x`, the FINE accumulation
+    // threshold) rather than the nominal one, because the fine threshold is
+    // what counts low-order tributaries: growing to the nominal 2.25 km/km^2
+    // leaves the interfluves bare at `ridge_mask_area_frac` 0.297, and growing
+    // to the fine 4.30 lands it at 0.412 against a real 0.408. Florida and
+    // sandhills keep pooled provisionals via the `valley_count` identity-zero
+    // family — a closed-basin archetype has no through drainage to size.
     const FINGERPRINT_GOLDEN: &str =
-        "231dbf23dbb6978ebe873edf4739dd176faa6cf67f0e73af76849d21aad66839";
+        "aed23ac1530b2466fc31451fdc7cf36532016747086302e96468b0582390a26e";
 }

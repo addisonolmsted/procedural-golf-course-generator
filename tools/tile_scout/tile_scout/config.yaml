@@ -1,0 +1,120 @@
+# Stage-0T campaign configuration. The only RNG in the package is the GMM
+# seeded below; everything else is deterministic + cache-first.
+
+seed: 20260703
+
+paths:
+  course_metrics_parquet: "tools/dtm_metrics/out/metrics.parquet"
+  parkland_cache: "tools/parkland_atlas/out/cache"
+  atlas_root: "tools/dtm_atlas"        # tiles_us.{txt,json} destination
+
+tile:
+  side_m: 3000.0
+
+archetypes:
+  # the S1 screening vector (valley_count/elong dropped: pond-fragile
+  # diagnostics per the Stage-1 robustness report, and noisy at 10 m)
+  metric_cols:
+    - s1_relief_p95_p5
+    - s1_relief_p99_p1
+    - s1_lp_slope_p50
+    - s1_lp_slope_iqr
+    - s1_lp_slope_p90
+    - s1_hyps_q10
+    - s1_hyps_q25
+    - s1_hyps_q50
+    - s1_hyps_q75
+    - s1_hyps_q90
+    - s1_bp_800p
+    - s1_bp_400_800
+    - s1_bp_200_400
+    - s1_bp_50_200
+    - s1_drainage_density_coarse
+    - s1_aniso_ratio_macro
+    - s1_tilt_grade
+  log1p_cols:                          # heavy-tailed -> log1p before robust z
+    - s1_relief_p95_p5
+    - s1_relief_p99_p1
+    - s1_lp_slope_p50
+    - s1_lp_slope_iqr
+    - s1_lp_slope_p90
+    - s1_bp_800p
+    - s1_bp_400_800
+    - s1_bp_200_400
+    - s1_bp_50_200
+    - s1_drainage_density_coarse
+    - s1_tilt_grade
+  pca_var: 0.90
+  pca_max: 8
+  gmm_k_range: [1, 8]
+  gmm_n_init: 10
+
+regions:
+  group_radius_km: 100.0               # greedy disc-cover membership radius
+  search_radius_km: 120.0              # candidate disc around member centroid
+  tiles_per_course: 1.5                # quota_r = max(min_quota, ceil(1.5 * n))
+  min_quota: 2
+
+lattice:
+  spacing_m: 1500.0                    # half-overlap of 3 km tiles
+  dedup_min_km: 1.4                    # cross-region center dedup
+
+f0:
+  res_m: 60.0
+  keep_factor: 10                      # survivors per region = 10 * quota
+  max_nodata_frac: 0.05
+  max_flat_frac: 0.25                  # |grad| < flat_slope fraction
+  flat_slope: 0.002
+  z_window_sd: 1.5                     # relief/slope hard window half-width
+
+f1:
+  batch_size: 8
+  courtesy_sleep_s: 2.0
+  max_buildings: 5
+  max_big_road_rail: 0                 # motorway|trunk|primary|secondary + rail
+  max_residential: 0
+  max_local_roads: 2                   # unclassified|tertiary
+  max_dev_landuse: 0                   # residential|commercial|industrial|...
+  max_agriculture: 4                   # farmland|orchard|vineyard|farmyard
+  agri_penalty: 0.25                   # added to f2 distance per agri way
+  relaxed:                             # ladder tier for shortfall regions
+    max_buildings: 8                   # (offline re-eval of cached counts;
+    max_local_roads: 4                 #  big roads/rail/residential/dev stay 0)
+    max_agriculture: 8
+
+f2:
+  res_m: 10.0
+  budget_per_region_factor: 3          # cap entrants at 3 * quota by f0 rank
+  overshoot_factor: 1.3                # finalists per region
+  global_finalist_cap: 260
+  metric_weights:                      # drift-calibrated (out/reports/drift_10m.txt):
+    s1_drainage_density_coarse: 0.5    # raw-vs-naturalized flow routing drifts
+    s1_aniso_ratio_macro: 0.5          # noisy at 10 m / street-grid sensitive
+
+f3:
+  n_select: 200
+  region_cap_factor: 1.8
+  max_inpaint_frac: 0.15   # clean-subset bar (Stage-0T contamination triage: developed/flat tiles gated out)
+  max_water_fraction: 0.25
+  max_nodata_frac: 0.01
+  qa_band_z_max: 3.0                   # s2_cw_bp_4_8 z vs courses (veg noise)
+
+pilot:
+  n_ingest: 8
+
+qa:
+  max_px: 1600
+
+topup:                               # screener v2 top-up campaign
+  max_building_area_m2: 2000.0       # ~a barn + outbuilding; warehouses OUT
+  max_paved_len_m: 250.0             # essentially road-free (tracks/paths OK)
+  protected_bonus: 1.0               # subtracted from f2_dist x protected_frac
+  courtesy_sleep_s: 1.0
+  starved_dist: 3.5                  # courses with best-analog worse than this
+  radius_ladder_km: [200.0, 300.0]   # extended discs for starved courses
+  deepen_rank_max: 40                # per-region f0 rank window to re-mine
+  linear_hp_sigma_m: 30.0            # unmapped-road detector: highpass scale
+  linear_abs_m: 0.35                 #   |residual| threshold
+  linear_min_len_m: 400.0            #   min linear-component length
+  linear_elong_min: 8.0
+  n_new_max: 120                     # ingest cap for the top-up

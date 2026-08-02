@@ -1,0 +1,110 @@
+# Stage-3 extraction configuration. Every detector threshold lives here.
+# NO seed key on purpose: stage 3 contains no RNG — determinism by construction.
+
+network:
+  block_m: 8.0                 # flow-accumulation working resolution
+  accum_min_area_m2: 60000.0   # channel/outlet threshold (Stage-1 value)
+  trib_min_area_m2: 60000.0
+  trib_min_len_m: 150.0
+  max_depth: 2                 # tributary recursion depth
+  max_tributaries: 6
+  junction_donor_floor_m2: 15000.0  # >=2 donors above this = a junction ->
+                                    # keyed choice (valley width, continuity,
+                                    # area); corner-clipped trunks can be tiny
+  osm_match_tol_m: 30.0        # cKDTree agreement tolerance
+  osm_min_line_len_m: 200.0    # ignore trivial OSM stubs
+  osm_divergent_frac: 0.4      # below this within-frac -> osm_divergent flag
+  osm_extend_area_factor: 0.25 # upstream extension floor (fraction of A_min)
+
+centerline:
+  resample_m: 5.0
+  lowpass_m: 80.0              # half-amplitude cutoff: kills 8 m raster jaggies,
+                               # preserves meanders (lambda >= ~10 x width)
+  recenter_iters: 1
+  extension_m: 150.0           # extend border-truncated ends along tangent
+  ctrl_spacing_m: 50.0         # Path::Points control-point spacing
+
+transects:
+  spacing_m: 25.0
+  halflen_m: 300.0             # pass-B default; adaptive to 1.4 x top width
+  halflen_max_m: 600.0         # pass-A probe + adaptivity ceiling (floodplains)
+  search_frac_hw: 0.6          # recenter search scales with provisional hw
+  sample_step_m: 2.0
+  min_valid_frac: 0.9
+  inpaint_frac_max: 0.4        # inner-half inpaint fraction discard
+  road_floor_halfwidth_m: 20.0 # road sample within floor zone -> discard
+  foreign_corridor_pad_m: 20.0
+  junction_pad_m: 50.0
+  recenter_search_m: 30.0
+  floor_probe_min_m: 6.0
+  reach_len_m: 300.0
+  min_transects_per_reach: 6
+
+valleyfit:
+  f_scale: 0.5                 # soft_l1 scale (meters)
+  shoulder_k_m: 4.0            # FROZEN: degenerate against wall grads
+  min_incision_m: 1.5          # below this: "no valley expression" (presence evidence)
+  rms_max_abs_m: 0.8
+  rms_max_frac: 0.2            # of incision
+
+longitudinal:
+  monotone_tol_m: 1.5
+
+meander:
+  trend_lowpass_m: 600.0
+  smooth_e_m: 25.0
+  min_crossings: 3
+  min_radius_widths: 2.5       # Stage-2 curvature-clamp constant (meander.rs)
+
+bluff:
+  lowpass_m: 70.0              # L=200 would smear a 15 m face
+  slope_thresh: 0.25
+  min_area_m2: 3000.0
+  elong_min: 2.5
+  min_len_m: 120.0
+  valley_pad_m: 30.0           # exclusion: valley walls are modeled elsewhere
+  reach_len_m: 100.0           # height-profile knot spacing
+  taper_frac: 0.10             # fixed; ends excluded from knot fitting
+  rms_max_frac: 0.15
+
+bowl:
+  block_m: 4.0                 # pre-fill depth resolution (8.0 fallback if slow)
+  depth_floor_m: 0.5
+  min_depth_m: 1.5
+  min_area_m2: 5000.0          # of the depth >= 0.5*max core (bunker-proof)
+  lake_water_frac: 0.3
+  ring_offset_m: 10.0
+  boundary_max_pts: 96
+  n_rays: 72
+
+ridgefit:                       # inverted-surface valley machinery + geomorphons
+  lookup_m: 500.0               # geomorphon scale (frozen by geopilot sweep)
+  flat_deg: 1.0
+  confirm_frac: 0.6             # within-trimmed-run confirmation floor
+  confirm_radius_m: 30.0
+  min_len_m: 200.0              # trimmed confirmed run must be a real ridge
+
+tilt:
+  margin_bonus: 2.0            # exterior-preferred (vs Stage-1's 1.0)
+  huber_c_mads: 1.345
+  irls_iters: 5
+  max_cells: 200000
+  corridor_pad_m: 30.0         # carved-zone exclusion pad
+  fit_curve: false             # curve_m = 0; robust quadratic reported as prior only
+
+presence:
+  valley_weights: {relief: 0.30, fit: 0.25, cover: 0.15, osm: 0.15, detect: 0.15}
+  present_min_conf: 0.5
+  review_band: [0.35, 0.5]
+  valley_min_incision_m: 1.5
+
+roundtrip:
+  cell_m: 2.0
+  min_confidence: 0.5
+  rms_floor_m: 0.75
+  rms_frac: 0.15               # of median incision
+  pass_frac: 0.80
+  carve_pad_m: 10.0
+
+qa:
+  max_px: 1600

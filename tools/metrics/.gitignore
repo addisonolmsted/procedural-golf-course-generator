@@ -1,0 +1,4 @@
+# generated artifacts — reproduce with `python3 -m metrics.run`
+out/
+__pycache__/
+*.pyc

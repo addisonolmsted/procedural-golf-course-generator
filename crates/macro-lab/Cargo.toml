@@ -1,0 +1,16 @@
+[package]
+name = "macro-lab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "step-03 macro-landform viewer: every construction stage, seed-scrubbable"
+
+[dependencies]
+course-seed = { workspace = true }
+course-spec = { workspace = true }
+course-world = { workspace = true }
+course-macro = { workspace = true }
+course-viz = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }

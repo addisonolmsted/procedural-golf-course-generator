@@ -83,16 +83,22 @@ equal the archetype's declared knob set, every override key must be a
 declared knob, and every non-overridden value must lie within its table's
 range (overridden knobs are exempt: they are recorded verbatim, not
 sampled). A hand-edited params map cannot enter the pipeline. The committed
-file is a hand-authored placeholder until the data campaign (PLAN.md)
-delivers a fitted file with the same schema.
+file is `campaign-pilot-3`: 47 `landform.*` tables fitted from the step-03
+data campaign's 27-tile exemplar pilot (`tools/macro_campaign`). The rest
+stay hand-authored provisional, each for a recorded reason — a design lever
+(the core relief cap), an archetype-identity zero, too few samples, or an
+estimator that measurement showed cannot inform the knob (gating policy and
+evidence: the campaign README + `fit_knobs.QUARANTINED`).
 
 ## Per-archetype behavior
 
 Entirely expressed by the prior tables + the `hydrology_mode` switch.
-Directional anchors the placeholder encodes (test-pinned): sandhills
-infiltration ≈ 1, dune wavelength 150–400 m; florida relief < 10 m and water
-table ≤ ~1.5 m; mountain relief 80–180 m with 2–5 benches; moraine
-basin_count 4–14 with depression_keep ≈ 1; piedmont the fluvial mid-point.
+Directional anchors (test-pinned, median-based since `campaign-pilot-1` so
+re-fits with heavier tails don't break them): sandhills infiltration ≈ 1,
+dune wavelength 150–400 m, densest basin field; florida the flattest
+archetype (med relief < 20 m) with water table ≤ ~1.5 m; mountain med
+relief 90–160 m with 2–5 benches; moraine kettled (med basin_count 6–30)
+with depression_keep ≈ 1; piedmont the fluvial mid-point.
 
 ## Hard requirements
 
@@ -112,7 +118,45 @@ basin_count 4–14 with depression_keep ≈ 1; piedmont the fluvial mid-point.
 
 Golden values (bless only on an intentional contract event, together):
 `builtin_fingerprint_golden` (prior bytes), `golden_spec_seed_1`
-(tests/golden_spec_seed_1.json — the full artifact for seed 1).
+(tests/golden_spec_seed_1.json — the full artifact for seed 1). Re-bless
+helper: `cargo run -p course-spec --example bless_golden >
+crates/course-spec/tests/golden_spec_seed_1.json`.
+
+Re-bless log:
+- 2026-07-26 (`placeholder-2`): +12 `landform.*` knobs for step 03's
+  planner (`valley_halfwidth_m`, `valley_wall_grade`, `valley_fall_grad`,
+  `meander_intensity`, `meander_wavelength_mult`, `ridge_len_m`,
+  `bench_tread_w_m`, `bench_scarp_h_m`, `basin_spacing_m`, `basin_depth_m`,
+  `basin_radius_m`, `blowout_eccentricity`) with provisional hand-authored
+  quantiles (anchored to terrain-v2's fitted landform prior + presets);
+  inapplicable archetypes carry near-degenerate tables. The step-03 data
+  campaign (`tools/macro_campaign`) refits VALUES only — never the schema.
+- 2026-07-27 (`campaign-pilot-1`): 37 `landform.*` tables fitted from the
+  27-tile exemplar pilot (gated: design knobs, quarantined estimators,
+  identity-zero families keep provisional; small-n winsorize p10–p90 —
+  policy encoded in `tools/macro_campaign/macro_campaign/fit_knobs.py`).
+  `placeholder_anchors` moved to median-based assertions with fitted
+  reality (florida med relief 13.6 m from FL lake-district tiles). Applying
+  the fitted relief also forced the course-macro `MACRO_VERSION 2`
+  re-anchoring fix + golden re-bless (see steps/03).
+- 2026-07-28 (`campaign-pilot-2`): same corpus, repaired estimators — 50
+  tables fitted (valley fall and major-ridge counting left quarantine;
+  dune wavelength and both meander knobs are quarantined *with evidence*,
+  see `fit_knobs.QUARANTINED`). Adds the `landform.ridge_crest_hw_m` knob
+  (measured 7.8 m piedmont → 92.5 m sandhills) that step 03's ridge shaping
+  reads, and an optional `fit_provenance` block recording how many tiles the
+  QA cull removed plus that cull's digest — so a prior version is traceable
+  to the exact corpus it came from.
+- 2026-07-30 (`campaign-pilot-3`): the CORPUS was rebuilt, not just refitted.
+  A tile-lab QA review found the exemplar tiles were 5-64% developed and
+  that three detectors were measuring in the wrong place (steps/03). Centers
+  moved onto protected land, an OSM screen auto-culls built-up tiles, and an
+  archetype-MEMBERSHIP cull drops tiles that lack the defining feature
+  (`macro_campaign/character.py`). 47 tables fitted. The moraine
+  `basin_count` anchor widened to 10-60: the old 6-30 band came from farmed
+  Kettle Moraine country at ~12 kettles/tile, while genuinely pitted
+  protected outwash measures ~37. Every archetype median shifted, so the
+  course-macro goldens re-blessed with it (no planner change).
 
 Note: `serde_json` is used with its `float_roundtrip` feature (workspace
 Cargo.toml) — without it, f64 parsing is inexact in the last ULP and
