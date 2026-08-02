@@ -88,11 +88,17 @@ impl Lab {
             .iter()
             .next()
             .map(|(a, ts)| (a.clone(), ts[0].id.clone()));
-        let compare = skeleton.and_then(|dir| match course_macro::artifact::load_skeleton(&dir) {
-            Ok((sk, _)) => Some((dir, sk.base_height)),
-            Err(e) => {
-                eprintln!("tile-lab: skeleton {}: {e}", dir.display());
-                None
+        // Generated-vs-real compare pane: accepts any CGRID1 heightfield (a
+        // .cgrid file, or a directory containing base_height.cgrid) — no
+        // dependency on any particular generator stage.
+        let compare = skeleton.and_then(|dir| {
+            let path = if dir.is_dir() { dir.join("base_height.cgrid") } else { dir.clone() };
+            match course_world::gridio::read_grid_f32(&path) {
+                Ok(g) => Some((dir, g)),
+                Err(e) => {
+                    eprintln!("tile-lab: compare grid {}: {e}", path.display());
+                    None
+                }
             }
         });
         Lab {

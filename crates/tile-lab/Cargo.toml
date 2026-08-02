@@ -8,7 +8,6 @@ description = "campaign tile QA viewer: real DTM tiles with the extractor's land
 [dependencies]
 course-spec = { workspace = true }
 course-world = { workspace = true }
-course-macro = { workspace = true }
 course-viz = { workspace = true }
 eframe = { workspace = true }
 image = { workspace = true }

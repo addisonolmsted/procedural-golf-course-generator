@@ -4,9 +4,7 @@ members = [
     "crates/course-seed",
     "crates/course-spec",
     "crates/course-world",
-    "crates/course-macro",
     "crates/course-viz",
-    "crates/macro-lab",
     "crates/tile-lab",
 ]
 
@@ -19,7 +17,6 @@ license = "MIT OR Apache-2.0"
 course-seed = { path = "crates/course-seed" }
 course-spec = { path = "crates/course-spec" }
 course-world = { path = "crates/course-world" }
-course-macro = { path = "crates/course-macro" }
 course-viz = { path = "crates/course-viz" }
 libm = "0.2"
 eframe = { version = "0.31", features = ["wgpu"] }

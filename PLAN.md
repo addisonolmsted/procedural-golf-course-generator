@@ -1,132 +1,111 @@
 # Project Plan
 
 Goal: a deterministic generator that turns a seed into a complete, playable
-9-hole (par-36) golf-course terrain — heightfield, water, cover, routing, and
-finished hole earthworks — in one of five named archetypes, with the archetype
-driving both terrain character and (later) art direction.
+9-hole (par-36) golf course — final heightfield, water, cover, routing,
+finished hole construction, and the object manifest — in one of five named
+archetypes, on terrain that is **varied, interesting, plausible, and golf
+routable**:
+
+- *Varied* — stage 01's site framing (window position in an implied larger
+  landscape × structural grain × provinces) multiplies between-seed macro
+  diversity beyond the archetype choice.
+- *Interesting* — stage 03's hero features and province-boundary landforms,
+  plus sim-emergent drainage texture.
+- *Plausible* — stage 05's landscape evolution model earns real-terrain
+  statistics (the retired authored generator measured 22/71 knobs inside the
+  real-tile IQR — commit `0313432`); stage 00's covariance-intact θ keeps
+  parameter combinations coherent; the campaign's real-vs-generated loop is
+  the referee.
+- *Routable* — stage 02 authors the guarantee before terrain exists and it
+  propagates as physics; the stage-08 gate rejects rarely and rerolls
+  resample only stages 2–3.
 
 Cross-cutting rules and the repo map: [ARCHITECTURE.md](ARCHITECTURE.md).
-Per-step contracts: [steps/](steps/).
+Per-stage contracts: [stages/](stages/).
 
 ## The pipeline
 
-| # | Step | Doc | Output (one line) |
-|---|------|-----|-------------------|
-| 1 | Seed | [steps/01-seed.md](steps/01-seed.md) | the master seed + run identity |
-| 2 | Archetype selection | [steps/02-archetype.md](steps/02-archetype.md) | archetype + fully sampled parameter pack (`CourseSpec`) |
-| 3 | Macro landform | [steps/03-macro-landform.md](steps/03-macro-landform.md) | base heightfield + conditioning fields + structure graph |
-| 4 | Conditioned noise | [steps/04-conditioned-noise.md](steps/04-conditioned-noise.md) | composed heightfield (skeleton + modulated noise) |
-| 5 | Erosion & hydrology | [steps/05-erosion-hydrology.md](steps/05-erosion-hydrology.md) | eroded heightfield + flow model + streams/lakes/wetlands |
-| 6 | Cover assignment | [steps/06-cover.md](steps/06-cover.md) | per-cell cover class + canopy density |
-| 7 | Routability gate | [steps/07-routability-gate.md](steps/07-routability-gate.md) | pass/fail report with published metrics (reroll on fail) |
-| 8 | Routing | [steps/08-routing.md](steps/08-routing.md) | 9-hole returning-nine routing plan |
-| 9 | Hole earthmoving | [steps/09-earthmoving.md](steps/09-earthmoving.md) | local 0.5 m height patches (tees/greens/bunkers) |
-| 10 | Drainage validation | [steps/10-drainage.md](steps/10-drainage.md) | drainage audit + repair patches + final course bundle |
+| # | Stage | Doc | Output (one line) |
+|---|-------|-----|-------------------|
+| 0 | Seed & archetype | [stages/00-seed-archetype.md](stages/00-seed-archetype.md) | `RunIdentity` + `CourseSpec` (archetype, θ with covariance) |
+| 1 | Site framing | [stages/01-site-framing.md](stages/01-site-framing.md) | window position, base level, tilt, grain, provinces |
+| 2 | Routability mask | [stages/02-routability-mask.md](stages/02-routability-mask.md) | the authored guarantee: connected mask + corridors + allowance |
+| 3 | Guidance strokes | [stages/03-guidance-strokes.md](stages/03-guidance-strokes.md) | trunk spline, boundary landform, hero, flatten datums |
+| 4 | Forcing fields | [stages/04-forcing-fields.md](stages/04-forcing-fields.md) | initial surface, uplift, erodibility, diffusivity |
+| 5 | Landscape evolution | [stages/05-landscape-evolution.md](stages/05-landscape-evolution.md) | the macro+meso heightfield (the co-author) |
+| 6 | Hydrography | [stages/06-hydrography.md](stages/06-hydrography.md) | creek splines, lakes, wetlands, water table |
+| 7 | Cover | [stages/07-cover.md](stages/07-cover.md) | class + canopy + substrate maps |
+| 8 | Routability gate | [stages/08-routability-gate.md](stages/08-routability-gate.md) | cheap pass/fail vs the mask invariant |
+| 9 | Routing | [stages/09-routing.md](stages/09-routing.md) | 9-hole returning loop; earthmoving allowance as soft cost |
+| 10 | Earthmoving | [stages/10-earthmoving.md](stages/10-earthmoving.md) | per-hole displacement layers (plan/surface split) |
+| 11 | Drainage validation | [stages/11-drainage-validation.md](stages/11-drainage-validation.md) | flow audit + masked grading repairs |
+| 12 | Micro re-pass | [stages/12-micro-pass.md](stages/12-micro-pass.md) | seam blending + calibrated micro noise → final heightfield |
+| 13 | Placement | [stages/13-placement.md](stages/13-placement.md) | seed-deterministic object manifest |
 
-Data flows strictly forward; the only loop is the gate (step 7 fail ⇒ reroll
-from step 2 with a derived sub-seed, bounded attempts).
+Data flows strictly forward. Loops: stage 08 fail ⇒ attempt++ resamples
+stages 2–3 (archetype/θ/framing are stable-scoped and survive); stage 09 may
+fail the same way; stages 10↔11 iterate within a bounded budget.
 
-## Phases
+## Milestones
 
-- **P0 — docs hardening (now).** Refine ARCHITECTURE.md + the step docs with
-  the user until each step doc is strong enough to hand to an agent
-  unsupervised. Exit: user sign-off per doc.
-- **P1 — foundations.** The shared substrate the steps sit on: artifact
-  store + grid format, determinism kit (seeded domain-split RNG), fixture
-  set, and a minimal per-step viewer/harness. Exit: a fixture-backed
-  end-to-end skeleton runs and renders.
-- **P2 — parallel step build-out.** One agent per step doc, all steps in
-  parallel against fixtures. Critical path: step 05 (erosion/hydrology) —
-  start it first. Exit per step: its doc's Hard Requirements all tested, a
-  determinism double-run, and its viewer tab showing real output.
-- **P3 — composition.** Replace fixtures with real steps one seam at a time;
-  wire the gate/reroll loop; first archetype end-to-end is `piedmont` (the
-  fluvial general case — the other four are specializations).
-- **P4 — calibration & validation.** The archetype data campaign (below)
-  replaces placeholder parameter priors with fitted ones; batch harness
-  measures gate pass-rates per archetype; generated terrain is scored in the
-  same metric space as the real-course atlas.
+- **N0 — reset + docs (done 2026-08-02).** Step-03 era archived
+  (`0313432`), workspace reduced to the keepers, `stages/00…13` written.
+- **N1 — Stage 00 rev.** Two-tier stream registry v2 (stable/attempt
+  scopes) + θ from Gaussian components (provisional diagonal build from the
+  existing tables). `PIPELINE_VERSION` 2, goldens re-blessed once.
+- **N2 — Stages 1–4 + stage-lab.** Framing, mask, strokes, forcing fields —
+  all cheap authored fields — plus the per-stage viewer shell (course-viz).
+- **N3 — Stages 5–6 (critical path).** Port the erosion core, build the LEM
+  and hydrographic extraction. Start stage 05 first; everything else in N2
+  can proceed in parallel against fixtures.
+- **N4 — Stages 7–8 + the attempt loop.** First full terrain end-to-end per
+  archetype; measure gate pass rates (target ≥ 90% with the mask upstream).
+- **N5 — Campaign v2.** Refit θ as per-archetype Gaussian components from
+  the corpus; calibrate LEM forcing against `structure.py` metrics
+  (drainage density, local relief, dist-to-channel); `netstats` families
+  (slope-area θ, width scaling) become VALIDATION targets. Corpus scale-up
+  (glacial_moraine is thin).
+- **N6 — Stage 9.** Port the beam/anneal router onto the new contracts.
+- **N7 — Stages 10–11.** Import the ten-pass earthmoving design (open
+  question in its doc), build construction + drainage repair.
+- **N8 — Stages 12–13.** Micro finish + placement manifest = shippable
+  course bundle.
 
 ## Parallelization protocol
 
-- Each step doc has a **Status** line: `unclaimed` → `claimed (<agent>, <date>)`
-  → `built` → `verified`. Claim before starting; keep the doc current — the
-  doc IS the step's source of truth, the code is its implementation.
-- An agent owns exactly: its step's doc, its step's module, its fixtures
-  usage. It never edits another step's module.
-- Contract changes are cross-step events: propose in the step doc's Open
-  Questions, resolve with the user, then update every affected doc +
-  ARCHITECTURE.md before code changes.
-- Never weaken a fixture or a requirement to make a step pass.
+- Each stage doc has a **Status** line: `unclaimed → claimed (<agent>, <date>)
+  → built → verified`. Claim before starting; the doc IS the stage's source
+  of truth.
+- An agent owns exactly its stage's doc + module + fixture usage; it never
+  edits another stage's module.
+- Contract changes: propose in Open Questions, resolve with the user, update
+  every affected doc + ARCHITECTURE.md before code.
+- Never weaken a fixture or requirement to make a stage pass.
+- Dependency note for claiming: stages 1–4 are independent of each other
+  given fixtures for their inputs; 5 needs 4's artifact shape (fixture
+  early); 6–8 fixture-drivable; 9+ second wave.
 
-## Archetype data campaign (parallel to everything)
+## The data campaign (v2)
 
-Parameters per archetype must come from real courses, not intuition:
+Everything empirical routes through `tools/`:
 
-1. **Label** the existing 200-course atlas (135 with 1 m lidar,
-   `terrain-v2:tools/dtm_atlas`) into the five archetypes — geography (course
-   bbox) + relief + the 49-scalar morphology vectors + existing soft
-   clustering (`terrain-v2:tools/tile_scout/out/archetypes.json`); manual
-   override list; `none` is a valid label.
-2. **Collect gap courses** for thin archetypes — sandhills (today only
-   pinehurst2, streamsong) and glacial_moraine (erin, moraine) — via the
-   existing `dtm_atlas` fetch machinery.
-3. **Fit per-archetype priors** (quantile tables per parameter, later a
-   copula) consumed by step 02, plus per-archetype calibration targets
-   (drainage density, lake %, depression density, canopy %) used as
-   acceptance checks by steps 05–06.
+- **Retained as-is**: corpus infrastructure (`macro_campaign`
+  fetch/develop/courses/regions/character/structure/report/cgrid), the
+  `dtm_*` analysis stack, the 90-tile exemplar corpus + course corpus
+  (local, refetchable; indices committed), the exclusion-cull QA loop and
+  `tile-lab`.
+- **Repurposed**: `netstats`/`structure` metric families → LEM calibration
+  and validation targets (no longer generator inputs);
+  the course-corpus playable-fraction method → stage-02 mask sizing.
+- **Rewritten**: `fit_knobs.py` → a GMM fitter (transformed space, gating
+  policy carried over); `extract.py` → the new θ knob set per stage docs.
+- **Retired**: `shape.py` transect fitting, `landform_prior` (pattern
+  reference only).
 
 ## Current status
 
-P0 (doc refinement) continues for steps 04–10. P1 largely done:
-`crates/course-seed` (determinism kit) and `crates/course-world` (grid +
-geometry + CGRID1 store + world constants) are built and tested;
-`crates/course-viz` provides the shared viewer rendering. Steps 01–03 built:
-
-- step 02 `crates/course-spec` — weighted archetype draw + data-driven
-  prior sampling; prior expanded to the full step-03 landform knob set
-  (`placeholder-2`, provisional values).
-- step 03 `crates/course-macro` — primitives ported from
-  terrain-v2:golf-landform, the staged site planner (drainage routing,
-  bench cascade, interfluve ridges, basin fields, core-relief budget
-  solve), analytic fields, the `macro_skeleton/` artifact, all five hard
-  requirements tested + per-archetype goldens. Viewers:
-  `crates/macro-lab` (step-03 construction stages) and `crates/tile-lab`
-  (campaign-data QA: real tiles + the extractor's classifications, knobs vs
-  the committed quantiles, the exclusion cull the fit honors).
-
-The archetype data campaign's **pilot is complete** (2026-07-27):
-terrain-v2's Python tools ported under `tools/`; `tools/macro_campaign`
-fetched 27 exemplar landscape tiles (≥5/archetype), extracted all, and
-applied `campaign-pilot-1` — 37 fitted `landform.*` tables under a
-documented gating policy (README), goldens re-blessed in course-spec and
-course-macro (`MACRO_VERSION 2`: the fitted relief exposed and fixed a
-stale-anchor bug in the budget solve).
-
-**Estimator + QA pass complete (2026-07-28)**, `campaign-pilot-2` /
-`MACRO_VERSION 3`: valley-fall and major-ridge estimators repaired and out
-of quarantine, dune wavelength kept provisional with a falsification result,
-shape-tier transect pass built and run, ridge de-mesa shaping, an exact bowl
-raster cull (sandhills 58 s → 4 s at 2 m), `crates/tile-lab` for campaign
-data QA, and the generated-vs-real loop (`export_tiles` + `compare`).
-
-**Corpus and detector repair (2026-07-29).** A tile-lab QA review found that
-three detectors were measuring in the wrong PLACE while every scalar stayed
-in range — a coordinate mirror between dtm_primitives' row-0-north
-convention and the campaign's row-0-south tiles, a flat-routing artifact
-that drew straight cardinal "channels" across every lake, and a bench
-detector that could only emit straight bands. All three are fixed (see
-steps/03), with regression tests for the routing. The screen also showed the
-exemplar corpus itself was contaminated — 5-64% built — so `regions.py` was
-re-picked onto protected land and a new `develop` subcommand measures and
-auto-culls built-up tiles. Corpus is now ~80 fetched / ~45 usable tiles.
-
-Next, in order: (1) fix the core-cap budget solve to scale only through the
-core shoulder rather than the whole 3 km box — the dominant cause of the
-compare report's 22/73 in-IQR result; (2) replace `meander_intensity` with a
-sinuosity target the planner solves for (the current knob is defined against
-the generator's own clamp and is unmeasurable); (3) finish the corpus
-scale-up to ~30 usable tiles/archetype — glacial_moraine is the thin one and
-its kettle density is the open question; (4) a `Spine::project` spatial index
-for the unbounded bluff cost (mountain 42 s at 2 m).
-Steps 04–10 unclaimed.
+N0 complete (2026-08-02): archive + reset committed, 14 stage docs written,
+kept workspace (course-seed, course-spec, course-world, course-viz,
+tile-lab) builds with all tests green. Stage 00 is built at v1 (rev
+pending); stages 01–13 unclaimed. Next: N1 (Stage 00 rev), then N2/N3 in
+parallel with stage 05 first.

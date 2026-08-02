@@ -713,18 +713,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "course-macro"
-version = "0.0.0"
-dependencies = [
- "course-seed",
- "course-spec",
- "course-viz",
- "course-world",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "course-seed"
 version = "0.0.0"
 dependencies = [
@@ -1794,20 +1782,6 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
-
-[[package]]
-name = "macro-lab"
-version = "0.0.0"
-dependencies = [
- "course-macro",
- "course-seed",
- "course-spec",
- "course-viz",
- "course-world",
- "eframe",
- "image",
- "serde_json",
-]
 
 [[package]]
 name = "malloc_buf"
@@ -3068,7 +3042,6 @@ dependencies = [
 name = "tile-lab"
 version = "0.0.0"
 dependencies = [
- "course-macro",
  "course-spec",
  "course-viz",
  "course-world",
