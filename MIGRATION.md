@@ -68,10 +68,22 @@ one-knob input to two roles: ground truth for the
 [S5](docs/stages/stage-05-siting-substrate.md) siting scorer, and a
 separately-weighted exemplar source for the dictionary.
 
-**Currently broken:** `tools/metrics` and `tools/dtm_metrics` are non-runnable
-— both read `tools/parkland_atlas/out/cache`, which is not in this branch.
-Recover from `main` (`tools/parkland_atlas/` plus `assets/atlas.bin`, 29.7 MB)
-or re-collect.
+**Resolved (2026-08-07):** `tools/parkland_atlas` and `assets/atlas.bin` are
+recovered from `main`, and the "non-runnable" diagnosis turned out to be
+narrower than feared. The parkland cache (`out/cache/*.json`) is needed only
+for **atlas-corpus runs** of `tools/metrics` — a v1 workflow. The battery
+itself (`metrics.features.compute`) is a pure function and runs on CGRID1
+tiles directly; `dtm_metrics` degrades gracefully (one context column NaN).
+Verified end-to-end by `tools/spike/smoke.py`: tile → `surfaces.build` →
+49-scalar battery, on a real clean piedmont tile. **v2 never needs the cache**
+— its corpus is the 3 km @ 2 m tiles, better data than the atlas's 256²
+clips. If an atlas run is ever wanted, the regeneration path is
+`assets/atlas.bin` + `golf-atlas/src/binfmt.rs` (main), or re-collection via
+the parkland_atlas scripts.
+
+**Still absent (M4 concern, not spike):** the 135-course DTM store
+(`tools/dtm_atlas/out/`) that `dtm_metrics/gates.py` runs over. Refetchable
+from 3DEP via `dep3.py`; only the indices are committed.
 
 ---
 

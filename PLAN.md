@@ -151,7 +151,8 @@ Recorded here so they are not rediscovered one stage at a time.
 | **Three of six biomes have no corpus**; only **38 clean tiles** exist and they are keyed to the retired archetypes | **S3 entirely** (no corpus ⇒ no dictionary ⇒ no texture), plus S0/S2/S9 targets | [targets.md](docs/calibration/targets.md) |
 | **Four of the 22 metrics do not exist** and are ungated | heathland, great-plains, river-valley, hill-country fits | [metric-battery.md](docs/calibration/metric-battery.md) |
 | No batch entrypoint (`xtask forward-grid` is not on this branch) | the entire calibration loop | M2 |
-| `tools/metrics` and `tools/dtm_metrics` are non-runnable (missing `parkland_atlas` cache) | any measurement | [MIGRATION.md](MIGRATION.md) |
+| ~~metric tools non-runnable~~ **Resolved 2026-08-07**: battery verified end-to-end on real tiles (`tools/spike/smoke.py`); parkland cache proved unnecessary for v2 | — | [MIGRATION.md](MIGRATION.md) |
+| `tools/dtm_atlas/out/` DTM store absent (needed by `gates.py` for metric admission) | M4's G1–G6 gates | refetchable via `dep3.py`; indices committed |
 | Dictionary patch size, basis rank, bucket boundaries undecided | S3's asset format | [stage-03](docs/stages/stage-03-amplification.md), settled by the M3.5 spike |
 | **C0 delivery format TBD with the frontend team** (heightmap format, quantization, LOD) | S3 implementation (quantization bounds texture depth) | [C0-delivery.md](docs/contracts/C0-delivery.md) |
 | Envelope representation undecided (GMM vs hull vs flow) | S0's sampler | [envelope-certification.md](docs/calibration/envelope-certification.md) |
@@ -189,9 +190,12 @@ retirement; `cargo check --workspace` is clean and the 112 retained tests pass.
 The documentation tree is complete: 12 stage docs, 3 contracts, 8 biome files,
 4 calibration docs, plus the three root documents.
 
-**All twelve stages are unclaimed.** Next: M1 (contracts) and M2 (batch
-entrypoint), which between them unblock everything else; the **M3.5 dictionary
-spike**, which de-risks the central bet using tiles already on disk; and M4's
-corpus campaign, the long pole, which can run in parallel from day one. C0's
-TBD-frontend rows (M4.5) need a conversation with the frontend team sometime
-before S3 is implemented.
+**All twelve stages are unclaimed. Spike prerequisite complete (2026-08-07):**
+`tools/parkland_atlas` + `assets/atlas.bin` recovered from `main`; the
+measurement chain verified end-to-end on a real clean piedmont tile
+(`tools/spike/smoke.py` — cgrid → `surfaces.build` → the 49-scalar battery,
+whole-tile and residual-only); the 6 clean piedmont tiles inventoried; first
+fit-target numbers recorded (residual std 1.95 m, β 3.59, variogram range
+181 m). **The M3.5 spike itself is unblocked and is the next step**, alongside
+M1 (contracts) and M2 (batch entrypoint). C0's TBD-frontend rows (M4.5) need a
+conversation with the frontend team sometime before S3 is implemented.

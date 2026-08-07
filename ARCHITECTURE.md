@@ -92,14 +92,23 @@ crates/
   tile-lab/            — campaign-data QA viewer
 
 tools/                 — Python: the data campaign + terrain analysis stack
+  spike/               — M3.5 dictionary-spike workspace: smoke.py (the
+                         measurement-chain end-to-end test) + status
   metrics/             — the pure f(height, cell, mask) battery kernels
   dtm_metrics/         — metric admission gates (G1–G6) + the Sobol/HistGBT
                          calibration sandbox
   dtm_atlas/           — USGS 3DEP DTM store, OSM/NHD masks, QA
   macro_campaign/      — corpus fetch/screen/compare/report + CGRID1 mirror
   tile_scout/          — F0/F1/F2 tile selection cascade
-  dtm_primitives/      — primitive extraction (reference only)
+  dtm_primitives/      — primitive extraction; promoted to a dependency
+                         (skeletonizes real tiles for the dictionary)
+  parkland_atlas/      — the v1 200-course collector (recovered from main;
+                         cache regeneration optional — see MIGRATION.md)
   landform_prior/      — retired fitting pattern (reference only)
+
+assets/
+  atlas.bin            — packed 200-course parkland atlas (from main;
+                         golf-atlas/src/binfmt.rs is the format)
 ```
 
 ## The separation principle

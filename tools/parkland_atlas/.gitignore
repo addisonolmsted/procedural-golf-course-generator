@@ -1,0 +1,6 @@
+# Scratch / working files — keep the deliverables (out/parkland_atlas.html,
+# out/parkland_atlas.json) and the resumable cache (out/cache/).
+__pycache__/
+out/preview/
+out/*.log
+out/failed.json
