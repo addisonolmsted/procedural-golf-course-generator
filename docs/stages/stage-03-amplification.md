@@ -116,12 +116,38 @@ does not need channel heads to stay put: [S4](stage-04-hydrology.md) re-derives
 hydrology from the amplified surface afterwards, so small movements are simply
 absorbed.
 
-### 5. Polish
+### 5. Fill the sub-patch band
+
+Below the dictionary's finest resolved wavelength (~patch pitch ÷ components),
+fill with **noise shaped to the measured PSD of the real residual** —
+`course_world::noise`, band-limited, position-seeded, amplitude from the
+variogram targets. This is the one place procedural noise touches the terrain,
+and the rule that keeps it honest: *if a metric can tell the fill from the real
+thing at that band, the fill is not allowed at that band.* See
+[../00-architecture.md](../00-architecture.md), "Where noise lives".
+
+### 6. Close the relief budget
+
+S1 spends part of `relief_budget_m`, S2 spends more, and the residual adds the
+rest — and **S3 is the closer**: it measures what S1 + S2 actually spent and
+scales its total residual amplitude so the finished surface lands on the drawn
+budget. Without a closer, three stages drawing independently from one budget
+systematically overshoot. (The taper and the certified amplitude ceiling still
+bound the scaling; the budget closes *within* them.)
+
+### 7. Polish
 
 One short fixed pass making the surface drainage-coherent: rills that actually
 converge, no spurious pits. **Not a texture source** — texture is the
 dictionary's job. This is what remains of the erosion stage, and it is a much
 better-defined job than "texture that must not restructure."
+
+**The pit boundary is decided, not discovered.** S2's closed-basin embryos are
+recorded in the skeleton artifact, so polish knows exactly which depressions
+are intended: it removes only pits that are *not* embryo-derived **and** are
+below the embryo scale. A heathland kettle survives polish because polish can
+look it up — not because a heuristic guessed right. (S7's repair uses the same
+lookup via S4's basin inventory.)
 
 ## Biome expression
 
@@ -203,10 +229,20 @@ The **discriminants** — the metrics that actually separate archetypes, per
   graded, not natural, and blending them in unweighted would teach the
   generator to reproduce earthmoving as terrain.
 
+**De-risk first: the dictionary spike.** The full campaign is expensive and
+the dictionary is the least-proven component — do not let it be validated
+last. Before fetching anything, fit a crude dictionary from the **6 clean
+piedmont tiles already on disk**, reconstruct over a synthetic base, and score
+`spectral_slope_beta` and the curvature family against held-out real. A week of
+work that answers "can this work at all" before the campaign is paid for. If
+the spike fails, the fallback conversation happens *before* 300 tiles are
+fetched, not after.
+
 **Blocker:** the corpus today is 38 clean tiles keyed to the *retired*
-archetypes. The campaign is a prerequisite. Note also that
-`tools/metrics` and `tools/dtm_metrics` are currently non-runnable — both read
-`tools/parkland_atlas/out/cache`, absent from this branch.
+archetypes. The full campaign is a prerequisite for shipping quality (the spike
+is not shipping quality). Note also that `tools/metrics` and `tools/dtm_metrics`
+are currently non-runnable — both read `tools/parkland_atlas/out/cache`, absent
+from this branch.
 
 ## Future-biome seams
 

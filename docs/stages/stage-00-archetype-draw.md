@@ -62,12 +62,22 @@ SiteDescriptors {
   relief_budget_m: f64,       // total vertical range the site may use
   density_target: f64,        // drainage density, channel-km per km^2
   plasticity: f64,            // [0,1]; see docs/00-architecture.md
-  wind_azimuth_rad: f64,      // DIRECTION [0,2pi)
+  wind_azimuth_rad: f64,      // DIRECTION [0,2pi) -- the PREVAILING wind
+  wind_speed_mps: f64,        // prevailing mean speed; scales aeolian dials
   water_table_m: f64,         // depth below the local datum; may be negative
   strata: Vec<Stratum>,       // may be empty
   aesthetic_seed: u64,        // S10's sub-seed
 }
 ```
+
+**One wind system.** The prevailing wind drawn here is simultaneously (a) the
+azimuth every aeolian feature is sculpted along — S2's dune trains, S3's
+oriented texture, S9's rumple, S10's flagging vegetation — and (b) **the
+course's exported prevailing wind**, delivered to the game via
+[C0](../contracts/C0-delivery.md). Runtime gameplay wind is the game's business
+(gusts, variation, hole-by-hole shifts), but its *mean* is this vector — so the
+wind a player fights points down the same axis the dunes run. Terrain and
+gameplay never disagree about which way the wind blows.
 
 ## Responsibilities
 

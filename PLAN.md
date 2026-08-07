@@ -74,14 +74,26 @@ first route); S7–S10 stream per hole. Full table:
 - **M3 — S1 + S2 (the critical path).** The skeleton kernel is where the
   architecture's central bet lives. Build it early, measure it early. S1 is
   small and can proceed in parallel.
+- **M3.5 — the dictionary spike (de-risk, before the campaign).** Fit a crude
+  dictionary from the **6 clean piedmont tiles already on disk**
+  (`surfaces.py` residuals, coarse buckets), reconstruct over a synthetic
+  base, score `spectral_slope_beta` + curvature against held-out real. ~A week.
+  The least-proven component must not be validated last: if the spike fails,
+  the fallback conversation happens *before* 300 tiles are fetched.
+  Prerequisite: recover `tools/parkland_atlas` from `main` (also the first
+  step of M4).
 - **M4 — corpus + battery.** The long pole, and it gates almost everything.
-  Recover `tools/parkland_atlas` from `main` so the metric tools run at all;
-  implement the four missing metrics and run the G1–G6 gates; **confirm the
+  Implement the four missing metrics and run the G1–G6 gates; **confirm the
   invariant/discriminant split empirically** rather than assuming it; then
   collect corpora in the order in
   [targets.md](docs/calibration/targets.md) — piedmont first (the anchor), then
   heathland (the golden most likely to invalidate an assumption). Target ~30
   clean tiles per biome, ~180 total, at ~40% attrition.
+- **M4.5 — settle C0 with the frontend team.** The
+  [delivery contract](docs/contracts/C0-delivery.md)'s **TBD-frontend** rows:
+  heightmap format, quantization, play-grid extent, beyond-window LOD. Must
+  land before S3 is implemented — quantization depth bounds how much fine
+  texture is worth generating.
 - **M5 — the dictionary.** Fit the patch basis and coefficient distributions
   per conditioning bucket, offline in `course-calibration`. Ship target
   **< 15 MB**. Report **per-bucket tile diversity**, not just patch count — a
@@ -127,7 +139,8 @@ Recorded here so they are not rediscovered one stage at a time.
 | **Four of the 22 metrics do not exist** and are ungated | heathland, great-plains, river-valley, hill-country fits | [metric-battery.md](docs/calibration/metric-battery.md) |
 | No batch entrypoint (`xtask forward-grid` is not on this branch) | the entire calibration loop | M2 |
 | `tools/metrics` and `tools/dtm_metrics` are non-runnable (missing `parkland_atlas` cache) | any measurement | [MIGRATION.md](MIGRATION.md) |
-| Dictionary patch size, basis rank, bucket boundaries undecided | S3's asset format | [stage-03](docs/stages/stage-03-amplification.md) |
+| Dictionary patch size, basis rank, bucket boundaries undecided | S3's asset format | [stage-03](docs/stages/stage-03-amplification.md), settled by the M3.5 spike |
+| **C0 delivery format TBD with the frontend team** (heightmap format, quantization, LOD) | S3 implementation (quantization bounds texture depth) | [C0-delivery.md](docs/contracts/C0-delivery.md) |
 | Envelope representation undecided (GMM vs hull vs flow) | S0's sampler | [envelope-certification.md](docs/calibration/envelope-certification.md) |
 | Siting score undefined (needs fitting to the 64 course grids) | S5's `siting` | [stage-05](docs/stages/stage-05-siting-substrate.md) |
 | S7's template library and S8's surface passes undesigned | S7, S8 | prior art in `golf-holes/` on `main` |
@@ -164,5 +177,8 @@ The documentation tree is complete: 12 stage docs, 3 contracts, 8 biome files,
 4 calibration docs, plus the three root documents.
 
 **All twelve stages are unclaimed.** Next: M1 (contracts) and M2 (batch
-entrypoint), which between them unblock everything else — and M4's corpus
-campaign, which is the long pole and can run in parallel from day one.
+entrypoint), which between them unblock everything else; the **M3.5 dictionary
+spike**, which de-risks the central bet using tiles already on disk; and M4's
+corpus campaign, the long pole, which can run in parallel from day one. C0's
+TBD-frontend rows (M4.5) need a conversation with the frontend team sometime
+before S3 is implemented.

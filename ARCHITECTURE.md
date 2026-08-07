@@ -45,8 +45,9 @@ docs/                  — the authoritative documentation
   01-conventions.md    — units, world geometry, resolution ladder,
                          determinism, artifacts, naming
   02-performance-budget.md — per-stage ms budgets, streaming order
-  contracts/           — C1 (primitives→kernel), C2 (routing substrate),
-                         C3 (routing→realization); the three guarded seams
+  contracts/           — C0 (delivery to the frontend team), C1
+                         (primitives→kernel), C2 (routing substrate),
+                         C3 (routing→realization); the four guarded seams
   stages/              — stage-00…11; one standalone doc per stage
   biomes/              — the six Heartland records, config-not-code,
                          and the future-pack index
@@ -60,7 +61,7 @@ crates/
                          Vec2/libm math, ease, Profile, Spine, noise
   course-viz/          — Grid→PNG renderers (hillshade, hypsometric,
                          scalar/direction fields, overlays)
-  course-contracts/    — C1/C2/C3 + units, metadata, plasticity, biome.
+  course-contracts/    — C0/C1/C2/C3 + units, metadata, plasticity, biome.
                          The v2 vocabulary; deliberately does NOT restate
                          grid or seed types
   course-spec/         — S0: biome + structural class + descriptor draw
@@ -114,11 +115,13 @@ Each stage is an **isolated module behind a versioned artifact contract**:
 4. Every stage doc has the same skeleton, so an agent can own one doc and one
    module without reading the others.
 
-The three seams in [docs/contracts/](docs/contracts/) are the *guarded* ones —
+The four seams in [docs/contracts/](docs/contracts/) are the *guarded* ones —
 golden-tested and stable while everything between them churns. **C2 is the
-waist**: S6 onward may see nothing except C2, and
-`course-routing` depending on anything upstream of it is a build failure, not a
-style problem.
+waist**: S6 onward may see nothing except C2, and `course-routing` depending on
+anything upstream of it is a build failure, not a style problem. **C0 is the
+product**: the delivery bundle for the frontend team — plain axis-aligned
+grids, self-describing manifest, one prevailing-wind vector shared between
+terrain sculpting and gameplay.
 
 ## World geometry (fixed, cross-stage)
 

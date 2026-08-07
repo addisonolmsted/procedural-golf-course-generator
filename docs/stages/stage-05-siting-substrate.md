@@ -113,6 +113,13 @@ in `out/courses/` are ground truth: measuring what terrain real architects
 actually chose turns siting from a heuristic into a fitted model. See
 [../calibration/targets.md](../calibration/targets.md).
 
+One statistical honesty note: this is **one-class data** — we observe the
+terrain architects chose, never the sites they rejected, so a classifier fitted
+naively has no negative class. The fix is built into the method: score
+contrast against **random windows drawn from the same source tiles** as the
+negative class. What distinguishes chosen ground from arbitrary ground in the
+same landscape is exactly the signal siting needs.
+
 ### 2. Scan and select the window
 
 Slide the 600 m window over the ±450 m centre range and pick the best.

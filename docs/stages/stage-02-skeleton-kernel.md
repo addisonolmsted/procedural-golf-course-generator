@@ -114,18 +114,30 @@ more accurate than re-deriving them downstream.
    win. Earlier drafts specified a rich sampled "catena library"; a parametric
    family is now the right call.
 
-### The five modules
+### The five modules — structure only
 
 Each is a **dial, not a branch**. A biome that does not use one runs it at zero
 intensity; the code path is identical.
 
-| Module | What it does | Primary biomes |
+The modules were inherited from a design where S2 owned identity, and have been
+**pruned to structural roles** so that S2 and S3 never fight over the same
+feature. The dividing rule is crisp:
+
+> **An S2 module may alter only the network and the base surface at
+> wavelengths at or above the dictionary's patch scale (~64 m). Everything
+> below that wavelength belongs to S3.**
+
+| Module | Structural role (S2 keeps) | Moved to S3's dictionary |
 |---|---|---|
-| **Trunk-river** | Floodplain, terrace flight, oxbow/scroll stamps | River Valley (dominant), Piedmont (low) |
-| **Stratigraphy / bench** | Differential resistance from the strata stack ⇒ benches and scarps instead of smooth slopes | Hill Country, Great Plains, River Valley (shared) |
-| **Closed basin** | Closed-basin tolerance + a point-process embryo that seeds basins | Heathland (kettles) |
-| **Aeolian** | Micro-band hook oriented by `wind_azimuth_rad`; carries the **S1/S2 amplitude fork** for dune scale | Sandhills |
-| **Drainage integration** | How completely the network connects. Run **negative** for a deranged, poorly-integrated network | Heathland (~0.07 density) |
+| **Trunk-river** | Floodplain accommodation, terrace-flight **geometry**, meander planform + its provenance record | Scroll-bar and swale **texture** on the floodplain |
+| **Stratigraphy / bench** | Bench and scarp **geometry** — tread/riser positions from the strata stack | Riser-face and tread **texture** |
+| **Closed basin** | The point-process **embryos** that seed basins, and closed-basin tolerance in the flow field. Embryos are recorded in the artifact — S3's polish and S7's repair both need to know which pits are intended | Hummock texture around kettles |
+| **Aeolian** | Dune-**train** ridges in the base surface — the 100–400 m structural forms, oriented by `wind_azimuth_rad`. These sit above S1's ≥400 m band and above S3's patch scale, so they have no other owner | Dune-flank form, blowouts, rumple — everything below ~64 m |
+| **Drainage integration** | How completely the network connects; run **negative** for a deranged network | — (purely structural) |
+
+This also **resolves the S1/S2 amplitude fork** from the earlier draft: S1 owns
+the ≥ 400 m dune-train envelope, S2's aeolian module owns the 64–400 m dune
+forms, S3 owns everything finer. Three owners, three disjoint bands, no fork.
 
 ## Biome expression
 
@@ -212,10 +224,10 @@ useful validation of the trait's shape before an external kernel needs it.
    bifurcation ratio. Grow to a fixed count and report the achieved ratio, or
    construct the hierarchy top-down so ratios hold by construction? Leaning
    top-down — it makes the invariant structural rather than hoped-for.
-4. **Where does the S1/S2 amplitude fork live?** The dune amplitude split
-   currently spans both stages. With S3 owning texture, the fork may collapse
-   entirely: S1 keeps the dune-train envelope, S3 keeps the dune form, and S2's
-   aeolian module does little. Confirm against the sandhills corpus.
+4. ~~Where does the S1/S2 amplitude fork live?~~ **Resolved** by the wavelength
+   rule above: S1 ≥ 400 m, S2 64–400 m, S3 < 64 m. Validate the band boundaries
+   against the sandhills corpus's spectral break, but the ownership question is
+   closed.
 5. **How is achieved density reported?** If fixed-count growth systematically
    misses `density_target`, the envelope is wrong. S2 should emit achieved
    density and achieved Horton ratios as diagnostics so calibration can close

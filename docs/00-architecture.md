@@ -31,20 +31,26 @@ author being involved — and that a bug found in one biome is a bug fixed in al
 of them. With the exemplar pool carrying identity, **adding a biome is mostly a
 data-collection job.**
 
-### 2. Three guarded contracts
+### 2. Four guarded contracts
 
-Most of the pipeline is expected to churn. Three interfaces are not:
+Most of the pipeline is expected to churn. Four interfaces are not:
 
 | Contract | Between | Doc |
 |---|---|---|
+| **C0** | the pipeline → **the frontend/game team** | [contracts/C0-delivery.md](contracts/C0-delivery.md) |
 | **C1** | macro primitives → skeleton kernel | [contracts/C1-primitives-to-kernel.md](contracts/C1-primitives-to-kernel.md) |
 | **C2** | skeleton → routing (*the routing substrate*) | [contracts/C2-routing-substrate.md](contracts/C2-routing-substrate.md) |
 | **C3** | routing → realization (corridor graph + budgets) | [contracts/C3-corridor-realization.md](contracts/C3-corridor-realization.md) |
 
-These three are golden-seed tested and versioned. Everything between them may
-be replaced wholesale. C2 is the load-bearing one: it is the waist of the
-pipeline, and S6 onward can see nothing except C2 — not the skeleton, not the
-biome, not how any of it was made.
+All four are golden-seed tested and versioned. Everything between them may be
+replaced wholesale. C2 is the internal load-bearing one — the waist of the
+pipeline; S6 onward can see nothing except C2. **C0 is the external one**: its
+consumer is another team, its heightmaps are plain axis-aligned grids with no
+transform attached, and its `prevailing_wind` is byte-identical to the vector
+the terrain was sculpted with — one wind system, terrain and gameplay never
+disagreeing about which way it blows. Several C0 fields are **TBD with the
+frontend team** and must be settled before S3 is implemented, because
+quantization depth bounds how much fine texture is worth generating.
 
 ### 3. Offline calibration, runtime guarantees
 
@@ -126,6 +132,30 @@ simulated and not parameterized — it is *sampled from the real thing*.
 
 See [calibration/metric-battery.md](calibration/metric-battery.md) for the
 invariant/discriminant split and its evidence.
+
+## Where noise lives
+
+Procedural noise is **never the source of terrain character** — that was the
+original generator's failure: noise has no structure, and no amount of tuning
+gives it any. But noise is not banned; it survives in three bounded,
+calibrated roles:
+
+1. **S1's macro fields.** The relief predisposition is a band-limited random
+   field at wavelengths ≥ 400 m. Noise, used where noise is honest — the
+   long-wavelength lottery of where a site happens to sit high or low.
+2. **RNG draws for discrete choices.** Tributary deflection, basin seeding,
+   coefficient selection — randomness steering decisions, not painting
+   texture. All of it through the `course-seed` stream registry.
+3. **The sub-patch spectral fill.** The dictionary's patches resolve down to
+   roughly their own pitch (~64 m ÷ components). Below the finest resolved
+   band, [S3](stages/stage-03-amplification.md) and
+   [S9](stages/stage-09-micro-repass.md) fill with noise **shaped to the
+   measured PSD of the real residual** — `course_world::noise`, band-limited,
+   position-seeded, amplitude from the variogram targets. A filler tuned to
+   measurements, never a character source.
+
+The rule that keeps this disciplined: **if a metric can tell generated noise
+from the real thing at that band, noise is not allowed at that band.**
 
 ## Deliberate reversals from v1
 

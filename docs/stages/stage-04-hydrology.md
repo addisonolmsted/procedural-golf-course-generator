@@ -163,9 +163,10 @@ other stage changes.
 1. **Agreement tolerance.** `skeleton_agreement` needs a definition and a
    healthy range. Proposal: fraction of authored channel length within one 8 m
    cell of a derived channel. Below ~0.9, S3's taper needs strengthening.
-2. **Where exactly does trunk carving happen** — inside the floodplain datum,
-   or as a separate ordered modifier after it? Separate is more honest and more
-   testable. Leaning separate.
+2. ~~Where does trunk carving happen?~~ **Resolved: a separate ordered
+   modifier after the floodplain datum.** More testable, and the transform
+   order is config anyway. The open part is only its parameterization (carve
+   depth/width profile along the trunk).
 3. **Are seasonal bodies (`permanent: false`) read downstream?** Heathland is
    the only biome producing them. If nothing consumes the flag, drop it rather
    than carry a lie.
