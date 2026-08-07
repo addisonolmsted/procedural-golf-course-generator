@@ -45,6 +45,9 @@ docs/                  — the authoritative documentation
   01-conventions.md    — units, world geometry, resolution ladder,
                          determinism, artifacts, naming
   02-performance-budget.md — per-stage ms budgets, streaming order
+  03-success-indicators.md — per-stage gates: plausibility, variety
+                         (dispersion ratio), qualitative protocols P1-P5,
+                         the golfability proxy, blocking-gate discipline
   contracts/           — C0 (delivery to the frontend team), C1
                          (primitives→kernel), C2 (routing substrate),
                          C3 (routing→realization); the four guarded seams

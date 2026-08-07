@@ -27,6 +27,9 @@ routable**:
 
 Cross-cutting rules and the repo map: [ARCHITECTURE.md](ARCHITECTURE.md).
 The architecture itself: [docs/00-architecture.md](docs/00-architecture.md).
+**How we know each stage worked**: [docs/03-success-indicators.md](docs/03-success-indicators.md)
+— the per-stage gates, the dispersion-ratio variety target, the qualitative
+protocols, and the golfability proxy. Milestones below reference its gates.
 Where pre-v2 code went: [MIGRATION.md](MIGRATION.md).
 
 ## The pipeline
@@ -71,17 +74,21 @@ first route); S7–S10 stream per hole. Full table:
 - **M2 — the batch entrypoint.** `course-cli` headless driver with a
   `forward-grid` equivalent. Small, and it unblocks the entire calibration
   loop — `tools/calibration/forward.py` has nothing to call without it.
-- **M3 — S1 + S2 (the critical path).** The skeleton kernel is where the
-  architecture's central bet lives. Build it early, measure it early. S1 is
-  small and can proceed in parallel.
+- **M3 — S1 + S2 (the critical path).** Build early, measure early. S1's exit
+  test is **class legibility** (name the window class from the implied-terrain
+  hillshade). S2's exit is **gate G-SKELETON**: shared invariants in band on
+  the base surface, **conditioning-space overlap ≥ ~90% vs real tiles** (the
+  leading indicator that predicts S3's success before S3 exists), the
+  golfability proxy in regime, P1 overlay review — and explicitly NOT judged
+  on texture, which is expected to look like candle wax.
 - **M3.5 — the dictionary spike (de-risk, before the campaign).** Fit a crude
   dictionary from the **6 clean piedmont tiles already on disk**
   (`surfaces.py` residuals, coarse buckets), reconstruct over a synthetic
-  base, score `spectral_slope_beta` + curvature against held-out real. ~A week.
-  The least-proven component must not be validated last: if the spike fails,
-  the fallback conversation happens *before* 300 tiles are fetched.
-  Prerequisite: recover `tools/parkland_atlas` from `main` (also the first
-  step of M4).
+  base. ~A week. The least-proven component must not be validated last: if the
+  spike fails, the fallback conversation happens *before* 300 tiles are
+  fetched. Prerequisite: recover `tools/parkland_atlas` from `main` (also the
+  first step of M4). **Gate: G-SPIKE** — blocking go/no-go
+  ([success indicators](docs/03-success-indicators.md)).
 - **M4 — corpus + battery.** The long pole, and it gates almost everything.
   Implement the four missing metrics and run the G1–G6 gates; **confirm the
   invariant/discriminant split empirically** rather than assuming it; then
@@ -98,8 +105,14 @@ first route); S7–S10 stream per hole. Full table:
   per conditioning bucket, offline in `course-calibration`. Ship target
   **< 15 MB**. Report **per-bucket tile diversity**, not just patch count — a
   bucket sourced from one tile will reproduce that tile.
-- **M6 — S3 + S4 + S5.** Amplification (the realism bet — measure it against
-  discriminants immediately), hydrology, siting, and C2 assembly.
+- **M6 — S3 + S4 + S5.** Amplification, hydrology, siting, C2 assembly.
+  Exits through the two big gates: **G-TERRAIN** (discriminants in band,
+  energy distance beats 2.35, blind A/B ≤ 65%, name-the-biome ≥ 80%,
+  dispersion ratio 0.7–1.3, `skeleton_agreement` ≥ 0.9) and **G-SITE**
+  (chosen window beats centred + median-random on the fitted score;
+  golfability proxy inside the real-course band). G-TERRAIN + G-SITE on
+  piedmont, heathland, and sandhills = **terrain-complete**, the declared
+  precondition for starting routing work.
 - **M7 — first certified envelope.** Recover and rebind `tools/calibration`
   from `main`; run the loop for piedmont; produce an envelope S0 can sample.
   **The coverage gate here is the referee on the realism bet** — run it

@@ -148,6 +148,11 @@ addition, since C1 has no vocabulary for located features).
    [S0's open question 2](stage-00-archetype-draw.md). Whatever is decided
    there applies here.
 
+**Exit test: class legibility** — a reviewer names the window class from the
+implied-terrain hillshade alone, ≥ 80% ([../03-success-indicators.md](../03-success-indicators.md)).
+If the class is not legible in the macro fields, nothing downstream will make
+it legible.
+
 ## Acceptance criteria
 
 - [ ] Same seed ⇒ byte-identical C1 artifact, cross-platform.

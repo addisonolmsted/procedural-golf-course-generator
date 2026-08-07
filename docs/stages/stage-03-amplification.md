@@ -272,6 +272,12 @@ job, not a modelling job.**
 6. **Course-grid weighting.** How much do built grids contribute before they
    start teaching earthmoving? Suspect low, and only in fairway-scale buckets.
 
+**Exit gate: G-TERRAIN** in
+[../03-success-indicators.md](../03-success-indicators.md) — discriminants in
+band, blind A/B ≤ 65%, name-the-biome ≥ 80%, dispersion ratio 0.7–1.3. The
+criteria below are the correctness axis of that gate; the spike gate G-SPIKE
+precedes all of it.
+
 ## Acceptance criteria
 
 - [ ] Same seed ⇒ byte-identical output, cross-platform.

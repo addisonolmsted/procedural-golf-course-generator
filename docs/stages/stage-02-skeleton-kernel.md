@@ -233,6 +233,12 @@ useful validation of the trait's shape before an external kernel needs it.
    density and achieved Horton ratios as diagnostics so calibration can close
    the loop.
 
+**Exit gate: G-SKELETON** in
+[../03-success-indicators.md](../03-success-indicators.md) — including the
+conditioning-space-overlap leading indicator, the golfability proxy, and the
+explicit rule that S2 is **not** judged on texture. The criteria below are the
+correctness axis of that gate.
+
 ## Acceptance criteria
 
 - [ ] Same seed ⇒ byte-identical skeleton, cross-platform.

@@ -216,6 +216,11 @@ a hand-written struct literal.
 6. **Does the window need a halo** for corridors that bulge past it? Probably a
    ~50 m tolerance, which the 750 m margin absorbs easily.
 
+**Exit gate: G-SITE** in
+[../03-success-indicators.md](../03-success-indicators.md) — including the
+golf-eye protocol (P5) and the golfability proxy calibrated on the 64 real
+course grids. The criteria below are the correctness axis of that gate.
+
 ## Acceptance criteria
 
 - [ ] Same seed ⇒ byte-identical C2, cross-platform.
