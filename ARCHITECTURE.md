@@ -48,6 +48,9 @@ docs/                  — the authoritative documentation
   03-success-indicators.md — per-stage gates: plausibility, variety
                          (dispersion ratio), qualitative protocols P1-P5,
                          the golfability proxy, blocking-gate discipline
+  04-terrain-workplan.md — the complete work breakdown to terrain-complete:
+                         phases A-H, three parallel tracks, stage-lab tabs,
+                         the dependency spine
   contracts/           — C0 (delivery to the frontend team), C1
                          (primitives→kernel), C2 (routing substrate),
                          C3 (routing→realization); the four guarded seams

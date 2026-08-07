@@ -30,6 +30,9 @@ The architecture itself: [docs/00-architecture.md](docs/00-architecture.md).
 **How we know each stage worked**: [docs/03-success-indicators.md](docs/03-success-indicators.md)
 — the per-stage gates, the dispersion-ratio variety target, the qualitative
 protocols, and the golfability proxy. Milestones below reference its gates.
+**The full work breakdown to terrain-complete**:
+[docs/04-terrain-workplan.md](docs/04-terrain-workplan.md) — phases A–H with
+per-item verification, the stage-lab tab plan, and the dependency spine.
 Where pre-v2 code went: [MIGRATION.md](MIGRATION.md).
 
 ## The pipeline
