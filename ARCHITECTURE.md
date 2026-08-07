@@ -1,71 +1,90 @@
 # Architecture
 
-The general architecture of the golf-terrain pipeline. **This file is updated
-every time a folder or file is added to this branch** — it is the map of the
-repo. Per-stage contracts live under `stages/`; the project plan and
-milestones live in [PLAN.md](PLAN.md).
+The map of this repo. **This file is updated every time a folder or file is
+added to this branch.** Deep documentation lives in [docs/](docs/); the project
+plan and milestones live in [PLAN.md](PLAN.md); where the pre-v2 code went is
+in [MIGRATION.md](MIGRATION.md).
 
 ## The pipeline in one paragraph
 
-A deterministic 14-stage generator (stages 0–13). Authored **envelopes** in,
-physics out: Stage 0 draws the archetype and the parameter vector θ; stages
-1–3 author the site frame, the routability mask (the guarantee, authored
-BEFORE terrain exists), and a few shallow guidance strokes; Stage 4 compiles
-them into forcing fields; Stage 5 — the co-author — runs a landscape
-evolution model (stream power + diffusion + thermal) that earns terrain
-plausibility instead of imitating it; stages 6–8 extract water, assign
-cover, and cheaply verify the mask survived; stages 9–13 route the holes,
-build them, validate drainage, blend the seams, and emit the object
-manifest. Rerolls are cheap by construction: a gate fail resamples stages
-2–3 only — archetype, θ, and framing survive.
+A deterministic **12-stage** generator (S0–S11). A seed goes in; a complete,
+playable 9-hole par-36 golf course comes out in under ten seconds,
+byte-identically on every platform. S0 draws the biome and its site descriptors
+from an offline-certified envelope; S1 lays down the site's predisposition; S2 —
+a fluvial skeleton engine — authors the structure; S3 applies datum transforms
+and extracts water; S4 adds erosion texture without ever restructuring; S5
+compiles everything into the routing substrate; S6 routes nine holes; S7–S10
+grade, lay out, detail, and dress them one hole at a time so the first tee is
+playable while the rest finish; S11 measures and reports. **Nothing rejects and
+nothing retries** — the rejecting happened offline, in calibration, so runtime
+samples only from parameter space already known to work.
 
-Why this shape: the previous authored-primitive generator was measured
-against a 90-tile corpus of real landscapes and failed structurally (22/71
-knobs within the real IQR; archive commit `0313432`,
-`tools/macro_campaign/out/report/compare.md`). Realism is now delegated to
-the sim; authorship is confined to envelopes the sim cannot break.
+Full treatment, including the four decisions this architecture deliberately
+reverses from its predecessor: [docs/00-architecture.md](docs/00-architecture.md).
 
 ## Repo layout (current)
 
 ```
 ARCHITECTURE.md        — this file: repo map + cross-cutting invariants
-PLAN.md                — goal, milestones N0-N8, campaign v2, status
-stages/00…13-*.md      — one contract doc per stage; each stage's owning
-                         agent builds that stage and keeps its doc current
+PLAN.md                — milestones, claim protocol, status
+MIGRATION.md           — where every pre-v2 module went
 Cargo.toml             — Rust workspace (resolver 2, edition 2024)
-crates/course-seed/    — stage 00a: DetRng determinism kit, stream registry,
-                         RunIdentity, reroll rule
-crates/course-spec/    — stage 00b: archetype selection + θ sampling →
-                         spec.json; data/archetype_priors.json is the
-                         committed, fingerprinted prior (knob registry)
-crates/course-framing/ — stage 01: CourseSpec → framing.json (window class,
-                         base level, tilt, grain, provinces + the structural
-                         skeleton: trunk corridor, tributaries, ridge axes,
-                         terrace step lines); stable-scoped, survives
-                         rerolls byte-identically
-crates/course-world/   — shared substrate: Grid/GridSpec + CGRID1 store,
-                         world constants, Vec2/libm math, ease, Profile,
-                         Spine/catmull-rom splines, perlin noise
-crates/course-viz/     — shared substrate: Grid→PNG renderers (hillshade,
-                         hypsometric, scalar/direction fields, overlays)
-crates/stage-lab/      — per-stage viewer shell (egui): one tab per built
-                         stage + seed-sweep gallery; stage 01 framing today,
-                         stages 02-04 add tabs; headless snapshots example
-crates/tile-lab/       — campaign-data QA viewer: real corpus tiles, the
-                         extractor's classifications, knobs-vs-prior, the
-                         exclusion cull; optional compare pane accepts any
-                         CGRID1 heightfield
+
+docs/                  — the authoritative documentation
+  00-architecture.md   — the 12 stages, the three ideas, plasticity
+  01-conventions.md    — units, world geometry, resolution ladder,
+                         determinism, artifacts, naming
+  02-performance-budget.md — per-stage ms budgets, streaming order
+  contracts/           — C1 (primitives→kernel), C2 (routing substrate),
+                         C3 (routing→realization); the three guarded seams
+  stages/              — stage-00…11; one standalone doc per stage
+  biomes/              — the six Heartland records, config-not-code,
+                         and the future-pack index
+  calibration/         — lidar pipeline, 22-metric battery, target
+                         vectors, envelope certification (all OFFLINE)
+
+crates/
+  course-seed/         — determinism kit: DetRng, stream registry,
+                         RunIdentity. Shared substrate, reused unchanged
+  course-world/        — Grid/GridSpec + CGRID1, world constants,
+                         Vec2/libm math, ease, Profile, Spine, noise
+  course-viz/          — Grid→PNG renderers (hillshade, hypsometric,
+                         scalar/direction fields, overlays)
+  course-contracts/    — C1/C2/C3 + units, metadata, plasticity, biome.
+                         The v2 vocabulary; deliberately does NOT restate
+                         grid or seed types
+  course-spec/         — S0: biome + descriptor draw → spec.json
+                         (contents pre-v2; see MIGRATION.md)
+  course-primitives/   — S1: macro primitives → C1
+  course-skeleton/     — S2: the fluvial engine + five modules;
+                         the SkeletonKernel future-biome seam
+  course-transforms/   — S3: datum ops, water extraction, basin inventory;
+                         glacial + boundary-retreat seams (empty)
+  course-finishers/    — S4: texture-only erosion; the never-restructures check
+  course-substrate/    — S5: assembles C2
+  course-routing/      — S6: beam + anneal → C3
+  course-earthmoving/  — S7: grading, borrow, mass balance, bounded repair
+  course-layout/       — S8: the ten-pass plan/surface hole layout
+  course-micro/        — S9: oriented band-limited detail + surface fields
+  course-zoning/       — S10: cover mosaic, materials, palette, placements
+  course-validate/     — S11: playability, sightlines, difficulty, perf, goldens
+  course-calibration/  — OFFLINE: ingest, battery, gates, fitting, envelopes
+  course-cli/          — headless dev driver
+  course-framing/      — v1 stage 01; prior art for S1/S2, retired when
+                         the skeleton kernel lands (MIGRATION.md)
+  stage-lab/           — per-stage viewer shell (egui) + headless snapshots
+  tile-lab/            — campaign-data QA viewer
+
 tools/                 — Python: the data campaign + terrain analysis stack
-  macro_campaign/      — corpus fetch/screen/report + fitting (see PLAN.md
-                         campaign v2 for what is retained vs retired)
-  dtm_atlas/ dtm_metrics/ dtm_primitives/ metrics/ tile_scout/
-                       — ported terrain-v2 analysis tools (DTM store,
-                         metric batteries, primitive extraction, tile scout)
+  metrics/             — the pure f(height, cell, mask) battery kernels
+  dtm_metrics/         — metric admission gates (G1–G6) + the Sobol/HistGBT
+                         calibration sandbox
+  dtm_atlas/           — USGS 3DEP DTM store, OSM/NHD masks, QA
+  macro_campaign/      — corpus fetch/screen/compare/report + CGRID1 mirror
+  tile_scout/          — F0/F1/F2 tile selection cascade
+  dtm_primitives/      — primitive extraction (reference only)
   landform_prior/      — retired fitting pattern (reference only)
 ```
-
-Retired at commit `0313432` (archived, reachable, not in the workspace):
-`crates/course-macro` (authored macro primitives), `crates/macro-lab`.
 
 ## The separation principle
 
@@ -74,105 +93,156 @@ Each stage is an **isolated module behind a versioned artifact contract**:
 1. A stage's only interface is: read its input artifacts → write its output
    artifact. Data shapes live in the stage docs; nothing crosses a stage
    boundary that is not in a contract.
-2. A stage may be overhauled or replaced without touching any other stage,
-   so long as its output contract is honored. Contract changes are
-   cross-stage events: update the affected docs + this file, bump the
-   artifact version and `PIPELINE_VERSION`.
+2. A stage may be overhauled or replaced without touching any other stage, so
+   long as its output contract is honored. Contract changes are cross-stage
+   events: update the affected docs and this file, bump the artifact version
+   and `PIPELINE_VERSION`, re-bless goldens.
 3. Stages never import each other's internals and are testable in isolation
-   against fixture artifacts before their upstream neighbors exist.
-4. Every stage doc has the same skeleton (Purpose / Position / Contract /
-   Per-archetype behavior / Hard requirements / References / Open questions
-   / Status), so an agent can own one doc and one module without reading
-   the others.
+   against fixture artifacts before their upstream neighbours exist.
+4. Every stage doc has the same skeleton, so an agent can own one doc and one
+   module without reading the others.
+
+The three seams in [docs/contracts/](docs/contracts/) are the *guarded* ones —
+golden-tested and stable while everything between them churns. **C2 is the
+waist**: S6 onward may see nothing except C2, and
+`course-routing` depending on anything upstream of it is a build failure, not a
+style problem.
 
 ## World geometry (fixed, cross-stage)
 
-- Generated terrain: **3 km × 3 km**, origin SW, x east, y north, metres.
-  (`course-world::world`: `EXTENT_M`, `world_spec`, `in_core`.)
-- **Core**: central 1.5 km × 1.5 km `[750, 2250]²` m. The routability mask
-  (stage 02) lives mostly inside it; holes are routed inside the mask.
-- Resolutions: **2 m** canonical deliverable (`RES_FULL_M`, 1501² nodes),
-  8 m preview, **sim resolution ~4 m** for stage 05 (its doc owns the final
-  choice), **0.5 m** local patches for stages 10–12
-  (`RES_EARTHWORKS_M`). Every stage is resolution-consistent: same code
-  path at any cell size.
+Defined in [`crates/course-world/src/world.rs`](crates/course-world/src/world.rs)
+— import these, never redefine them.
+
+- **3 km × 3 km**, origin SW, x east, y north, metres (`EXTENT_M`). No CRS: a
+  local Cartesian frame, with elevations in a local datum where 0 is a nominal
+  core reference, not sea level.
+- **Core**: the central 1.5 km × 1.5 km window `[750, 2250]²` (`CORE_MIN_M`,
+  `CORE_MAX_M`, `in_core`). Holes route inside it; the margin exists so
+  landforms enter and leave the frame instead of terminating at it.
+- **Resolution ladder**: 8 m preview/search (`RES_PREVIEW_M`, 376²), **2 m
+  canonical** (`RES_FULL_M`, 1501²), 0.5 m corridor-local
+  (`RES_EARTHWORKS_M`). Node convention `nx = extent/res + 1`, so coarse node
+  sets **nest** inside fine ones and coarsening is subsampling, not resampling.
+
+Details and the three ladder rules: [docs/01-conventions.md](docs/01-conventions.md).
 
 ## Cross-cutting invariants
 
-1. **Determinism.** One master `seed: u64`. Same seed + params + resolution
-   ⇒ byte-identical artifacts on every platform. All randomness through
+1. **Determinism.** One master `seed: u64`. Same seed + params + resolution ⇒
+   byte-identical artifacts on every platform. All randomness through
    `RunIdentity::stream(name)` with a name registered in
-   `crates/course-seed/src/streams.rs` (this table is test-enforced to
-   mirror it). Registry v2 (current `PIPELINE_VERSION` 3; the registry
-   itself is unchanged since v2): every stream has a SCOPE —
-   `stable` streams key off the MASTER seed (identical on every attempt;
-   stages 0–1 survive gate-fail rerolls), `attempt` streams key off the
-   attempt seed (resampled per reroll):
+   [`crates/course-seed/src/streams.rs`](crates/course-seed/src/streams.rs)
+   (test-enforced). No wall clock, no `HashMap` iteration order, no platform
+   intrinsics, no nondeterministic parallel float reduction; `libm` for
+   transcendentals.
 
-   | Stream | Scope | Purpose |
-   |---|---|---|
-   | `arch/select/v1` | stable | archetype draw (when not forced) |
-   | `arch/params/v1` | stable | θ sampling |
-   | `framing/v1` | stable | stage 01 site framing |
-   | `mask/v1` | attempt | stage 02 routability mask |
-   | `strokes/v1` | attempt | stage 03 guidance strokes |
-   | `forcing/v1` | attempt | stage 04 forcing fields |
-   | `cover/v1` | attempt | stage 07 cover clumping |
-   | `route/v1` | attempt | stage 09 routing search |
-   | `earthworks/v1` | attempt | stage 10 earthworks jitter |
-   | `micro/v1` | attempt | stage 12 micro noise |
-   | `placement/v1` | attempt | stage 13 placement jitter |
-   | `reroll/v1` | stable | INTERNAL: gate-fail sub-seeds (master-seed keyed) |
-   | `fixture/v1` | attempt | tests/fixtures only |
+   **No retry-forked RNG.** v2 never retries, so no stream may advance
+   conditionally on a rejection: draw counts are a function of the parameters
+   alone, never of the data. "Keep drawing until the point lands outside water"
+   is forbidden — draw a fixed count and resolve collisions deterministically.
+   This is the rule most likely to be violated by accident.
 
-   Retired at the v2 rekey: `macro/place/v1`, `noise/field/v1`, `hydro/v1`,
-   `cover/clump/v1`. The `arch/*` names kept `/v1`: attempt-0 draws are
-   bit-identical before and after the scope flip (the master seed IS the
-   attempt-0 seed); the attempt>0 rekey is what the `PIPELINE_VERSION` bump
-   to 2 covers.
-2. **Versioned artifacts.** Every artifact carries a version; shape changes
-   bump it + `PIPELINE_VERSION`, update the stage doc, re-bless goldens —
-   explicit, reviewed events. `serde_json` runs with `float_roundtrip` so
-   f64 JSON round-trips byte-identically.
-3. **Artifacts are files.** JSON for structure, CGRID1 (`course-world::gridio`,
-   mirrored in Python by `macro_campaign/cgrid.py`) for per-cell fields;
-   per-course manifest with blake3 content hashes; `RunIdentity` embedded in
-   every manifest.
-4. **The empty case is legal.** Sandhills has zero surface water; every
-   consumer must be correct on empty collections.
-5. **The archetype is data, not code.** Stages read θ knobs and at most one
-   mode switch (`hydrology_mode`); no stage branches on the archetype id.
-   If you need `if sandhills`, you are missing a parameter.
-6. **The mask is law.** From stage 02 onward, the routability mask's
-   invariant (slope cap, no off-corridor channels, connectivity, corridor
-   width) may not be broken by any stage — stage 04 encodes it as physics,
-   stage 08 verifies it, stages 9–12 preserve it.
+   **The registry as it stands** (`PIPELINE_VERSION` 3). Every stream has a
+   SCOPE: `stable` streams key off the MASTER seed, `attempt` streams key off
+   the attempt seed. Under v2 attempt is pinned at 0, so the distinction is
+   currently inert — see invariant 2.
 
-## The five archetypes
+   | Stream | Scope | Owner today | v2 owner |
+   |---|---|---|---|
+   | `arch/select/v1` | stable | biome draw | S0 |
+   | `arch/params/v1` | stable | θ sampling | S0 |
+   | `framing/v1` | stable | v1 stage 01 | S1 (rename pending) |
+   | `mask/v1` | attempt | v1 stage 02 | **none** — the mask is gone |
+   | `strokes/v1` | attempt | v1 stage 03 | **none** |
+   | `forcing/v1` | attempt | v1 stage 04 | **none** |
+   | `cover/v1` | attempt | v1 stage 07 | S10 |
+   | `route/v1` | attempt | v1 stage 09 | S6 |
+   | `earthworks/v1` | attempt | v1 stage 10 | S7 |
+   | `micro/v1` | attempt | v1 stage 12 | S9 |
+   | `placement/v1` | attempt | v1 stage 13 | S10 |
+   | `reroll/v1` | stable | INTERNAL: reroll sub-seeds | vestigial |
+   | `fixture/v1` | attempt | tests and fixtures only | tests |
 
-| Key | Identity | Water | Relief | Canopy |
-|---|---|---|---|---|
-| `sandhills` | aeolian dune trains, high infiltration | none (surface) | low-mid | open |
-| `piedmont` | rolling fluvial + creek corridor, clay | streams | mid | closed |
-| `florida_lowland` | water table at surface, lakes primary | dominant | ~zero | mid |
-| `glacial_moraine` | kettled moraine / heathland | ponds/bogs | mid | open |
-| `mountain_bench` | benches, scarps, terraces | mountain streams | high | mid |
+   This table is **test-enforced** to mirror
+   [`crates/course-seed/src/streams.rs`](crates/course-seed/src/streams.rs).
+   It is still the v1 registry: the stage docs under [docs/stages/](docs/stages/)
+   name the streams v2 will use (`primitives/v1`, `skeleton/trunk/v1`,
+   `substrate/v1`, …), and those are **proposals** until their stages are
+   built. The rekey is a single reviewed `PIPELINE_VERSION` bump, scheduled
+   with M1 — batched deliberately, because rekeying streams re-blesses every
+   golden.
 
-Selected in stage 00, carried to stage 13 (the art-kit key). They span
-no-water→all-water, flat→steep, open→closed canopy: a contract that
-survives all five survives.
+2. **No runtime rejection.** No gates, no reroll, no unbounded loops, no
+   convergence criteria. Every iterative stage takes a fixed count from config.
+   Safe only because
+   [offline calibration](docs/calibration/envelope-certification.md) certifies
+   the parameter envelope first. **A bad course is a calibration bug, not a
+   seed to discard.**
+
+   `course-seed`'s `MAX_ATTEMPTS` and `Scope::Attempt` machinery is therefore
+   **vestigial** — attempt is pinned at 0. It is retained deliberately;
+   removing it would rekey every stream for no behavioural gain.
+
+3. **Versioned artifacts.** Every artifact carries a version; shape changes bump
+   it plus `PIPELINE_VERSION`, update the stage doc, and re-bless goldens — an
+   explicit reviewed event. `serde_json` runs with `float_roundtrip` so f64 JSON
+   round-trips byte-identically.
+
+4. **Artifacts are files.** JSON for structure, CGRID1
+   (`course-world::gridio`, mirrored in Python by
+   `tools/macro_campaign/macro_campaign/cgrid.py`) for per-cell fields; a
+   per-course manifest with blake3 hashes and the embedded `RunIdentity`. Loud
+   load validation — a stale or malformed artifact fails with a specific error,
+   never a silent default.
+
+5. **The empty case is legal.** Sandhills has no surface water and no channels;
+   Great Plains often has no water bodies; any biome may run any module at zero.
+   Every consumer must be correct on empty collections. This is a hard
+   requirement and the failure mode most likely to survive testing on piedmont
+   and die on sandhills.
+
+6. **The biome is data, not code.** Stages never branch per biome — there is no
+   `if piedmont` anywhere in the pipeline, and adding a biome adds no stage
+   code. A biome that does not use a module **runs it at zero intensity**
+   rather than skipping it. Dials are named for what they do, never for the
+   biome that uses them: `drainage_integration`, not `heathland_derangement`.
+   See [docs/biomes/README.md](docs/biomes/README.md).
+
+7. **The sim does not restructure.** S2 authors the drainage network; S4 adds
+   texture and may not move a divide, open a channel, or capture a drainage.
+   That boundary is what keeps the pipeline certifiable, and S4 enforces it
+   explicitly. See [docs/stages/stage-04-finishers.md](docs/stages/stage-04-finishers.md).
+
+## The six biomes ("Heartland")
+
+| Key | Identity | Water | Relief | Canopy | Plasticity |
+|---|---|---|---|---|---|
+| [`piedmont`](docs/biomes/piedmont.md) | rolling fluvial, creek corridors | streams | mid | closed | mid |
+| [`great_plains`](docs/biomes/great-plains.md) | flat, caprock-held, big sky | little/none | low | open | mid-high |
+| [`river_valley`](docs/biomes/river-valley.md) | floodplain + terrace flight | river | low-mid | mixed | mid |
+| [`sandhills`](docs/biomes/sandhills.md) | aeolian dune trains | **none** | mid | open | low |
+| [`heathland`](docs/biomes/heathland.md) | deranged drainage, kettles | ponds/bogs | low-mid | open | low-mid |
+| [`hill_country`](docs/biomes/hill-country.md) | benched, stratified, steep | streams | high | mixed | low |
+
+All six are served by one fluvial kernel plus five modules. They span
+no-water → water-dominant, flat → steep, open → closed canopy, and — the axis
+that matters most — **integrated → deranged drainage**: sandhills (no network)
+and heathland (a disconnected one) break the engine's central assumption from
+opposite directions.
+
+**Golden archetypes:** piedmont (primary), heathland (adversarial). Sandhills is
+a strong third candidate. **Lowcountry Marsh** (future, Coastal pack) resumes
+the adversarial contract-tester role for C2 when it lands.
 
 ## Reference material
 
-- **This repo's history**: commit `0313432` — the complete step-03 era
-  (authored primitives, its planner/network/budget, the 67 KB working
-  journal at `steps/03-macro-landform.md`, and the compare verdict). The
-  best record of what was tried and measured.
-- `main` branch: `golf-terrain/src/erosion.rs` (the stream-power/
-  priority-flood core stage 05 ports), `golf-terrain/src/water.rs`
-  (hydrographic extraction for stage 06), `golf-routing/` (the beam/anneal
-  router stage 09 ports), `golf-holes/` (build-out prior art for stage 10).
-- `terrain-v2` branch: the original Python tool sources; `golf-landform`
-  noise/skeleton experiments.
-- `archetype-pipeline` branch: the M0 typed-contract scaffold (fixture
-  patterns, gate/report shapes).
+- **[MIGRATION.md](MIGRATION.md)** — the authoritative map of where every pre-v2
+  module went, and the retirement schedule.
+- **Commit `0313432`** — the step-03-era authored-primitive generator and its
+  measured failure (22/71 knobs inside the real-tile IQR). Read before
+  implementing S2; it is the record of what authoring-in-landform-space costs.
+- **`main` branch** — `tools/calibration/` (a complete working harness for the
+  v2 calibration loop), `golf-terrain/src/erosion.rs`, `golf-routing/`,
+  `golf-holes/`, `xtask`.
+- **`pipeline` branch** — the immediate predecessor: the v1 14-stage
+  sim-co-authored architecture and its stage docs.

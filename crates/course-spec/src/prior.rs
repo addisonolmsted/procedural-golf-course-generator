@@ -461,7 +461,7 @@ mod tests {
         );
         assert!(med(ArchetypeId::Piedmont, "hydro.depression_keep") <= 0.2);
 
-        // Framing (stage 01, stages/01-site-framing.md per-archetype table):
+        // Framing (stage 01, v1 stage-01 doc, retired; see MIGRATION.md):
         // florida near-zero tilt; mountain steepest; sandhills the strongest
         // grain; moraine + mountain province-prone; every archetype's
         // window-class weights carry mass.

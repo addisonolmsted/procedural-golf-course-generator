@@ -1,4 +1,4 @@
-//! Step-02 integration suite: the determinism double-run (steps/02 hard
+//! Step-02 integration suite: the determinism double-run (stage-00 hard
 //! requirement 4), the golden spec artifact (which embeds the prior
 //! fingerprint, so any prior edit forces an explicit re-bless HERE as well
 //! as in the fingerprint golden), sampling-range and route invariants over

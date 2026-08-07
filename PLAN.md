@@ -1,123 +1,139 @@
 # Project Plan
 
 Goal: a deterministic generator that turns a seed into a complete, playable
-9-hole (par-36) golf course — final heightfield, water, cover, routing,
-finished hole construction, and the object manifest — in one of five named
-archetypes, on terrain that is **varied, interesting, plausible, and golf
+9-hole (par-36) golf course — final heightfield, water, cover, routing, finished
+hole construction, and the object manifest — in one of six named biomes, in
+under ten seconds, on terrain that is **varied, interesting, plausible, and golf
 routable**:
 
-- *Varied* — stage 01's site framing (window position in an implied larger
-  landscape × structural grain × provinces × the structural skeleton —
-  trunk corridor, ridge train, terrace flight) multiplies between-seed macro
-  diversity beyond the archetype choice.
-- *Interesting* — stage 03's hero features and province-boundary landforms,
-  plus sim-emergent drainage texture.
-- *Plausible* — stage 05's landscape evolution model earns real-terrain
-  statistics (the retired authored generator measured 22/71 knobs inside the
-  real-tile IQR — commit `0313432`); stage 00's covariance-intact θ keeps
-  parameter combinations coherent; the campaign's real-vs-generated loop is
-  the referee.
-- *Routable* — stage 02 authors the guarantee before terrain exists and it
-  propagates as physics; the stage-08 gate rejects rarely and rerolls
-  resample only stages 2–3.
+- *Varied* — [S0](docs/stages/stage-00-archetype-draw.md) draws site
+  descriptors jointly from a certified envelope, so two courses in one biome are
+  different sites rather than the same site twice.
+- *Interesting* — [S8](docs/stages/stage-08-hole-layout.md)'s dispersion pass
+  stops nine holes from being one hole nine times, and
+  [S9](docs/stages/stage-09-micro-repass.md)'s detail is oriented by the
+  metadata thread rather than sprinkled.
+- *Plausible* — [S2](docs/stages/stage-02-skeleton-kernel.md) authors in
+  flow-distance space, so drainage statistics hold by construction; the
+  [calibration loop](docs/calibration/) is the referee.
+- *Routable* — `plasticity` plus [S7](docs/stages/stage-07-earthmoving.md)
+  grading, with the guarantee enforced by
+  [certified envelopes](docs/calibration/envelope-certification.md) rather than
+  by a runtime gate.
 
 Cross-cutting rules and the repo map: [ARCHITECTURE.md](ARCHITECTURE.md).
-Per-stage contracts: [stages/](stages/).
+The architecture itself: [docs/00-architecture.md](docs/00-architecture.md).
+Where pre-v2 code went: [MIGRATION.md](MIGRATION.md).
 
 ## The pipeline
 
-| # | Stage | Doc | Output (one line) |
-|---|-------|-----|-------------------|
-| 0 | Seed & archetype | [stages/00-seed-archetype.md](stages/00-seed-archetype.md) | `RunIdentity` + `CourseSpec` (archetype, θ with covariance) |
-| 1 | Site framing | [stages/01-site-framing.md](stages/01-site-framing.md) | window position, base level, tilt, grain, provinces + structural skeleton |
-| 2 | Routability mask | [stages/02-routability-mask.md](stages/02-routability-mask.md) | the authored guarantee: connected mask + corridors + allowance |
-| 3 | Guidance strokes | [stages/03-guidance-strokes.md](stages/03-guidance-strokes.md) | trunk spline, boundary landform, hero, flatten datums |
-| 4 | Forcing fields | [stages/04-forcing-fields.md](stages/04-forcing-fields.md) | initial surface, uplift, erodibility, diffusivity |
-| 5 | Landscape evolution | [stages/05-landscape-evolution.md](stages/05-landscape-evolution.md) | the macro+meso heightfield (the co-author) |
-| 6 | Hydrography | [stages/06-hydrography.md](stages/06-hydrography.md) | creek splines, lakes, wetlands, water table |
-| 7 | Cover | [stages/07-cover.md](stages/07-cover.md) | class + canopy + substrate maps |
-| 8 | Routability gate | [stages/08-routability-gate.md](stages/08-routability-gate.md) | cheap pass/fail vs the mask invariant |
-| 9 | Routing | [stages/09-routing.md](stages/09-routing.md) | 9-hole returning loop; earthmoving allowance as soft cost |
-| 10 | Earthmoving | [stages/10-earthmoving.md](stages/10-earthmoving.md) | per-hole displacement layers (plan/surface split) |
-| 11 | Drainage validation | [stages/11-drainage-validation.md](stages/11-drainage-validation.md) | flow audit + masked grading repairs |
-| 12 | Micro re-pass | [stages/12-micro-pass.md](stages/12-micro-pass.md) | seam blending + calibrated micro noise → final heightfield |
-| 13 | Placement | [stages/13-placement.md](stages/13-placement.md) | seed-deterministic object manifest |
+| # | Stage | Doc | Output | Budget |
+|---|---|---|---|---:|
+| S0 | Archetype & site draw † | [stage-00](docs/stages/stage-00-archetype-draw.md) | `CourseSpec` — biome + descriptors | 1 ms |
+| S1 | Macro primitives | [stage-01](docs/stages/stage-01-macro-primitives.md) | contract **C1** | 120 ms |
+| S2 | Skeleton kernel † | [stage-02](docs/stages/stage-02-skeleton-kernel.md) | structural heightfield + flow field | 900 ms |
+| S3 | Transforms & datum ops | [stage-03](docs/stages/stage-03-transforms.md) | height + water + basin inventory | 250 ms |
+| S4 | Simulation finishers † | [stage-04](docs/stages/stage-04-finishers.md) | textured heightfield | 900 ms |
+| S5 | Substrate assembly | [stage-05](docs/stages/stage-05-substrate-assembly.md) | contract **C2** | 400 ms |
+| S6 | Routing | [stage-06](docs/stages/stage-06-routing.md) | contract **C3** | 1 300 ms |
+| S7 | Earthmoving | [stage-07](docs/stages/stage-07-earthmoving.md) | graded heightfield | 1 600 ms |
+| S8 | Hole layout | [stage-08](docs/stages/stage-08-hole-layout.md) | hole geometry + zones | 900 ms |
+| S9 | Micro re-pass † | [stage-09](docs/stages/stage-09-micro-repass.md) | final heightfield + surface fields | 1 400 ms |
+| S10 | Zoning & aesthetics | [stage-10](docs/stages/stage-10-zoning-aesthetics.md) | cover mosaic + manifests | 700 ms |
+| S11 | Validation | [stage-11](docs/stages/stage-11-validation.md) | the report | 400 ms |
 
-Data flows strictly forward. Loops: stage 08 fail ⇒ attempt++ resamples
-stages 2–3 (archetype/θ/framing are stable-scoped and survive); stage 09 may
-fail the same way; stages 10↔11 iterate within a bounded budget.
+† = has offline calibration needs. Data flows strictly forward; the only
+backward edge is S7's single bounded repair pass. S0–S6 are blocking (~3.9 s to
+first route); S7–S10 stream per hole. Full table:
+[docs/02-performance-budget.md](docs/02-performance-budget.md).
 
 ## Milestones
 
-- **N0 — reset + docs (done 2026-08-02).** Step-03 era archived
-  (`0313432`), workspace reduced to the keepers, `stages/00…13` written.
-- **N1 — Stage 00 rev.** Two-tier stream registry v2 (stable/attempt
-  scopes) + θ from Gaussian components (provisional diagonal build from the
-  existing tables). `PIPELINE_VERSION` 2, goldens re-blessed once.
-- **N2 — Stages 1–4 + stage-lab.** Framing, mask, strokes, forcing fields —
-  all cheap authored fields — plus the per-stage viewer shell (course-viz).
-- **N3 — Stages 5–6 (critical path).** Port the erosion core, build the LEM
-  and hydrographic extraction. Start stage 05 first; everything else in N2
-  can proceed in parallel against fixtures.
-- **N4 — Stages 7–8 + the attempt loop.** First full terrain end-to-end per
-  archetype; measure gate pass rates (target ≥ 90% with the mask upstream).
-- **N5 — Campaign v2.** Refit θ as per-archetype Gaussian components from
-  the corpus; calibrate LEM forcing against `structure.py` metrics
-  (drainage density, local relief, dist-to-channel); `netstats` families
-  (slope-area θ, width scaling) become VALIDATION targets. Corpus scale-up
-  (glacial_moraine is thin).
-- **N6 — Stage 9.** Port the beam/anneal router onto the new contracts.
-- **N7 — Stages 10–11.** Import the ten-pass earthmoving design (open
-  question in its doc), build construction + drainage repair.
-- **N8 — Stages 12–13.** Micro finish + placement manifest = shippable
-  course bundle.
+- **M0 — scaffold + docs (done 2026-08-06).** v1 stage-01 work preserved on
+  `pipeline` (`1ad56c7`); `heartland` branch cut; 14 crate scaffolds;
+  27 documentation files; `MIGRATION.md`.
+- **M1 — contracts + the stream rekey.** Implement `course-contracts`: C1, C2,
+  C3 as real types with construction-time invariant enforcement, plus fixture
+  builders. Nothing else can be tested in isolation until these exist. **Do
+  this first.** Rekey the stream registry from the v1 names to the v2 names the
+  stage docs declare, in **one** `PIPELINE_VERSION` bump — batched deliberately,
+  because rekeying re-blesses every golden. See the registry table in
+  [ARCHITECTURE.md](ARCHITECTURE.md).
+- **M2 — the batch entrypoint.** `course-cli` headless driver with a
+  `forward-grid` equivalent. Small, and it unblocks the entire calibration
+  loop — `tools/calibration/forward.py` has nothing to call without it.
+- **M3 — S1 + S2 (the critical path).** The skeleton kernel is where the
+  architecture's central bet lives. Build it early, measure it early. S1 is
+  small and can proceed in parallel.
+- **M4 — corpus + battery.** Implement the four missing metrics, run the G1–G6
+  admission gates, and collect corpora in the order given in
+  [targets.md](docs/calibration/targets.md): piedmont first (the anchor), then
+  heathland (the golden most likely to invalidate an assumption).
+- **M5 — S3 + S4 + S5.** Transforms, finishers, and C2 assembly. S4's
+  restructuring check needs M4's metrics.
+- **M6 — first certified envelope.** Recover and rebind `tools/calibration`
+  from `main`; run the loop for piedmont; produce an envelope S0 can sample.
+  **The coverage/reachability gate here is the referee on the S2 bet** — if
+  reachability is materially worse than v1's 59%, the architecture needs
+  revisiting rather than retuning.
+- **M7 — S0 + S6.** Envelope sampling and routing. First end-to-end route.
+- **M8 — S7 + S8.** First playable hole; the streaming seam becomes real.
+- **M9 — S9 + S10 + S11.** Final detail, dressing, and the measurement
+  apparatus. First complete course.
+- **M10 — all six biomes certified.** Corpora, targets, and envelopes for the
+  remaining five. This is the milestone that turns one working biome into a
+  generator.
 
 ## Parallelization protocol
 
-- Each stage doc has a **Status** line: `unclaimed → claimed (<agent>, <date>)
-  → built → verified`. Claim before starting; the doc IS the stage's source
-  of truth.
-- An agent owns exactly its stage's doc + module + fixture usage; it never
+- Each stage doc carries a **Status** line: `unclaimed → claimed (<agent>,
+  <date>) → built → verified`. Claim before starting; **the doc is the stage's
+  source of truth**, not the code.
+- An agent owns exactly its stage's doc, its module, and its fixtures. It never
   edits another stage's module.
-- Contract changes: propose in Open Questions, resolve with the user, update
-  every affected doc + ARCHITECTURE.md before code.
-- Never weaken a fixture or requirement to make a stage pass.
-- Dependency note for claiming: stages 1–4 are independent of each other
-  given fixtures for their inputs; 5 needs 4's artifact shape (fixture
-  early); 6–8 fixture-drivable; 9+ second wave.
+- **Contract changes are not unilateral.** Propose in the doc's Open Questions,
+  resolve with the user, then update every affected doc plus
+  [ARCHITECTURE.md](ARCHITECTURE.md) *before* writing code.
+- Never weaken a fixture, an invariant, or an acceptance criterion to make a
+  stage pass. If a criterion is wrong, change it deliberately and say so.
+- **Dependency note for claiming:** M1's contracts unblock everything. Given
+  fixtures, S1–S4 are independent of each other; S5 needs C1/C2 shapes; S6 needs
+  only C2; S7–S10 need C3 and can be built per-hole against fixtures.
 
-## The data campaign (v2)
+## Known blockers
 
-Everything empirical routes through `tools/`:
+Recorded here so they are not rediscovered one stage at a time.
 
-- **Retained as-is**: corpus infrastructure (`macro_campaign`
-  fetch/develop/courses/regions/character/structure/report/cgrid), the
-  `dtm_*` analysis stack, the 90-tile exemplar corpus + course corpus
-  (local, refetchable; indices committed), the exclusion-cull QA loop and
-  `tile-lab`.
-- **Repurposed**: `netstats`/`structure` metric families → LEM calibration
-  and validation targets (no longer generator inputs);
-  the course-corpus playable-fraction method → stage-02 mask sizing.
-- **Rewritten**: `fit_knobs.py` → a GMM fitter (transformed space, gating
-  policy carried over); `extract.py` → the new θ knob set per stage docs.
-- **Retired**: `shape.py` transect fitting, `landform_prior` (pattern
-  reference only).
+| Blocker | Blocks | Where |
+|---|---|---|
+| **Three of six biomes have no corpus**; two more need re-measuring | S0, S2, S4, S9 calibration | [targets.md](docs/calibration/targets.md) |
+| **Four of the 22 metrics do not exist** and are ungated | heathland, great-plains, river-valley, hill-country fits | [metric-battery.md](docs/calibration/metric-battery.md) |
+| No batch entrypoint (`xtask forward-grid` is not on this branch) | the entire calibration loop | M2 |
+| `tools/metrics` and `tools/dtm_metrics` are non-runnable (missing `parkland_atlas` cache) | any measurement | [MIGRATION.md](MIGRATION.md) |
+| Envelope representation undecided (GMM vs hull vs flow) | S0's sampler | [envelope-certification.md](docs/calibration/envelope-certification.md) |
+| Catena library representation undecided | S2 | [stage-02](docs/stages/stage-02-skeleton-kernel.md) |
+| S7's template library and S8's surface passes undesigned | S7, S8 | prior art in `golf-holes/` on `main` |
+| Enclosure model representation undecided | S10, and S11's sightline check | [stage-10](docs/stages/stage-10-zoning-aesthetics.md) |
+
+## The open architectural risk
+
+[Heathland](docs/biomes/heathland.md)'s **negative drainage integration** may
+not be expressible as "the same fluvial growth with a dial turned down". If it
+needs genuinely different growth, that is a second kernel wearing a module's
+clothes, and it should be admitted as such rather than hidden in a dial.
+
+This is worth finding out early, which is why heathland is second in the corpus
+collection order despite piedmont being the anchor. See
+[S2's open questions](docs/stages/stage-02-skeleton-kernel.md).
 
 ## Current status
 
-N0 complete (2026-08-02): archive + reset committed, 14 stage docs written.
-N1 Rev A landed (2026-08-02): registry v2 with stable/attempt stream
-scoping, `PIPELINE_VERSION` 2, goldens re-blessed once; Rev B (Gaussian θ)
-deferred — `framing.*` ships as hand-authored quantile tables. Stage 01
-built (`crates/course-framing`): framing.json + the full hard-requirement
-test suite, plus `crates/stage-lab` — the N2 per-stage viewer shell
-(framing tab + seed-sweep gallery + headless snapshots). Framing v2
-(`PIPELINE_VERSION` 3) added the structural skeleton — trunk drainage
-corridor, tributaries, ridge/interfluve train, terrace step flight — as
-guidance GEOMETRY (relief stays θ, consumed at stage 04), plus the
-illustrative implied-terrain preview in the lab. The stage-01/03 split is
-now "stage 01 = what the land is, stage 03 = what the course intends to do
-with it"; stage 02 places the mask against the real corridor rather than a
-drainage direction. Stages 02–13 unclaimed. Next: rest of N2 (stages 2–4
-onto the stage-lab shell) and N3 (stage 05 first), in parallel; Rev B when
-the campaign fits components.
+**M0 complete (2026-08-06).** Branch `heartland`, cut from `pipeline` at
+`1ad56c7`. Workspace holds 21 crates — 3 shared substrate reused unchanged, 14
+new v2 scaffolds, and 4 retained from v1 pending retirement; `cargo check
+--workspace` is clean and the 112 retained tests pass. The documentation tree is
+complete: 12 stage docs, 3 contracts, 8 biome files, 4 calibration docs, plus
+the three root documents.
+
+**All twelve stages are unclaimed.** Next: M1 (contracts) and M2 (batch
+entrypoint), which between them unblock everything else.
