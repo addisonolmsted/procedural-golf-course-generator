@@ -1,0 +1,16 @@
+[package]
+name = "stage-lab"
+description = "per-stage pipeline viewer shell: stage 01 framing (stages 02-04 add tabs here)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+course-seed = { workspace = true }
+course-spec = { workspace = true }
+course-framing = { workspace = true }
+course-world = { workspace = true }
+course-viz = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }

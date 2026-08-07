@@ -7,7 +7,8 @@ archetypes, on terrain that is **varied, interesting, plausible, and golf
 routable**:
 
 - *Varied* — stage 01's site framing (window position in an implied larger
-  landscape × structural grain × provinces) multiplies between-seed macro
+  landscape × structural grain × provinces × the structural skeleton —
+  trunk corridor, ridge train, terrace flight) multiplies between-seed macro
   diversity beyond the archetype choice.
 - *Interesting* — stage 03's hero features and province-boundary landforms,
   plus sim-emergent drainage texture.
@@ -28,7 +29,7 @@ Per-stage contracts: [stages/](stages/).
 | # | Stage | Doc | Output (one line) |
 |---|-------|-----|-------------------|
 | 0 | Seed & archetype | [stages/00-seed-archetype.md](stages/00-seed-archetype.md) | `RunIdentity` + `CourseSpec` (archetype, θ with covariance) |
-| 1 | Site framing | [stages/01-site-framing.md](stages/01-site-framing.md) | window position, base level, tilt, grain, provinces |
+| 1 | Site framing | [stages/01-site-framing.md](stages/01-site-framing.md) | window position, base level, tilt, grain, provinces + structural skeleton |
 | 2 | Routability mask | [stages/02-routability-mask.md](stages/02-routability-mask.md) | the authored guarantee: connected mask + corridors + allowance |
 | 3 | Guidance strokes | [stages/03-guidance-strokes.md](stages/03-guidance-strokes.md) | trunk spline, boundary landform, hero, flatten datums |
 | 4 | Forcing fields | [stages/04-forcing-fields.md](stages/04-forcing-fields.md) | initial surface, uplift, erodibility, diffusivity |
@@ -104,8 +105,19 @@ Everything empirical routes through `tools/`:
 
 ## Current status
 
-N0 complete (2026-08-02): archive + reset committed, 14 stage docs written,
-kept workspace (course-seed, course-spec, course-world, course-viz,
-tile-lab) builds with all tests green. Stage 00 is built at v1 (rev
-pending); stages 01–13 unclaimed. Next: N1 (Stage 00 rev), then N2/N3 in
-parallel with stage 05 first.
+N0 complete (2026-08-02): archive + reset committed, 14 stage docs written.
+N1 Rev A landed (2026-08-02): registry v2 with stable/attempt stream
+scoping, `PIPELINE_VERSION` 2, goldens re-blessed once; Rev B (Gaussian θ)
+deferred — `framing.*` ships as hand-authored quantile tables. Stage 01
+built (`crates/course-framing`): framing.json + the full hard-requirement
+test suite, plus `crates/stage-lab` — the N2 per-stage viewer shell
+(framing tab + seed-sweep gallery + headless snapshots). Framing v2
+(`PIPELINE_VERSION` 3) added the structural skeleton — trunk drainage
+corridor, tributaries, ridge/interfluve train, terrace step flight — as
+guidance GEOMETRY (relief stays θ, consumed at stage 04), plus the
+illustrative implied-terrain preview in the lab. The stage-01/03 split is
+now "stage 01 = what the land is, stage 03 = what the course intends to do
+with it"; stage 02 places the mask against the real corridor rather than a
+drainage direction. Stages 02–13 unclaimed. Next: rest of N2 (stages 2–4
+onto the stage-lab shell) and N3 (stage 05 first), in parallel; Rev B when
+the campaign fits components.

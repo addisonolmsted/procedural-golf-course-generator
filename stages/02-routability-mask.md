@@ -14,8 +14,10 @@ ground comes out of the sim smooth and natural-reading rather than stamped.
 ## Position
 
 - Upstream: Stage 00 (`mask.*` knobs), Stage 01 (`Framing` — the mask is
-  placed respecting base-level direction so it does not straddle the trunk
-  drainage unnecessarily).
+  placed respecting the base-level direction AND the actual
+  `Framing.skeleton.trunk` corridor, so it does not straddle the trunk
+  drainage unnecessarily and its crossings are authored where the corridor
+  genuinely passes through, not guessed from the drainage direction).
 - Downstream: Stage 03 (strokes route relative to it), Stage 04 (forcing
   fields read it), Stage 08 (gate verifies it survived), Stage 09 (the
   earthmoving allowance enters routing as a soft cost).

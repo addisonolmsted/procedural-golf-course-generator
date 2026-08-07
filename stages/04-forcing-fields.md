@@ -53,6 +53,27 @@ Composition rules (the contract's semantics):
   contrast) for mountain_bench / escarpment windows; elsewhere patchy.
 - `diffusivity` inside mask: multiplied by `forcing.mask_diff_boost` (>1).
 
+**Consuming the stage-01 skeleton.** `Framing.skeleton` carries pure
+geometry; the amplitudes are θ knobs read from `CourseSpec.params`:
+
+- `skeleton.ridges` condition `uplift` — a tapered ridge of extra uplift
+  along each axis, amplitude `framing.topo_ridge_relief_m`. The train's
+  spacing is already the archetype's drainage/dune wavelength, so the sim
+  inherits the organization instead of being asked to invent it.
+- `skeleton.trunk` / `.branches` seed the `initial_height` carve, depth
+  `framing.topo_trunk_carve_m` (branches shallower), inside `halfwidth_m`.
+  Stage 03's trunk stroke refines within the same corridor — apply once,
+  taking the stroke where present.
+- `skeleton.steps` anchor the `erodibility` strata PHASE: hard/soft band
+  boundaries land at the step lines rather than at an arbitrary elevation
+  offset, so benches emerge where stage 01 said the flight is; riser scale
+  `framing.topo_step_riser_m`.
+- **Precedence:** corridor carve composes LAST (smooth-min), after ridge and
+  step contributions. Skeleton families are deliberately not trimmed against
+  each other, so water gaps through a ridge and cut terraces emerge from
+  this ordering rather than being authored in stage 01.
+- The empty skeleton (florida, and no-trunk archetypes) must be a no-op.
+
 All noise here is authored ONLY at the envelope level (wavelengths,
 amplitudes, anisotropy from θ) — no hand-placed landforms beyond the
 strokes.

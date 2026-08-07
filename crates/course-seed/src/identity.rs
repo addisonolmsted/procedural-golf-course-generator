@@ -113,17 +113,23 @@ impl RunIdentity {
         }
     }
 
-    /// THE way a step obtains randomness. `name` must be registered in
-    /// [`streams`]; `reroll/v1` is internal to step 01 (it keys off the
-    /// master seed, not the attempt seed, so opening it here would be wrong).
+    /// THE way a stage obtains randomness. `name` must be registered in
+    /// [`streams`]; its [`streams::Scope`] decides the key: `Stable` streams
+    /// (stages 0–1) key off the master seed and are identical on every
+    /// attempt, `Attempt` streams (stages 2+) key off the attempt seed.
+    /// `reroll/v1` is internal to course-seed and rejected here.
     pub fn stream(&self, name: &str) -> DetRng {
-        assert!(streams::ALL.contains(&name), "unregistered stream: {name}");
+        let scope = streams::scope(name).unwrap_or_else(|| panic!("unregistered stream: {name}"));
         assert_ne!(
             name,
             streams::REROLL,
             "reroll/v1 is internal to course-seed"
         );
-        DetRng::new(self.stream_seed(), name.as_bytes())
+        let key = match scope {
+            streams::Scope::Stable => self.seed,
+            streams::Scope::Attempt => self.stream_seed(),
+        };
+        DetRng::new(key, name.as_bytes())
     }
 
     /// The canonical `run.json` bytes: compact JSON, declared field order,
@@ -215,18 +221,68 @@ mod tests {
         assert_eq!(got, GOLDEN);
     }
 
+    /// Registry-v2 semantics: stable streams are byte-identical across the
+    /// whole reroll chain, attempt streams pairwise distinct (fixed seed —
+    /// deterministic assertion, not probabilistic).
+    #[test]
+    fn stable_streams_survive_rerolls() {
+        let mut id = RunIdentity::from_seed(1234);
+        let mut chain = vec![id];
+        while let Ok(next) = id.reroll() {
+            id = next;
+            chain.push(id);
+        }
+        assert_eq!(chain.len() as u32, MAX_ATTEMPTS);
+
+        let first4 = |id: &RunIdentity, name: &str| {
+            let mut rng = id.stream(name);
+            [rng.next_u64(), rng.next_u64(), rng.next_u64(), rng.next_u64()]
+        };
+        for name in [streams::FRAMING, streams::ARCH_SELECT, streams::ARCH_PARAMS] {
+            let baseline = first4(&chain[0], name);
+            for id in &chain[1..] {
+                assert_eq!(first4(id, name), baseline, "stable stream {name} drifted");
+            }
+        }
+        for name in [streams::MASK, streams::ROUTE] {
+            let firsts: Vec<u64> = chain.iter().map(|id| id.stream(name).next_u64()).collect();
+            for (i, a) in firsts.iter().enumerate() {
+                for b in &firsts[i + 1..] {
+                    assert_ne!(a, b, "attempt stream {name} repeated across attempts");
+                }
+            }
+        }
+    }
+
+    /// Pins the stable-scope keying itself; bless only on an intentional
+    /// RNG-contract change (pipeline_version bump).
+    #[test]
+    fn golden_stable_stream_draw() {
+        // Blessed 2026-08-02 at the registry-v2 rekey (PIPELINE_VERSION 2).
+        const GOLDEN: u64 = 0x3cc1002d6fa0ca41;
+        let got = RunIdentity::from_seed(1).stream(streams::FRAMING).next_u64();
+        assert_eq!(got, GOLDEN);
+        // Same draw regardless of attempt (stable scope).
+        let at3 = RunIdentity {
+            seed: 1,
+            pipeline_version: PIPELINE_VERSION,
+            attempt: 3,
+        };
+        assert_eq!(at3.stream(streams::FRAMING).next_u64(), GOLDEN);
+    }
+
     #[test]
     fn canonical_json_golden() {
         let id = RunIdentity::from_seed(1);
         assert_eq!(
             id.canonical_json(),
-            r#"{"seed":1,"pipeline_version":1,"attempt":0}"#
+            format!(r#"{{"seed":1,"pipeline_version":{PIPELINE_VERSION},"attempt":0}}"#)
         );
         let max = RunIdentity::from_seed(u64::MAX);
         assert_eq!(
             max.canonical_json(),
             format!(
-                r#"{{"seed":{},"pipeline_version":1,"attempt":0}}"#,
+                r#"{{"seed":{},"pipeline_version":{PIPELINE_VERSION},"attempt":0}}"#,
                 u64::MAX
             )
         );
@@ -244,27 +300,31 @@ mod tests {
         let back = RunIdentity::from_json(&bytes).unwrap();
         assert_eq!(back, id);
         assert_eq!(back.canonical_json(), bytes);
-        assert!(
-            RunIdentity::from_json(r#"{"seed":1,"pipeline_version":1,"attempt":0,"x":1}"#).is_err()
+        let unknown_field = format!(
+            r#"{{"seed":1,"pipeline_version":{PIPELINE_VERSION},"attempt":0,"x":1}}"#
         );
+        assert!(RunIdentity::from_json(&unknown_field).is_err());
     }
 
     #[test]
     fn from_json_rejects_version_mismatch() {
-        let err = RunIdentity::from_json(r#"{"seed":1,"pipeline_version":2,"attempt":0}"#);
-        assert!(matches!(err, Err(SeedError::VersionMismatch { found: 2 })));
+        let stale = PIPELINE_VERSION + 1;
+        let json = format!(r#"{{"seed":1,"pipeline_version":{stale},"attempt":0}}"#);
+        let err = RunIdentity::from_json(&json);
+        assert!(matches!(err, Err(SeedError::VersionMismatch { found }) if found == stale));
     }
 
     #[test]
     fn from_json_rejects_attempt_out_of_range() {
-        let json = format!(r#"{{"seed":1,"pipeline_version":1,"attempt":{MAX_ATTEMPTS}}}"#);
+        let json =
+            format!(r#"{{"seed":1,"pipeline_version":{PIPELINE_VERSION},"attempt":{MAX_ATTEMPTS}}}"#);
         assert!(matches!(
             RunIdentity::from_json(&json),
             Err(SeedError::AttemptOutOfRange { attempt }) if attempt == MAX_ATTEMPTS
         ));
         // Last valid attempt still loads.
         let json = format!(
-            r#"{{"seed":1,"pipeline_version":1,"attempt":{}}}"#,
+            r#"{{"seed":1,"pipeline_version":{PIPELINE_VERSION},"attempt":{}}}"#,
             MAX_ATTEMPTS - 1
         );
         assert!(RunIdentity::from_json(&json).is_ok());

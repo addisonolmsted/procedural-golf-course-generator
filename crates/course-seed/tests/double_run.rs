@@ -5,6 +5,7 @@ use course_seed::{RunIdentity, streams};
 
 /// A mini "pipeline": open several streams off one identity, draw a mixed
 /// u64/f64 transcript, and serialize everything into one byte buffer.
+/// Mixes stable streams (arch/*) with an attempt-scoped one (fixture/v1).
 fn transcript(id: &RunIdentity) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(id.canonical_json().as_bytes());
@@ -45,7 +46,9 @@ fn reroll_replay_from_master() {
     }
 
     assert_eq!(first, replay);
-    // Attempts genuinely differ from each other (the reroll changed the streams).
+    // Attempts genuinely differ: the attempt-scoped fixture stream (and the
+    // embedded attempt counter) change per reroll; the stable arch/* draws
+    // inside the transcript deliberately do not.
     assert_ne!(first[0], first[1]);
     assert_ne!(first[1], first[2]);
 }

@@ -363,10 +363,15 @@ mod tests {
 
     #[test]
     fn from_json_rejects_version_mismatch() {
-        let json = valid_json().replacen(r#""pipeline_version":1"#, r#""pipeline_version":2"#, 1);
+        let stale = PIPELINE_VERSION + 1;
+        let json = valid_json().replacen(
+            &format!(r#""pipeline_version":{PIPELINE_VERSION}"#),
+            &format!(r#""pipeline_version":{stale}"#),
+            1,
+        );
         assert!(matches!(
             CourseSpec::from_json(&json),
-            Err(SpecError::VersionMismatch { found: 2 })
+            Err(SpecError::VersionMismatch { found }) if found == stale
         ));
     }
 

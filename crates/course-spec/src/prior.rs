@@ -460,6 +460,73 @@ mod tests {
             0.0
         );
         assert!(med(ArchetypeId::Piedmont, "hydro.depression_keep") <= 0.2);
+
+        // Framing (stage 01, stages/01-site-framing.md per-archetype table):
+        // florida near-zero tilt; mountain steepest; sandhills the strongest
+        // grain; moraine + mountain province-prone; every archetype's
+        // window-class weights carry mass.
+        let (_, fl_tilt_hi) = rng(ArchetypeId::FloridaLowland, "framing.tilt_grade");
+        assert!(fl_tilt_hi <= 0.002);
+        let m_tilt = med(ArchetypeId::MountainBench, "framing.tilt_grade");
+        for a in [
+            ArchetypeId::Sandhills,
+            ArchetypeId::Piedmont,
+            ArchetypeId::FloridaLowland,
+            ArchetypeId::GlacialMoraine,
+        ] {
+            assert!(med(a, "framing.tilt_grade") < m_tilt);
+            assert!(med(a, "framing.grain_anisotropy") <= med(ArchetypeId::Sandhills, "framing.grain_anisotropy"));
+        }
+        assert!(med(ArchetypeId::GlacialMoraine, "framing.province_p") >= 0.7);
+        assert!(med(ArchetypeId::MountainBench, "framing.province_p") >= 0.7);
+        const WINDOW_W: [&str; 6] = [
+            "framing.w_valley_floor",
+            "framing.w_interfluve",
+            "framing.w_escarpment_face",
+            "framing.w_basin_margin",
+            "framing.w_piedmont_slope",
+            "framing.w_terrace_flight",
+        ];
+        for a in ArchetypeId::ALL {
+            let sum: f64 = WINDOW_W.iter().map(|k| med(a, k)).sum();
+            assert!(sum > 0.0, "{a:?} has no reachable window class");
+        }
+
+        // Skeleton (stage 01 v2): florida is the empty case; sandhills is
+        // dune-train dense with no surface water; piedmont owns the strong
+        // meander; steps are mountain-only.
+        for k in [
+            "framing.topo_trunk_p",
+            "framing.topo_ridge_count",
+            "framing.topo_branch_count",
+            "framing.topo_step_count",
+            "framing.topo_ridge_relief_m",
+            "framing.topo_trunk_carve_m",
+        ] {
+            assert_eq!(med(ArchetypeId::FloridaLowland, k), 0.0, "florida {k}");
+        }
+        assert_eq!(med(ArchetypeId::Sandhills, "framing.topo_trunk_p"), 0.0);
+        assert!(med(ArchetypeId::Sandhills, "framing.topo_ridge_count") >= 4.0);
+        let (sh_lo, sh_hi) = rng(ArchetypeId::Sandhills, "framing.topo_ridge_spacing_m");
+        assert!(sh_lo >= 150.0 && sh_hi <= 400.0, "sandhills dune pitch");
+        assert!(med(ArchetypeId::Piedmont, "framing.topo_trunk_p") >= 0.8);
+        let p_sin = med(ArchetypeId::Piedmont, "framing.topo_trunk_sinuosity");
+        assert!((1.15..=1.35).contains(&p_sin), "piedmont meanders: {p_sin}");
+        for a in [
+            ArchetypeId::Sandhills,
+            ArchetypeId::Piedmont,
+            ArchetypeId::FloridaLowland,
+            ArchetypeId::GlacialMoraine,
+        ] {
+            assert_eq!(med(a, "framing.topo_step_count"), 0.0, "{a:?} has steps");
+        }
+        let mb_steps = med(ArchetypeId::MountainBench, "framing.topo_step_count");
+        assert!((2.0..=4.0).contains(&mb_steps));
+        // Every archetype's sinuosity target is physically sane.
+        for a in ArchetypeId::ALL {
+            let (lo, hi) = rng(a, "framing.topo_trunk_sinuosity");
+            assert!(lo >= 1.0 && hi <= 1.5, "{a:?} sinuosity {lo}..{hi}");
+        }
     }
 
     /// Any edit to the committed prior file fails HERE first. Re-bless
@@ -518,6 +585,36 @@ mod tests {
     // to the fine 4.30 lands it at 0.412 against a real 0.408. Florida and
     // sandhills keep pooled provisionals via the `valley_count` identity-zero
     // family — a closed-basin archetype has no through drainage to size.
+    // Re-blessed 2026-08-02: campaign-m5-framing1 — PIPELINE_VERSION 2
+    // (registry v2 scoping) + the stage-01 `framing.*` section: 16
+    // hand-authored provisional tables per archetype (window-class weights,
+    // tilt/grain character, province probability/kind/relief, base drop).
+    // Categorical weights are degenerate constant tables — fixed archetype
+    // data, the per-seed draw happens in stage 01 off `framing/v1`.
+    // `framing` sorts between `earthworks` and `gate`, so every later
+    // knob's draw shifted — deliberate, folded into this one re-bless. The
+    // file was also normalized to fully sorted knob order (the m4/m5
+    // network-family knobs had been appended unsorted); content-identical
+    // reorder.
+    // Re-blessed 2026-08-02: campaign-m5-framing2 — the stage-01 structural
+    // skeleton. 14 `framing.topo_*` knobs (trunk corridor presence/sinuosity/
+    // wavelength/halfwidth, branch count/length/junction angle, ridge
+    // count/spacing/length, step count, and three downstream-only relief
+    // scalars). Sinuosity, junction angle, and sandhills ridge spacing are
+    // COPIES of the campaign-fitted `landform.meander_sinuosity`,
+    // `landform.junction_angle_deg`, and `landform.dune_wavelength_m` tables
+    // — stage 01 never reads another stage's namespace at runtime.
+    //
+    // NAMING CONSTRAINT (load-bearing, do not break): every skeleton knob is
+    // `framing.topo_*`, which sorts AFTER `framing.tilt_grade` — the last
+    // SAMPLED base-field knob — and before `framing.w_*` (degenerate
+    // constants, insensitive to a shifted uniform). θ sampling is positional
+    // (one uniform per knob in sorted order), so this keeps every stage-01
+    // BASE field (window, base level, tilt, grain, provinces) bit-identical
+    // across the v1→v2 artifact bump. Pinned by course-framing's
+    // `base_fields_survive_v2` test — a future knob named before
+    // `tilt_grade` fails there loudly. `gate.*`/`hydro.*`/`landform.*`/
+    // `noise.*` draws DID shift; nothing built consumes them yet.
     const FINGERPRINT_GOLDEN: &str =
-        "aed23ac1530b2466fc31451fdc7cf36532016747086302e96468b0582390a26e";
+        "6fb1a439b8c17f252241cc6b3efd647f7fd7ff0723eb0e71bb5a8ea0e26a9f9e";
 }

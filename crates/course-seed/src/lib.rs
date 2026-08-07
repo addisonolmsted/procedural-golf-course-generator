@@ -27,7 +27,15 @@ pub use identity::{RunIdentity, SeedError};
 
 /// Global contract version. Any artifact-shape or RNG-contract change bumps
 /// this (and re-blesses goldens) as an explicit reviewed event.
-pub const PIPELINE_VERSION: u32 = 1;
+///
+/// v2 (2026-08-02): registry v2 — two-tier stream scoping (stable streams
+/// key off the master seed and survive rerolls) + the stage-era stream
+/// renames. Attempt-0 draws are unchanged; attempt>0 stage-0/1 draws rekeyed.
+///
+/// v3 (2026-08-02): stage-01 artifact gains the structural skeleton
+/// (`FRAMING_VERSION` 2). Header-only here: streams key on seed + name, so
+/// this bump moves no draws.
+pub const PIPELINE_VERSION: u32 = 3;
 
 /// Bound on gate-fail rerolls (step 07 triggers, step 01 owns the rule):
 /// attempts 0..MAX_ATTEMPTS, then the run fails for good.

@@ -1,0 +1,13 @@
+[package]
+name = "course-framing"
+description = "Stage 01 — site framing: window position, base level, tilt, grain, provinces"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+course-seed = { workspace = true }
+course-spec = { workspace = true }
+course-world = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

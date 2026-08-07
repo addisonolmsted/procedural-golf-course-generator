@@ -1,7 +1,8 @@
 # Stage 00 — Seed & Archetype
 
-**Status:** built (crates/course-seed + crates/course-spec; rev pending — see
-"Planned rev" below)
+**Status:** built (crates/course-seed + crates/course-spec). Rev A (registry
+v2 scoping, `PIPELINE_VERSION` 2) landed 2026-08-02 with stage 01; Rev B
+(Gaussian θ) still pending — see "Planned rev" below.
 
 ## Purpose
 
@@ -57,27 +58,39 @@ Selection: weighted draw over per-archetype `weight` in the prior file
 (`arch/select/v1`; skipped entirely when forced). Sampling today: one uniform
 draw per knob in sorted key order through 11-point quantile tables
 (`arch/params/v1`); overrides applied post-sampling. Prior file:
-`crates/course-spec/data/archetype_priors.json`, currently `campaign-m5`
-(32 `landform.*` knobs campaign-fitted for the retired step-03 generator —
-dormant data pending the rev; other sections hand-authored provisional).
+`crates/course-spec/data/archetype_priors.json`, currently
+`campaign-m5-framing1` (32 `landform.*` knobs campaign-fitted for the
+retired step-03 generator — dormant data pending the rev; 16 `framing.*`
+knobs hand-authored provisional for stage 01, categorical weights as
+degenerate constant tables; other sections hand-authored provisional).
 Goldens: fingerprint + full seed-1 artifact; re-bless via
 `cargo run -p course-spec --example bless_golden`.
 
-## Planned rev (the Stage-0 contract of the new pipeline) — TWO changes
+## Rev A — two-tier stream scoping (LANDED 2026-08-02, `PIPELINE_VERSION` 2)
 
-**Rev A — two-tier stream scoping (course-seed, `PIPELINE_VERSION` → 2).**
-The new reroll semantics: a Stage-8 gate fail resamples **stages 2–3 only** —
-archetype, θ, and site framing must SURVIVE a reroll. Registry v2 gives every
-stream a scope:
+The reroll semantics of the new pipeline: a Stage-8 gate fail resamples
+**stages 2–3 only** — archetype, θ, and site framing SURVIVE a reroll.
+Registry v2 (`crates/course-seed/src/streams.rs`) gives every stream a
+`Scope`:
 
-- `stable` streams (stages 0–1) — keyed off the MASTER seed: identical on
-  every attempt.
-- `attempt` streams (stages 2+) — keyed off the attempt seed as today.
+- `Stable` streams (stages 0–1: `arch/select/v1`, `arch/params/v1`,
+  `framing/v1`) — keyed off the MASTER seed: identical on every attempt.
+- `Attempt` streams (stages 2+: `mask/v1`, `strokes/v1`, `forcing/v1`,
+  `cover/v1`, `route/v1`, `earthworks/v1`, `micro/v1`, `placement/v1`,
+  `fixture/v1`) — keyed off the attempt seed as before.
 
-`stream()` consults the registry for the scope. This is a rekey of stage-0/1
-streams ⇒ version bump + golden re-bless, done together with the registry
-rename (v2 stream names per stage, retiring `macro/place/v1` and the other
-step-era names).
+`stream()` consults the registry for the scope. The step-era names
+(`macro/place/v1`, `noise/field/v1`, `hydro/v1`, `cover/clump/v1`) were
+retired. The `arch/*` names kept `/v1`: attempt-0 draws are bit-identical
+before and after the scope flip (the master seed IS the attempt-0 seed);
+the attempt>0 rekey is what the version bump covers. Tested:
+`stable_streams_survive_rerolls`, `golden_stable_stream_draw`.
+
+Known wrinkle (pre-existing, flagged not fixed): `spec.json` embeds
+`identity.attempt` while its params are now attempt-invariant — two attempts
+of one master seed produce specs differing only in that header field.
+
+## Planned rev — remaining change (Rev B)
 
 **Rev B — θ from a Gaussian component, covariance intact (course-spec).**
 Replace independent per-knob quantile draws with: per archetype, a mixture of
@@ -113,8 +126,10 @@ non-parameter difference.
 
 1. Byte-identical double-run; platform-stable; artifacts traceable
    (`RunIdentity` embedded in every manifest). (All tested today.)
-2. After Rev A: stage-0/1 outputs byte-identical ACROSS attempts of one
-   master seed (new test), stage-2+ streams differ per attempt.
+2. Stage-0/1 outputs byte-identical ACROSS attempts of one master seed,
+   stage-2+ streams differ per attempt. (Tested since Rev A:
+   `stable_streams_survive_rerolls` in course-seed,
+   `stable_across_reroll_chain` in course-framing.)
 3. After Rev B: sampled θ respects support clamps; Cholesky factors validated
    (lower-triangular, positive diagonal) on prior load; determinism goldens
    re-blessed once, deliberately.

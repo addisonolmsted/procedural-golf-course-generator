@@ -3,8 +3,10 @@ resolver = "2"
 members = [
     "crates/course-seed",
     "crates/course-spec",
+    "crates/course-framing",
     "crates/course-world",
     "crates/course-viz",
+    "crates/stage-lab",
     "crates/tile-lab",
 ]
 
@@ -16,6 +18,7 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 course-seed = { path = "crates/course-seed" }
 course-spec = { path = "crates/course-spec" }
+course-framing = { path = "crates/course-framing" }
 course-world = { path = "crates/course-world" }
 course-viz = { path = "crates/course-viz" }
 libm = "0.2"

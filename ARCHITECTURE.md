@@ -38,11 +38,19 @@ crates/course-seed/    — stage 00a: DetRng determinism kit, stream registry,
 crates/course-spec/    — stage 00b: archetype selection + θ sampling →
                          spec.json; data/archetype_priors.json is the
                          committed, fingerprinted prior (knob registry)
+crates/course-framing/ — stage 01: CourseSpec → framing.json (window class,
+                         base level, tilt, grain, provinces + the structural
+                         skeleton: trunk corridor, tributaries, ridge axes,
+                         terrace step lines); stable-scoped, survives
+                         rerolls byte-identically
 crates/course-world/   — shared substrate: Grid/GridSpec + CGRID1 store,
                          world constants, Vec2/libm math, ease, Profile,
                          Spine/catmull-rom splines, perlin noise
 crates/course-viz/     — shared substrate: Grid→PNG renderers (hillshade,
                          hypsometric, scalar/direction fields, overlays)
+crates/stage-lab/      — per-stage viewer shell (egui): one tab per built
+                         stage + seed-sweep gallery; stage 01 framing today,
+                         stages 02-04 add tabs; headless snapshots example
 crates/tile-lab/       — campaign-data QA viewer: real corpus tiles, the
                          extractor's classifications, knobs-vs-prior, the
                          exclusion cull; optional compare pane accepts any
@@ -95,28 +103,33 @@ Each stage is an **isolated module behind a versioned artifact contract**:
    ⇒ byte-identical artifacts on every platform. All randomness through
    `RunIdentity::stream(name)` with a name registered in
    `crates/course-seed/src/streams.rs` (this table is test-enforced to
-   mirror it). Current (v1) registry:
+   mirror it). Registry v2 (current `PIPELINE_VERSION` 3; the registry
+   itself is unchanged since v2): every stream has a SCOPE —
+   `stable` streams key off the MASTER seed (identical on every attempt;
+   stages 0–1 survive gate-fail rerolls), `attempt` streams key off the
+   attempt seed (resampled per reroll):
 
-   | Stream | Purpose |
-   |---|---|
-   | `arch/select/v1` | archetype draw (when not forced) |
-   | `arch/params/v1` | θ sampling |
-   | `macro/place/v1` | RETIRED with step 03 — removed at the v2 rekey |
-   | `noise/field/v1` | retired name, replaced at v2 |
-   | `hydro/v1` | retired name, replaced at v2 |
-   | `cover/clump/v1` | retired name, replaced at v2 |
-   | `route/v1` | routing search (name survives into v2) |
-   | `earthworks/v1` | earthworks jitter (name survives into v2) |
-   | `reroll/v1` | INTERNAL: gate-fail sub-seeds (master-seed keyed) |
-   | `fixture/v1` | tests/fixtures only |
+   | Stream | Scope | Purpose |
+   |---|---|---|
+   | `arch/select/v1` | stable | archetype draw (when not forced) |
+   | `arch/params/v1` | stable | θ sampling |
+   | `framing/v1` | stable | stage 01 site framing |
+   | `mask/v1` | attempt | stage 02 routability mask |
+   | `strokes/v1` | attempt | stage 03 guidance strokes |
+   | `forcing/v1` | attempt | stage 04 forcing fields |
+   | `cover/v1` | attempt | stage 07 cover clumping |
+   | `route/v1` | attempt | stage 09 routing search |
+   | `earthworks/v1` | attempt | stage 10 earthworks jitter |
+   | `micro/v1` | attempt | stage 12 micro noise |
+   | `placement/v1` | attempt | stage 13 placement jitter |
+   | `reroll/v1` | stable | INTERNAL: gate-fail sub-seeds (master-seed keyed) |
+   | `fixture/v1` | attempt | tests/fixtures only |
 
-   **Registry v2 (planned, lands with the Stage-00 rev — see
-   `stages/00-seed-archetype.md`):** every stream gains a SCOPE — `stable`
-   (keyed off the master seed; stages 0–1: `arch/*`, `framing/v1` — survives
-   rerolls) or `attempt` (keyed off the attempt seed; stages 2+: `mask/v1`,
-   `strokes/v1`, `forcing/v1`, `cover/v1`, `route/v1`, `earthworks/v1`,
-   `micro/v1`, `placement/v1`). The rekey is one `PIPELINE_VERSION` bump +
-   golden re-bless.
+   Retired at the v2 rekey: `macro/place/v1`, `noise/field/v1`, `hydro/v1`,
+   `cover/clump/v1`. The `arch/*` names kept `/v1`: attempt-0 draws are
+   bit-identical before and after the scope flip (the master seed IS the
+   attempt-0 seed); the attempt>0 rekey is what the `PIPELINE_VERSION` bump
+   to 2 covers.
 2. **Versioned artifacts.** Every artifact carries a version; shape changes
    bump it + `PIPELINE_VERSION`, update the stage doc, re-bless goldens —
    explicit, reviewed events. `serde_json` runs with `float_roundtrip` so

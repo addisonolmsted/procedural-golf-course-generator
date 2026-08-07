@@ -13,7 +13,11 @@ does the finishing.
 
 ## Position
 
-- Upstream: Stage 00 (`strokes.*` knobs), Stage 01 (`Framing`), Stage 02
+- Upstream: Stage 00 (`strokes.*` knobs), Stage 01 (`Framing`, including its
+  structural skeleton — the trunk SPLINE below refines within
+  `skeleton.trunk`'s corridor, staying inside its `halfwidth_m`, rather than
+  routing to the outlet from scratch; the boundary landform follows the
+  province curve and hero/kettle placement reads the ridge axes), Stage 02
   (mask + crossings).
 - Downstream: Stage 04 compiles strokes into forcing fields; Stage 06 reads
   the flatten datums back (lake/marsh levels become water bodies).
