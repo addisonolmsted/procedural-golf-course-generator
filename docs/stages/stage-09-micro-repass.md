@@ -27,7 +27,7 @@ sim and the ball physics read.
 
 - **Upstream:** [S8](stage-08-hole-layout.md) (layout, surface delta);
   [S7](stage-07-earthmoving.md) (graded patch);
-  [S5](stage-05-substrate-assembly.md) via C2 (`meta` — the orientation
+  [S5](stage-05-siting-substrate.md) via C2 (`meta` — the orientation
   thread).
 - **Downstream:** [S10](stage-10-zoning-aesthetics.md),
   [S11](stage-11-validation.md). S9's output is the **final heightfield**.

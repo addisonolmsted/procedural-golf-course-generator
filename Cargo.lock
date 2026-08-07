@@ -713,6 +713,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "course-amplify"
+version = "0.0.0"
+
+[[package]]
 name = "course-calibration"
 version = "0.0.0"
 
@@ -726,10 +730,6 @@ version = "0.0.0"
 
 [[package]]
 name = "course-earthmoving"
-version = "0.0.0"
-
-[[package]]
-name = "course-finishers"
 version = "0.0.0"
 
 [[package]]

@@ -1,6 +1,6 @@
 # Contract C2 — The Routing Substrate
 
-**Between:** [S5 substrate assembly](../stages/stage-05-substrate-assembly.md) →
+**Between:** [S5 substrate assembly](../stages/stage-05-siting-substrate.md) →
 [S6 routing](../stages/stage-06-routing.md)
 **Type:** `course_contracts::contracts::routing_substrate::RoutingSubstrate`
 **Status:** guarded, and the most tightly guarded of the three. Golden-seed
@@ -37,6 +37,7 @@ RoutingSubstrate {
   grid_cost:  GridSpec,          // 8 m rung, 376^2  -- all cost/mask fields
 
   height:     Field<f64>,        // m, at grid_full
+  play_window: Rect,             // where the course goes; S6 routes inside it
 
   masks:      ExclusionMasks,    // at grid_cost
   cost:       CostFields,        // at grid_cost
@@ -52,13 +53,50 @@ so an 8 m cost cell corresponds to exactly 16 height nodes with no resampling.
 
 ## `height`
 
-The 2 m heightfield, in metres in the local datum, after S4's finishers. This
-is the ground as it stands *before any earthmoving*.
+The 2 m heightfield, in metres in the local datum, after
+[S4](../stages/stage-04-hydrology.md)'s datum ops. This is the ground as it
+stands *before any earthmoving*.
 
 Invariants: no NaN, no holes, defined at every node. Under water bodies it
 carries the **bed** elevation, not the water surface — the water surface is in
 `masks.water_surface_m`. Getting this backwards makes every lake a plateau and
 is the most likely single implementation bug in S5.
+
+## `play_window`
+
+The axis-aligned rect [S5](../stages/stage-05-siting-substrate.md) selected —
+where on this land the course actually goes. S6 routes inside it; every spine
+vertex must fall within it.
+
+```
+Rect { min: Vec2, max: Vec2 }   // world metres, axis-aligned
+```
+
+Fixed geometry, all of it invariant:
+
+| Quantity | Value |
+|---|---|
+| Side | **600 m** (`PLAY_M`) |
+| Centre freedom | **±450 m** per axis from world centre |
+| Always inside | the core, `[750, 2250]²` |
+| Terrain margin beyond any played point | **≥ 750 m** |
+
+The arithmetic closes exactly — a 600 m window whose centre ranges ±450 m spans
+precisely the core — so the margin holds by construction and no world constant
+moves. **That margin is a product requirement**: a hole at the edge of play
+must still have terrain running out past it, and the player must never see the
+world end.
+
+The fields and cost grids still cover the whole core, not just the window. That
+is deliberate: 376² at 8 m is trivial, and it means S6 can reason about what is
+just outside the window (a creek that drains through it, a ridge that closes a
+sightline) without a second artifact.
+
+**Axis-aligned, never rotated.** Rotation was considered and rejected: it is
+redundant with S1's randomized grain axis and base-level edge, it would break
+the resolution ladder's nesting property, and it would hand the renderer a
+heightmap with a transform attached. **Deliverable heightmaps stay
+axis-aligned.**
 
 ## `masks: ExclusionMasks`
 
@@ -83,7 +121,7 @@ below a threshold and as exclusion above one; the threshold is in `preset`.
 Everything else is soft. This is a deliberate design rule: **hard constraints
 are the mechanism that forces retries**, and v2 has no retries. Two hard masks
 is the irreducible minimum, and both are known-good by construction (the core
-window, and features S3 marked untouchable) rather than derived from anything
+window, and features S4 marked untouchable) rather than derived from anything
 that could go wrong.
 
 **`unbuildable`** is soft precisely because it is the one that *would* have been
@@ -146,7 +184,7 @@ reading as one place and no single stage looks wrong.
 
 `water_plane_origin` records *why* water is where it is (water-table
 intersection, floodplain datum, closed basin, or none). S10 dresses a kettle
-pond differently from an oxbow, and this is how it knows without asking S3.
+pond differently from an oxbow, and this is how it knows without asking S4.
 
 `plasticity` is duplicated here rather than re-read from the spec so that C2 is
 genuinely self-sufficient — a fixture C2 loaded from disk is a complete input
@@ -180,22 +218,25 @@ change ever wants a `match biome`, the fix is a new preset field.
    input to S6. No other artifact is required. This is testable and S6's
    fixtures depend on it.
 2. **No upstream imports.** `course-routing` depends on `course-contracts` and
-   `course-world` only. Never on `course-skeleton`, `course-transforms`,
-   `course-finishers`, or `course-spec`. This is checkable in CI from the
+   `course-world` only. Never on `course-skeleton`, `course-amplify`,
+   `course-transforms`, or `course-spec`. This is checkable in CI from the
    dependency graph and should be.
 3. **Two hard masks, everything else soft.** `protected` and `out_of_bounds`
    are the only fields that can make a cell impossible.
-4. **Costs are non-negative and finite.** No infinities — an infinity is a hard
+4. **`play_window` is 600 m, axis-aligned, and inside the core**, with its
+   centre within ±450 m of the world centre. Asserted at construction, which
+   is what makes the 750 m terrain-margin guarantee structural.
+5. **Costs are non-negative and finite.** No infinities — an infinity is a hard
    constraint smuggled into a soft field, and it reintroduces the failure mode
    that requires retries.
-5. **Rungs nest.** `grid_cost` is exactly `grid_full` coarsened 4×; an 8 m cost
+6. **Rungs nest.** `grid_cost` is exactly `grid_full` coarsened 4×; an 8 m cost
    cell maps to 16 height nodes with no interpolation.
-6. **Metadata passes through unchanged.** `grain_axis_rad` and
+7. **Metadata passes through unchanged.** `grain_axis_rad` and
    `wind_azimuth_rad` are bit-identical to their C1 values.
-7. **The empty case is legal.** `water` may be identically zero (Sandhills);
+8. **The empty case is legal.** `water` may be identically zero (Sandhills);
    `borrow` may be identically zero; `clearing` may be identically zero. S6
    must route all three.
-8. **Bed, not surface.** `height` under water is the bed.
+9. **Bed, not surface.** `height` under water is the bed.
 
 ## Versioning
 

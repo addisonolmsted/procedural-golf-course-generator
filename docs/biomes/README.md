@@ -12,18 +12,33 @@ A biome is a **data record** with five parts:
 | Part | Consumed by | Meaning |
 |---|---|---|
 | **Kernel selection** | [S2](../stages/stage-02-skeleton-kernel.md) | Which `SkeletonKernel` builds the structure. All six base biomes select Kernel I, the fluvial engine. |
+| **Exemplar pool** | [S3](../stages/stage-03-amplification.md) | The real tiles whose residual patches supply this biome's texture. **This is where identity actually lives** — see below. |
 | **Stage intensity dials** | S1–S4, S9, S10 | Per-stage, per-module scalars. |
 | **Calibration targets** | offline only | The measured metric vector the biome is fit to ([../calibration/targets.md](../calibration/targets.md)). |
 | **Scorer preset** | [S6](../stages/stage-06-routing.md), via C2 | The weights the router routes against. |
 | **`plasticity`** | S6, S7 | 0 = terrain dictates routing, 1 = routing dictates terrain. |
 
+### Identity is texture, not structure
+
+The measurement that decided this: `structure.py` reports `dist_to_channel_p50`
+at **104–120 m in every real archetype regardless of relief**. Drainage spacing
+is a law of landscapes, not a signature — a sandhills tile and a hill-country
+tile have nearly the same channel spacing.
+
+So a biome's structural dials mostly make it *correct*, and its **exemplar pool
+makes it recognizable**. Piedmont's spur-and-hollow interfluves, sandhills' dune
+flanks, hill country's stepped risers — those are texture, reconstructed at
+[S3](../stages/stage-03-amplification.md) from real terrain of that type.
+
+The practical consequence: **adding a biome is mostly a data-collection job.**
+
 ### A module at zero, not a branch around it
 
 The rule that makes this work in practice: **a biome that does not use a module
 runs it at zero intensity.** Sandhills has no channels, so S2's tributary
-growth runs with density ≈ 0 — it does not skip the growth code. Sandhills has
-no rilling, so S4's rilling pass runs at intensity 0 — it does not skip the
-pass.
+growth runs with density ≈ 0 — it does not skip the growth code. Great Plains
+has no scroll arcs, so S9's scroll family runs at amplitude 0 — it does not
+skip the family.
 
 This costs a little performance and buys three things: every code path is
 exercised by every biome (so a bug in the rare path is found immediately rather
@@ -93,14 +108,19 @@ repo is keyed to the retired v1 archetype set (`florida_lowland`,
 `glacial_moraine`, `mountain_bench`, `piedmont`, `sandhills`) and none of its
 fitted data carries over.
 
-| Biome | Corpus |
-|---|---|
-| Piedmont | v1 tiles exist; **must be re-measured** against the new battery |
-| Sandhills | v1 tiles exist; **must be re-measured** |
-| Hill Country | partial — v1 `mountain_bench` tiles are related but not the same biome |
-| Heathland | **none** — v1 `glacial_moraine` was a different definition |
-| Great Plains | **none** |
-| River Valley | **none** |
+| Biome | Corpus | Clean tiles |
+|---|---|---:|
+| Piedmont | v1 tiles exist; **re-measure and scale up** | 6 of 14 |
+| Sandhills | v1 tiles exist; **re-measure and scale up** | 10 of 10 |
+| Hill Country | partial — v1 `mountain_bench` is related but a different definition | 8 of 14 |
+| Heathland | **none** — v1 `glacial_moraine` was a different definition | 5 of 31 |
+| Great Plains | **none** | 0 |
+| River Valley | **none** | 0 |
 
-This is the pipeline's largest open data debt and it blocks S0, S2, S4, and S9.
-See [../calibration/targets.md](../calibration/targets.md).
+**38 clean tiles total**, across the *retired* archetype set. The campaign
+target is ~30 clean per biome, ~180 total.
+
+This is the pipeline's largest open data debt, and it now blocks more than it
+used to: S0, S2, and S9 need it for targets, and **S3 needs it to exist at all**
+— without an exemplar corpus there is no dictionary and no texture. See
+[../calibration/targets.md](../calibration/targets.md).

@@ -1,14 +1,22 @@
-//! Stage S3 — transforms and datum ops. An ordered list of modifiers applied
-//! to the skeleton. The base six use only the water-table and floodplain
-//! datums; the glacial transform and boundary-retreat seams are declared here
-//! but empty until the future-biome packs land.
+//! Stage S4 — hydrology and transforms. Reads the finished surface and decides
+//! where the water is.
 //!
-//! Emits the water polygons and basin inventory that S5 masks and S10 dress.
+//! S4 runs **after** amplification, deliberately. Deriving flow from the
+//! surface that actually exists — rather than asserting that an authored flow
+//! field still describes it — is what removes the self-consistency gap between
+//! the skeleton and the ground, and it is why S3 needs no "may not
+//! restructure" rule.
 //!
-//! Stage doc: `docs/stages/stage-03-transforms.md`.
+//! Order: re-derive flow ([`flow`]) → apply the ordered datum modifiers
+//! ([`datum`], [`water_table`], [`floodplain`]) → inventory basins
+//! ([`basins`]). The glacial and boundary-retreat seams are declared and empty
+//! until the future-biome packs land.
+//!
+//! Stage doc: `docs/stages/stage-04-hydrology.md`.
 
 pub mod basins;
 pub mod datum;
 pub mod floodplain;
+pub mod flow;
 pub mod seams;
 pub mod water_table;

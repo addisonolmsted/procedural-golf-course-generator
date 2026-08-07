@@ -20,14 +20,16 @@ five parts:
 | Part | Meaning |
 |---|---|
 | Kernel selection | Which [`SkeletonKernel`](stages/stage-02-skeleton-kernel.md) builds the structure. All six base biomes select Kernel I, the fluvial engine. |
+| **Exemplar pool** | The real tiles whose residual patches supply this biome's texture at [S3](stages/stage-03-amplification.md). **This is where identity actually lives** — see below. |
 | Stage intensity dials | Per-stage scalars. A biome that does not use a module runs it at zero, not around it. |
 | Calibration targets | The measured metric vector the biome is fit to ([calibration/targets.md](calibration/targets.md)). |
 | Scorer preset | The weights S6 routes against, carried through contract C2. |
 | `plasticity` | See below. |
 
 The payoff is that a biome can be retuned, or a new one added, without a stage
-author being involved — and that a bug found in one biome is a bug fixed in
-all of them.
+author being involved — and that a bug found in one biome is a bug fixed in all
+of them. With the exemplar pool carrying identity, **adding a biome is mostly a
+data-collection job.**
 
 ### 2. Three guarded contracts
 
@@ -79,11 +81,11 @@ different kind of golf course, and the calibration targets differ accordingly.
 | # | Stage | Doc | Output | † |
 |---|---|---|---|---|
 | S0 | Archetype & site draw | [stage-00](stages/stage-00-archetype-draw.md) | config only: biome + site descriptors | † |
-| S1 | Macro primitives | [stage-01](stages/stage-01-macro-primitives.md) | contract **C1** | |
-| S2 | Skeleton kernel | [stage-02](stages/stage-02-skeleton-kernel.md) | the structural heightfield | † |
-| S3 | Transforms & datum ops | [stage-03](stages/stage-03-transforms.md) | height + water polygons + basin inventory | |
-| S4 | Simulation finishers | [stage-04](stages/stage-04-finishers.md) | textured heightfield | † |
-| S5 | Substrate assembly | [stage-05](stages/stage-05-substrate-assembly.md) | contract **C2** | |
+| S1 | Macro structure | [stage-01](stages/stage-01-macro-primitives.md) | contract **C1** | |
+| S2 | Drainage skeleton | [stage-02](stages/stage-02-skeleton-kernel.md) | network, divides, base surface | † |
+| S3 | **Amplification** | [stage-03](stages/stage-03-amplification.md) | the terrain, textured from real data | † |
+| S4 | **Hydrology & transforms** | [stage-04](stages/stage-04-hydrology.md) | flow + water polygons + basin inventory | |
+| S5 | **Site selection & substrate** | [stage-05](stages/stage-05-siting-substrate.md) | the play window + contract **C2** | |
 | S6 | Routing | [stage-06](stages/stage-06-routing.md) | contract **C3** | |
 | S7 | Earthmoving realization | [stage-07](stages/stage-07-earthmoving.md) | graded heightfield | |
 | S8 | Hole layout | [stage-08](stages/stage-08-hole-layout.md) | hole geometry + zones | |
@@ -97,13 +99,41 @@ Data flows strictly forward. The only backward edge in the whole pipeline is
 S7's single bounded repair pass, and it is bounded precisely so that it is not
 a loop.
 
-## Four deliberate reversals from v1
+## Where realism comes from
+
+The single most important structural fact about this pipeline, and the one that
+determines what each stage is for.
+
+`tools/macro_campaign/macro_campaign/structure.py` measures
+`dist_to_channel_p50` at **104–120 m in every real archetype regardless of
+relief**, and flags it as the most robust metric in the set. Drainage spacing
+is a **law of landscapes, not a signature** — a sandhills tile and a
+hill-country tile have nearly the same channel spacing.
+
+So the skeleton cannot carry archetype identity, however well it is built.
+Identity lives in hillslope form and texture. That splits the terrain half of
+the pipeline cleanly in two:
+
+| | Owns | Fitted to |
+|---|---|---|
+| **[S2](stages/stage-02-skeleton-kernel.md) skeleton** | structure, routability, drainage correctness | **shared invariants** — the quantities every archetype hits alike |
+| **[S3](stages/stage-03-amplification.md) amplification** | texture, hillslope form, **archetype identity** | **discriminants** — the quantities that actually differ |
+
+S2 authors a correct, characterless base. **S3 reconstructs detail from a
+dictionary of real terrain patches**, fitted offline to that biome's lidar
+corpus and conditioned on position within the skeleton. Realism is not
+simulated and not parameterized — it is *sampled from the real thing*.
+
+See [calibration/metric-battery.md](calibration/metric-battery.md) for the
+invariant/discriminant split and its evidence.
+
+## Deliberate reversals from v1
 
 The previous architecture on branch `pipeline` was a 14-stage, sim-co-authored
-pipeline. v2 reverses four of its decisions. They are recorded here with their
+pipeline. v2 reverses six of its decisions. They are recorded here with their
 reasoning so they are not silently re-litigated later.
 
-### The sim is demoted; the skeleton is authored
+### Realism comes from data, not from simulation or parameters
 
 **v1:** stage 05's landscape-evolution model was *the co-author*. Realism was
 delegated to physics because the authored-primitive generator before it had
@@ -111,25 +141,51 @@ been measured against a 90-tile corpus and failed — 22 of 71 knobs inside the
 real-tile IQR (archive commit `0313432`,
 `tools/macro_campaign/out/report/compare.md`).
 
-**v2:** S2's fluvial engine authors the structure directly. S4 erosion is
-texture-only and *never restructures*.
+**v2:** S2 authors structure; S3 reconstructs texture from a fitted patch
+dictionary.
 
-The reasoning is not that the v1 measurement was wrong — it stands. It is that
-the failure was specific to authoring in **landform-primitive space**: placing
-ridges and valleys as shapes and hoping the statistics followed. S2 authors in
-**flow-distance / drainage space** instead — trunk splines, tributary growth at
-a calibrated spacing, a flow-distance transform, derived divides, and a catena
-library — which produces drainage-network statistics by construction rather
-than by luck.
+Both previous attempts failed for the same underlying reason — they tried to
+*produce* real terrain statistics from a model, whether authored primitives or
+simulated physics. Noise had no structure; primitives had structure but wrong
+statistics; a LEM has both but cannot be bounded or certified cheaply enough
+for a sub-10s no-retry budget.
 
-What is traded away is emergent surprise. What is bought is controllability and
-the ability to certify envelopes offline, which is what makes the no-retry
-guarantee possible at all. A long-running LEM cannot be certified cheaply and
-cannot be bounded tightly enough for a sub-10s budget.
+The third approach does not model the statistics at all. It **measures real
+terrain, decomposes it into structure plus residual, and reconstructs the
+residual conditioned on an authored structure.** What is traded away is the
+possibility of terrain unlike anything in the corpus. What is bought is that
+the texture is real by construction, plus controllability and certifiability.
 
-**This is a bet.** [calibration/targets.md](calibration/targets.md) is where it
-gets settled: if the fluvial engine cannot hit the process metrics that the v1
-LEM hit, the bet was wrong and S2 needs the simulation back.
+**This is still a bet**, and
+[calibration/envelope-certification.md](calibration/envelope-certification.md)
+is where it gets settled: run the coverage gate **separately on invariants and
+discriminants**. Poor discriminant reachability means the dictionary is too
+small or too coarsely conditioned. Poor invariant reachability means the
+skeleton engine is wrong and no texture will save it. v1's single 59% number
+could not tell those apart.
+
+### The course is sited, not centred
+
+**v1:** the routable area was nailed to the whole core, `[750, 2250]²`, and
+routing took whatever terrain it was handed.
+
+**v2:** [S5](stages/stage-05-siting-substrate.md) scores the core and selects a
+**600 m play window** — translation only, centre free ±450 m per axis.
+
+Real course siting is an architect choosing the good 150 acres out of 500.
+Doing the same here improves the golf *and* is a large source of between-seed
+variety, since the same terrain yields a different course depending on where
+the window lands.
+
+The geometry closes exactly and **no world constant moves**: a 600 m window
+whose centre ranges ±450 m spans precisely the existing core, so `in_core`
+still bounds everything and the **750 m minimum terrain margin** — a hole at
+the edge of play must still have ground running out past it — holds by
+construction.
+
+Rotation was considered and rejected: redundant with S1's randomized grain axis
+and base-level edge, and it would break the resolution ladder's nesting
+property and hand the renderer a heightmap with a transform attached.
 
 ### The pre-authored routability mask is gone
 
@@ -168,9 +224,35 @@ tile corpus behind them.
 
 **v2:** the six Heartland biomes. The old prior, corpus, and galleries are
 reference-only; nothing carries over as fitted data. Three of the six
-(Great Plains, River Valley, and the rebuilt Heathland) have no corpus at all
-yet. See [calibration/targets.md](calibration/targets.md) — this is the
-pipeline's largest open data debt and it blocks S0, S2, S4, and S9.
+(Great Plains, River Valley, and the rebuilt Heathland) have no corpus at all,
+and of the 90 tiles on disk only **38 are clean**.
+
+See [calibration/targets.md](calibration/targets.md) — the pipeline's largest
+open data debt, and it now blocks more than it used to. S0, S2, and S9 need it
+for targets; **S3 needs it to exist at all**, since without an exemplar corpus
+there is no dictionary and no texture.
+
+### Variety is multiplicative, not just continuous
+
+**v1 →  early v2:** the framing stage's categorical window classes and typed
+province boundaries were replaced with smooth continuous fields.
+
+**v2, corrected:** they are restored. [S0](stages/stage-00-archetype-draw.md)
+draws a **categorical structural class**, [S1](stages/stage-01-macro-primitives.md)
+realizes it and places **structural discontinuities**, and envelopes are
+certified as a **union of modes** rather than one blob.
+
+Continuous descriptors alone give courses that differ by degree; categorical
+draws give courses that differ in kind. Discontinuities — a scarp, a material
+contact — also carry disproportionate golf value, because a line where the
+ground changes character is where dramatic holes come from, and no smooth field
+can produce one.
+
+There is a real tension here that the earlier draft did not name: **a certified
+envelope exists to be narrow, and narrowness is antagonistic to variety.**
+Multi-modal envelopes plus categorical structure plus exemplar selection plus
+window siting are how the pipeline gets variety *without* widening any single
+envelope.
 
 ## Future biomes
 

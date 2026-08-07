@@ -9,17 +9,26 @@ in [MIGRATION.md](MIGRATION.md).
 
 A deterministic **12-stage** generator (S0–S11). A seed goes in; a complete,
 playable 9-hole par-36 golf course comes out in under ten seconds,
-byte-identically on every platform. S0 draws the biome and its site descriptors
-from an offline-certified envelope; S1 lays down the site's predisposition; S2 —
-a fluvial skeleton engine — authors the structure; S3 applies datum transforms
-and extracts water; S4 adds erosion texture without ever restructuring; S5
-compiles everything into the routing substrate; S6 routes nine holes; S7–S10
-grade, lay out, detail, and dress them one hole at a time so the first tee is
-playable while the rest finish; S11 measures and reports. **Nothing rejects and
-nothing retries** — the rejecting happened offline, in calibration, so runtime
-samples only from parameter space already known to work.
+byte-identically on every platform. S0 draws the biome, a categorical
+structural class, and site descriptors from an offline-certified envelope; S1
+lays down the site's predisposition and its structural discontinuities; S2 — a
+fluvial skeleton engine — authors the drainage network and a base surface; **S3
+reconstructs terrain texture from a dictionary of real lidar patches**; S4
+re-derives hydrology from the finished surface and places water; S5 **selects
+the 600 m play window** and compiles everything into the routing substrate; S6
+routes nine holes; S7–S10 grade, lay out, detail, and dress them one hole at a
+time so the first tee is playable while the rest finish; S11 measures and
+reports. **Nothing rejects and nothing retries** — the rejecting happened
+offline, in calibration, so runtime samples only from parameter space already
+known to work.
 
-Full treatment, including the four decisions this architecture deliberately
+Where realism comes from is the architecture's central claim:
+`dist_to_channel_p50` measures 104–120 m in **every** real archetype, so
+drainage spacing is a law of landscapes and not a signature. The skeleton
+therefore cannot carry archetype identity — **texture does**, reconstructed
+from real terrain at S3.
+
+Full treatment, including the six decisions this architecture deliberately
 reverses from its predecessor: [docs/00-architecture.md](docs/00-architecture.md).
 
 ## Repo layout (current)
@@ -31,7 +40,8 @@ MIGRATION.md           — where every pre-v2 module went
 Cargo.toml             — Rust workspace (resolver 2, edition 2024)
 
 docs/                  — the authoritative documentation
-  00-architecture.md   — the 12 stages, the three ideas, plasticity
+  00-architecture.md   — the 12 stages, the three ideas, where realism
+                         comes from, plasticity, the six reversals
   01-conventions.md    — units, world geometry, resolution ladder,
                          determinism, artifacts, naming
   02-performance-budget.md — per-stage ms budgets, streaming order
@@ -53,15 +63,17 @@ crates/
   course-contracts/    — C1/C2/C3 + units, metadata, plasticity, biome.
                          The v2 vocabulary; deliberately does NOT restate
                          grid or seed types
-  course-spec/         — S0: biome + descriptor draw → spec.json
-                         (contents pre-v2; see MIGRATION.md)
-  course-primitives/   — S1: macro primitives → C1
-  course-skeleton/     — S2: the fluvial engine + five modules;
-                         the SkeletonKernel future-biome seam
-  course-transforms/   — S3: datum ops, water extraction, basin inventory;
+  course-spec/         — S0: biome + structural class + descriptor draw
+                         → spec.json (contents pre-v2; see MIGRATION.md)
+  course-primitives/   — S1: macro structure + discontinuities → C1
+  course-skeleton/     — S2: the fluvial engine + five modules; Horton
+                         hierarchy; the SkeletonKernel future-biome seam
+  course-amplify/      — S3: the patch dictionary — texture and archetype
+                         identity reconstructed from real lidar residuals,
+                         conditioned on skeleton position
+  course-transforms/   — S4: flow re-derivation, datum ops, water, basins;
                          glacial + boundary-retreat seams (empty)
-  course-finishers/    — S4: texture-only erosion; the never-restructures check
-  course-substrate/    — S5: assembles C2
+  course-substrate/    — S5: site selection (600 m play window) + assembles C2
   course-routing/      — S6: beam + anneal → C3
   course-earthmoving/  — S7: grading, borrow, mass balance, bounded repair
   course-layout/       — S8: the ten-pass plan/surface hole layout
@@ -117,8 +129,13 @@ Defined in [`crates/course-world/src/world.rs`](crates/course-world/src/world.rs
   local Cartesian frame, with elevations in a local datum where 0 is a nominal
   core reference, not sea level.
 - **Core**: the central 1.5 km × 1.5 km window `[750, 2250]²` (`CORE_MIN_M`,
-  `CORE_MAX_M`, `in_core`). Holes route inside it; the margin exists so
-  landforms enter and leave the frame instead of terminating at it.
+  `CORE_MAX_M`, `in_core`). The **search region** for site selection; the
+  margin exists so landforms enter and leave the frame instead of terminating
+  at it.
+- **Play window**: a **600 m axis-aligned square** (`PLAY_M`) chosen inside the
+  core, centre free ±450 m. Holes route inside *this*. The arithmetic closes
+  exactly — 600 ± 450 spans the core — so no world constant moves and the
+  **750 m terrain margin** holds by construction.
 - **Resolution ladder**: 8 m preview/search (`RES_PREVIEW_M`, 376²), **2 m
   canonical** (`RES_FULL_M`, 1501²), 0.5 m corridor-local
   (`RES_EARTHWORKS_M`). Node convention `nx = extent/res + 1`, so coarse node
@@ -208,10 +225,19 @@ Details and the three ladder rules: [docs/01-conventions.md](docs/01-conventions
    biome that uses them: `drainage_integration`, not `heathland_derangement`.
    See [docs/biomes/README.md](docs/biomes/README.md).
 
-7. **The sim does not restructure.** S2 authors the drainage network; S4 adds
-   texture and may not move a divide, open a channel, or capture a drainage.
-   That boundary is what keeps the pipeline certifiable, and S4 enforces it
-   explicitly. See [docs/stages/stage-04-finishers.md](docs/stages/stage-04-finishers.md).
+7. **Amplification decorates the skeleton; it does not replace it.** S2 authors
+   the drainage network; S3 reconstructs texture over it with residual
+   amplitude **tapering to zero inside channel corridors**. Because S4 then
+   re-derives hydrology from the finished surface, small movements are absorbed
+   rather than forbidden — the constraint is constructive, not policed. See
+   [docs/stages/stage-03-amplification.md](docs/stages/stage-03-amplification.md).
+
+8. **The course is sited, not centred.** The core is the *search region*; the
+   routable area is a **600 m axis-aligned play window** chosen inside it, its
+   centre free ±450 m. Guarantees a **750 m minimum terrain margin** beyond any
+   played point — a hole at the edge of play must still have ground running out
+   past it. Translation only; deliverable heightmaps stay axis-aligned with no
+   transform attached.
 
 ## The six biomes ("Heartland")
 

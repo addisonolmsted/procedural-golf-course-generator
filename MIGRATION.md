@@ -30,8 +30,8 @@ lands.
 All 14 are empty scaffolds — doc comments and module skeletons only.
 
 `course-contracts` (C1/C2/C3, units, metadata, plasticity, biome) ·
-`course-primitives` (S1) · `course-skeleton` (S2) · `course-transforms` (S3) ·
-`course-finishers` (S4) · `course-substrate` (S5) · `course-routing` (S6) ·
+`course-primitives` (S1) · `course-skeleton` (S2) · `course-amplify` (S3) ·
+`course-transforms` (S4) · `course-substrate` (S5) · `course-routing` (S6) ·
 `course-earthmoving` (S7) · `course-layout` (S8) · `course-micro` (S9) ·
 `course-zoning` (S10) · `course-validate` (S11) · `course-calibration`
 (offline) · `course-cli` (headless driver).
@@ -44,12 +44,12 @@ All 14 are empty scaffolds — doc comments and module skeletons only.
 
 | Package | LOC | Fate | Maps to |
 |---|---:|---|---|
-| `metrics` | 1 912 | **retained, core of the battery** | [metric-battery.md](docs/calibration/metric-battery.md). `core.py`'s pure `f(height, cell, mask)` kernels are the reason real and synthetic terrain share a feature space. **Reuse; do not rewrite.** The v2 battery of 22 is a subset of its 49 plus 4 new metrics. |
-| `dtm_metrics` | 2 356 | **retained, two parts** | `gates.py` (G1–G6 metric admission) → the battery's admission layer. `sandbox/` (Sobol → HistGBT → SALib, with the inert `dummy` noise floor and the θ-vs-seed variance split) → the structural template for `course-calibration`. |
+| `metrics` | 1 912 | **retained, core of the battery** | [metric-battery.md](docs/calibration/metric-battery.md). `core.py`'s pure `f(height, cell, mask)` kernels are the reason real and synthetic terrain share a feature space. **Reuse; do not rewrite.** The v2 battery of 22 is a subset of its 49 plus 4 new metrics. Note `spectral_slope_beta`, the curvature family, and `anisotropy` are already here — they were simply not being used as identity metrics. |
+| `dtm_metrics` | 2 356 | **retained, three parts** | `gates.py` (G1–G6 metric admission) → the battery's admission layer. `sandbox/` (Sobol → HistGBT → SALib, with the inert `dummy` noise floor and the θ-vs-seed variance split) → the structural template for `course-calibration`. **`surfaces.py` → the dictionary's decomposition**: it already computes `s2 = s1 − lowpass` plus the `lp_slope`/`lp_aspect`/`tpi`/`relief_pos` conditioning fields, with a *pluggable* macro provider. That pluggability is the seam S3's fitter attaches to. |
 | `dtm_atlas` | 3 003 | **retained** | [lidar-pipeline.md](docs/calibration/lidar-pipeline.md). `dep3.py` (3DEP fetch), `grids.py` (1 m→2 m block-mean), `nhd.py`, `osm.py`, `masks.py`. |
 | `macro_campaign` | 4 463 | **partly retained** | `fetch.py`, `cgrid.py`, `develop/regions/report` → corpus infrastructure, retained. `compare.py` → the real-vs-generated gate bands, **including `--baseline`**, which splits the real corpus in half to measure each gate's false-positive rate. Any new harness needs this or it will optimize into smooth blobs. `fit_knobs.py` → superseded by envelope fitting, but its **gating policy and exclusion-digest provenance carry forward**. `shape.py` → retired. |
 | `tile_scout` | 2 219 | **retained** | The F0/F1/F2 tile-selection cascade. |
-| `dtm_primitives` | 3 599 | **reference only** | Geomorphons, valley/bluff/meander/bowl fitting, ridge and valley pipes, transects. Built to *extract* primitives for the retired authored generator. Useful reading for S2's catena library; not a dependency. |
+| `dtm_primitives` | 3 599 | **promoted to a dependency** | Geomorphons, ridge/valley pipes, network extraction, transects. Built to extract primitives for the retired generator, but v2 needs exactly this to **skeletonize real tiles** so their residuals can be conditioned the same way the generator conditions its own. `network.py`, `ridgepipe.py`, `geomorphons.py` are now on the critical path for S3's dictionary. |
 | `landform_prior` | 731 | **reference only** | Marked retired already. But `fit.py` — weighted quantile tables, log-log hydraulic regressions, a **Gaussian copula over reach residuals**, Kish-ESS shrinkage — is the **closest prior art for the envelope fitter**. See [envelope certification, open question 1](docs/calibration/envelope-certification.md). |
 
 ### Data
@@ -58,9 +58,15 @@ All 14 are empty scaffolds — doc comments and module skeletons only.
 tiles across the **retired** five archetypes, plus extracted knobs, generated
 comparisons, and the `report/` dashboards.
 
-**Tiles are salvageable for three v2 biomes; fits are not.** See
+**Tiles are salvageable for three v2 biomes; fits are not.** And the corpus is
+thinner than the headline: **38 of 90 tiles are clean** (52 excluded). See
 [targets.md](docs/calibration/targets.md) for the crosswalk and the collection
 order.
+
+The **64 real golf-course grids** in `out/courses/` are promoted from a
+one-knob input to two roles: ground truth for the
+[S5](docs/stages/stage-05-siting-substrate.md) siting scorer, and a
+separately-weighted exemplar source for the dictionary.
 
 **Currently broken:** `tools/metrics` and `tools/dtm_metrics` are non-runnable
 — both read `tools/parkland_atlas/out/cache`, which is not in this branch.
@@ -77,8 +83,8 @@ The full pre-v2 generator, 37 Rust files. Not in this tree; recoverable with
 | Path | Maps to | Notes |
 |---|---|---|
 | `tools/calibration/` (11 modules, ~54 KB) | [envelope-certification.md](docs/calibration/envelope-certification.md) | **The single most valuable thing on any other branch.** A complete working harness for exactly the v2 loop: Sobol design → forward → coverage gate → HistGBT emulator + SALib → density-ratio inverse → held-out validation → bake to Rust. Read `CALIBRATION.md` first. Rebinding needed: `param_schema.py`, `forward.py`, `export_sampler.py`. |
-| `golf-terrain/src/erosion.rs` | [S4](docs/stages/stage-04-finishers.md) | Stream-power / priority-flood core. **Note the role change**: it was the co-author; S4 is texture-only and may not restructure. Port the numerics, not the authority. |
-| `golf-terrain/src/water.rs` | [S3](docs/stages/stage-03-transforms.md) | Hydrographic extraction. |
+| `golf-terrain/src/erosion.rs` | [S3](docs/stages/stage-03-amplification.md) polish, [S4](docs/stages/stage-04-hydrology.md) flow | **Mostly retired.** v2 does not simulate erosion for texture — texture comes from the patch dictionary. What survives is the priority-flood core (useful to S4's flow routing, though `macro_campaign/flow.py` with Barnes flat resolution is the better reference) and, at most, S3's short consistency polish. Port neither the authority nor the stream-power model. |
+| `golf-terrain/src/water.rs` | [S4](docs/stages/stage-04-hydrology.md) | Hydrographic extraction. |
 | `golf-terrain/src/sampler/ptheta.rs` (163 KB, generated) | [S0](docs/stages/stage-00-archetype-draw.md) | The precedent for baking a fitted ensemble into deterministic Rust: unit-space design points, weight CDF, `(lo, hi, log, int)` decode spec. |
 | `golf-routing/` (7 files) | [S6](docs/stages/stage-06-routing.md) | The beam/anneal router. Closest prior art for S6, but it read terrain directly — S6 may see only [C2](docs/contracts/C2-routing-substrate.md). |
 | `golf-holes/` (6 files) | [S7](docs/stages/stage-07-earthmoving.md), [S8](docs/stages/stage-08-hole-layout.md) | Hole build-out. Prior art for S7's template library and S8's surface passes 7–9, both of which are open questions blocking implementation. |

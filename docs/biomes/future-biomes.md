@@ -16,6 +16,7 @@ grouped by which of those they need.
 | `SkeletonKernel` trait | [`course-skeleton/src/kernel.rs`](../../crates/course-skeleton/src/kernel.rs) | Declared. Kernel I (fluvial) is the only implementation. |
 | Glacial transform | [`course-transforms/src/seams/glacial.rs`](../../crates/course-transforms/src/seams/glacial.rs) | Declared, ordered, empty. |
 | Boundary retreat | [`course-transforms/src/seams/boundary_retreat.rs`](../../crates/course-transforms/src/seams/boundary_retreat.rs) | Declared, ordered, empty. |
+| S3 exemplar pools | [`course-amplify/`](../../crates/course-amplify/) | **A pack is normally just a new dictionary.** No code. |
 | S9 detail families | [`course-micro/`](../../crates/course-micro/) | Add a module, run at zero elsewhere. |
 | S10 cover classes | [`course-zoning/`](../../crates/course-zoning/) | Grows with every pack; keep the class set extensible rather than a closed match. |
 
@@ -74,11 +75,13 @@ Volcanic cones, lava fields, lahar plains, caldera floors.
 
 Karst towers, rainforest lowland, volcanic islands.
 
-- **Seam:** karst is awkward. Sinkholes **capture drainage**, which is
-  restructuring — so it belongs in S3 as a transform, not S4 as a finisher.
-  Possibly Kernel IV.
-- **S4:** a chemical-weathering pass would be a new pass, not a new dial. See
-  [S4's future-biome note](../stages/stage-04-finishers.md).
+- **Seam:** karst is awkward. Sinkholes **capture drainage** — they change the
+  network, not just the texture — so they belong at S2 (kernel) or S4 (a
+  transform), never at S3, whose taper exists precisely to leave the network
+  alone. Possibly Kernel IV.
+- **S3:** a karst dictionary would be a new exemplar pool, not new code —
+  assuming solution features are expressible as conditioned texture, which is
+  itself uncertain.
 - **Notes:** the least-resolved pack. Karst may not fit the architecture
   cleanly, and finding that out is worth doing before committing to it.
 

@@ -19,7 +19,7 @@ S10 is also the last stage permitted to touch appearance. S11 only measures.
 
 - **Upstream:** [S9](stage-09-micro-repass.md) (final heightfield, firmness,
   TWI); [S8](stage-08-hole-layout.md) (zones, hazards);
-  [S5](stage-05-substrate-assembly.md) via C2 (`meta.water_plane_origin`);
+  [S5](stage-05-siting-substrate.md) via C2 (`meta.water_plane_origin`);
   [S0](stage-00-archetype-draw.md) (`aesthetic_seed`).
 - **Downstream:** [S11](stage-11-validation.md), and the renderer.
 - **Streams:** `zoning/v1`, seeded from `aesthetic_seed`.

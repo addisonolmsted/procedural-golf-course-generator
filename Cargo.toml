@@ -10,8 +10,8 @@ members = [
     "crates/course-spec",
     "crates/course-primitives",
     "crates/course-skeleton",
+    "crates/course-amplify",
     "crates/course-transforms",
-    "crates/course-finishers",
     "crates/course-substrate",
     "crates/course-routing",
     "crates/course-earthmoving",
@@ -42,8 +42,8 @@ course-contracts = { path = "crates/course-contracts" }
 course-spec = { path = "crates/course-spec" }
 course-primitives = { path = "crates/course-primitives" }
 course-skeleton = { path = "crates/course-skeleton" }
+course-amplify = { path = "crates/course-amplify" }
 course-transforms = { path = "crates/course-transforms" }
-course-finishers = { path = "crates/course-finishers" }
 course-substrate = { path = "crates/course-substrate" }
 course-routing = { path = "crates/course-routing" }
 course-earthmoving = { path = "crates/course-earthmoving" }

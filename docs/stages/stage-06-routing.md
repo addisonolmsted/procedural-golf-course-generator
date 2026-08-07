@@ -18,7 +18,7 @@ route exists, because until then there is no first tee.
 
 ## Position
 
-- **Upstream:** [S5](stage-05-substrate-assembly.md) via
+- **Upstream:** [S5](stage-05-siting-substrate.md) via
   **[C2](../contracts/C2-routing-substrate.md)**.
 - **Downstream:** [S7](stage-07-earthmoving.md), [S8](stage-08-hole-layout.md)
   via **[C3](../contracts/C3-corridor-realization.md)**.
@@ -144,7 +144,7 @@ in advance in [C3](../contracts/C3-corridor-realization.md): a span list on
 - [ ] Same seed ⇒ byte-identical C3, cross-platform.
 - [ ] **`course-routing` imports nothing upstream of C2** — enforced in CI from
       the dependency graph, and grep-clean of `course_skeleton`,
-      `course_transforms`, `course_finishers`, `course_spec`.
+      `course_amplify`, `course_transforms`, `course_spec`.
 - [ ] **No biome branch anywhere in the crate** — grep for biome names, expect
       zero hits.
 - [ ] No infinities and no vetoes in the scorer; every penalty saturates.

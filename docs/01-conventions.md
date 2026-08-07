@@ -34,9 +34,24 @@ Do not redefine these; import them.
 - **Extent**: 3 km × 3 km, origin at the SW corner, x east, y north
   (`EXTENT_M = 3000.0`).
 - **Core**: the central 1.5 km × 1.5 km window `[750, 2250]²`
-  (`CORE_MIN_M`, `CORE_MAX_M`, `in_core`). The course is routed inside the
-  core; the surrounding margin exists so that landforms enter and leave the
-  frame instead of terminating at it.
+  (`CORE_MIN_M`, `CORE_MAX_M`, `in_core`). The **search region** for site
+  selection; the surrounding margin exists so that landforms enter and leave
+  the frame instead of terminating at it.
+- **Play window**: a **600 m axis-aligned square** (`PLAY_M`) chosen inside the
+  core by [S5](stages/stage-05-siting-substrate.md), its centre free within
+  ±450 m of the world centre. The course is routed inside *this*, not the whole
+  core.
+
+  The arithmetic closes exactly — 600 m ± 450 m spans `[750, 2250]²` — so the
+  core is unchanged and the **750 m minimum terrain margin** holds by
+  construction. That margin is a product requirement: a hole at the edge of
+  play must still have ground running out past it, and the player must never
+  see the world end.
+
+  **Axis-aligned, never rotated.** Deliverable heightmaps are plain grids with
+  no transform attached. Rotation would also break the nesting property below,
+  and it is redundant anyway — S1 randomizes the grain axis and base-level
+  edge, which is the same freedom.
 - **Elevations** are metres in a *local datum* — 0 is a nominal core reference
   elevation, not sea level.
 

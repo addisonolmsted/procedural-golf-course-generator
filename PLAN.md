@@ -6,15 +6,19 @@ hole construction, and the object manifest — in one of six named biomes, in
 under ten seconds, on terrain that is **varied, interesting, plausible, and golf
 routable**:
 
-- *Varied* — [S0](docs/stages/stage-00-archetype-draw.md) draws site
-  descriptors jointly from a certified envelope, so two courses in one biome are
-  different sites rather than the same site twice.
+- *Varied* — variety is **multiplicative**: a categorical structural class and
+  an exemplar pool at [S0](docs/stages/stage-00-archetype-draw.md), structural
+  discontinuities at [S1](docs/stages/stage-01-macro-primitives.md),
+  multi-modal envelopes, and a **sited play window** at
+  [S5](docs/stages/stage-05-siting-substrate.md). Continuous descriptors alone
+  give courses that differ by degree; these give courses that differ in kind.
 - *Interesting* — [S8](docs/stages/stage-08-hole-layout.md)'s dispersion pass
-  stops nine holes from being one hole nine times, and
-  [S9](docs/stages/stage-09-micro-repass.md)'s detail is oriented by the
-  metadata thread rather than sprinkled.
-- *Plausible* — [S2](docs/stages/stage-02-skeleton-kernel.md) authors in
-  flow-distance space, so drainage statistics hold by construction; the
+  stops nine holes from being one hole nine times, and siting puts the course on
+  the best ground rather than the middle of the map.
+- *Plausible* — **[S3](docs/stages/stage-03-amplification.md) reconstructs
+  texture from real lidar residuals**, so terrain statistics are sampled from
+  the real thing rather than modelled. S2 supplies the structure the
+  reconstruction is conditioned on. The
   [calibration loop](docs/calibration/) is the referee.
 - *Routable* — `plasticity` plus [S7](docs/stages/stage-07-earthmoving.md)
   grading, with the guarantee enforced by
@@ -29,12 +33,12 @@ Where pre-v2 code went: [MIGRATION.md](MIGRATION.md).
 
 | # | Stage | Doc | Output | Budget |
 |---|---|---|---|---:|
-| S0 | Archetype & site draw † | [stage-00](docs/stages/stage-00-archetype-draw.md) | `CourseSpec` — biome + descriptors | 1 ms |
-| S1 | Macro primitives | [stage-01](docs/stages/stage-01-macro-primitives.md) | contract **C1** | 120 ms |
-| S2 | Skeleton kernel † | [stage-02](docs/stages/stage-02-skeleton-kernel.md) | structural heightfield + flow field | 900 ms |
-| S3 | Transforms & datum ops | [stage-03](docs/stages/stage-03-transforms.md) | height + water + basin inventory | 250 ms |
-| S4 | Simulation finishers † | [stage-04](docs/stages/stage-04-finishers.md) | textured heightfield | 900 ms |
-| S5 | Substrate assembly | [stage-05](docs/stages/stage-05-substrate-assembly.md) | contract **C2** | 400 ms |
+| S0 | Site & biome draw † | [stage-00](docs/stages/stage-00-archetype-draw.md) | `CourseSpec` — biome, structural class, descriptors, exemplars | 1 ms |
+| S1 | Macro structure | [stage-01](docs/stages/stage-01-macro-primitives.md) | contract **C1** | 120 ms |
+| S2 | Drainage skeleton † | [stage-02](docs/stages/stage-02-skeleton-kernel.md) | network, divides, base surface | 900 ms |
+| S3 | **Amplification** † | [stage-03](docs/stages/stage-03-amplification.md) | the terrain, textured from real data | 900 ms |
+| S4 | **Hydrology & transforms** | [stage-04](docs/stages/stage-04-hydrology.md) | flow + water + basin inventory | 250 ms |
+| S5 | **Site selection & substrate** | [stage-05](docs/stages/stage-05-siting-substrate.md) | play window + contract **C2** | 400 ms |
 | S6 | Routing | [stage-06](docs/stages/stage-06-routing.md) | contract **C3** | 1 300 ms |
 | S7 | Earthmoving | [stage-07](docs/stages/stage-07-earthmoving.md) | graded heightfield | 1 600 ms |
 | S8 | Hole layout | [stage-08](docs/stages/stage-08-hole-layout.md) | hole geometry + zones | 900 ms |
@@ -52,6 +56,11 @@ first route); S7–S10 stream per hole. Full table:
 - **M0 — scaffold + docs (done 2026-08-06).** v1 stage-01 work preserved on
   `pipeline` (`1ad56c7`); `heartland` branch cut; 14 crate scaffolds;
   27 documentation files; `MIGRATION.md`.
+- **M0b — pipeline revision (done 2026-08-07).** S3/S4 swapped: amplification
+  from a real-terrain patch dictionary replaces erosion; hydrology moved after
+  it. Site selection added at S5. Categorical structure and discontinuities
+  restored at S0/S1. Metric targets reorganized onto the
+  invariant/discriminant axis.
 - **M1 — contracts + the stream rekey.** Implement `course-contracts`: C1, C2,
   C3 as real types with construction-time invariant enforcement, plus fixture
   builders. Nothing else can be tested in isolation until these exist. **Do
@@ -65,24 +74,32 @@ first route); S7–S10 stream per hole. Full table:
 - **M3 — S1 + S2 (the critical path).** The skeleton kernel is where the
   architecture's central bet lives. Build it early, measure it early. S1 is
   small and can proceed in parallel.
-- **M4 — corpus + battery.** Implement the four missing metrics, run the G1–G6
-  admission gates, and collect corpora in the order given in
-  [targets.md](docs/calibration/targets.md): piedmont first (the anchor), then
-  heathland (the golden most likely to invalidate an assumption).
-- **M5 — S3 + S4 + S5.** Transforms, finishers, and C2 assembly. S4's
-  restructuring check needs M4's metrics.
-- **M6 — first certified envelope.** Recover and rebind `tools/calibration`
+- **M4 — corpus + battery.** The long pole, and it gates almost everything.
+  Recover `tools/parkland_atlas` from `main` so the metric tools run at all;
+  implement the four missing metrics and run the G1–G6 gates; **confirm the
+  invariant/discriminant split empirically** rather than assuming it; then
+  collect corpora in the order in
+  [targets.md](docs/calibration/targets.md) — piedmont first (the anchor), then
+  heathland (the golden most likely to invalidate an assumption). Target ~30
+  clean tiles per biome, ~180 total, at ~40% attrition.
+- **M5 — the dictionary.** Fit the patch basis and coefficient distributions
+  per conditioning bucket, offline in `course-calibration`. Ship target
+  **< 15 MB**. Report **per-bucket tile diversity**, not just patch count — a
+  bucket sourced from one tile will reproduce that tile.
+- **M6 — S3 + S4 + S5.** Amplification (the realism bet — measure it against
+  discriminants immediately), hydrology, siting, and C2 assembly.
+- **M7 — first certified envelope.** Recover and rebind `tools/calibration`
   from `main`; run the loop for piedmont; produce an envelope S0 can sample.
-  **The coverage/reachability gate here is the referee on the S2 bet** — if
-  reachability is materially worse than v1's 59%, the architecture needs
-  revisiting rather than retuning.
-- **M7 — S0 + S6.** Envelope sampling and routing. First end-to-end route.
-- **M8 — S7 + S8.** First playable hole; the streaming seam becomes real.
-- **M9 — S9 + S10 + S11.** Final detail, dressing, and the measurement
+  **The coverage gate here is the referee on the realism bet** — run it
+  separately on invariants and discriminants, because they fail for different
+  reasons and have different fixes.
+- **M8 — S0 + S6.** Envelope sampling and routing. First end-to-end route.
+- **M9 — S7 + S8.** First playable hole; the streaming seam becomes real.
+- **M10 — S9 + S10 + S11.** Final detail, dressing, and the measurement
   apparatus. First complete course.
-- **M10 — all six biomes certified.** Corpora, targets, and envelopes for the
-  remaining five. This is the milestone that turns one working biome into a
-  generator.
+- **M11 — all six biomes certified.** Corpora, dictionaries, targets, and
+  envelopes for the remaining five. This is the milestone that turns one
+  working biome into a generator.
 
 ## Parallelization protocol
 
@@ -106,34 +123,46 @@ Recorded here so they are not rediscovered one stage at a time.
 
 | Blocker | Blocks | Where |
 |---|---|---|
-| **Three of six biomes have no corpus**; two more need re-measuring | S0, S2, S4, S9 calibration | [targets.md](docs/calibration/targets.md) |
+| **Three of six biomes have no corpus**; only **38 clean tiles** exist and they are keyed to the retired archetypes | **S3 entirely** (no corpus ⇒ no dictionary ⇒ no texture), plus S0/S2/S9 targets | [targets.md](docs/calibration/targets.md) |
 | **Four of the 22 metrics do not exist** and are ungated | heathland, great-plains, river-valley, hill-country fits | [metric-battery.md](docs/calibration/metric-battery.md) |
 | No batch entrypoint (`xtask forward-grid` is not on this branch) | the entire calibration loop | M2 |
 | `tools/metrics` and `tools/dtm_metrics` are non-runnable (missing `parkland_atlas` cache) | any measurement | [MIGRATION.md](MIGRATION.md) |
+| Dictionary patch size, basis rank, bucket boundaries undecided | S3's asset format | [stage-03](docs/stages/stage-03-amplification.md) |
 | Envelope representation undecided (GMM vs hull vs flow) | S0's sampler | [envelope-certification.md](docs/calibration/envelope-certification.md) |
-| Catena library representation undecided | S2 | [stage-02](docs/stages/stage-02-skeleton-kernel.md) |
+| Siting score undefined (needs fitting to the 64 course grids) | S5's `siting` | [stage-05](docs/stages/stage-05-siting-substrate.md) |
 | S7's template library and S8's surface passes undesigned | S7, S8 | prior art in `golf-holes/` on `main` |
 | Enclosure model representation undecided | S10, and S11's sightline check | [stage-10](docs/stages/stage-10-zoning-aesthetics.md) |
 
-## The open architectural risk
+## The open architectural risks
 
-[Heathland](docs/biomes/heathland.md)'s **negative drainage integration** may
-not be expressible as "the same fluvial growth with a dial turned down". If it
-needs genuinely different growth, that is a second kernel wearing a module's
-clothes, and it should be admitted as such rather than hidden in a dial.
+Two, in order of how much they would cost to be wrong about.
 
-This is worth finding out early, which is why heathland is second in the corpus
-collection order despite piedmont being the anchor. See
+**1. The dictionary may not carry identity.** The whole architecture now rests
+on the claim that archetype identity is texture, and that a conditioned patch
+dictionary can reproduce it. If generated piedmont and generated hill country
+come out indistinguishable on the discriminants, neither the skeleton nor the
+dictionary is doing its job and there is no third fallback in reserve.
+
+This is why M7's coverage gate must be run **separately on invariants and
+discriminants** — the two failure modes have different fixes and v1's single
+59% number could not tell them apart.
+
+**2. Heathland's negative drainage integration** may not be expressible as "the
+same fluvial growth with a dial turned down". If it needs genuinely different
+growth, that is a second kernel wearing a module's clothes and should be
+admitted as such. Cheaper to be wrong about than (1), and it is why heathland is
+second in the corpus collection order despite piedmont being the anchor. See
 [S2's open questions](docs/stages/stage-02-skeleton-kernel.md).
 
 ## Current status
 
-**M0 complete (2026-08-06).** Branch `heartland`, cut from `pipeline` at
-`1ad56c7`. Workspace holds 21 crates — 3 shared substrate reused unchanged, 14
-new v2 scaffolds, and 4 retained from v1 pending retirement; `cargo check
---workspace` is clean and the 112 retained tests pass. The documentation tree is
-complete: 12 stage docs, 3 contracts, 8 biome files, 4 calibration docs, plus
-the three root documents.
+**M0 complete (2026-08-06); M0b complete (2026-08-07).** Branch `heartland`,
+cut from `pipeline` at `1ad56c7`. Workspace holds 21 crates — 3 shared
+substrate reused unchanged, 14 v2 scaffolds, and 4 retained from v1 pending
+retirement; `cargo check --workspace` is clean and the 112 retained tests pass.
+The documentation tree is complete: 12 stage docs, 3 contracts, 8 biome files,
+4 calibration docs, plus the three root documents.
 
 **All twelve stages are unclaimed.** Next: M1 (contracts) and M2 (batch
-entrypoint), which between them unblock everything else.
+entrypoint), which between them unblock everything else — and M4's corpus
+campaign, which is the long pole and can run in parallel from day one.

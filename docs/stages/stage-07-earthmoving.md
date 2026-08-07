@@ -22,7 +22,7 @@ bounded repair, then stop and report whatever remains.
 
 - **Upstream:** [S6](stage-06-routing.md) via
   **[C3](../contracts/C3-corridor-realization.md)**;
-  [S5](stage-05-substrate-assembly.md) via C2 (`height`, `drainage_risk`,
+  [S5](stage-05-siting-substrate.md) via C2 (`height`, `drainage_risk`,
   `borrow`).
 - **Downstream:** [S8](stage-08-hole-layout.md), [S9](stage-09-micro-repass.md).
 - **Streams:** `earthworks/v1`.

@@ -85,32 +85,89 @@ In order:
 The exclusion loop from the v1 campaign, retained wholesale:
 per-tile reasons, human review through `crates/tile-lab/`, and an
 **exclusion digest** stamped into the fitted output so a prior can always be
-traced to the exact tile set that produced it. 52 of the v1 tiles were excluded
-this way; expect a similar rate.
+traced to the exact tile set that produced it.
+
+**Expect ~40% attrition.** v1 excluded 52 of 90 — 38 auto-excluded on the OSM
+developed-fraction screen (threshold 2%) and 14 on character. To land ~30 clean
+tiles per biome, fetch ~50.
+
+### 5. Skeleton and residual extraction
+
+New in v2, and the step that makes the corpus a *generation* input rather than
+only a validation one. For each clean tile:
+
+1. **Extract the drainage skeleton** so the tile's terrain can be conditioned
+   the same way the generator conditions its own —
+   `dtm_primitives/network.py` (`extract_network`, `coarse_flow`),
+   `ridgepipe.py` (divides, via the same pipeline on the inverted surface),
+   `geomorphons.py` (landform class). Per-tile vector skeletons **already exist
+   on disk** at `out/extract/*.regions.json` (channels, ridges, valley
+   centrelines, basins, scarps, transects, in world metres).
+2. **Decompose into lowpass + residual**, `s2 = s1 − lowpass`. Implemented in
+   `tools/dtm_metrics/dtm_metrics/surfaces.py`, whose docstring states the
+   purpose outright: *"the residual is what the noise layer must reproduce"*.
+   Its macro provider is documented as **pluggable** — swapping the Gaussian
+   lowpass for the generator's own S2 catena is the correct seam, and makes the
+   fitted residual exactly the thing S3 must synthesize.
+3. **Compute conditioning fields** — `lp_slope`, `lp_aspect`, `tpi`,
+   `relief_pos` from `surfaces.py`, plus normalized flow distance and hillslope
+   position from the skeleton. These are the six axes of
+   [S3](../stages/stage-03-amplification.md)'s conditioning vector.
+4. **Sample patches** with their conditioning vectors, and record **which tile
+   each came from** — per-bucket tile diversity is the dictionary's real
+   coverage constraint, not patch count
+   ([targets.md](targets.md)).
+
+### 6. The course-grid corpus
+
+64 real golf-course grids sit in `out/courses/` (1500² @ 2 m; piedmont 18,
+sandhills 12, florida 12, glacial 12, mountain 10) and have only ever been used
+to fit one knob. They are worth far more than that, in two distinct roles:
+
+- **Ground truth for the siting scorer**
+  ([S5](../stages/stage-05-siting-substrate.md)). Measuring what terrain real
+  architects actually chose turns site selection from a hand-authored heuristic
+  into a fitted model. This is their higher-value use.
+- **A second exemplar source** for the dictionary — real played ground has real
+  golf texture.
+
+**Weight them separately and keep them identifiable.** Course grids are
+*graded*, not natural: blending them into the dictionary unweighted would teach
+the generator to reproduce earthmoving as terrain. Suspect they belong only in
+fairway-scale buckets, at low weight, and the weighting is itself a calibration
+question ([S3's open questions](../stages/stage-03-amplification.md)).
 
 ## Caveats
 
 ### The despeckle caveat — the one that matters most
 
 Lidar noise lives at **exactly the wavelengths
-[S9](../stages/stage-09-micro-repass.md) operates at**, and it cuts both ways:
+[S3](../stages/stage-03-amplification.md) and
+[S9](../stages/stage-09-micro-repass.md) operate at**, and it cuts both ways:
 
-- **Under-despeckle** and S9 learns to reproduce sensor noise as terrain
+- **Under-despeckle** and the dictionary learns sensor noise as terrain
   texture. The generated ground acquires a fine random crackle that looks like
   detail and is not.
 - **Over-despeckle** and the real micro-texture is removed along with the
-  noise, and S9 learns that the ground is smooth. Generated terrain then reads
+  noise, and the dictionary learns that the ground is smooth. Terrain then reads
   as plastic at close range.
 
 There is no setting that is right for both, because the noise and the signal
 overlap in frequency. **Do not pick one despeckle setting and proceed.** Run a
-sensitivity analysis: measure S9's variogram targets across a range of
-settings, and report the target as a band whose width reflects the
-methodological uncertainty rather than a point estimate that pretends to a
-precision the data does not support.
+sensitivity analysis: measure the texture targets across a range of settings,
+and report each as a band whose width reflects the methodological uncertainty
+rather than a point estimate that pretends to a precision the data does not
+support.
 
-[S4](../stages/stage-04-finishers.md)'s short-lag roughness target has the same
-exposure, one octave coarser.
+**This is far more consequential under v2 than it was.** Despeckle no longer
+just sets an erosion intensity dial — it determines **what the dictionary
+contains**. Under-despeckle and [S3](../stages/stage-03-amplification.md)
+reconstructs sensor noise as terrain, faithfully, on every course in the biome.
+Over-despeckle and the dictionary has no fine structure to reconstruct at all,
+and the whole exemplar approach degrades to a smooth base surface.
+
+Applies to `spectral_slope_beta`, `variogram_range`/`sill`, and
+`short_lag_roughness` — four of S3's discriminants.
 
 ### Canopy
 
@@ -140,6 +197,12 @@ landscapes are in the UK and the Netherlands, which needs a second source
 (Environment Agency LIDAR, AHN) and therefore a second ingestion path with its
 own conditioning quirks. Plan for it; the metrics must be source-independent or
 the comparison is meaningless.
+
+**The dictionary is more exposed to this than the metrics are.** A metric
+averages a sensor difference away; a dictionary bucket mixing 3DEP and EA
+patches would blend two sensors' noise characteristics into one synthesized
+texture. Either normalize across sources before fitting, or keep buckets
+single-source and accept thinner coverage.
 
 ## Corpus status
 

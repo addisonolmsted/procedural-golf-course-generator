@@ -25,11 +25,12 @@ stresses:
    integration.** Density ~0.07 — a deranged network that never reaches base
    level. The engine must produce a *disconnected* result without a special
    case.
-2. **[S4](../stages/stage-04-finishers.md): the restructuring bound is tightest
+2. **[S3](../stages/stage-03-amplification.md): the taper bound is tightest
    here.** Heathland's network is the easiest in the base set to accidentally
-   *integrate* — a slightly-too-strong rilling pass will connect the
-   disconnected channels, which is precisely the restructuring the finisher
-   contract forbids. Heathland sets S4's hard envelope ceiling.
+   *integrate* — residual amplitude that would be unremarkable elsewhere can
+   connect the disconnected channels. Heathland therefore sets the **hard
+   envelope ceiling** on amplification amplitude
+   ([../calibration/envelope-certification.md](../calibration/envelope-certification.md)).
 3. **[S7](../stages/stage-07-earthmoving.md): kettles are borrow sites *and*
    intended depressions at the same time.** The Priority-Flood verify will
    correctly identify every kettle as a depression, and repairing them away
@@ -57,8 +58,8 @@ Kernel I (fluvial), run against its own assumptions.
 |---|---|
 | [S1](../stages/stage-01-macro-primitives.md) | Low-mid relief; **empty strata**; uniform `hardness`; **low `grain_strength`**. Nearly featureless C1 by design — heathland's character is derangement, which is an S2 dial, not an S1 one. |
 | [S2](../stages/stage-02-skeleton-kernel.md) | Density ~0.07, integration negative, closed-basin module dominant. |
-| [S3](../stages/stage-03-transforms.md) | **Water-table datum dominant.** The table sits near the surface, so S2's closed basins fill: kettle ponds and bogs. Seasonal ones marked `permanent: false`. No floodplain. |
-| [S4](../stages/stage-04-finishers.md) | **Low, and capped hard.** See the restructuring bound above. |
+| [S3](../stages/stage-03-amplification.md) | Low amplitude, hummocky, **weakly oriented** — `grain_strength` is low enough that orientation barely reads. Near-isotropic conditioning; a good check that the dictionary does not force anisotropy where the biome has none. Amplitude **capped hard** by the taper bound. |
+| [S4](../stages/stage-04-hydrology.md) | **Water-table datum dominant.** The table sits near the surface, so S2's closed basins fill: kettle ponds and bogs. Seasonal ones marked `permanent: false`. No floodplain. |
 | [S9](../stages/stage-09-micro-repass.md) | Low amplitude, patchy, hummocky rather than directional — the one biome where `grain_strength` is low enough that orientation barely reads. |
 | [S10](../stages/stage-10-zoning-aesthetics.md) | Heather and gorse, scattered pine, no closed canopy. |
 
@@ -80,14 +81,14 @@ and its 62 extracted tiles do not transfer. Heathland needs a fresh tile
 campaign — UK/Netherlands heath and North American outwash plains — and it is
 the highest-priority collection because it is a golden archetype.
 
-| Metric | Family | Notes |
+| Metric | Role | Notes |
 |---|---|---|
-| **Drainage density (~0.07)** | **process, identity-defining** | The single number that makes heathland heathland. |
-| **Network connectivity** | **process, identity-defining** | Fraction of channel length reaching base level. Near zero. Needs to be added to the battery — see [../calibration/metric-battery.md](../calibration/metric-battery.md). |
-| Closed-basin density | process | Kettles per km². |
-| Hypsometric integral | process | |
-| Local relief | amplitude | |
-| Short-lag roughness | amplitude | Sets the S4 ceiling. |
+| **`network_connectivity`** ★ | **discriminant** | Fraction of channel length reaching base level. Near zero. **The single number that makes heathland heathland, and the only discriminant S2 owns** — every other biome's identity is texture. Needs adding to the battery ([../calibration/metric-battery.md](../calibration/metric-battery.md)). |
+| `drainage_density` (~0.07) | discriminant (exception) | One of only two places a shared invariant genuinely departs; the other is Sandhills' zero. |
+| `anisotropy_ratio` (low) | **discriminant** | Near-isotropic — the check that the dictionary does not force orientation where there is none. |
+| `variogram_sill` (low) | **discriminant** | Hummocky, low amplitude. Sets the taper bound. |
+| Closed-basin density | discriminant | Kettles per km². |
+| `local_relief_p50` | amplitude | |
 
 ## Signature exaggeration
 
@@ -102,13 +103,15 @@ signature is not, and this is where it is spent.
    network cannot be produced by the same growth with a dial turned down, that
    is a second kernel wearing a module's clothes and should be admitted as
    such. **This is the biggest open architectural risk in the base six.**
-2. **Is network connectivity in the battery?** It is identity-defining for
-   heathland and is not currently a standard terrain metric. It needs adding
-   and validating.
+2. **Is `network_connectivity` admissible?** It carries heathland's entire
+   identity and is not a standard terrain metric. It needs implementing and
+   putting through the G1–G6 gates. **If it fails admission, heathland cannot
+   be fitted** and the biome definition needs revisiting rather than the
+   metric.
 3. **Are seasonal water bodies modelled downstream?** Heathland is the only
    biome that produces them. If nothing reads `permanent: false`, drop the flag
    rather than carry a lie — see
-   [S3's open questions](../stages/stage-03-transforms.md).
+   [S4's open questions](../stages/stage-04-hydrology.md).
 4. **Kettle scale.** Real kettles range from a few metres to hundreds. Golf
    wants the middle of that range; does the point process need an explicit size
    distribution, or does the water table naturally select?

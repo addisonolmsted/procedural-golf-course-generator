@@ -13,12 +13,12 @@ noted.
 
 | # | Stage | Budget | Working resolution | Notes |
 |---|---|---:|---|---|
-| S0 | Archetype & site draw | 1 ms | — | Pure sampling. If this is measurable, something is wrong. |
-| S1 | Macro primitives | 120 ms | 8 m (376²) | Analytic fields. |
-| S2 | Skeleton kernel | 900 ms | 8 m growth → 2 m raster | The largest pre-routing cost; the flow-distance transform dominates. |
-| S3 | Transforms & datum ops | 250 ms | 2 m (1501²) | Datum ops are per-cell and trivially parallel. |
-| S4 | Simulation finishers | 900 ms | 2 m | Fixed pass count. Never "iterate to convergence". |
-| S5 | Substrate assembly | 400 ms | 2 m + 8 m cost | Mostly cost-field construction. |
+| S0 | Site & biome draw | 1 ms | — | Pure sampling. If this is measurable, something is wrong. |
+| S1 | Macro structure | 120 ms | 8 m (376²) | Analytic fields. |
+| S2 | Drainage skeleton | 900 ms | 8 m growth → 2 m raster | The largest pre-routing cost; the flow-distance transform dominates. |
+| S3 | **Amplification** | 900 ms | 2 m (1501²) | Basis reconstruction per patch, ~300 M multiply-adds. **Unmeasured** — verify early. |
+| S4 | **Hydrology & transforms** | 250 ms | 2 m | Flow routing at 8 m + per-cell datum ops. |
+| S5 | **Site selection & substrate** | 400 ms | 2 m + 8 m cost | Mostly cost fields; the window scan is a summed-area table and nearly free. |
 | S6 | Routing | 1 300 ms | 8 m cost grid | Fixed beam width × depth, fixed anneal iterations. |
 | | **— first tee playable —** | **3 871 ms** | | plus hole 1's realization slice (~220 ms) ⇒ **≈ 4.1 s** |
 | S7 | Earthmoving realization | 1 600 ms | 0.5 m local patches | Per hole; streams. |
@@ -71,6 +71,19 @@ in the pipeline:
 Hence the three rules in [01-conventions.md](01-conventions.md): search coarse,
 deliver at 2 m, and touch 0.5 m only in corridor-local patches. A full-extent
 0.5 m grid alone would exceed the entire course budget.
+
+## The dictionary asset
+
+[S3](stages/stage-03-amplification.md) is the first stage with a shipped data
+dependency. Budget it separately from the per-course time:
+
+- **Ship target < 15 MB total** across all six biomes (~32×32 patches, ~32
+  basis components, i16-quantized, zstd).
+- **Loaded once, resident, shared across courses.** Decompression is startup
+  cost, not per-course cost, and the 900 ms above assumes the basis is already
+  in memory.
+- If the asset must shrink, the lever is basis rank, and it trades **directly
+  against realism**. Take budget from elsewhere before taking it from here.
 
 ## Rules that keep the budget honest
 

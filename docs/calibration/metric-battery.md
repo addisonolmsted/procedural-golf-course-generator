@@ -59,24 +59,19 @@ Output is a classification per metric:
   that fails G4 or G6 optimizes noise.
 - **`diagnostic`** — for humans, not for the loop.
 
-**A metric's family (process/amplitude) and its gate class are independent
-axes.** An amplitude metric can be a fit target; a process metric can fail
-admission and be validation-only.
+**A metric's family, its role, and its gate class are three independent axes.**
+An amplitude metric can be a fit target; a process metric can fail admission
+and be validation-only.
 
-## Process versus amplitude
+## Axis 1 — process versus amplitude (how to match)
 
-The central distinction in this project's calibration, and the thing most often
-gotten wrong.
+**Process metrics** describe *how the landscape is organized* — drainage
+density, slope–area scaling, network connectivity, landform proportions. They
+are nearly constant within a biome and **must match pointwise**, within a
+narrow band.
 
-**Process metrics are identity.** They describe *how the landscape is
-organized* — drainage density, slope–area scaling, network connectivity,
-landform proportions. They are what makes heathland heathland and they are
-nearly constant within a biome. They **must match**, pointwise, within a narrow
-band. A generated heathland whose drainage density is piedmont's is not a
-heathland with unusual parameters; it is a failure.
-
-**Amplitude metrics are per-site continuous descriptors.** Local relief,
-elevation range, variogram sill. They vary widely *within* a biome — real
+**Amplitude metrics** are per-site continuous descriptors — local relief,
+elevation range, variogram sill. They vary widely *within* a biome: real
 piedmont sites range from 20 m to 90 m of local relief and all of them are
 piedmont. They are matched **in distribution**, not pointwise, and S0's
 descriptors draw from that distribution.
@@ -85,61 +80,120 @@ Getting this backwards produces the two classic failures: matching amplitude
 pointwise gives every course in a biome the same relief, and matching process
 in distribution gives biomes that blur into each other.
 
+## Axis 2 — shared invariant versus discriminant (what it tells you)
+
+The axis this project learned the hard way, and the one that reorganized the
+whole target set.
+
+**Shared invariants** are quantities every real archetype hits at nearly the
+same value. The generator **must hit them** — they are what makes terrain look
+like Earth — but hitting them tells you nothing about *which* biome you built.
+
+The evidence: `tools/macro_campaign/macro_campaign/structure.py` measures
+`dist_to_channel_p50` at **104–120 m in every archetype regardless of relief**,
+and flags it as the most robust metric in the set. A sandhills tile and a
+hill-country tile have nearly the same channel spacing. Drainage density is a
+law of landscapes, not a signature.
+
+**Discriminants** are the quantities that actually differ between archetypes —
+texture, hillslope form, orientation, landform proportions. **These are what
+identity means.** `METRICS.md` already singles out `spectral_slope_beta` as
+*"the primary roughness invariant"*, and it is a discriminant in exactly this
+sense: it separates.
+
+Two consequences that shape the pipeline:
+
+1. **[S2](../stages/stage-02-skeleton-kernel.md) is fitted almost entirely to
+   shared invariants.** Its job is to be correct, not distinctive. If generated
+   piedmont and generated sandhills differ measurably in drainage density,
+   something is wrong — because the real ones do not.
+2. **[S3](../stages/stage-03-amplification.md) carries identity.** Every
+   discriminant except `network_connectivity` is a texture or form metric, and
+   texture is what the patch dictionary reconstructs from real terrain.
+
+An earlier draft of this document called drainage density "identity-defining"
+for four biomes. That was wrong, and it would have aimed the entire calibration
+effort at a metric that cannot separate anything.
+
 ## The 22
 
-| # | Metric | Family | Calibrates | Stage |
-|---|---|---|---|---|
-| **Relief & hypsometry** ||||
-| 1 | `local_relief_p50` | amplitude | relief budget | [S0](../stages/stage-00-archetype-draw.md), [S1](../stages/stage-01-macro-primitives.md) |
-| 2 | `elevation_range` | amplitude | relief budget | S0 |
-| 3 | `hypsometric_integral` | process | catena form | [S2](../stages/stage-02-skeleton-kernel.md) |
-| 4 | `hypsometric_bimodality` ★ | process | floor/step separation | S2 |
-| **Slope** ||||
-| 5 | `slope_p50` | amplitude | relief amplitude | S1, S2 |
-| 6 | `slope_p90` | amplitude | steepness tail | S2 |
-| 7 | `slope_bimodality` ★ | process | caprock/scarp structure | S2 stratigraphy |
-| 8 | `slope_entropy` | process | slope organization | S2 |
-| **Drainage & network** ||||
-| 9 | `drainage_density` | **process, identity** | **tributary spacing** | **S2** |
-| 10 | `network_connectivity` ★ | **process, identity** | **drainage integration dial** | **S2** |
-| 11 | `slope_area_theta` | process | **profile-law exponent θ** | S2 catena |
-| 12 | `dist_to_channel_p50` | process | flow-distance scale | S2 |
-| 13 | `flow_accum_gini` | process | network concentration | S2 |
-| **Spectrum & texture** ||||
-| 14 | `variogram_range` | process | detail wavelength band | [S9](../stages/stage-09-micro-repass.md) |
-| 15 | `variogram_sill` | amplitude | detail amplitude | S9 |
-| 16 | `spectral_break_wavelength` | process | scale separation | S2 aeolian, S9 |
-| 17 | `short_lag_roughness` | amplitude | erosion texture | [S4](../stages/stage-04-finishers.md) |
-| **Anisotropy** ||||
-| 18 | `anisotropy_ratio` | process | grain strength | S1, S9 |
-| 19 | `anisotropy_axis_alignment` | process | orientation coherence | S1 → S9 (the thread) |
-| **Landform organization** ||||
-| 20 | `tpi_landform_fractions` | process | flat/riser/tread proportions | S2 stratigraphy |
-| 21 | `bench_step_count_per_relief` ★ | **process, identity** | bench step height | S2 stratigraphy |
-| 22 | `terrace_step_spacing` ★ | **process, identity** | terrace flight | S2 trunk-river |
+**I** = shared invariant · **D** = discriminant · ★ = not in the existing
+battery, needs implementing and gating.
 
-★ = **not in the existing battery; needs implementing and gating.**
+| # | Metric | Family | Role | Calibrates | Stage |
+|---|---|---|---|---|---|
+| **Relief & hypsometry** |||||
+| 1 | `local_relief_p50` | amplitude | D | relief budget | [S0](../stages/stage-00-archetype-draw.md), [S1](../stages/stage-01-macro-primitives.md) |
+| 2 | `elevation_range` | amplitude | D | relief budget | S0 |
+| 3 | `hypsometric_integral` | process | I | catena form | [S2](../stages/stage-02-skeleton-kernel.md) |
+| 4 | `hypsometric_bimodality` ★ | process | **D** | floor/step separation | S2 |
+| **Slope** |||||
+| 5 | `slope_p50` | amplitude | D | relief amplitude | S1, S2 |
+| 6 | `slope_p90` | amplitude | D | steepness tail | S2 |
+| 7 | `slope_bimodality` ★ | process | **D** | caprock/scarp structure | S2 stratigraphy |
+| 8 | `slope_entropy` | process | D | slope organization | S2 |
+| **Drainage & network** |||||
+| 9 | `drainage_density` | process | **I** | tributary spacing | S2 |
+| 10 | `dist_to_channel_p50` | process | **I** | flow-distance scale | S2 |
+| 11 | `slope_area_theta` | process | **I** | profile-law exponent θ | S2 catena |
+| 12 | `horton_ratios` ★ | process | **I** | bifurcation / length ratios | S2 hierarchy |
+| 13 | `network_connectivity` ★ | process | **D** | **drainage integration dial** | **S2** |
+| **Spectrum & texture** |||||
+| 14 | `spectral_slope_beta` | process | **D — primary** | **dictionary bucket spectra** | [S3](../stages/stage-03-amplification.md) |
+| 15 | `variogram_range` | process | **D** | detail wavelength band | S3, [S9](../stages/stage-09-micro-repass.md) |
+| 16 | `variogram_sill` | amplitude | **D** | detail amplitude | S3, S9 |
+| 17 | `short_lag_roughness` | amplitude | **D** | fine texture | S3 |
+| **Curvature** |||||
+| 18 | `mean_abs_profile_curv` | process | **D** | **hillslope form (spur/hollow)** | **S3** |
+| 19 | `plan_curv_p90` | process | **D** | convergence structure | S3 |
+| **Anisotropy** |||||
+| 20 | `anisotropy_ratio` | process | **D** | grain strength | S1, S3 |
+| 21 | `anisotropy_orientation_deg` | process | I | orientation coherence | S1 → S3 (the thread) |
+| **Landform organization** |||||
+| 22 | `tpi_landform_fractions` | process | **D** | flat/riser/tread proportions | S2 stratigraphy, S3 |
 
-### The four new metrics
+Count the roles: **6 shared invariants, 16 discriminants**, and of the
+discriminants **9 are fitted at [S3](../stages/stage-03-amplification.md)**.
+That distribution is the architecture in one table — the skeleton hits the laws
+of landscapes, the dictionary carries the identity.
+
+Dropped from the earlier draft: `flow_accum_gini` and `spectral_break_wavelength`
+(both redundant against retained metrics under G5), and
+`bench_step_count_per_relief` / `terrace_step_spacing`, which were four separate
+proposals for measuring stepped structure that `tpi_landform_fractions` plus
+`slope_bimodality` cover between them. Added: `spectral_slope_beta`,
+`horton_ratios`, and the curvature pair.
+
+### The new metrics
 
 Each exists because a v2 biome's identity cannot be expressed without it, and
-none of them is a standard terrain metric. All four need implementing in
-`core.py` and putting through G1–G6 before use.
+none is a standard terrain metric. All need implementing in `core.py` and
+putting through G1–G6 before use.
 
-- **`network_connectivity`** — fraction of channel length that reaches base
+- **`network_connectivity`** ★ — fraction of channel length that reaches base
   level. Near zero for [Heathland](../biomes/heathland.md), near one for
-  everything else. **This is the single number that defines heathland**, and
-  without it the biome cannot be fit at all.
-- **`hypsometric_bimodality`** and **`slope_bimodality`** —
+  everything else. **The single number that defines heathland**, and the only
+  discriminant S2 owns. Without it the biome cannot be fit at all.
+- **`hypsometric_bimodality`** ★ and **`slope_bimodality`** ★ —
   [Great Plains](../biomes/great-plains.md) and
   [River Valley](../biomes/river-valley.md) both have genuinely bimodal
   distributions (surface/scarp, floor/terrace). A unimodal fit to a bimodal
   truth **scores acceptably and is wrong**, which is the worst kind of
-  calibration failure because nothing flags it.
-- **`bench_step_count_per_relief`** — separates
-  [Hill Country](../biomes/hill-country.md) from any other steep terrain. Its
-  slopes are stepped, not smooth, and no existing metric distinguishes those.
-- **`terrace_step_spacing`** — the River Valley staircase.
+  calibration failure because nothing flags it. `slope_bimodality` also carries
+  Hill Country's stepped slopes — treads and risers are two modes.
+- **`horton_ratios`** ★ — bifurcation and length ratios of the Strahler
+  hierarchy. A shared invariant: real networks cluster tightly (bifurcation
+  3–5, length ~2) whatever the biome. It exists to catch a *flat* generated
+  network — one where every tributary is the same size, which reads wrong even
+  at perfectly correct density.
+  `tools/macro_campaign/macro_campaign/netstats.py` already implements
+  `_strahler()` and the junction statistics, so this is a wrapper, not new
+  science.
+
+Note that `spectral_slope_beta`, `mean_abs_profile_curv`, `plan_curv_p90`, and
+`anisotropy_ratio` are **not** new — they are already in
+`tools/metrics/metrics/core.py`. They were simply not being used as identity
+metrics, which was the mistake.
 
 ## Distribution vectors
 
@@ -147,6 +201,12 @@ Alongside the 22 scalars, four distributions on shared axes, used for
 distribution-matching rather than pointwise comparison: `slope_hist`,
 `radial_psd`, `variogram`, `hypsometric_curve`. These come from the existing
 `features.py` unchanged.
+
+`radial_psd` and `variogram` do double duty for
+[S3](../stages/stage-03-amplification.md): besides matching texture, they are
+the **seam detectors**. Patch synthesis that tiles visibly shows up as a
+spurious peak at the patch pitch or its harmonics, and nothing else in the
+battery would catch it.
 
 ## Resolution guards
 
@@ -163,15 +223,28 @@ will the moment someone measures a preview-resolution run.
 
 ## Open questions
 
-1. **Are the four new metrics admissible?** They may fail G4 (θ-share) or G6
+1. **Are the new metrics admissible?** They may fail G4 (θ-share) or G6
    (identifiability). If `network_connectivity` fails, heathland cannot be
    fitted and the biome definition needs revisiting rather than the metric.
-2. **Is 22 the right number?** Narrowed from 37 for consumer-directedness. If
+2. **Is the invariant/discriminant split itself measurable?** It should be:
+   run every metric across the six biome corpora and compute between-biome
+   variance over within-biome variance. **The split above is a hypothesis based
+   on one measurement** (`dist_to_channel_p50`) and should be confirmed
+   empirically for all 22 before targets are set. This is cheap and it would be
+   embarrassing to skip.
+3. **Is 22 the right number?** Narrowed from 37 for consumer-directedness. If
    the emulator cannot identify a dial from the reduced set, metrics come back.
-3. **A bimodality measure that is not fragile.** Dip tests and mixture fits are
-   both sensitive to bandwidth. Needs a robust choice before implementation.
-4. **Does the battery need a golf-specific metric?** Everything here is
+4. **A bimodality measure that is not fragile.** Dip tests and mixture fits are
+   both sensitive to bandwidth, and two biomes' identities rest on one. Needs a
+   robust choice before implementation.
+5. **Do the discriminants need to be measured on the residual specifically,
+   rather than the finished surface?** S3 is fitted to residual statistics, but
+   the battery measures whole terrain. Measuring both — residual for fitting,
+   whole surface for validation — is probably right and needs deciding before
+   the dictionary is built.
+6. **Does the battery need a golf-specific metric?** Everything here is
    geomorphology. Nothing measures whether terrain is *good for golf* — that is
-   [S11](../stages/stage-11-validation.md)'s playability sim, which is not part
-   of this battery and cannot be measured on a lidar tile. Worth stating that
-   the gap is deliberate.
+   [S11](../stages/stage-11-validation.md)'s playability sim, plus the siting
+   scorer at [S5](../stages/stage-05-siting-substrate.md), neither of which can
+   be measured on a lidar tile. The gap is deliberate; the 64 real course grids
+   are how it gets closed.

@@ -38,8 +38,8 @@ Kernel I (fluvial), with stratigraphy carrying the identity.
 |---|---|
 | [S1](../stages/stage-01-macro-primitives.md) | **Thick strata stack ⇒ strongly stepped `hardness`.** Highest relief amplitude in the base six. `accommodation` low outside valley floors. Together with [River Valley](river-valley.md), one of only two biomes that genuinely move S1's dials. |
 | [S2](../stages/stage-02-skeleton-kernel.md) | Mid drainage density; channels **incised, not broad**. Stratigraphy dominant. |
-| [S3](../stages/stage-03-transforms.md) | Light floodplain in the incised valleys; deep water table. **Benches must be untouched** — a datum op that flattens a bench has destroyed the biome. |
-| [S4](../stages/stage-04-finishers.md) | **High** — steep slopes, active erosion, strong rilling. Also the biome most at risk of a finisher **breaching a bench**, which is restructuring and forbidden. Its S4 ceiling is set by that risk, not by appearance. |
+| [S3](../stages/stage-03-amplification.md) | **Stepped texture** — benches and risers with terracettes on the treads. The texture *is* the stratigraphy showing through, so conditioning must pick up `tpi` strongly. Highest amplitude after Sandhills. |
+| [S4](../stages/stage-04-hydrology.md) | Light floodplain in the incised valleys; deep water table. **Benches must be untouched** — a datum op that flattens a bench has destroyed the biome. |
 | [S9](../stages/stage-09-micro-repass.md) | **Terracettes dominant** on grazed slopes — strongly contour-aligned. Swales in the incised valleys. |
 | [S10](../stages/stage-10-zoning-aesthetics.md) | Scrub oak and cedar, thin soil, rock outcrop at every riser. |
 
@@ -68,15 +68,13 @@ a dissected plateau. Tiles are a useful starting point; the targets are not
 transferable. Needs supplementing — Texas Hill Country, the Ozarks, the
 Cumberland Plateau, Causses.
 
-| Metric | Family | Notes |
+| Metric | Role | Notes |
 |---|---|---|
-| **TPI landform fractions** | **process, identity-defining** | The flat/riser/tread decomposition. Shares the metric with Great Plains but at completely different proportions. |
-| **Bench step count per unit relief** | **process, identity-defining** | Needs adding to the battery. This is the number that separates hill country from any other steep terrain. |
-| Slope distribution | process | Multi-modal — treads, risers, valley sides. |
-| Drainage density | process | |
-| Slope–area θ | process | Steep, incised. |
-| Local relief | amplitude | Highest in the base six. |
-| Bench step height | amplitude | Stratum thickness. |
+| **`slope_bimodality`** ★ | **discriminant** | Treads and risers are two modes. **This is what separates hill country from any other steep terrain** — its slopes are stepped, not smooth. Shares the metric with Great Plains at completely different proportions. |
+| **`tpi_landform_fractions`** | **discriminant** | The flat/riser/tread decomposition. |
+| `variogram_sill` | **discriminant** | High amplitude, and stepped — the dictionary must reproduce risers, not just roughness. |
+| `drainage_density`, `slope_area_theta` | shared invariant | Steep and incised, but at the same spacing as everywhere else. |
+| `local_relief_p50` | amplitude | Highest in the base six. |
 
 ## Signature exaggeration
 
@@ -101,7 +99,7 @@ flight, applied to a different structure.
    sufficient contiguous feasible area**. This is a concrete, checkable
    envelope constraint and it should be stated as one — see
    [../calibration/envelope-certification.md](../calibration/envelope-certification.md).
-4. **S4's ceiling versus its appearance target.** High relief wants strong
-   erosion; benches forbid it. These may conflict, and if the appearance target
-   sits above the restructuring ceiling, the bench structure needs to be more
-   robust rather than the erosion weaker.
+4. **Does the taper bound conflict with the appearance target?** Hill country
+   wants high texture amplitude; benches and the channel taper both constrain
+   it. If the appearance target sits above the certified ceiling, the answer is
+   more robust bench structure at S2 — not weaker texture at S3.

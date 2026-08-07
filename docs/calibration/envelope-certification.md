@@ -99,10 +99,17 @@ harder would not have helped; the generator lacked the expressive range. This
 gate is the one that catches a structurally wrong generator, and it is
 therefore the most valuable single step in the loop.
 
-**For v2 this gate is the referee on the S2 bet.** If the fluvial engine's
-reachability is materially worse than v1's LEM, the demotion of the simulation
-([S2](../stages/stage-02-skeleton-kernel.md)) was wrong and the architecture
-needs revisiting rather than retuning.
+**For v2 this gate is the referee on the whole realism bet.** The generator now
+reaches real terrain in two stages: [S2](../stages/stage-02-skeleton-kernel.md)
+covers the structural axes, [S3](../stages/stage-03-amplification.md) covers
+the textural ones. Run coverage **separately on the shared invariants and on
+the discriminants** — they fail for different reasons and have different fixes.
+
+If discriminant reachability is poor, the dictionary is too small or its
+conditioning too coarse: collect more, or re-bucket. If invariant reachability
+is poor, the skeleton engine is wrong and no amount of texture will save it.
+Conflating the two would send the effort to the wrong place, which is precisely
+what v1's single 59% number could not distinguish.
 
 ### 4. Emulator and sensitivity
 
@@ -164,20 +171,33 @@ reuse the pattern.
 Beyond "produces realistic metrics", the envelope carries hard guarantees that
 downstream stages depend on for the no-retry rule to hold:
 
-1. **[S4](../stages/stage-04-finishers.md)'s restructuring ceiling.** Per
-   biome, the maximum finisher intensity at which the drainage network is not
-   reorganized. A **hard upper boundary** — S0 may never draw above it.
-   Heathland's will be the tightest.
-2. **[S6](../stages/stage-06-routing.md)'s search viability.** Every θ in the
-   envelope must yield a substrate on which the router finds a valid route.
-   For [Hill Country](../biomes/hill-country.md) this means the envelope must
-   guarantee **sufficient contiguous feasible area**, since scarce
-   non-contiguous feasible ground can make routing genuinely impossible — and
-   under no-retry, "impossible" has no fallback.
-3. **[S7](../stages/stage-07-earthmoving.md)'s fundability.** Available borrow
+1. **[S3](../stages/stage-03-amplification.md)'s skeleton preservation.** Per
+   biome, the maximum residual amplitude at which the taper still holds and the
+   drainage network survives amplification intact. A **hard upper boundary** —
+   S0 may never draw above it. Heathland's will be the tightest, since its
+   deranged network is the easiest to accidentally integrate.
+
+   This replaces what an earlier draft called the erosion "restructuring
+   ceiling". The quantity is similar and the reason it is a hard boundary is
+   identical, but it now bounds a synthesis amplitude rather than a simulation
+   intensity — which is easier to certify, because amplitude is a parameter
+   rather than an emergent outcome.
+2. **[S5](../stages/stage-05-siting-substrate.md)'s siting viability.** Every θ
+   in the envelope must yield terrain on which *some* 600 m window scores
+   acceptably. Siting helps here — it gets to choose the best ground rather
+   than accept the middle — but it cannot rescue a site that is uniformly
+   unroutable.
+3. **[S6](../stages/stage-06-routing.md)'s search viability.** Every θ in the
+   envelope must yield a substrate on which the router finds a valid route
+   *inside the selected window*. For [Hill Country](../biomes/hill-country.md)
+   this means the envelope must guarantee **sufficient contiguous feasible
+   area within a 600 m window**, since scarce non-contiguous feasible ground
+   can make routing genuinely impossible — and under no-retry, "impossible" has
+   no fallback.
+4. **[S7](../stages/stage-07-earthmoving.md)'s fundability.** Available borrow
    must cover required fill across the envelope, or the mass-balance rule is
    unsatisfiable.
-4. **Budget compliance.** No θ in the envelope may push a stage past its
+5. **Budget compliance.** No θ in the envelope may push a stage past its
    allocation in
    [../02-performance-budget.md](../02-performance-budget.md).
 
@@ -221,7 +241,7 @@ non-runnable** for lack of `tools/parkland_atlas/out/cache`. See
    ([S0's determinism note](../stages/stage-00-archetype-draw.md)), so the
    envelope needs an invertible transform placing every draw inside by
    construction. A GMM gives this naturally; a convex hull does not.
-3. **How are the four hard guarantees certified?** Dense sampling plus checks
+3. **How are the five hard guarantees certified?** Dense sampling plus checks
    is the obvious approach, but "dense" needs a number, and the failure
    probability that number implies needs stating.
 4. **Recertification cadence.** Every generator change invalidates the

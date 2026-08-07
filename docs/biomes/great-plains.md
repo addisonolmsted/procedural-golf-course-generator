@@ -38,8 +38,8 @@ Kernel I (fluvial), with stratigraphy carrying the identity.
 |---|---|
 | [S1](../stages/stage-01-macro-primitives.md) | **Low relief amplitude**; strata present; **high `accommodation` almost everywhere**; low-mid `grain_strength`. |
 | [S2](../stages/stage-02-skeleton-kernel.md) | **Low drainage density** — widely-spaced draws. Stratigraphy dominant: benching and small scarps where the caprock breaks. |
-| [S3](../stages/stage-03-transforms.md) | Minimal. Shallow floodplain, deep water table. **Often produces zero water bodies**, which is legal and must be handled. |
-| [S4](../stages/stage-04-finishers.md) | **Low.** Flat ground erodes slowly, and smoothness is the biome's identity. Over-eroding here is the fastest way to turn Great Plains into generic low-relief terrain. |
+| [S3](../stages/stage-03-amplification.md) | **Low amplitude, but not smooth.** The caprock breaks into small scarps and benches — texture *with structure*. The biome most likely to be wrongly rendered as "flat plus noise", which is exactly what the dictionary exists to prevent. |
+| [S4](../stages/stage-04-hydrology.md) | Minimal. Shallow floodplain, deep water table. **Often produces zero water bodies**, which is legal and must be handled. |
 | [S9](../stages/stage-09-micro-repass.md) | Swales at **very low** amplitude. Scroll arcs and aeolian rumple at zero. The ground is genuinely smooth and adding texture to make it "interesting" destroys the biome. |
 | [S10](../stages/stage-10-zoning-aesthetics.md) | Open grassland, isolated tree groups in the draws, big sky. |
 
@@ -76,14 +76,14 @@ earthmoving typically *increases* relief rather than removing obstruction.
 **Corpus: none.** No v1 archetype corresponds. Needs a fresh tile campaign —
 US High Plains, the Llano Estacado, southern Alberta.
 
-| Metric | Family | Notes |
+| Metric | Role | Notes |
 |---|---|---|
-| Drainage density (low) | process | Widely-spaced draws. |
-| **TPI landform fractions** | **process, identity-defining** | The flat/scarp/bench decomposition is what separates Great Plains from "low-relief anything". |
-| Slope distribution | process | Strongly bimodal: near-zero on the surface, steep on the scarps. **The bimodality is the identity**, and a unimodal fit would be a passing score on a wrong model. |
-| Hypsometric integral | process | High — most of the area near the top. |
-| Local relief | amplitude | Low. |
-| Bench step height | amplitude | Caprock thickness. |
+| **`slope_bimodality`** | **discriminant** | Strongly bimodal: near-zero on the surface, steep on the scarps. **The bimodality is the identity** — a unimodal fit would be a passing score on a wrong model. |
+| **`tpi_landform_fractions`** | **discriminant** | The flat/scarp/bench decomposition is what separates Great Plains from "low-relief anything". |
+| `variogram_sill` (low) | **discriminant** | Low texture amplitude — but the dictionary must still supply *structured* low amplitude, not smoothness. |
+| `hypsometric_bimodality` | **discriminant** | High integral, with a break where the caprock is. |
+| `drainage_density` | shared invariant | Widely-spaced draws, but no lower than any other biome's — resist the temptation to make it a signature. |
+| `local_relief_p50` | amplitude | Low. |
 
 ## Signature exaggeration
 

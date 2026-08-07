@@ -1,7 +1,7 @@
 # River Valley
 
 **Role: the transform-heavy biome.** The only one where
-[S3](../stages/stage-03-transforms.md) does substantial work, and the only one
+[S4](../stages/stage-04-hydrology.md) does substantial work, and the only one
 where scroll arcs carry real amplitude at
 [S9](../stages/stage-09-micro-repass.md).
 
@@ -39,8 +39,8 @@ designed around.
 |---|---|
 | [S1](../stages/stage-01-macro-primitives.md) | **`accommodation` is the dominant field** — a broad high-accommodation floor with low-accommodation valley sides. Gentle, strongly monotone tilt. Strata present. |
 | [S2](../stages/stage-02-skeleton-kernel.md) | Mid-high drainage density. Trunk-river dominant; terrace flight constructed here as geometry. |
-| [S3](../stages/stage-03-transforms.md) | **Floodplain datum dominant** — the most transform-heavy biome. Flatten the floor toward the trunk while **preserving the terraces above it**. Requires the datum to have an upper bound. |
-| [S4](../stages/stage-04-finishers.md) | Low-mid. Creep on the valley sides; almost nothing on the floodplain floor, which is depositional rather than erosional. |
+| [S3](../stages/stage-03-amplification.md) | **Two regimes in one course**: scroll-and-swale on the floodplain, spur-and-hollow on the valley sides. The strongest test in the base six that conditioning actually switches behaviour *within* a single tile. |
+| [S4](../stages/stage-04-hydrology.md) | **Floodplain datum dominant** — the most transform-heavy biome. Flatten the floor toward the trunk while **preserving the terraces above it**. Requires the datum to have an upper bound. |
 | [S9](../stages/stage-09-micro-repass.md) | **Scroll arcs dominant** on the floodplain — the only biome where they carry real amplitude, oriented by the trunk-river module's meander provenance. Swales on the valley sides. |
 | [S10](../stages/stage-10-zoning-aesthetics.md) | Riparian gallery forest on the floor, open terraces above. Strong vegetation contrast at the break. |
 
@@ -68,15 +68,14 @@ valley-side holes need a lot.
 mature meandering rivers with preserved terrace flights (Mississippi
 tributaries, the Missouri breaks, European lowland rivers).
 
-| Metric | Family | Notes |
+| Metric | Role | Notes |
 |---|---|---|
-| **Terrace step count and spacing** | **process, identity-defining** | The staircase. Needs adding to the battery. |
-| **Hypsometric curve shape** | **process** | Strongly bimodal — floor and terraces — with a sharp break. Like [Great Plains](great-plains.md), a unimodal fit would score acceptably and be wrong. |
-| Meander wavelength | process | Sets scroll-arc spacing at S9. |
-| Drainage density | process | |
-| Floodplain width / valley width ratio | process | |
-| Local relief | amplitude | |
-| Scroll-bar amplitude | amplitude | The S9 fit target. |
+| **`hypsometric_bimodality`** ★ | **discriminant** | Strongly bimodal — floor and terraces — with a sharp break. Like [Great Plains](great-plains.md), a unimodal fit would score acceptably and be wrong. |
+| **Within-tile texture contrast** | **discriminant** | Floodplain and valley-side residual statistics must differ *inside one course*. No other biome tests conditioning this hard. |
+| Meander wavelength | discriminant | Sets scroll-arc spacing at S3 and S9. |
+| Floodplain / valley width ratio | discriminant | |
+| `drainage_density` | shared invariant | |
+| `local_relief_p50`, scroll-bar amplitude | amplitude | |
 
 ## Signature exaggeration
 
@@ -89,7 +88,7 @@ floor.
 1. **Terrace preservation under the floodplain datum.** The datum must flatten
    the floor and leave the terraces alone, which means an upper bound. Is that
    bound a dial or derived from S2's terrace geometry? Leaning derived — see
-   [S3's open questions](../stages/stage-03-transforms.md). **Blocks S3 for
+   [S4's open questions](../stages/stage-04-hydrology.md). **Blocks S3 for
    this biome.**
 2. **Where are terraces built — S2 or S3?** Currently S2 constructs them as
    geometry and S3 must avoid destroying them. Building them in S3 as a

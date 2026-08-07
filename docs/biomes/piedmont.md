@@ -34,8 +34,8 @@ Kernel I (fluvial). Everything at moderate intensity.
 |---|---|
 | [S1](../stages/stage-01-macro-primitives.md) | Mid relief amplitude; thin strata; mid `grain_strength` from a geological fabric. Near-identity. |
 | [S2](../stages/stage-02-skeleton-kernel.md) | Mid drainage density. Convex interfluve catena — the signature hillslope form. |
-| [S3](../stages/stage-03-transforms.md) | Light floodplain along the trunk. Water table below the surface almost everywhere: creeks, no lakes. |
-| [S4](../stages/stage-04-finishers.md) | **Mid** — balanced creep and rilling. The calibration reference for both. |
+| [S3](../stages/stage-03-amplification.md) | **The reference dictionary.** Spur-and-hollow interfluves — the classic ridge-and-ravine texture. Mid amplitude. Piedmont is fitted first and the other five are validated partly by how their texture differs from it. |
+| [S4](../stages/stage-04-hydrology.md) | Light floodplain along the trunk. Water table below the surface almost everywhere: creeks, no lakes. |
 | [S9](../stages/stage-09-micro-repass.md) | Swales dominant, mid amplitude; light terracettes on steeper rough. |
 | [S10](../stages/stage-10-zoning-aesthetics.md) | Closed hardwood canopy with mown corridors cut through it. |
 
@@ -51,21 +51,21 @@ the primary golden and exactly why it is a poor test of anything.
 
 ## Calibration targets
 
-**Corpus: v1 piedmont tiles exist (28 extracted) and must be re-measured
-against the new battery.** The best-supplied of the six.
+**Corpus: v1 piedmont tiles exist but only 6 of 14 are clean.** Best-supplied
+of the six and still thin. **Re-measure and scale up.**
 
-| Metric | Family | Notes |
+| Metric | Role | Notes |
 |---|---|---|
-| Drainage density | process | The reference value; all others are described relative to it. |
-| Slope–area θ | process | Well-constrained by the existing corpus. |
-| Hypsometric integral | process | Convex interfluves give a characteristic signature. |
-| Local relief | amplitude | Per-site, matched in distribution. |
-| Short-lag roughness | amplitude | The S4 reference. |
-| Variogram range/sill | amplitude | The S9 reference. |
+| `mean_abs_profile_curv` | **discriminant** | The spur-and-hollow signature. Piedmont's single most characteristic quantity, and exactly what a flow-distance catena cannot produce. |
+| `spectral_slope_beta` | **discriminant** | The reference β; every other biome is described relative to it. |
+| `variogram_range` / `sill` | **discriminant** | The dictionary's wavelength and amplitude reference. |
+| `drainage_density`, `dist_to_channel_p50` | shared invariant | Must be hit, carries no identity — 104–120 m like everything else. |
+| `slope_area_theta`, `hypsometric_integral` | shared invariant | |
+| `local_relief_p50` | amplitude | Per-site, matched in distribution. |
 
-Piedmont's role in calibration is to be the **anchor**: it is measured first,
-and the other five biomes' targets are validated partly by how they differ from
-it.
+Piedmont's role in calibration is to be the **anchor**: measured first, fitted
+first, and the reference against which the other five biomes' discriminants are
+sanity-checked. Nothing else can be validated until it exists.
 
 ## Signature exaggeration
 
