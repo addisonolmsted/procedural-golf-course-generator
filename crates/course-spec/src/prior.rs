@@ -170,7 +170,7 @@ fn knob_key_ok(key: &str) -> bool {
 
 impl Priors {
     /// Parse and validate a prior file. Every structural guarantee the
-    /// sampler relies on is checked HERE, loudly, once (steps/02 hard
+    /// sampler relies on is checked HERE, loudly, once (stage-00 hard
     /// requirement 1: monotone tables validated on load).
     pub fn from_json(s: &str) -> Result<Priors, PriorError> {
         let p: Priors = serde_json::from_str(s).map_err(PriorError::Json)?;
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn builtin_loads_and_validates() {
         let p = Priors::builtin();
-        // Placeholder ships equal weights (steps/02 open question, resolved).
+        // Placeholder ships equal weights (stage-00 open question, resolved).
         for a in ArchetypeId::ALL {
             assert_eq!(p.entry(a).weight, 1.0, "{a}");
             assert!(!p.entry(a).params.is_empty(), "{a}");
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(p.entry(ArchetypeId::Piedmont).params.len(), 1);
     }
 
-    /// Placeholder directional anchors (steps/02 “Per-archetype behavior”),
+    /// Placeholder directional anchors (stage-00 “Per-archetype behavior”),
     /// read from medians. A prior re-fit that breaks the physics of an
     /// archetype fails here, not three steps downstream.
     #[test]
@@ -551,7 +551,7 @@ mod tests {
     // the `landform.ridge_crest_hw_m` knob the de-mesa shaping reads.
     // Re-blessed 2026-07-30: campaign-pilot-3 — the corpus itself was
     // rebuilt. tile-lab QA found the exemplar tiles were 5-64% developed and
-    // three detectors were measuring in the wrong place (see steps/03); the
+    // three detectors were measuring in the wrong place (see the step-03 archive, commit 0313432); the
     // centers moved onto protected land, an OSM screen auto-culls built-up
     // tiles, and the geometry/routing/scarp fixes landed. 51 tables fitted
     // from the usable tiles, after both an OSM development cull and an

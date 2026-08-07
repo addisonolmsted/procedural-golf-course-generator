@@ -3,7 +3,7 @@ name = "course-seed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Step 01 — Seed: DetRng determinism kit, stream registry, RunIdentity, reroll rule"
+description = "Determinism kit: DetRng, stream registry, RunIdentity, reroll rule"
 
 [dependencies]
 serde = { workspace = true }

@@ -1,13 +1,32 @@
 [workspace]
 resolver = "2"
 members = [
+    # Shared substrate — reused by v2 unchanged.
     "crates/course-seed",
-    "crates/course-spec",
-    "crates/course-framing",
     "crates/course-world",
     "crates/course-viz",
+    # v2 pipeline, S0 -> S11. See docs/00-architecture.md.
+    "crates/course-contracts",
+    "crates/course-spec",
+    "crates/course-primitives",
+    "crates/course-skeleton",
+    "crates/course-transforms",
+    "crates/course-finishers",
+    "crates/course-substrate",
+    "crates/course-routing",
+    "crates/course-earthmoving",
+    "crates/course-layout",
+    "crates/course-micro",
+    "crates/course-zoning",
+    "crates/course-validate",
+    # Offline + tooling.
+    "crates/course-calibration",
+    "crates/course-cli",
     "crates/stage-lab",
     "crates/tile-lab",
+    # Superseded by S1/S2; retained until the skeleton kernel lands.
+    # See MIGRATION.md.
+    "crates/course-framing",
 ]
 
 [workspace.package]
@@ -17,10 +36,23 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 course-seed = { path = "crates/course-seed" }
-course-spec = { path = "crates/course-spec" }
-course-framing = { path = "crates/course-framing" }
 course-world = { path = "crates/course-world" }
 course-viz = { path = "crates/course-viz" }
+course-contracts = { path = "crates/course-contracts" }
+course-spec = { path = "crates/course-spec" }
+course-primitives = { path = "crates/course-primitives" }
+course-skeleton = { path = "crates/course-skeleton" }
+course-transforms = { path = "crates/course-transforms" }
+course-finishers = { path = "crates/course-finishers" }
+course-substrate = { path = "crates/course-substrate" }
+course-routing = { path = "crates/course-routing" }
+course-earthmoving = { path = "crates/course-earthmoving" }
+course-layout = { path = "crates/course-layout" }
+course-micro = { path = "crates/course-micro" }
+course-zoning = { path = "crates/course-zoning" }
+course-validate = { path = "crates/course-validate" }
+course-calibration = { path = "crates/course-calibration" }
+course-framing = { path = "crates/course-framing" }
 libm = "0.2"
 eframe = { version = "0.31", features = ["wgpu"] }
 image = { version = "0.25", default-features = false, features = ["png"] }

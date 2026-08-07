@@ -713,6 +713,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "course-calibration"
+version = "0.0.0"
+
+[[package]]
+name = "course-cli"
+version = "0.0.0"
+
+[[package]]
+name = "course-contracts"
+version = "0.0.0"
+
+[[package]]
+name = "course-earthmoving"
+version = "0.0.0"
+
+[[package]]
+name = "course-finishers"
+version = "0.0.0"
+
+[[package]]
 name = "course-framing"
 version = "0.0.0"
 dependencies = [
@@ -722,6 +742,22 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "course-layout"
+version = "0.0.0"
+
+[[package]]
+name = "course-micro"
+version = "0.0.0"
+
+[[package]]
+name = "course-primitives"
+version = "0.0.0"
+
+[[package]]
+name = "course-routing"
+version = "0.0.0"
 
 [[package]]
 name = "course-seed"
@@ -736,6 +772,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "course-skeleton"
+version = "0.0.0"
+
+[[package]]
 name = "course-spec"
 version = "0.0.0"
 dependencies = [
@@ -744,6 +784,18 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "course-substrate"
+version = "0.0.0"
+
+[[package]]
+name = "course-transforms"
+version = "0.0.0"
+
+[[package]]
+name = "course-validate"
+version = "0.0.0"
 
 [[package]]
 name = "course-viz"
@@ -760,6 +812,10 @@ dependencies = [
  "libm",
  "serde",
 ]
+
+[[package]]
+name = "course-zoning"
+version = "0.0.0"
 
 [[package]]
 name = "cpufeatures"

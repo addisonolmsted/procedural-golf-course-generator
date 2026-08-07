@@ -35,7 +35,7 @@ pub struct CourseSpec {
     /// `"<section>.<knob>"` → sampled value (post-override). The knob set is
     /// whatever the archetype's prior declares — data, not schema.
     pub params: BTreeMap<String, f64>,
-    /// What the caller forced, recorded verbatim (steps/02 hard req 3).
+    /// What the caller forced, recorded verbatim (stage-00 hard req 3).
     /// Empty ⇒ a pure seed run.
     pub overrides: SpecOverrides,
 }

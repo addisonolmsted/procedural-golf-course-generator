@@ -1,10 +1,19 @@
-//! Step 01 — Seed. The determinism bedrock of the course pipeline:
-//! one master `u64` seed, the [`RunIdentity`] artifact, domain-split RNG
-//! streams ([`RunIdentity::stream`] + the [`streams`] registry), and the
-//! deterministic gate-fail reroll rule.
+//! The determinism bedrock of the course pipeline: one master `u64` seed, the
+//! [`RunIdentity`] artifact, domain-split RNG streams
+//! ([`RunIdentity::stream`] + the [`streams`] registry), and the deterministic
+//! gate-fail reroll rule.
 //!
-//! Contract doc: `steps/01-seed.md`. Cross-cutting invariants:
-//! `ARCHITECTURE.md`.
+//! Stage-agnostic and reused unchanged by the v2 pipeline. Conventions:
+//! `docs/01-conventions.md`. Cross-cutting invariants: `ARCHITECTURE.md`.
+//!
+//! # The reroll rule is vestigial under v2
+//!
+//! [`MAX_ATTEMPTS`] and the `stable`/`attempt` stream scoping exist to support
+//! gate-fail rerolls. The v2 pipeline samples only from offline-certified
+//! envelopes and **never rejects or retries at runtime**
+//! (`docs/calibration/envelope-certification.md`), so no v2 stage raises an
+//! attempt. The machinery is retained deliberately: it costs nothing while
+//! attempt is pinned to 0, and removing it would rekey every stream.
 //!
 //! # Platform stability (by construction)
 //!
@@ -37,6 +46,7 @@ pub use identity::{RunIdentity, SeedError};
 /// this bump moves no draws.
 pub const PIPELINE_VERSION: u32 = 3;
 
-/// Bound on gate-fail rerolls (step 07 triggers, step 01 owns the rule):
-/// attempts 0..MAX_ATTEMPTS, then the run fails for good.
+/// Bound on gate-fail rerolls: attempts 0..MAX_ATTEMPTS, then the run fails
+/// for good. Vestigial under v2 — see the crate docs; no v2 stage raises an
+/// attempt.
 pub const MAX_ATTEMPTS: u32 = 8;
