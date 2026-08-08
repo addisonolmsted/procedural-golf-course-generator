@@ -12,12 +12,16 @@ mod render;
 
 use std::collections::BTreeMap;
 
+use course_contracts::biome::{BiomeId, BoundaryKind as KindV2, StructureClass, WindowClass as ClassV2};
+use course_contracts::contracts::primitive_field::PrimitiveField;
 use course_seed::{RunIdentity, MAX_ATTEMPTS, PIPELINE_VERSION};
+use course_spec::v2::{SiteSpec, SpecOverridesV2};
 use course_spec::ArchetypeId;
 use course_framing::{BoundaryKind, WindowClass};
 use data::{build_case, Case};
 use eframe::egui;
 use render::{render_framing_schematic, render_implied_terrain, ImpliedRelief};
+use stage_lab::render_v2::{render_c1, C1View, C1_VIEWS};
 
 const IMG_PX: u32 = 900;
 /// Preview grid resolution in the interactive app (188² — a few ms).
@@ -43,11 +47,31 @@ fn main() -> eframe::Result {
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Tab {
+    SpecV2,
+    C1,
+    C1Gallery,
     Framing,
     Gallery,
 }
 
-const TABS: [(Tab, &str); 2] = [(Tab::Framing, "1 Framing"), (Tab::Gallery, "Gallery")];
+const TABS: [(Tab, &str); 5] = [
+    (Tab::SpecV2, "0 Spec (v2)"),
+    (Tab::C1, "1 C1 (S1)"),
+    (Tab::C1Gallery, "C1 gallery"),
+    (Tab::Framing, "framing (v1)"),
+    (Tab::Gallery, "v1 gallery"),
+];
+
+fn class_label(w: ClassV2) -> &'static str {
+    match w {
+        ClassV2::ValleyFloor => "valley_floor",
+        ClassV2::Interfluve => "interfluve",
+        ClassV2::EscarpmentFace => "escarpment_face",
+        ClassV2::BasinMargin => "basin_margin",
+        ClassV2::PiedmontSlope => "piedmont_slope",
+        ClassV2::TerraceFlight => "terrace_flight",
+    }
+}
 
 fn window_label(w: WindowClass) -> &'static str {
     match w {
@@ -75,6 +99,14 @@ struct Thumb {
     tex: egui::TextureHandle,
 }
 
+struct C1Thumb {
+    seed: u64,
+    biome: BiomeId,
+    class: ClassV2,
+    forced_class: bool,
+    tex: egui::TextureHandle,
+}
+
 struct Lab {
     tab: Tab,
     seed: u64,
@@ -92,6 +124,16 @@ struct Lab {
     tex: Option<egui::TextureHandle>,
     thumbs: Vec<Thumb>,
     stats: String,
+    // ---- v2 ----
+    forced_biome: Option<BiomeId>,
+    c1_view: C1View,
+    c1_overlays: bool,
+    v2_spec: Option<SiteSpec>,
+    c1: Option<PrimitiveField>,
+    c1_tex: Option<egui::TextureHandle>,
+    c1_thumbs: Vec<C1Thumb>,
+    c1_gallery_forced: bool,
+    spec_rows: Vec<String>,
 }
 
 impl Default for Lab {
@@ -113,6 +155,15 @@ impl Default for Lab {
             tex: None,
             thumbs: Vec::new(),
             stats: String::new(),
+            forced_biome: None,
+            c1_view: C1View::Implied,
+            c1_overlays: true,
+            v2_spec: None,
+            c1: None,
+            c1_tex: None,
+            c1_thumbs: Vec::new(),
+            c1_gallery_forced: true,
+            spec_rows: Vec::new(),
         }
     }
 }
@@ -189,7 +240,125 @@ impl Lab {
         if self.tab == Tab::Gallery {
             self.regen_gallery(ctx);
         }
+        match self.tab {
+            Tab::SpecV2 => self.regen_spec_v2(),
+            Tab::C1 => self.regen_c1(ctx),
+            Tab::C1Gallery => self.regen_c1_gallery(ctx),
+            _ => {}
+        }
         self.dirty = false;
+    }
+
+    fn v2_case(&self, seed: u64, forced_class: Option<ClassV2>) -> (SiteSpec, PrimitiveField) {
+        let id = RunIdentity::from_seed(seed);
+        let ov = SpecOverridesV2 {
+            forced_biome: self.forced_biome,
+        };
+        let mut spec = SiteSpec::generate_builtin(id, &ov);
+        if let Some(class) = forced_class {
+            // Lab-only: realize a chosen class with this seed's other draws
+            // (the same construction the S1 distinctness tests use).
+            spec.structure_class = StructureClass::new(
+                class,
+                spec.structure_class.provinces,
+                spec.structure_class.boundary_kind,
+            )
+            .unwrap();
+        }
+        let c1 = course_primitives::generate(&spec, &id);
+        (spec, c1)
+    }
+
+    fn regen_spec_v2(&mut self) {
+        let (spec, _c1) = self.v2_case(self.seed, None);
+        self.spec_rows.clear();
+        for s in self.seed..self.seed + 14 {
+            let (row, _) = self.v2_case(s, None);
+            self.spec_rows.push(format!(
+                "{:>6}  {:14}  {:16}  {}p{}  relief {:5.1} m  dens {:5.3}  plast {:.2}  wind {:3.0}° @ {:4.1} m/s",
+                s,
+                row.biome.key(),
+                class_label(row.structure_class.window),
+                row.structure_class.provinces,
+                row.structure_class
+                    .boundary_kind
+                    .map(|k| match k {
+                        KindV2::Scarp => " scarp",
+                        KindV2::ValleyWall => " wall",
+                        KindV2::MaterialContact => " contact",
+                    })
+                    .unwrap_or(""),
+                row.descriptors.relief_budget_m,
+                row.descriptors.density_target,
+                row.descriptors.plasticity.value(),
+                row.descriptors.wind_azimuth_rad.to_degrees(),
+                row.descriptors.wind_speed_mps,
+            ));
+        }
+        self.stats = format!(
+            "S0 v2 · seed {} · envelope {}…",
+            self.seed,
+            &spec.envelope_fingerprint[..12]
+        );
+        self.v2_spec = Some(spec);
+    }
+
+    fn regen_c1(&mut self, ctx: &egui::Context) {
+        let t0 = std::time::Instant::now();
+        let (spec, c1) = self.v2_case(self.seed, None);
+        let img = render_c1(&c1, self.c1_view, IMG_PX, self.c1_overlays);
+        self.c1_tex = Some(load_tex(ctx, "c1", &img));
+        self.stats = format!(
+            "S1 · seed {} · {} · {} · {}p · edge {:?} @ {:.1} m · grain {:.0}°×{:.2} · wind {:.0}° · {} ms",
+            self.seed,
+            spec.biome.key(),
+            class_label(spec.structure_class.window),
+            spec.structure_class.provinces,
+            c1.meta.base_level.edge,
+            c1.meta.base_level.elev_m,
+            c1.meta.grain_axis_rad.to_degrees(),
+            c1.meta.grain_strength,
+            c1.meta.wind_azimuth_rad.to_degrees(),
+            t0.elapsed().as_millis()
+        );
+        self.v2_spec = Some(spec);
+        self.c1 = Some(c1);
+    }
+
+    fn regen_c1_gallery(&mut self, ctx: &egui::Context) {
+        self.c1_thumbs.clear();
+        if self.c1_gallery_forced {
+            // Grouped by class: 3 examples per class, class forced so every
+            // row exists — the material behind the legibility session.
+            for (ci, &class) in ClassV2::ALL.iter().enumerate() {
+                for k in 0..3u64 {
+                    let seed = self.gallery_base + ci as u64 * 3 + k;
+                    let (spec, c1) = self.v2_case(seed, Some(class));
+                    let img = render_c1(&c1, C1View::Implied, THUMB_PX, false);
+                    self.c1_thumbs.push(C1Thumb {
+                        seed,
+                        biome: spec.biome,
+                        class,
+                        forced_class: true,
+                        tex: load_tex(ctx, &format!("c1t-{ci}-{k}"), &img),
+                    });
+                }
+            }
+        } else {
+            // Natural draws, first come first shown.
+            for k in 0..(GALLERY_N as u64) {
+                let seed = self.gallery_base + k;
+                let (spec, c1) = self.v2_case(seed, None);
+                let img = render_c1(&c1, C1View::Implied, THUMB_PX, false);
+                self.c1_thumbs.push(C1Thumb {
+                    seed,
+                    biome: spec.biome,
+                    class: spec.structure_class.window,
+                    forced_class: false,
+                    tex: load_tex(ctx, &format!("c1n-{k}"), &img),
+                });
+            }
+        }
     }
 
     fn regen_gallery(&mut self, ctx: &egui::Context) {
@@ -299,6 +468,61 @@ impl eframe::App for Lab {
                 }
             }
 
+            if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::C1Gallery) {
+                ui.separator();
+                let biome_label = self
+                    .forced_biome
+                    .map(|b| b.key().to_string())
+                    .unwrap_or_else(|| "natural".into());
+                egui::ComboBox::from_label("biome (v2)")
+                    .selected_text(biome_label)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_value(&mut self.forced_biome, None, "natural").changed() {
+                            self.dirty = true;
+                        }
+                        for b in BiomeId::ALL {
+                            if ui
+                                .selectable_value(&mut self.forced_biome, Some(b), b.key())
+                                .changed()
+                            {
+                                self.dirty = true;
+                            }
+                        }
+                    });
+            }
+            if self.tab == Tab::C1 {
+                for (v, label) in C1_VIEWS {
+                    if ui.selectable_label(self.c1_view == v, label).clicked() {
+                        self.c1_view = v;
+                        self.dirty = true;
+                    }
+                }
+                if ui.checkbox(&mut self.c1_overlays, "overlays").changed() {
+                    self.dirty = true;
+                }
+            }
+            if self.tab == Tab::C1Gallery {
+                ui.horizontal(|ui| {
+                    ui.label("base seed");
+                    if ui
+                        .add(egui::DragValue::new(&mut self.gallery_base).speed(1))
+                        .changed()
+                    {
+                        self.dirty = true;
+                    }
+                    if ui.button("next page").clicked() {
+                        self.gallery_base = self.gallery_base.wrapping_add(GALLERY_N as u64);
+                        self.dirty = true;
+                    }
+                });
+                if ui
+                    .checkbox(&mut self.c1_gallery_forced, "grouped by class (forced)")
+                    .changed()
+                {
+                    self.dirty = true;
+                }
+            }
+
             if self.tab == Tab::Framing {
                 ui.separator();
                 if ui
@@ -404,6 +628,14 @@ impl eframe::App for Lab {
                     });
                 }
             }
+            if matches!(self.tab, Tab::SpecV2 | Tab::C1) {
+                if let Some(spec) = &self.v2_spec {
+                    let json = serde_json::to_string_pretty(spec).unwrap_or_default();
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.monospace(json);
+                    });
+                }
+            }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -412,6 +644,60 @@ impl eframe::App for Lab {
             }
             ui.label(&self.stats);
             match self.tab {
+                Tab::SpecV2 => {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(160, 200, 160),
+                        "S0 v2 draw table — 14 seeds from the current one",
+                    );
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for row in &self.spec_rows {
+                            ui.monospace(row);
+                        }
+                    });
+                }
+                Tab::C1 => {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 190, 90),
+                        "C1 is PREDISPOSITION — no drainage, no texture (S2/S3's jobs).                          Judge class legibility and field coherence only; see C1_REVIEW.md.",
+                    );
+                    if let Some(tex) = &self.c1_tex {
+                        let avail = ui.available_size();
+                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        ui.image((tex.id(), egui::vec2(side, side)));
+                    }
+                }
+                Tab::C1Gallery => {
+                    let mut open_seed = None;
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::Grid::new("c1gallery").spacing([8.0, 8.0]).show(ui, |ui| {
+                            for (i, t) in self.c1_thumbs.iter().enumerate() {
+                                ui.vertical(|ui| {
+                                    let resp = ui
+                                        .image((t.tex.id(), egui::vec2(THUMB_PX as f32, THUMB_PX as f32)))
+                                        .interact(egui::Sense::click());
+                                    if resp.clicked() {
+                                        open_seed = Some(t.seed);
+                                    }
+                                    ui.label(format!(
+                                        "{} · {} · {}{}",
+                                        t.seed,
+                                        t.biome.key(),
+                                        class_label(t.class),
+                                        if t.forced_class { " (forced)" } else { "" }
+                                    ));
+                                });
+                                if (i + 1) % 3 == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                    });
+                    if let Some(seed) = open_seed {
+                        self.seed = seed;
+                        self.tab = Tab::C1;
+                        self.dirty = true;
+                    }
+                }
                 Tab::Framing => {
                     if self.show_implied {
                         ui.colored_label(

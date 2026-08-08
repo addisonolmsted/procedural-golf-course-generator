@@ -91,7 +91,10 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let mut hardness = Grid::filled(grid, hardness_base);
     let mut accommodation = Grid::filled(grid, 0.5f64);
 
-    let mode_amp = relief_amp * 0.45 / (MODE_WAVELENGTHS_M.len() as f64).sqrt();
+    // The class shape CARRIES the macro form; modes season it. The first
+    // legibility renders had these comparable and every class drowned in
+    // blob noise — the P1 protocol's first catch.
+    let mode_amp = relief_amp * 0.18 / (MODE_WAVELENGTHS_M.len() as f64).sqrt();
     for y in 0..grid.ny {
         for x in 0..grid.nx {
             let p = grid.world_of(x, y);
@@ -102,7 +105,7 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
 
             // Relief: class shape + grain-clustered smooth modes.
             let (class_relief, class_accom) =
-                classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.5);
+                classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85);
             let mut r = class_relief;
             for i in 0..MODE_WAVELENGTHS_M.len() {
                 let u = p.x * libm::cos(mode_dirs[i]) + p.y * libm::sin(mode_dirs[i]);

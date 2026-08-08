@@ -14,3 +14,5 @@ course-viz = { workspace = true }
 eframe = { workspace = true }
 image = { workspace = true }
 serde_json = { workspace = true }
+course-contracts = { workspace = true }
+course-primitives = { workspace = true }
