@@ -44,7 +44,13 @@ pub use identity::{RunIdentity, SeedError};
 /// v3 (2026-08-02): stage-01 artifact gains the structural skeleton
 /// (`FRAMING_VERSION` 2). Header-only here: streams key on seed + name, so
 /// this bump moves no draws.
-pub const PIPELINE_VERSION: u32 = 3;
+///
+/// v4 (2026-08-07): registry v3 — the v2-pipeline rekey. New stage streams
+/// registered (primitives, skeleton/*, amplify, hydro, substrate, layout,
+/// zoning, validate); `mask/strokes/forcing` retired; every stream `Stable`
+/// (v2 never retries). Retained names keep their spellings, so attempt-0
+/// draws are bit-identical; artifact headers change version only.
+pub const PIPELINE_VERSION: u32 = 4;
 
 /// Bound on gate-fail rerolls: attempts 0..MAX_ATTEMPTS, then the run fails
 /// for good. Vestigial under v2 — see the crate docs; no v2 stage raises an

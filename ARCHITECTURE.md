@@ -177,35 +177,38 @@ Details and the three ladder rules: [docs/01-conventions.md](docs/01-conventions
    is forbidden — draw a fixed count and resolve collisions deterministically.
    This is the rule most likely to be violated by accident.
 
-   **The registry as it stands** (`PIPELINE_VERSION` 3). Every stream has a
-   SCOPE: `stable` streams key off the MASTER seed, `attempt` streams key off
-   the attempt seed. Under v2 attempt is pinned at 0, so the distinction is
-   currently inert — see invariant 2.
+   **Registry v3** (`PIPELINE_VERSION` 4, the v2-pipeline rekey, 2026-08-07).
+   v2 never retries, so **every stream is `stable`** (master-seed keyed); the
+   scope machinery is vestigial-but-retained — see invariant 2. The retired
+   v1 streams (`mask/v1`, `strokes/v1`, `forcing/v1`) had no v2 owner;
+   retained names kept their exact spellings, so attempt-0 draws are
+   bit-identical across the bump and only artifact version headers moved.
 
-   | Stream | Scope | Owner today | v2 owner |
-   |---|---|---|---|
-   | `arch/select/v1` | stable | biome draw | S0 |
-   | `arch/params/v1` | stable | θ sampling | S0 |
-   | `framing/v1` | stable | v1 stage 01 | S1 (rename pending) |
-   | `mask/v1` | attempt | v1 stage 02 | **none** — the mask is gone |
-   | `strokes/v1` | attempt | v1 stage 03 | **none** |
-   | `forcing/v1` | attempt | v1 stage 04 | **none** |
-   | `cover/v1` | attempt | v1 stage 07 | S10 |
-   | `route/v1` | attempt | v1 stage 09 | S6 |
-   | `earthworks/v1` | attempt | v1 stage 10 | S7 |
-   | `micro/v1` | attempt | v1 stage 12 | S9 |
-   | `placement/v1` | attempt | v1 stage 13 | S10 |
-   | `reroll/v1` | stable | INTERNAL: reroll sub-seeds | vestigial |
-   | `fixture/v1` | attempt | tests and fixtures only | tests |
+   | Stream | Scope | Owner |
+   |---|---|---|
+   | `arch/select/v1` | stable | S0 biome draw |
+   | `arch/params/v1` | stable | S0 descriptor sampling |
+   | `framing/v1` | stable | v1 stage 01 (retained with `course-framing`; retires with it) |
+   | `primitives/v1` | stable | S1 macro structure |
+   | `skeleton/trunk/v1` | stable | S2 trunk growth |
+   | `skeleton/tributary/v1` | stable | S2 tributary growth |
+   | `skeleton/module/v1` | stable | S2 structural modules |
+   | `amplify/v1` | stable | S3 amplification |
+   | `hydro/v1` | stable | S4 hydrology & transforms |
+   | `substrate/v1` | stable | S5 siting + substrate |
+   | `route/v1` | stable | S6 routing search |
+   | `earthworks/v1` | stable | S7 earthworks jitter |
+   | `layout/v1` | stable | S8 hole layout |
+   | `micro/v1` | stable | S9 micro noise |
+   | `cover/v1` | stable | S10 cover clumping |
+   | `zoning/v1` | stable | S10 palette/exaggeration draws |
+   | `placement/v1` | stable | S10 placement jitter |
+   | `validate/v1` | stable | S11 playability-sim dispersion |
+   | `reroll/v1` | stable | INTERNAL reroll sub-seeds (vestigial) |
+   | `fixture/v1` | stable | tests and fixtures only |
 
    This table is **test-enforced** to mirror
    [`crates/course-seed/src/streams.rs`](crates/course-seed/src/streams.rs).
-   It is still the v1 registry: the stage docs under [docs/stages/](docs/stages/)
-   name the streams v2 will use (`primitives/v1`, `skeleton/trunk/v1`,
-   `substrate/v1`, …), and those are **proposals** until their stages are
-   built. The rekey is a single reviewed `PIPELINE_VERSION` bump, scheduled
-   with M1 — batched deliberately, because rekeying streams re-blesses every
-   golden.
 
 2. **No runtime rejection.** No gates, no reroll, no unbounded loops, no
    convergence criteria. Every iterative stage takes a fixed count from config.

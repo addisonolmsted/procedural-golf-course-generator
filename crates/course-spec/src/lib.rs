@@ -27,13 +27,10 @@ pub use archetype::{ArchetypeId, HydrologyMode};
 pub use prior::{PriorError, Priors, Quantiles};
 pub use spec::{CourseSpec, SpecError, SpecOverrides};
 
-/// Fixed 9-hole route (stage-00 hard requirement 2). Typed constants, not
-/// prior data: par is an integer sequence, identical across archetypes, and
-/// contract-fixed — encoding it as a sampled knob would let a prior edit
-/// silently break the par-36 requirement.
-pub const HOLE_COUNT: u32 = 9;
-/// Par per hole in play order; sums to 36.
-pub const PAR_SEQUENCE: [u32; 9] = [4, 4, 3, 5, 4, 3, 4, 5, 4];
+/// Fixed 9-hole route (stage-00 hard requirement 2). The AUTHORITY lives in
+/// `course-contracts` (contract-fixed data belongs to the contracts crate);
+/// re-exported here so existing consumers keep their import path.
+pub use course_contracts::{HOLE_COUNT, PAR_SEQUENCE};
 
 #[cfg(test)]
 mod tests {

@@ -222,7 +222,8 @@ mod tests {
     }
 
     /// Registry-v2 semantics: stable streams are byte-identical across the
-    /// whole reroll chain, attempt streams pairwise distinct (fixed seed —
+    /// Registry v3: EVERY stream is stable across the (vestigial) reroll
+    /// chain — v2 never retries, so nothing may vary by attempt (fixed seed —
     /// deterministic assertion, not probabilistic).
     #[test]
     fn stable_streams_survive_rerolls() {
@@ -238,18 +239,21 @@ mod tests {
             let mut rng = id.stream(name);
             [rng.next_u64(), rng.next_u64(), rng.next_u64(), rng.next_u64()]
         };
-        for name in [streams::FRAMING, streams::ARCH_SELECT, streams::ARCH_PARAMS] {
+        for (name, _) in streams::ALL {
+            if name == streams::REROLL {
+                continue; // internal; never opened via stream()
+            }
             let baseline = first4(&chain[0], name);
             for id in &chain[1..] {
-                assert_eq!(first4(id, name), baseline, "stable stream {name} drifted");
+                assert_eq!(first4(id, name), baseline, "stream {name} drifted across attempts");
             }
         }
-        for name in [streams::MASK, streams::ROUTE] {
-            let firsts: Vec<u64> = chain.iter().map(|id| id.stream(name).next_u64()).collect();
-            for (i, a) in firsts.iter().enumerate() {
-                for b in &firsts[i + 1..] {
-                    assert_ne!(a, b, "attempt stream {name} repeated across attempts");
-                }
+        // The attempt-keying machinery is retained (vestigial): attempt seeds
+        // themselves must still be pairwise distinct.
+        let seeds: Vec<u64> = chain.iter().map(|id| id.stream_seed()).collect();
+        for (i, a) in seeds.iter().enumerate() {
+            for b in &seeds[i + 1..] {
+                assert_ne!(a, b, "attempt seeds repeated");
             }
         }
     }

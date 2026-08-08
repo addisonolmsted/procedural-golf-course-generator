@@ -9,3 +9,4 @@ course-seed = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
+course-contracts = { workspace = true }

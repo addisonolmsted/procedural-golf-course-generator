@@ -3,5 +3,11 @@ name = "course-contracts"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "The four guarded contracts (C0-C3) + the shared v2 vocabulary"
 
 [dependencies]
+course-world = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+libm = { workspace = true }

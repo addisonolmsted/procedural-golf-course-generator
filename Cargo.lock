@@ -727,6 +727,13 @@ version = "0.0.0"
 [[package]]
 name = "course-contracts"
 version = "0.0.0"
+dependencies = [
+ "blake3",
+ "course-world",
+ "libm",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "course-earthmoving"
@@ -780,6 +787,7 @@ name = "course-spec"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "course-contracts",
  "course-seed",
  "serde",
  "serde_json",
