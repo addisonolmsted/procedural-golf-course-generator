@@ -22,7 +22,7 @@ Workspace: [`tools/spike/`](../tools/spike/README.md).
 | # | Item | Size | Verification |
 |---|---|---|---|
 | A1 | Patch + conditioning extraction from 5 of the 6 clean piedmont tiles (`surfaces.build` + skeleton fields; hold out `t03550_08002`) | S | patch count, per-bucket tile diversity report |
-| A2 | Coarse bucketing (slope × TPI × hillslope-position, ~3×3×3) + PCA basis (~16 comp) + coefficient distributions per bucket | S | reconstruction error on *training* tiles first |
+| A2 | Coarse bucketing (slope × TPI × hillslope-position, ~3×3×3) + per-bucket model | S | **DONE — and the spike overturned the model**: PCA + drawn coefficients falsified (passed metrics, visually fake); the working mechanism is **gradient-domain exemplar quilting** (min-error seams on gradients, Poisson integration, band-limit, spectral equalizer, per-band closer) |
 | A3 | Reconstruct residual over the held-out tile's own lowpass; overlap-add blend | S | β, variogram range/sill, curvature pair vs the held-out tile's own values |
 | A4 | Seam check: radial PSD, look for a peak at patch pitch/harmonics | S | no peak above noise |
 | A5 | Hillshade crop pairs (real vs reconstructed) for the blind A/B | S | **P2 relaxed: reviewer ≤ 75%** |
@@ -80,7 +80,7 @@ Workspace: [`tools/spike/`](../tools/spike/README.md).
 | # | Item | Size | Verification |
 |---|---|---|---|
 | F1 | **M4.5: settle C0 with the frontend team** — format, quantization, `height_play` extent, beyond-window LOD | S (calendar risk) | C0 doc TBD rows resolved; C0 types updated in B1's crate |
-| F2 | **Dictionary fitter** in `course-calibration` (or Python baking to a Rust-readable asset): bucketing tuned by E5 coverage, PCA/sparse basis, coefficient distributions, course-grid source weighted separately, i16+zstd bake, fingerprint | **L** | per-bucket tile diversity ≥ 5; asset < 15 MB; round-trip reconstruction error report |
+| F2 | **Dictionary builder** in `course-calibration` (or Python baking to a Rust-readable asset): bucketing tuned by E5 coverage, **curated real-patch library per bucket** (mask-aware extraction, amplitude statistics, per-band radial-PSD equalizer targets), course-grid source weighted separately, per-bucket caps + dedup, i16+zstd bake, fingerprint. Grain levers from the spike: amplitude matching (not a floor), equalizer HF rolloff, cover/smoothness conditioning axis | **L** | per-bucket tile diversity ≥ 5; asset budget re-estimated for patches (the < 15 MB figure assumed a basis); held-out reconstruction scored on discriminants |
 | F3 | Dictionary QA: reconstruct held-out real tiles per biome, full discriminant scoring | M | energy distance beats 2.35 on held-out; per-biome bands |
 
 ## Phase G — S3 + S4 + gate G-TERRAIN (needs D, F)

@@ -193,12 +193,16 @@ retirement; `cargo check --workspace` is clean and the 112 retained tests pass.
 The documentation tree is complete: 12 stage docs, 3 contracts, 8 biome files,
 4 calibration docs, plus the three root documents.
 
-**All twelve stages are unclaimed. Spike prerequisite complete (2026-08-07):**
-`tools/parkland_atlas` + `assets/atlas.bin` recovered from `main`; the
-measurement chain verified end-to-end on a real clean piedmont tile
-(`tools/spike/smoke.py` — cgrid → `surfaces.build` → the 49-scalar battery,
-whole-tile and residual-only); the 6 clean piedmont tiles inventoried; first
-fit-target numbers recorded (residual std 1.95 m, β 3.59, variogram range
-181 m). **The M3.5 spike itself is unblocked and is the next step**, alongside
-M1 (contracts) and M2 (batch entrypoint). C0's TBD-frontend rows (M4.5) need a
-conversation with the frontend team sometime before S3 is implemented.
+**All twelve stages are unclaimed. M3.5 complete — G-SPIKE PASSED
+(2026-08-07).** Seven variants run on the 6 clean piedmont tiles
+(`tools/spike/`): drawn-coefficient PCA synthesis **falsified** (8/8 metrics
+in band, visually fake — the concrete proof that metrics cannot gate texture
+alone); the working mechanism is **gradient-domain exemplar quilting**, now
+folded into stage-03. Reviewer verdict on the texture-isolation blind set:
+good, slightly grainy — grain is quantified (curvature ~1.5× hot), has four
+named levers, and is deliberately deferred to Phase F so it is tuned against
+the full corpus rather than 6 tiles and their classifier artifacts.
+
+**Next: Phase B (M1 contracts + M2 batch entrypoint) and Phase E's corpus
+fetching in parallel.** C0's TBD-frontend rows (M4.5) need a conversation with
+the frontend team before S3 is implemented.

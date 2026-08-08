@@ -77,13 +77,18 @@ deliver at 2 m, and touch 0.5 m only in corridor-local patches. A full-extent
 [S3](stages/stage-03-amplification.md) is the first stage with a shipped data
 dependency. Budget it separately from the per-course time:
 
-- **Ship target < 15 MB total** across all six biomes (~32×32 patches, ~32
-  basis components, i16-quantized, zstd).
+- The asset is a **real-patch library** (the spike falsified basis synthesis),
+  i16-quantized + zstd. The original < 15 MB target assumed a PCA basis —
+  **re-estimate in Phase F**; per-bucket caps and dedup are the levers.
 - **Loaded once, resident, shared across courses.** Decompression is startup
-  cost, not per-course cost, and the 900 ms above assumes the basis is already
-  in memory.
-- If the asset must shrink, the lever is basis rank, and it trades **directly
-  against realism**. Take budget from elsewhere before taking it from here.
+  cost, not per-course cost, and the 900 ms above assumes the library is
+  already in memory.
+- If the asset must shrink, the lever is patch count per bucket, and it trades
+  **directly against variety and realism**. Take budget from elsewhere before
+  taking it from here.
+- The per-course cost now includes one Poisson solve per band (FFT-based, on
+  the 2 m and 8 m grids) — cheap, but it is the reason the 900 ms figure still
+  needs measuring at G1 start.
 
 ## Rules that keep the budget honest
 

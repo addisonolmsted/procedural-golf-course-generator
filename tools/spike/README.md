@@ -80,7 +80,23 @@ closer). Asset implication: the dictionary ships real patches (i16-quantized)
 rather than a basis — size grows, mitigable by patch count discipline;
 re-estimate against the < 15 MB target during Phase F.
 
-### Pending: the P2 blind test (the human half of the gate)
+### G-SPIKE: PASSED (2026-08-07)
+
+Reviewer verdict on the texture-isolation set: **"looks good, slightly
+grainier than the real tiles."** The grain is the same defect the metrics
+flagged (curvature ~1.5× hot, β slightly shallow) — the P2 protocol and the
+battery agreeing on one artifact is the gate working as designed.
+
+**Decision: proceed; grain is a named Phase-F tuning item**, with four levers
+recorded in `docs/stages/stage-03-amplification.md`: replace the
+`QUILT_STD_FLOOR` amplitude floor with amplitude *matching*; equalizer
+high-frequency rolloff; a cover/smoothness conditioning axis; sub-patch fill
+discipline. Deliberately NOT tuned now: part of the real tiles' smoothness is
+classifier artifact (the canopy/despeckle caveats), and the Phase-E
+sensitivity analysis establishes the true target — tuning grain against 6
+tiles risks calibrating to lidar processing, not ground.
+
+### The P2 blind test (for the record)
 
 **Use `report/fineblind/`, not the original `report/blind/`.** The first
 blind set was confounded: real crops carry dendritic drainage STRUCTURE,

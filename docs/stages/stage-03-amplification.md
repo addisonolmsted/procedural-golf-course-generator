@@ -87,19 +87,41 @@ These are the same conditioning fields
 `lp_aspect`, `tpi`, `relief_pos`) — its macro provider is documented as
 pluggable, and that is the seam the offline fitter plugs into.
 
-### 2. Reconstruct
+### 2. Reconstruct — gradient-domain exemplar quilting
 
-For each patch location, select the bucket, draw basis coefficients from that
-bucket's fitted distribution, and rebuild the residual patch. Coefficient draws
-are **position-seeded** — derived from world coordinates plus the stream key,
-never from an incrementing counter — so a cell's detail does not depend on
-processing order.
+**The mechanism is settled by the G-SPIKE experiment (`tools/spike/`), not by
+preference.** Seven variants were run; the results are binding:
 
-### 3. Blend
+- **Drawn-coefficient synthesis is falsified.** A PCA basis with independent
+  coefficient draws passed 8/8 metrics while being visually fake (no connected
+  structure); correlated coefficient fields reinforce the patch lattice.
+  Real structure requires real patch content.
+- **Naive blending fails three ways**: Hann overlap-add cancels amplitude,
+  low overlap shows seams, min-error cuts in the height domain leave creases
+  (any height offset at a seam is a slope discontinuity).
+- **The working mechanism**: per site, select a real patch from the
+  conditioning bucket (best boundary match among a seeded top-k, amplitude
+  matched to the bucket's conditional expectation); compose its **gradients**
+  along a min-error seam; **Poisson-integrate** back to height;
+  **re-band-limit** (integration invents long-wavelength swell from seam
+  inconsistencies); true the within-band spectrum with a **calibrated radial
+  equalizer** (integration and band-limiting reshape it, and a scalar cannot
+  fix a shape drift); then the per-band closer sets amplitude.
 
-Overlap-add with feathering. Patch synthesis visibly tiles when done naively;
-the detectors are `variogram_range` and `spectral_slope_beta`, and S11 measures
-both.
+Two levels, disjoint bands: **mid** 64–400 m on the 8 m grid (256 m patches)
+and **fine** < 64 m at 2 m (64 m patches) — the pyramid question is closed;
+single-scale cannot span the residual's 181 m variogram range. Selection and
+seam decisions are **position-seeded** and raster-ordered — deterministic and
+platform-stable.
+
+**Known artifact, with owners:** the spike's output ran slightly *grainy*
+(curvature ~1.5× hot, β marginally shallow — reviewer-confirmed). Levers, in
+order: amplitude *matching* instead of a candidate std floor; equalizer
+high-frequency rolloff; a cover/smoothness conditioning axis; sub-patch fill
+discipline. **Do not tune these against the 6-tile spike corpus** — part of
+real-tile smoothness is classifier artifact, and the despeckle sensitivity
+analysis ([../calibration/lidar-pipeline.md](../calibration/lidar-pipeline.md))
+establishes the true target first.
 
 ### 4. Taper near the skeleton
 
@@ -198,12 +220,17 @@ data.
    conditioned the same way the generator will condition its own —
    `dtm_primitives/network.py`, `ridgepipe.py`, `geomorphons.py`. Per-tile
    vector skeletons already exist on disk in `out/extract/*.regions.json`.
-3. **Sample patches** with their conditioning vectors; bucket the conditioning
-   space.
-4. **Fit a basis per bucket** (PCA / sparse coding) plus the coefficient
-   distribution.
-5. **Bake** to a compact deterministic asset. Target **< 15 MB total**:
-   ~32×32 patches, ~32 components, i16-quantized, zstd.
+3. **Sample patches** with their conditioning vectors — **mask-aware**: the
+   spike showed the real fine band carries creek cuts, field boundaries, and
+   road traces; extraction must respect the develop/water masks or the
+   dictionary learns them as fabric.
+4. **Curate the patch library per bucket** (the dictionary ships real
+   patches, not a fitted basis) plus the per-bucket amplitude statistics and
+   the band's radial-PSD target for the equalizer.
+5. **Bake** to a compact deterministic asset, i16-quantized + zstd. The
+   original **< 15 MB** target assumed a PCA basis; a patch library is
+   larger — **re-estimate the budget in Phase F**, with patch-count
+   discipline (per-bucket caps, dedup) as the lever.
 
 ### Metrics
 
@@ -253,16 +280,16 @@ job, not a modelling job.**
 
 ## Open questions
 
-1. **Patch size and basis rank.** 32×32 @ 2 m = 64 m square with ~32
-   components is the working proposal, sized to the < 15 MB budget. Both are
-   calibration outcomes, not guesses — fit and measure. **Blocks the asset
-   format.**
+1. **Asset size for a patch library.** The < 15 MB target assumed a basis;
+   real patches are bigger. Per-bucket caps + dedup + i16 + zstd are the
+   levers. **Blocks the asset format**; re-estimate in Phase F.
 2. **Bucket count and boundaries.** Too few and conditioning does nothing; too
-   many and each bucket is fitted from too few patches. The corpus is the
-   constraint: 38 tiles today, ~180 after the campaign.
-3. **Single-scale or pyramid?** One scale plus a spectral fill for the finest
-   detail is cheaper; a 2–3 level pyramid is more faithful. Start single-scale
-   and let β decide.
+   many and each bucket draws from too few patches (and too few distinct
+   tiles). The corpus is the constraint: 38 tiles today, ~180 after the
+   campaign.
+3. ~~Single-scale or pyramid?~~ **Resolved by the spike: two levels** (mid
+   64–400 m @ 8 m, fine < 64 m @ 2 m). Single-scale cannot span the
+   residual's measured 181 m variogram range with 64 m patches.
 4. **How is the exemplar pool drawn?** Per-course selection of 2–3 tiles from
    the biome's pool gives variety grounded in real places, but a small pool
    risks visible repetition across courses. Needs a number.
