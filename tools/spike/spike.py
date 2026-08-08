@@ -494,6 +494,17 @@ def main():
           f"closer mid x{c_mid:.3f} fine x{c_fine:.3f} "
           f"-> {recon_resid.std():.3f} m")
 
+    # Save the bands for the texture-isolation renders (textures.py)
+    np.savez_compressed(
+        os.path.join(OUT, "bands.npz"),
+        lp400=d_h["lp400"].astype(np.float32),
+        real_mid=real_mid.astype(np.float32),
+        real_fine=d_h["fine"].astype(np.float32),
+        mid_dict=(mid_rec * c_mid).astype(np.float32),
+        fine_dict=(fine_rec * c_fine).astype(np.float32),
+        recon_full=recon_full.astype(np.float32),
+        filled=d_h["filled"].astype(np.float32))
+
     # ---- A4: score
     print("== A4: scoring ==")
     rows = {}

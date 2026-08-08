@@ -82,8 +82,33 @@ re-estimate against the < 15 MB target during Phase F.
 
 ### Pending: the P2 blind test (the human half of the gate)
 
-`report/blind/blind_*.png` — 8 shuffled 1 km hillshade crops, 4 real and 4
-generated (variant 6). Sort them, then check
-`report/blind/answer_key.json`. **Gate: reviewer accuracy ≤ 75%** (relaxed
-for the 6-tile spike). `report/pair_*.png` are labeled pairs (real left);
-`report/variantB_*.png` show the fine-band-only case.
+**Use `report/fineblind/`, not the original `report/blind/`.** The first
+blind set was confounded: real crops carry dendritic drainage STRUCTURE,
+which in production comes from S2's skeleton — a reviewer sorts real from
+generated on evidence about the wrong stage. The reviewer said exactly this,
+and was right.
+
+`textures.py` (run after `spike.py`) builds the texture-isolation set:
+
+- **`fineblind/fine_a..h.png`** — the fair blind test: identical macro + real
+  mid band on both sides; only the < 64 m band differs. Sort real vs
+  generated, then check `fineblind/answer_key.json`.
+  **Gate: accuracy ≤ 75%.**
+- `ramp_fine_…` / `ramp_mid_…` — each band pasted on a uniform 3.5% slope:
+  pure fabric, no structure of either origin to key on (real left).
+- `curv_fine_…` / `curv_mid_…` — Laplacian curvature maps; curvature is where
+  the remaining metric miss lives, so this is the most honest visual.
+- `tint_*` — hypsometric-tint × multi-azimuth hillshade composites of the
+  full surfaces, for context (real left).
+
+What the isolation renders already show: the real *fine* band is not
+homogeneous fabric — it carries creek cuts, field/canopy boundaries, and road
+traces (anthropogenic residue + hydrography). The spike quilted from unmasked
+patches, so corpus hygiene at patch-extraction time (the develop masks
+already exist per tile) is a named Phase-E item. The *mid* band isolated is
+close: same scale and amplitude; real forms slightly more elongated/connected
+(drainage-organized) — the gap S2's skeleton conditioning is expected to
+close.
+
+The original structure-confounded set is kept at `report/blind/` as the
+record of the confound.
