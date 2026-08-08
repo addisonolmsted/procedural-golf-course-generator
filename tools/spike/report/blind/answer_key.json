@@ -1,0 +1,34 @@
+{
+ "blind_a.png": {
+  "crop": "crop1",
+  "kind": "real"
+ },
+ "blind_b.png": {
+  "crop": "crop0",
+  "kind": "recon"
+ },
+ "blind_c.png": {
+  "crop": "crop3",
+  "kind": "recon"
+ },
+ "blind_d.png": {
+  "crop": "crop3",
+  "kind": "real"
+ },
+ "blind_e.png": {
+  "crop": "crop2",
+  "kind": "recon"
+ },
+ "blind_f.png": {
+  "crop": "crop2",
+  "kind": "real"
+ },
+ "blind_g.png": {
+  "crop": "crop1",
+  "kind": "recon"
+ },
+ "blind_h.png": {
+  "crop": "crop0",
+  "kind": "real"
+ }
+}

@@ -38,20 +38,52 @@ Note: `tools/metrics`' 15-test suite passes; the parkland-atlas cache turned
 out to be **unnecessary** for the spike and for v2 generally — see
 `MIGRATION.md`.
 
-## The spike itself (next)
+## Spike executed (2026-08-07) — findings
 
-1. Extract residual patches + conditioning vectors from 5 of the 6 tiles
-   (hold one out).
-2. Bucket coarsely; fit a small PCA basis + coefficient distribution per
-   bucket.
-3. Reconstruct residual over a synthetic base (or the held-out tile's own
-   lowpass — the cheapest honest test).
-4. Score against the held-out tile: β, variogram range/sill, curvature pair;
-   check the PSD for a peak at the patch pitch.
-5. Render side-by-side hillshade crops for the blind A/B (P2, relaxed to
-   ≤ 75% reviewer accuracy for the 6-tile spike).
+Seven variants run (`spike.py`; two-level dictionary, mid band 64–400 m @ 8 m
++ fine band < 64 m @ 2 m, conditioned on lp_slope × tpi × relief_pos,
+per-band budget closer). The story, in order:
 
-**Go:** metrics in band and no visible tiling ⇒ proceed to the corpus
-campaign (M4) with the design validated.
-**No-go:** the fallback conversation (richer basis, quilting, or
-reconsidering simulation) happens now, before ~300 tiles are fetched.
+| # | Variant | Metrics | Eye (P1) |
+|---|---|---|---|
+| 1 | PCA basis, independent coefficient draws | **8/8 in band** | **FAIL** — crumpled paper, no connected structure |
+| 2 | PCA, correlated coefficient fields | 6/8 | FAIL — reinforces the patch lattice (checkerboard) |
+| 3 | Quilt (real patches), Hann 50% overlap | 8/8* | plausible but mushy — blending cancels amplitude |
+| 4 | Quilt, 25% overlap + amplitude floor | 6/8 | crisper, visible rectangular seams |
+| 5 | Quilt, min-error-boundary cut | 6/8 | creases where the cut crosses height offsets |
+| 6 | **Quilt, gradient-domain + Poisson + band-limit + spectral equalizer** | 5/8 (β −0.7% from band edge; range dead-on; curvature ~1.5× hot) | **best** — seamless, natural, terrain-like |
+| B | Real mid band + dictionary fine band only | — | **nearly indistinguishable from real** |
+
+### The four load-bearing findings
+
+1. **Metrics alone cannot gate this stage.** Variant 1 passed every scalar
+   while being obviously fake at a glance — the concrete proof of the
+   03-success-indicators premise. Gate reports must always include renders.
+2. **Drawn-coefficient synthesis is falsified** (variants 1–2, two distinct
+   failure modes). Real structure requires real patch content.
+3. **The fine band (< 64 m) works now** (variant B). The battleground is the
+   mid band (64–400 m) — connected ravines and spur ridges. In production S2's
+   skeleton supplies drainage organization there; the spike's lowpass base had
+   none, so this is the dictionary's *hardest* case, not its typical one.
+4. **Gradient-domain quilting is the right mechanism** (variant 6): compose
+   patch gradients along min-error seams, Poisson-integrate, re-band-limit,
+   true up the spectrum with a calibrated radial equalizer, close amplitude
+   per band. Remaining gap is quantified and narrow: curvature ~1.5× hot
+   (finest-scale sharpness) and β 0.7% shallow — tuning items (equalizer
+   high-frequency rolloff, seam feather width), not unknowns.
+
+### Recommendation
+
+**GO**, with stage-03's mechanism revised from "PCA basis + coefficient
+distributions" to **gradient-domain exemplar quilting** (+ equalizer +
+closer). Asset implication: the dictionary ships real patches (i16-quantized)
+rather than a basis — size grows, mitigable by patch count discipline;
+re-estimate against the < 15 MB target during Phase F.
+
+### Pending: the P2 blind test (the human half of the gate)
+
+`report/blind/blind_*.png` — 8 shuffled 1 km hillshade crops, 4 real and 4
+generated (variant 6). Sort them, then check
+`report/blind/answer_key.json`. **Gate: reviewer accuracy ≤ 75%** (relaxed
+for the 6-tile spike). `report/pair_*.png` are labeled pairs (real left);
+`report/variantB_*.png` show the fine-band-only case.
