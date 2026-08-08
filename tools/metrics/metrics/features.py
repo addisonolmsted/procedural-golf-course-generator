@@ -102,6 +102,13 @@ def compute(height, cell_size, valid, cfg, axes, tree=None, water=None):
     S.update(core.hydrology_metrics(height, cell_size, valid,
                                     cfg["hydrology"]["accum_area_threshold_m2"]))
 
+    # F2. v2 battery additions (heartland workplan B4) -----------------------
+    thr = cfg["hydrology"]["accum_area_threshold_m2"]
+    S["network_connectivity"] = core.network_connectivity(height, cell_size, valid, thr)
+    S["hypsometric_bimodality"] = core.hypsometric_bimodality(height, cell_size, valid)
+    S["slope_bimodality"] = core.slope_bimodality(height, cell_size, valid)
+    S.update(core.horton_ratios(height, cell_size, valid, thr))
+
     # G. anisotropy ----------------------------------------------------------
     S.update(core.anisotropy(height, cell_size, valid, dm,
                              max_lag_m=min(cfg["variogram"]["max_lag_m"], 400.0)))
@@ -133,6 +140,8 @@ SCALAR_COLUMNS = [
     "extrema_per_ha",
     "valley_count_km2_60", "valley_elong_120", "valley_len_p90_120",
     "drainage_density", "valley_spacing", "concavity_theta", "chan_len_p90",
+    "network_connectivity", "hypsometric_bimodality", "slope_bimodality",
+    "horton_bifurcation_ratio", "horton_length_ratio", "strahler_max",
     "anisotropy_ratio", "anisotropy_orientation_deg",
     "canopy_fraction", "water_fraction", "canopy_fraction_clip",
 ]

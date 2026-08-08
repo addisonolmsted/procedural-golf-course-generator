@@ -226,6 +226,11 @@ will the moment someone measures a preview-resolution run.
 1. **Are the new metrics admissible?** They may fail G4 (θ-share) or G6
    (identifiability). If `network_connectivity` fails, heathland cannot be
    fitted and the biome definition needs revisiting rather than the metric.
+   **Measured caveat (B4, 2026-08-07):** on unconditioned real DTMs, road
+   embankments dam streams at culverts, so even integrated piedmont reads
+   ~0.2. The metric separates perfectly on analytic surfaces (integrated 1.0,
+   kettle field 0.36, shallow-dimpled 1.0 — the pit-depth tolerance works);
+   its *corpus* use needs road-mask conditioning or culvert breaching first.
 2. **Is the invariant/discriminant split itself measurable?** It should be:
    run every metric across the six biome corpora and compute between-biome
    variance over within-biome variance. **The split above is a hypothesis based

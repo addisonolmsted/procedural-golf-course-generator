@@ -37,7 +37,7 @@ Workspace: [`tools/spike/`](../tools/spike/README.md).
 | B3 | **M2: `course-cli`.** Subcommands: `run` (pipeline through stage N, write artifacts), `batch` (the `forward-grid` equivalent: θ-list × seeds → surfaces, rayon), `time` (per-stage ms vs the budget table) | M | 100-run batch deterministic (hash-identical across two invocations); timing report emits |
 | B4 | **Battery additions** in `tools/metrics/metrics/core.py`: `network_connectivity`, `hypsometric_bimodality`, `slope_bimodality`, `horton_ratios` (wrapper over `netstats._strahler`) + analytic-surface tests for each | M | tests: connectivity=1 on a cone with full network, ≈0 on disconnected segments; bimodality fires on a two-plane surface, not on fBm |
 | B5 | **Golfability proxy**: measure the 64 real course grids → `proxy_thresholds.json` (slope-cap fraction, contiguous sub-cap area, relief band, ponding coverage); scorer function `f(surface, window) -> score` | S | thresholds file committed with provenance; real courses score ≥ threshold on themselves (sanity) |
-| B6 | **Tile-battery runner**: promote `spike/smoke.py` into a proper CLI (`tools/spike/measure.py` or `metrics` entry) — any CGRID → full battery + residual battery → JSON row | S | runs over all 38 clean tiles without error |
+| B6 | **Tile-battery runner**: `tools/spike/measure.py` — any CGRID → full battery + residual battery + golfability proxy → JSONL row; `--clean-tiles` sweeps the non-excluded corpus | S | **Built 2026-08-07.** Known perf item: the three new hydrology metrics each recompute the D8 accumulation (~2.3 min/tile total); share `filled`+`accum` across them inside `features.compute` before the 180-tile Phase-E campaign |
 
 ## Phase C — Upstream stages S0 + S1 (needs B1)
 

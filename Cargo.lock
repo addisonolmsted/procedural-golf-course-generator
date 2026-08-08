@@ -723,6 +723,12 @@ version = "0.0.0"
 [[package]]
 name = "course-cli"
 version = "0.0.0"
+dependencies = [
+ "blake3",
+ "course-framing",
+ "course-seed",
+ "course-spec",
+]
 
 [[package]]
 name = "course-contracts"

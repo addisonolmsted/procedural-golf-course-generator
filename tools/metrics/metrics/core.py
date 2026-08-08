@@ -813,3 +813,213 @@ def fraction(layer_mask, valid_mask=None):
         denom = int(vm.sum())
         num = int((lm & vm).sum())
     return float(num / denom) if denom else float("nan")
+
+
+# ============================================================================
+# v2 battery additions (heartland workplan B4). Same purity contract as the
+# rest of this module: f(height, cell_size, mask) -> numbers, no I/O.
+#
+# LIMITATION, stated once: these use the module's D8 kernel, which has no flat
+# resolution (its documented straight-channel artifact on lakes and graded
+# flats). Fine for analytic surfaces and the generator's S2 output; for
+# flat-heavy real tiles the Barnes-flow kernel (macro_campaign/flow.py) is the
+# reference and these should be re-based on it when it lands here.
+# ============================================================================
+
+
+def _d8_receivers(z, cell_size):
+    """Steepest-descent receiver linear index per cell; -1 = pit/no lower
+    neighbour. The receiver half of d8_accumulation, on an arbitrary surface
+    (unfilled allowed -- that is the point for connectivity)."""
+    ny, nx = z.shape
+    fz = z.astype(np.float64)
+    best_slope = np.zeros((ny, nx))
+    recdir = np.full((ny, nx), -1, np.int8)
+    for k, (dy, dx) in enumerate(_D8):
+        neigh = _shift_full(fz, dy, dx, np.inf)
+        dist = cell_size * (SQRT2 if (dy and dx) else 1.0)
+        slope = (fz - neigh) / dist
+        take = slope > best_slope
+        best_slope[take] = slope[take]
+        recdir[take] = k
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    rec = np.full((ny, nx), -1, np.int64)
+    for k, (dy, dx) in enumerate(_D8):
+        m = recdir == k
+        rec[m] = (yy[m] + dy) * nx + (xx[m] + dx)
+    return rec
+
+
+def _terminals(recf):
+    """Terminal cell of every flow path via pointer doubling (log n passes)."""
+    n = recf.size
+    jump = np.where(recf >= 0, recf, np.arange(n))
+    for _ in range(int(np.ceil(np.log2(max(n, 2)))) + 1):
+        nxt = jump[jump]
+        if np.array_equal(nxt, jump):
+            break
+        jump = nxt
+    return jump
+
+
+def network_connectivity(height, cell_size, mask=None,
+                         accum_area_threshold_m2=6e4, min_pit_depth_m=0.5):
+    """Fraction of channel cells whose flow path reaches the tile boundary
+    without dying in a SIGNIFICANT closed depression -- the deranged-drainage
+    discriminant (near 0 for heathland, near 1 for integrated landscapes).
+
+    Channels are extracted on the filled surface (the standard network).
+    Connectivity is then judged on a selectively-filled surface: depressions
+    shallower than `min_pit_depth_m` are erased (real DTMs carry micro-pits
+    everywhere -- lidar noise, not hydrology; judged raw, a piedmont tile
+    reads ~0), while deeper ones remain and disconnect whatever drains into
+    them. NaN if there are no channels (the Sandhills case -- connectivity of
+    an empty network is meaningless).
+
+    REAL-TILE CAVEAT (measured 2026-08-07): on unconditioned DTMs, road
+    embankments dam the streams they cross (culverts are invisible to lidar),
+    so even integrated piedmont reads ~0.2. For corpus measurement this metric
+    wants road-mask conditioning or culvert breaching first; the G1-G6
+    admission gates (Phase E) decide its fit-target status on that basis.
+    """
+    valid = _validmask(height, mask)
+    filled = fill_depressions(height, cell_size, mask)
+    accum_cells, _rec = d8_accumulation(filled, cell_size)
+    chan = (accum_cells * cell_size * cell_size >= accum_area_threshold_m2) & valid
+    n_chan = int(chan.sum())
+    if n_chan == 0:
+        return float("nan")
+    ny, nx = height.shape
+    # Selective fill: keep only the significant pits.
+    depth = filled - np.where(valid, height, filled)
+    judge = np.where(depth > min_pit_depth_m, np.where(valid, height, np.inf), filled)
+    judge = np.where(valid, judge, np.inf)  # invalid cells cannot be crossed
+    rec_raw = _d8_receivers(judge, cell_size)
+    term = _terminals(rec_raw.ravel()).reshape(ny, nx)
+    ty, tx = term // nx, term % nx
+    on_edge = (ty == 0) | (ty == ny - 1) | (tx == 0) | (tx == nx - 1)
+    return float(on_edge[chan].mean())
+
+
+def _ashman_d(values, max_n=50_000):
+    """Ashman's D from a deterministic 2-component 1-D Gaussian mixture.
+    D > ~2 indicates clean bimodality. Deterministic: fixed random_state,
+    stride subsample."""
+    from sklearn.mixture import GaussianMixture
+
+    v = np.asarray(values, np.float64).ravel()
+    v = v[np.isfinite(v)]
+    if v.size < 64 or np.ptp(v) < 1e-12:
+        return float("nan")
+    if v.size > max_n:
+        v = v[:: v.size // max_n + 1]
+    gm = GaussianMixture(n_components=2, covariance_type="full",
+                         random_state=0, n_init=2, max_iter=200)
+    gm.fit(v.reshape(-1, 1))
+    mu = gm.means_.ravel()
+    var = gm.covariances_.ravel()
+    denom = np.sqrt(0.5 * (var[0] + var[1]))
+    if denom <= 0:
+        return float("nan")
+    return float(abs(mu[0] - mu[1]) / denom)
+
+
+def hypsometric_bimodality(height, cell_size, mask=None):
+    """Ashman's D of the (normalized) elevation distribution. High for
+    floor-plus-terrace and surface-plus-scarp landscapes (River Valley,
+    Great Plains), low for unimodal relief. A unimodal fit to a bimodal truth
+    scores acceptably and is wrong -- this is the metric that flags it."""
+    valid = _validmask(height, mask)
+    v = height[valid]
+    if v.size == 0:
+        return float("nan")
+    lo, hi = np.percentile(v, [1.0, 99.0])
+    if hi - lo < 1e-9:
+        return float("nan")
+    return _ashman_d((v - lo) / (hi - lo))
+
+
+def slope_bimodality(height, cell_size, mask=None):
+    """Ashman's D of the slope (degrees) distribution. The tread/riser
+    signature: high where slopes split into flats and scarps (Hill Country,
+    Great Plains caprock), low on smoothly-graded terrain."""
+    valid = _validmask(height, mask)
+    s = slope_deg(height, cell_size)
+    v = s[valid]
+    if v.size == 0:
+        return float("nan")
+    return _ashman_d(v)
+
+
+def horton_ratios(height, cell_size, mask=None, accum_area_threshold_m2=6e4):
+    """dict(horton_bifurcation_ratio, horton_length_ratio, strahler_max) of
+    the extracted channel network -- the hierarchy shared invariant. Real
+    networks cluster at bifurcation ~3-5, length ratio ~2; a flat
+    trunk-plus-branches network reads wrong even at correct density.
+
+    NaN ratios when the network has fewer than 2 Strahler orders.
+    """
+    nan3 = {"horton_bifurcation_ratio": float("nan"),
+            "horton_length_ratio": float("nan"),
+            "strahler_max": float("nan")}
+    valid = _validmask(height, mask)
+    filled = fill_depressions(height, cell_size, mask)
+    accum_cells, rec = d8_accumulation(filled, cell_size)
+    chan = (accum_cells * cell_size * cell_size >= accum_area_threshold_m2) & valid
+    if int(chan.sum()) < 8:
+        return nan3
+    ny, nx = height.shape
+    chanf = chan.ravel()
+    recf = rec.ravel()
+    fz = filled.ravel()
+    # Channel donors per cell.
+    donors = {}
+    idx = np.flatnonzero(chanf)
+    for i in idx:
+        j = recf[i]
+        if j >= 0 and chanf[j]:
+            donors.setdefault(j, []).append(i)
+    # Strahler order, processing high -> low (donors are strictly higher on a
+    # filled+D8 surface wherever a receiver exists).
+    order = {}
+    for i in idx[np.argsort(-fz[idx], kind="stable")]:
+        ds = [order[d] for d in donors.get(i, []) if d in order]
+        if not ds:
+            order[i] = 1
+        else:
+            m = max(ds)
+            order[i] = m + 1 if ds.count(m) >= 2 else m
+    omax = max(order.values())
+    if omax < 2:
+        return nan3
+    # Stream heads: order-w cells whose channel donors all have order < w.
+    # N_w = heads per order; L_w = total link length of order-w cells / N_w.
+    heads = np.zeros(omax + 1)
+    length = np.zeros(omax + 1)
+    for i, w in order.items():
+        ds = [order[d] for d in donors.get(i, []) if d in order]
+        if not ds or max(ds) < w:
+            heads[w] += 1
+        j = recf[i]
+        if j >= 0:
+            dy = abs(i // nx - j // nx)
+            dx = abs(i % nx - j % nx)
+            length[w] += cell_size * (SQRT2 if (dy and dx) else 1.0)
+    ws = np.arange(1, omax + 1)
+    n_w = heads[1:]
+    keep = n_w > 0
+    if keep.sum() < 2:
+        return nan3
+    # ln N_w = a - w ln Rb  ->  Rb = exp(-slope).
+    slope_n = np.polyfit(ws[keep], np.log(n_w[keep]), 1)[0]
+    rb = float(np.exp(-slope_n))
+    mean_len = np.where(n_w > 0, length[1:] / np.maximum(n_w, 1), np.nan)
+    keep_l = np.isfinite(mean_len) & (mean_len > 0)
+    if keep_l.sum() < 2:
+        rl = float("nan")
+    else:
+        slope_l = np.polyfit(ws[keep_l], np.log(mean_len[keep_l]), 1)[0]
+        rl = float(np.exp(slope_l))
+    return {"horton_bifurcation_ratio": rb,
+            "horton_length_ratio": rl,
+            "strahler_max": float(omax)}

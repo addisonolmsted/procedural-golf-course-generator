@@ -152,14 +152,14 @@ Recorded here so they are not rediscovered one stage at a time.
 | Blocker | Blocks | Where |
 |---|---|---|
 | **Three of six biomes have no corpus**; only **38 clean tiles** exist and they are keyed to the retired archetypes | **S3 entirely** (no corpus ⇒ no dictionary ⇒ no texture), plus S0/S2/S9 targets | [targets.md](docs/calibration/targets.md) |
-| **Four of the 22 metrics do not exist** and are ungated | heathland, great-plains, river-valley, hill-country fits | [metric-battery.md](docs/calibration/metric-battery.md) |
-| No batch entrypoint (`xtask forward-grid` is not on this branch) | the entire calibration loop | M2 |
+| ~~Four metrics do not exist~~ **Implemented 2026-08-07** (B4): `network_connectivity`, both bimodalities, `horton_ratios` in `core.py` + `features.compute`, analytic-tested. Still **ungated** (G1–G6 is Phase E), and connectivity's corpus use needs road/culvert conditioning — measured caveat in the battery doc | admission only | [metric-battery.md](docs/calibration/metric-battery.md) |
+| ~~No batch entrypoint~~ **Resolved 2026-08-07** (B3): `course-cli batch` — JSONL rows, byte-identical across invocations; stages join its registry as they land | — | M2 done |
 | ~~metric tools non-runnable~~ **Resolved 2026-08-07**: battery verified end-to-end on real tiles (`tools/spike/smoke.py`); parkland cache proved unnecessary for v2 | — | [MIGRATION.md](MIGRATION.md) |
 | `tools/dtm_atlas/out/` DTM store absent (needed by `gates.py` for metric admission) | M4's G1–G6 gates | refetchable via `dep3.py`; indices committed |
 | Dictionary patch size, basis rank, bucket boundaries undecided | S3's asset format | [stage-03](docs/stages/stage-03-amplification.md), settled by the M3.5 spike |
 | **C0 delivery format TBD with the frontend team** (heightmap format, quantization, LOD) | S3 implementation (quantization bounds texture depth) | [C0-delivery.md](docs/contracts/C0-delivery.md) |
 | Envelope representation undecided (GMM vs hull vs flow) | S0's sampler | [envelope-certification.md](docs/calibration/envelope-certification.md) |
-| Siting score undefined (needs fitting to the 64 course grids) | S5's `siting` | [stage-05](docs/stages/stage-05-siting-substrate.md) |
+| Siting score: the **golfability-proxy backbone is measured** (B5: 64 real courses ⇒ floors cap≥0.41, steep≥0.71, contig≥124 ha, relief 7–82 m, committed in `tools/golf_proxy/`); the chosen-vs-random contrast fit remains | S5's `siting` (H1) | [stage-05](docs/stages/stage-05-siting-substrate.md) |
 | S7's template library and S8's surface passes undesigned | S7, S8 | prior art in `golf-holes/` on `main` |
 | Enclosure model representation undecided | S10, and S11's sightline check | [stage-10](docs/stages/stage-10-zoning-aesthetics.md) |
 

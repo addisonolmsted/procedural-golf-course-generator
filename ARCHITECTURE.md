@@ -95,8 +95,12 @@ crates/
   tile-lab/            — campaign-data QA viewer
 
 tools/                 — Python: the data campaign + terrain analysis stack
-  spike/               — M3.5 dictionary-spike workspace: smoke.py (the
-                         measurement-chain end-to-end test) + status
+  spike/               — M3.5 dictionary-spike workspace: smoke.py, spike.py
+                         (the G-SPIKE experiment), textures.py, measure.py
+                         (the tile-battery runner: any CGRID → battery +
+                         residual battery + proxy, JSONL)
+  golf_proxy/          — the golfability proxy: thresholds measured from the
+                         64 real course grids + the window scorer
   metrics/             — the pure f(height, cell, mask) battery kernels
   dtm_metrics/         — metric admission gates (G1–G6) + the Sobol/HistGBT
                          calibration sandbox
