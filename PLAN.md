@@ -203,6 +203,12 @@ good, slightly grainy — grain is quantified (curvature ~1.5× hot), has four
 named levers, and is deliberately deferred to Phase F so it is tuned against
 the full corpus rather than 6 tiles and their classifier artifacts.
 
-**Next: Phase B (M1 contracts + M2 batch entrypoint) and Phase E's corpus
-fetching in parallel.** C0's TBD-frontend rows (M4.5) need a conversation with
-the frontend team before S3 is implemented.
+**Phase B complete (2026-08-07)**: contracts real (23 tests), registry v3 at
+`PIPELINE_VERSION` 4, `course-cli` batch verified byte-identical, the four
+battery metrics implemented + analytic-tested, the golfability proxy measured
+from the 64 real courses. **Phase E launched (2026-08-08)**: `regions_v2.py`
+(229 protected-land centers, six biomes; heathland via its US kettled-outwash
+analog, EA/AHN still E3) and the `fetch --v2` campaign running. Next: the
+develop screen + tile-lab cull (E4) when fetching completes, and **Phase C
+(S0 + S1)** in parallel. C0's TBD-frontend rows (M4.5) need a conversation
+with the frontend team before S3 is implemented.

@@ -8,6 +8,8 @@ def main():
     f = sub.add_parser("fetch", help="fetch exemplar tiles from 3DEP as CGRID1")
     f.add_argument("--limit", type=int, default=None, help="max tiles this run")
     f.add_argument("--archetype", default=None)
+    f.add_argument("--v2", action="store_true",
+                   help="use the Heartland v2 regions (regions_v2.py)")
 
     e = sub.add_parser("extract", help="measure landform knobs per tile")
     e.add_argument("--archetype", default=None)
@@ -49,7 +51,12 @@ def main():
     if args.cmd == "fetch":
         from . import fetch
 
-        fetch.run(limit=args.limit, archetype=args.archetype)
+        regions = None
+        if args.v2:
+            from .regions_v2 import REGIONS_V2
+
+            regions = REGIONS_V2
+        fetch.run(limit=args.limit, archetype=args.archetype, regions=regions)
     elif args.cmd == "extract":
         from . import extract
 

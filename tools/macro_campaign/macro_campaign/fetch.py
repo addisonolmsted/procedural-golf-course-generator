@@ -79,9 +79,10 @@ def fetch_tile(lat: float, lon: float, epsg: int, zone: int, dest: pathlib.Path)
     }
 
 
-def run(limit: int | None = None, archetype: str | None = None):
+def run(limit: int | None = None, archetype: str | None = None,
+        regions: dict | None = None):
     n_done = 0
-    for arch, reg in REGIONS.items():
+    for arch, reg in (regions or REGIONS).items():
         if archetype and arch != archetype:
             continue
         d = OUT / "tiles" / arch

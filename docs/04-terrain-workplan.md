@@ -66,8 +66,8 @@ Workspace: [`tools/spike/`](../tools/spike/README.md).
 
 | # | Item | Size | Verification |
 |---|---|---|---|
-| E1 | Region definitions for the six Heartland biomes in `tools/tile_scout` (protected/near-unpopulated land only) | S | region maps reviewed |
-| E2 | Fetch ~50/biome for US biomes via `fetch.py` (3DEP → CGRID1); resumable, network-heavy, unattended | M (wall-clock L) | tile counts; valid_frac |
+| E1 | Region definitions for the six Heartland biomes (protected/near-unpopulated land only) | S | **Done 2026-08-08**: `macro_campaign/regions_v2.py` — 229 centers across 15 protected units, zone-sanity asserted; piedmont/sandhills reuse their v1 dirs (dedupe free); heathland fetches the **US kettled-outwash analog** (Hiawatha/Seney/Huron-Manistee) so E2 is unblocked, with EA/AHN (E3) still the path to true heath. Validation tiles character-checked per biome |
+| E2 | Fetch ~50/biome via `fetch.py --v2` (3DEP → CGRID1); resumable, unattended | M (wall-clock L) | **Launched 2026-08-08**; per-tile valid_frac logged; develop screen + tile-lab cull (E4) next |
 | E3 | **Heathland non-US ingestion** (EA LIDAR / AHN): new fetch path + conditioning parity checks vs 3DEP | **M–L, highest-risk data item** | cross-source comparability test on overlap metrics |
 | E4 | OSM develop screen + **tile-lab cull** (human review) → `exclude.json` v2 with digest | M (human time) | ~30 clean/biome; per-tile reasons |
 | E5 | Skeleton + residual extraction per clean tile (`network.py`, `ridgepipe.py`, `geomorphons.py`, `surfaces.build`) → per-tile conditioning + patch source data | M | spot-check overlays in tile-lab (P1 on real tiles) |
