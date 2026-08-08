@@ -16,7 +16,7 @@ pub enum Pack {
 }
 
 /// The six Heartland biomes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BiomeId {
     Piedmont,
@@ -55,7 +55,7 @@ impl BiomeId {
 
 /// Where in an implied larger landscape the 3 km window sits — the
 /// categorical variety draw (`docs/stages/stage-00-archetype-draw.md`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowClass {
     ValleyFloor,
@@ -78,7 +78,7 @@ impl WindowClass {
 }
 
 /// The kind of structural discontinuity a two-province site carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoundaryKind {
     Scarp,

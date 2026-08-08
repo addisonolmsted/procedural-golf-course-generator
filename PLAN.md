@@ -203,12 +203,22 @@ good, slightly grainy — grain is quantified (curvature ~1.5× hot), has four
 named levers, and is deliberately deferred to Phase F so it is tuned against
 the full corpus rather than 6 tiles and their classifier artifacts.
 
-**Phase B complete (2026-08-07)**: contracts real (23 tests), registry v3 at
-`PIPELINE_VERSION` 4, `course-cli` batch verified byte-identical, the four
-battery metrics implemented + analytic-tested, the golfability proxy measured
-from the 64 real courses. **Phase E launched (2026-08-08)**: `regions_v2.py`
-(229 protected-land centers, six biomes; heathland via its US kettled-outwash
-analog, EA/AHN still E3) and the `fetch --v2` campaign running. Next: the
-develop screen + tile-lab cull (E4) when fetching completes, and **Phase C
-(S0 + S1)** in parallel. C0's TBD-frontend rows (M4.5) need a conversation
-with the frontend team before S3 is implemented.
+**Phase C: S0 + S1 built (2026-08-08).** S0 v2 (`course-spec::v2`): the
+certified-envelope schema (GMM in transformed space, Cholesky factors,
+rejection-free sampling, fingerprint interlock) with hand-authored provisional
+data in the final schema — Phase H swaps the data, not the code. Draws biome,
+categorical structural class, jointly-correlated descriptors (multi-modality
+verified surviving sampling), the exemplar pool, and the one-wind-system
+prevailing wind. S1 (`course-primitives`): window-class realization (all six
+classes structurally distinct at fixed seed), band-limited relief (≥400 m by
+construction, tested), monotone tilt, province discontinuities that step
+`hardness`/`accommodation` and span the box, strata aligned to the drawn
+grain — emitting validated C1. Both wired into `course-cli`
+(`spec_v2` 0.004 ms, `primitives` 26 ms vs 120 budget). 157 Rust tests.
+**Still open in Phase C**: stage-lab Spec/C1 tabs (C3/C4) and the
+class-legibility session (C5).
+
+**Phase E fetching underway (2026-08-08)**: 229 protected-land centers
+defined; the campaign is resumable and mid-flight. E4 (develop screen +
+tile-lab cull) when it completes. C0's TBD-frontend rows (M4.5) still need
+the frontend conversation before S3.

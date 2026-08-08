@@ -1,0 +1,829 @@
+{
+ "biomes": {
+  "great_plains": {
+   "boundary_kind_weights": {
+    "material_contact": 0.2,
+    "scarp": 0.8
+   },
+   "class_weights": {
+    "basin_margin": 0.4,
+    "interfluve": 0.4,
+    "piedmont_slope": 0.2
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.2
+      ],
+      [
+       -0.045,
+       0.14309
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.25
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       1.5
+      ]
+     ],
+     "mean": [
+      2.7,
+      0.7,
+      0.6,
+      1.9,
+      5.0
+     ],
+     "weight": 0.55
+    },
+    {
+     "chol": [
+      [
+       0.18
+      ],
+      [
+       -0.045,
+       0.14309
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.25
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       1.5
+      ]
+     ],
+     "mean": [
+      3.15,
+      1.0,
+      0.8,
+      1.9,
+      7.0
+     ],
+     "weight": 0.45
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t04077_10387",
+    "t04080_10380"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.35,
+   "strata": [
+    {
+     "dip_rad": 0.002,
+     "hardness": 0.85,
+     "thickness_m": 6.0
+    },
+    {
+     "dip_rad": 0.002,
+     "hardness": 0.35,
+     "thickness_m": 10.0
+    }
+   ],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 1.6,
+     "kind": "linear",
+     "lo": 0.3
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 12.0,
+     "kind": "linear",
+     "lo": 2.0
+    }
+   ],
+   "weight": 1.0
+  },
+  "heathland": {
+   "boundary_kind_weights": {
+    "material_contact": 1.0
+   },
+   "class_weights": {
+    "basin_margin": 0.6,
+    "interfluve": 0.4
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.18
+      ],
+      [
+       0.0,
+       0.03
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.25
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ]
+     ],
+     "mean": [
+      2.9,
+      0.06,
+      -0.4,
+      1.7,
+      0.15
+     ],
+     "weight": 0.6
+    },
+    {
+     "chol": [
+      [
+       0.15
+      ],
+      [
+       0.0,
+       0.03
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.25
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ]
+     ],
+     "mean": [
+      3.3,
+      0.09,
+      -0.2,
+      1.7,
+      0.4
+     ],
+     "weight": 0.4
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t04619_08659",
+    "t04623_08653"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.1,
+   "strata": [],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 0.2,
+     "kind": "linear",
+     "lo": 0.02
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 1.2,
+     "kind": "linear",
+     "lo": -0.6
+    }
+   ],
+   "weight": 1.0
+  },
+  "hill_country": {
+   "boundary_kind_weights": {
+    "scarp": 0.7,
+    "valley_wall": 0.3
+   },
+   "class_weights": {
+    "escarpment_face": 0.35,
+    "interfluve": 0.25,
+    "terrace_flight": 0.3,
+    "valley_floor": 0.1
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.15
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.35
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       2.0
+      ]
+     ],
+     "mean": [
+      4.1,
+      2.3,
+      -1.2,
+      1.7,
+      8.0
+     ],
+     "weight": 0.55
+    },
+    {
+     "chol": [
+      [
+       0.13
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.35
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       2.0
+      ]
+     ],
+     "mean": [
+      4.4,
+      2.6,
+      -1.0,
+      1.7,
+      11.0
+     ],
+     "weight": 0.45
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t03691_09122",
+    "t03695_09115"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.5,
+   "strata": [
+    {
+     "dip_rad": 0.005,
+     "hardness": 0.9,
+     "thickness_m": 8.0
+    },
+    {
+     "dip_rad": 0.005,
+     "hardness": 0.3,
+     "thickness_m": 12.0
+    },
+    {
+     "dip_rad": 0.005,
+     "hardness": 0.8,
+     "thickness_m": 8.0
+    }
+   ],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 3.4,
+     "kind": "linear",
+     "lo": 1.6
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "linear",
+     "lo": 3.0
+    }
+   ],
+   "weight": 1.0
+  },
+  "piedmont": {
+   "boundary_kind_weights": {
+    "material_contact": 0.6,
+    "valley_wall": 0.4
+   },
+   "class_weights": {
+    "escarpment_face": 0.1,
+    "interfluve": 0.45,
+    "piedmont_slope": 0.3,
+    "valley_floor": 0.15
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.18
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.5
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.8
+      ]
+     ],
+     "mean": [
+      3.45,
+      2.2,
+      0.0,
+      1.6,
+      1.2
+     ],
+     "weight": 0.6
+    },
+    {
+     "chol": [
+      [
+       0.15
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.5
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.8
+      ]
+     ],
+     "mean": [
+      3.95,
+      1.9,
+      0.2,
+      1.6,
+      1.8
+     ],
+     "weight": 0.4
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t03520_07988",
+    "t03525_07978",
+    "t03528_07995",
+    "t03538_07999",
+    "t03544_07992",
+    "t03550_08002"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.3,
+   "strata": [
+    {
+     "dip_rad": 0.01,
+     "hardness": 0.55,
+     "thickness_m": 4.0
+    }
+   ],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 3.5,
+     "kind": "linear",
+     "lo": 1.5
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 4.0,
+     "kind": "linear",
+     "lo": -1.0
+    }
+   ],
+   "weight": 1.0
+  },
+  "river_valley": {
+   "boundary_kind_weights": {
+    "material_contact": 0.3,
+    "valley_wall": 0.7
+   },
+   "class_weights": {
+    "interfluve": 0.15,
+    "terrace_flight": 0.35,
+    "valley_floor": 0.5
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.18
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.5
+      ]
+     ],
+     "mean": [
+      3.25,
+      2.7,
+      0.0,
+      1.5,
+      0.6
+     ],
+     "weight": 0.6
+    },
+    {
+     "chol": [
+      [
+       0.15
+      ],
+      [
+       -0.075,
+       0.23848
+      ],
+      [
+       0.0,
+       0.0,
+       0.4
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.3
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.5
+      ]
+     ],
+     "mean": [
+      3.6,
+      3.1,
+      0.1,
+      1.5,
+      1.0
+     ],
+     "weight": 0.4
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t04296_09005",
+    "t04305_09025"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.4,
+   "strata": [
+    {
+     "dip_rad": 0.001,
+     "hardness": 0.6,
+     "thickness_m": 5.0
+    }
+   ],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 3.8,
+     "kind": "linear",
+     "lo": 1.8
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 2.5,
+     "kind": "linear",
+     "lo": -0.5
+    }
+   ],
+   "weight": 1.0
+  },
+  "sandhills": {
+   "boundary_kind_weights": {
+    "material_contact": 1.0
+   },
+   "class_weights": {
+    "basin_margin": 0.25,
+    "interfluve": 0.75
+   },
+   "components": [
+    {
+     "chol": [
+      [
+       0.15
+      ],
+      [
+       0.0,
+       0.012
+      ],
+      [
+       0.0,
+       0.0,
+       0.35
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.2
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       5.0
+      ]
+     ],
+     "mean": [
+      3.4,
+      0.01,
+      -1.2,
+      2.1,
+      25.0
+     ],
+     "weight": 0.6
+    },
+    {
+     "chol": [
+      [
+       0.12
+      ],
+      [
+       0.0,
+       0.012
+      ],
+      [
+       0.0,
+       0.0,
+       0.35
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.2
+      ],
+      [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       5.0
+      ]
+     ],
+     "mean": [
+      3.75,
+      0.015,
+      -1.0,
+      2.1,
+      32.0
+     ],
+     "weight": 0.4
+    }
+   ],
+   "dims": [
+    "relief_budget_m",
+    "density_target",
+    "plasticity",
+    "wind_speed_mps",
+    "water_table_m"
+   ],
+   "exemplar_pool": [
+    "t04205_10140",
+    "t04195_10170",
+    "t04220_10195",
+    "t04180_10120",
+    "t04235_10160",
+    "t04165_10185",
+    "t04272_10055",
+    "t04268_10042",
+    "t04252_10068",
+    "t04246_10082"
+   ],
+   "exemplars_per_course": 2,
+   "province2_p": 0.1,
+   "strata": [],
+   "transforms": [
+    {
+     "hi": 120.0,
+     "kind": "log",
+     "lo": 5.0
+    },
+    {
+     "hi": 0.05,
+     "kind": "linear",
+     "lo": 0.0
+    },
+    {
+     "hi": 1.0,
+     "kind": "logit",
+     "lo": 0.0
+    },
+    {
+     "hi": 15.0,
+     "kind": "log",
+     "lo": 1.0
+    },
+    {
+     "hi": 45.0,
+     "kind": "linear",
+     "lo": 15.0
+    }
+   ],
+   "weight": 1.0
+  }
+ },
+ "envelope_version": 1,
+ "provenance": "provisional-c1 (hand-authored in the final schema; Phase H replaces the data, not the code)"
+}

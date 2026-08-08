@@ -726,8 +726,10 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "course-framing",
+ "course-primitives",
  "course-seed",
  "course-spec",
+ "course-world",
 ]
 
 [[package]]
@@ -767,6 +769,14 @@ version = "0.0.0"
 [[package]]
 name = "course-primitives"
 version = "0.0.0"
+dependencies = [
+ "blake3",
+ "course-contracts",
+ "course-seed",
+ "course-spec",
+ "course-world",
+ "libm",
+]
 
 [[package]]
 name = "course-routing"
@@ -795,6 +805,7 @@ dependencies = [
  "blake3",
  "course-contracts",
  "course-seed",
+ "libm",
  "serde",
  "serde_json",
 ]

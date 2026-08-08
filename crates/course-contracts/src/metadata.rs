@@ -58,7 +58,20 @@ pub enum WaterPlaneOrigin {
     ClosedBasin,
 }
 
+/// A structural discontinuity: a line across which terrain changes character
+/// (`docs/stages/stage-01-macro-primitives.md`). The curve enters AND exits
+/// the box — a boundary terminating mid-site is not a province boundary.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Discontinuity {
+    pub kind: crate::biome::BoundaryKind,
+    /// Polyline in world metres.
+    pub curve: Vec<course_world::math::Vec2>,
+}
+
 /// The structural metadata block of contract C1, passed through unchanged.
+///
+/// NOTE on versioning: `discontinuities` was added before any stage emitted
+/// C1 — the version discipline binds from S1, the first emitter.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StructureMeta {
     /// AXIS in `[0, π)` — the material/structural fabric. The origin of every
@@ -72,6 +85,8 @@ pub struct StructureMeta {
     pub wind_azimuth_rad: f64,
     /// May be empty (Heathland, Sandhills) — the empty case is legal.
     pub strata: Vec<Stratum>,
+    /// May be empty (single-province sites) — the empty case is legal.
+    pub discontinuities: Vec<Discontinuity>,
 }
 
 impl StructureMeta {
@@ -92,6 +107,22 @@ impl StructureMeta {
             check_unit("meta.strata.hardness", s.hardness)?;
             check_finite("meta.strata.dip_rad", s.dip_rad)?;
             check_axis("meta.strata.strike_axis_rad", s.strike_axis_rad)?;
+        }
+        for (i, d) in self.discontinuities.iter().enumerate() {
+            if d.curve.len() < 2 {
+                return Err(ContractError::invariant(
+                    "meta.discontinuities",
+                    format!("discontinuity {i}: needs >= 2 vertices"),
+                ));
+            }
+            for v in &d.curve {
+                if !v.x.is_finite() || !v.y.is_finite() {
+                    return Err(ContractError::invariant(
+                        "meta.discontinuities",
+                        format!("discontinuity {i}: non-finite vertex"),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -116,6 +147,7 @@ mod tests {
                 dip_rad: 0.02,
                 strike_axis_rad: 1.2,
             }],
+            discontinuities: vec![],
         }
     }
 

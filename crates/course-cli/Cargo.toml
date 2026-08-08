@@ -9,4 +9,6 @@ description = "Headless pipeline driver: run / batch (the forward-runner) / time
 course-seed = { workspace = true }
 course-spec = { workspace = true }
 course-framing = { workspace = true }
+course-primitives = { workspace = true }
+course-world = { workspace = true }
 blake3 = { workspace = true }

@@ -22,6 +22,7 @@
 pub mod archetype;
 pub mod prior;
 pub mod spec;
+pub mod v2;
 
 pub use archetype::{ArchetypeId, HydrologyMode};
 pub use prior::{PriorError, Priors, Quantiles};

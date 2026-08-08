@@ -34,6 +34,7 @@ pub fn meta() -> StructureMeta {
         },
         wind_azimuth_rad: 4.2,
         strata: vec![],
+        discontinuities: vec![],
     }
 }
 

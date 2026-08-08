@@ -3,5 +3,12 @@ name = "course-primitives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Stage S1 - macro structure: window-class realization, fields, discontinuities -> C1"
 
 [dependencies]
+course-contracts = { workspace = true }
+course-seed = { workspace = true }
+course-spec = { workspace = true }
+course-world = { workspace = true }
+libm = { workspace = true }
+blake3 = { workspace = true }

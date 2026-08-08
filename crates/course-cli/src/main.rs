@@ -27,6 +27,8 @@ struct Stage {
 }
 
 /// The stage registry, pipeline order. Stages append here as they land.
+/// (`spec` / `framing_v1` are the retained v1 pair; `spec_v2` + `primitives`
+/// are the v2 pipeline through S1.)
 const STAGES: &[Stage] = &[
     Stage {
         name: "spec",
@@ -37,6 +39,16 @@ const STAGES: &[Stage] = &[
         name: "framing_v1",
         budget_ms: 120.0,
         run: run_framing,
+    },
+    Stage {
+        name: "spec_v2",
+        budget_ms: 1.0,
+        run: run_spec_v2,
+    },
+    Stage {
+        name: "primitives",
+        budget_ms: 120.0,
+        run: run_primitives,
     },
 ];
 
@@ -61,6 +73,33 @@ fn run_framing(id: &RunIdentity, out: Option<&Path>) -> Result<Vec<u8>, String> 
         std::fs::write(dir.join("framing.json"), &json).map_err(|e| e.to_string())?;
     }
     Ok(json.into_bytes())
+}
+
+fn run_spec_v2(id: &RunIdentity, out: Option<&Path>) -> Result<Vec<u8>, String> {
+    let spec = course_spec::v2::SiteSpec::generate_builtin(*id, &Default::default());
+    let json = spec.canonical_json();
+    if let Some(dir) = out {
+        std::fs::write(dir.join("spec_v2.json"), &json).map_err(|e| e.to_string())?;
+    }
+    Ok(json.into_bytes())
+}
+
+fn run_primitives(id: &RunIdentity, out: Option<&Path>) -> Result<Vec<u8>, String> {
+    let spec = course_spec::v2::SiteSpec::generate_builtin(*id, &Default::default());
+    let c1 = course_primitives::generate(&spec, id);
+    if let Some(dir) = out {
+        c1.write_dir(&dir.join("primitives"))
+            .map_err(|e| e.to_string())?;
+    }
+    // Hash the field bits + meta json (the artifact identity, without a
+    // full re-serialize of 4 grids).
+    let mut bytes = Vec::new();
+    for g in [&c1.tilt, &c1.relief, &c1.hardness, &c1.accommodation] {
+        bytes.extend_from_slice(
+            &course_world::world::fnv_f64(&g.data).to_le_bytes(),
+        );
+    }
+    Ok(bytes)
 }
 
 fn stage_cutoff(through: Option<&str>) -> Result<usize, String> {
