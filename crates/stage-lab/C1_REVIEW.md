@@ -87,4 +87,4 @@ blind test runs before Phase D starts.
 
 | Date | Reviewer | Blind score | Confusions | Verdict |
 |------|----------|------------|------------|---------|
-| —    | —        | — /18      | —          | —       |
+| 2026-08-08 | davisolmsted | 17/18 | basin_margin→piedmont_slope (c1_d only; low-relief seed — flat + toe break sink into the modes; c1_j, same class at normal relief, read correctly) | **PASS** (gate 15/18). Not a shape bug; revisit only if the pair recurs. |
