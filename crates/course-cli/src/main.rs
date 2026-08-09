@@ -50,7 +50,42 @@ const STAGES: &[Stage] = &[
         budget_ms: 120.0,
         run: run_primitives,
     },
+    Stage {
+        name: "skeleton",
+        budget_ms: 900.0,
+        run: run_skeleton,
+    },
 ];
+
+fn run_skeleton(id: &RunIdentity, out: Option<&Path>) -> Result<Vec<u8>, String> {
+    let spec = course_spec::v2::SiteSpec::generate_builtin(*id, &Default::default());
+    let c1 = course_primitives::generate(&spec, id);
+    let sk = course_skeleton::generate(&spec, &c1, id);
+    if let Some(dir) = out {
+        let d = dir.join("skeleton");
+        std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+        course_world::gridio::write_grid_f32(&d.join("height.cgrid"), &sk.height)
+            .map_err(|e| e.to_string())?;
+        let meta = serde_json::json!({
+            "skeleton_version": sk.skeleton_version,
+            "channels": sk.channels.len(),
+            "diagnostics": sk.diagnostics,
+        });
+        std::fs::write(d.join("skeleton.json"), serde_json::to_string_pretty(&meta).unwrap())
+            .map_err(|e| e.to_string())?;
+    }
+    let mut bytes = Vec::new();
+    for g in [
+        &sk.height,
+        &sk.flow_accum,
+        &sk.flow_distance,
+        &sk.flow_distance_norm,
+        &sk.hillslope_position,
+    ] {
+        bytes.extend_from_slice(&course_world::world::fnv_f64(&g.data).to_le_bytes());
+    }
+    Ok(bytes)
+}
 
 fn run_spec(id: &RunIdentity, out: Option<&Path>) -> Result<Vec<u8>, String> {
     let spec =

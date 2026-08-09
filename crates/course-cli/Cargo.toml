@@ -10,5 +10,7 @@ course-seed = { workspace = true }
 course-spec = { workspace = true }
 course-framing = { workspace = true }
 course-primitives = { workspace = true }
+course-skeleton = { workspace = true }
 course-world = { workspace = true }
 blake3 = { workspace = true }
+serde_json = { workspace = true }

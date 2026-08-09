@@ -1,15 +1,266 @@
-//! Stage S2 — the skeleton kernel. The base six are all served by one fluvial
-//! engine: trunk splines, tributary growth at the drainage-density spacing,
-//! a flow-distance transform, derived divides, and catena-library elevation.
-//! Five modules dial in biome identity on top of it.
+//! Stage S2 — the skeleton kernel. The base six are all served by one
+//! fluvial engine: trunk splines, top-down Horton tributaries, a flow-
+//! distance transform, derived divides, and a parametric catena base
+//! surface. Five modules — dials, not branches — add the structural forms.
 //!
-//! This stage *authors* structure. S4 erosion adds texture and never
-//! restructures — see `docs/00-architecture.md` for why the pipeline makes
-//! that trade. The [`kernel::SkeletonKernel`] trait is the future-biome seam:
-//! kernels II-V plug in behind it without touching contract C1 or C2.
+//! S2 *authors* structure in flow-distance/drainage space; it does NOT
+//! carry archetype identity (drainage spacing is a shared invariant of real
+//! landscapes — 104–120 m in every archetype). Its output is a correct,
+//! characterless base; S3 supplies texture. Candle-wax interfluves are
+//! expected and fine here.
+//!
+//! Determinism: three streams with fixed transcripts —
+//!   `skeleton/trunk/v1`      1 + MAX_TRUNK_STEPS uniforms
+//!   `skeleton/tributary/v1`  Σ level count × (2 + steps) uniforms
+//!   `skeleton/module/v1`     MAX_EMBRYOS×3 + 3 uniforms
+//! Growth consumes prefixes of pre-drawn slices; no draw count ever
+//! depends on geometry. No `if biome` anywhere in this crate (grep it).
 //!
 //! Stage doc: `docs/stages/stage-02-skeleton-kernel.md`.
 
 pub mod fluvial;
 pub mod kernel;
 pub mod modules;
+
+use course_contracts::contracts::primitive_field::PrimitiveField;
+use course_seed::{streams, RunIdentity};
+use course_spec::v2::SiteSpec;
+use course_world::grid::Grid;
+use course_world::world::{world_spec, RES_FULL_M};
+
+use fluvial::flow_distance::{self, Nearest};
+use fluvial::trunk::Steer;
+use fluvial::{catena, divides, tributary};
+use kernel::{KernelId, Skeleton, SkeletonDiagnostics, SKELETON_VERSION};
+use modules::{aeolian, closed_basin, integration, stratigraphy, trunk_river};
+
+/// THE stage-02 entry point (Kernel I, fluvial).
+pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) -> Skeleton {
+    let dial = |k: &str, default: f64| spec.dials.get(k).copied().unwrap_or(default);
+    let density = dial("skeleton.density_target", 1.0);
+    let m_trunk_river = dial("skeleton.trunk_river", 0.0);
+    let m_strat = dial("skeleton.stratigraphy", 0.0);
+    let m_basin = dial("skeleton.closed_basin", 0.0);
+    let m_aeolian = dial("skeleton.aeolian", 0.0);
+    let m_integration = dial("skeleton.integration", 0.5);
+    let relief_budget = spec.descriptors.relief_budget_m;
+
+    let spec8 = c1.grid;
+    let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
+    let n8 = nx * ny;
+
+    // The implied macro surface: tilt + relief, C1's two elevation carriers.
+    let mut implied = c1.tilt.clone();
+    for (i, v) in implied.data.iter_mut().enumerate() {
+        *v += c1.relief.data[i];
+    }
+
+    // ---- draws (fixed transcripts) ------------------------------------
+    let mut trunk_rng = identity.stream(streams::SKELETON_TRUNK);
+    let mut trib_rng = identity.stream(streams::SKELETON_TRIBUTARY);
+    let draws = tributary::Draws::from_streams(&mut trunk_rng, &mut trib_rng);
+    let mut module_rng = identity.stream(streams::SKELETON_MODULE);
+    let embryo_draws: Vec<f64> = (0..closed_basin::MAX_EMBRYOS * closed_basin::DRAWS_PER_EMBRYO)
+        .map(|_| module_rng.next_f64())
+        .collect();
+    let aeolian_draws: Vec<f64> = (0..aeolian::DRAWS).map(|_| module_rng.next_f64()).collect();
+
+    // ---- network -------------------------------------------------------
+    let steer = Steer {
+        implied: &implied,
+        accommodation: &c1.accommodation,
+        hardness: &c1.hardness,
+        meta: &c1.meta,
+    };
+    let derangement = integration::derangement(m_integration);
+    let channels = tributary::build(&steer, &draws, density, derangement);
+
+    // ---- raster + transform -------------------------------------------
+    let base_elev = c1.meta.base_level.elev_m;
+    let d_mouth = (0.30 * relief_budget * integration::incision_scale(m_integration))
+        .clamp(3.0, 26.0);
+    let cells = flow_distance::rasterize(&channels, &spec8, &implied, base_elev, d_mouth);
+    let seeds: Vec<(usize, Nearest)> = if cells.is_empty() {
+        flow_distance::edge_seeds(&spec8, c1.meta.base_level.edge, base_elev, &implied)
+    } else {
+        cells
+            .iter()
+            .map(|c| {
+                (
+                    c.lin,
+                    Nearest {
+                        dist_m: 0.0,
+                        z_channel: c.z_channel,
+                        implied_channel: c.implied,
+                        order: c.order,
+                    },
+                )
+            })
+            .collect()
+    };
+    let near = flow_distance::dijkstra(&spec8, &seeds);
+
+    // ---- catena + modules ---------------------------------------------
+    let mut height8 = catena::assemble(&spec8, &implied, &near, 1.0);
+    let max_order = channels.iter().map(|c| c.order).max().unwrap_or(0);
+    trunk_river::apply(&mut height8, &near, m_trunk_river, max_order);
+    stratigraphy::apply(&mut height8, &c1.hardness, &spec.descriptors.strata, m_strat);
+    let embryos = closed_basin::apply(&mut height8, &near, &embryo_draws, m_basin, relief_budget);
+    aeolian::apply(
+        &mut height8,
+        &aeolian_draws,
+        m_aeolian,
+        c1.meta.wind_azimuth_rad,
+        relief_budget,
+    );
+    // Channel cells are the base profile EXACTLY, whatever the modules did
+    // around them — monotone descent along the network is structural.
+    for c in &cells {
+        height8.data[c.lin] = c.z_channel;
+    }
+
+    // ---- flow fields on the built surface ------------------------------
+    let ff = course_world::flow::route(&height8);
+    let mut flow_dir = Grid::filled(spec8, f64::NAN);
+    let mut flow_accum = Grid::filled(spec8, 0.0f64);
+    let cell_area = spec8.cell_size * spec8.cell_size;
+    for lin in 0..n8 {
+        flow_accum.data[lin] = ff.acc[lin] as f64 * cell_area;
+        let r = ff.rec[lin];
+        if r >= 0 {
+            let (y, x) = ((lin / nx) as f64, (lin % nx) as f64);
+            let (ry, rx) = ((r as usize / nx) as f64, (r as usize % nx) as f64);
+            let dir = libm::atan2(ry - y, rx - x);
+            flow_dir.data[lin] = course_contracts::units::normalize_direction(dir);
+        }
+    }
+
+    // ---- divides (derived), connectivity, normalized coordinates -------
+    let mut channel_of = vec![0u32; n8];
+    for c in &cells {
+        channel_of[c.lin] = c.channel + 1;
+    }
+    let labels = divides::basin_labels(&ff.rec, &channel_of);
+    let dmask = divides::divide_mask(&labels, &channel_of, &spec8);
+    let divide_lines = divides::polylines(&dmask, &spec8, 240.0);
+
+    // Connectivity (stage-02 calibration table): fraction of channel
+    // LENGTH in a connected component that reaches base level. A component
+    // reaches base level iff its root trunk's downstream end sits on the
+    // box border (a deranged trunk was cut and dangles in the interior).
+    let connectivity = if channels.is_empty() {
+        0.0
+    } else {
+        let root_of = |mut i: usize| {
+            while let Some(p) = channels[i].parent {
+                i = p as usize;
+            }
+            i
+        };
+        let reaches = |i: usize| {
+            let p0 = channels[root_of(i)].pts[0];
+            let m = 60.0;
+            p0.x < m
+                || p0.y < m
+                || p0.x > course_world::world::EXTENT_M - m
+                || p0.y > course_world::world::EXTENT_M - m
+        };
+        let total: f64 = channels.iter().map(|c| fluvial::trunk::arc_len(&c.pts)).sum();
+        let conn: f64 = (0..channels.len())
+            .filter(|&i| reaches(i))
+            .map(|i| fluvial::trunk::arc_len(&channels[i].pts))
+            .sum();
+        if total > 0.0 {
+            conn / total
+        } else {
+            0.0
+        }
+    };
+
+    // Divide-distance wavefront for the normalized coordinate + hillslope.
+    let divide_seeds: Vec<(usize, Nearest)> = dmask
+        .iter()
+        .enumerate()
+        .filter(|&(_, &m)| m)
+        .map(|(lin, _)| {
+            (
+                lin,
+                Nearest {
+                    dist_m: 0.0,
+                    z_channel: height8.data[lin], // divide elevation rides here
+                    implied_channel: 0.0,
+                    order: 0,
+                },
+            )
+        })
+        .collect();
+    let div_near = flow_distance::dijkstra(&spec8, &divide_seeds);
+
+    let mut fdn = Grid::filled(spec8, 1.0f64);
+    let mut hp = Grid::filled(spec8, 0.5f64);
+    if cells.is_empty() {
+        // Degenerate case: all hillslope. flow_distance_norm = 1 everywhere;
+        // hillslope_position = normalized relative elevation.
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for &v in &height8.data {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+        let span = (hi - lo).max(1e-9);
+        for lin in 0..n8 {
+            hp.data[lin] = (height8.data[lin] - lo) / span;
+        }
+    } else {
+        for lin in 0..n8 {
+            let d = near[lin].dist_m;
+            let dd = div_near[lin].dist_m;
+            fdn.data[lin] = if d + dd > 0.0 { d / (d + dd) } else { 0.0 };
+            let z_ch = near[lin].z_channel;
+            let z_div = div_near[lin].z_channel;
+            let denom = (z_div - z_ch).max(0.5);
+            hp.data[lin] = ((height8.data[lin] - z_ch) / denom).clamp(0.0, 1.0);
+        }
+    }
+
+    // ---- 2 m presentation ---------------------------------------------
+    let spec2 = world_spec(RES_FULL_M);
+    let mut height2 = Grid::filled(spec2, 0.0f64);
+    for y in 0..spec2.ny {
+        for x in 0..spec2.nx {
+            let p = spec2.world_of(x, y);
+            height2.set(x, y, height8.bilinear(p));
+        }
+    }
+
+    // ---- flow distance (metres) + diagnostics --------------------------
+    let mut flow_distance_m = Grid::filled(spec8, 0.0f64);
+    for lin in 0..n8 {
+        flow_distance_m.data[lin] = near[lin].dist_m;
+    }
+    let total_len_m: f64 = channels.iter().map(|c| fluvial::trunk::arc_len(&c.pts)).sum();
+    let (rb, rl) = tributary::horton_ratios(&channels);
+    let diagnostics = SkeletonDiagnostics {
+        target_density_km_km2: density,
+        achieved_density_km_km2: total_len_m / 1000.0 / 9.0,
+        channel_count: channels.len(),
+        bifurcation_ratio: rb,
+        length_ratio: rl,
+        connectivity,
+    };
+
+    Skeleton {
+        skeleton_version: SKELETON_VERSION,
+        kernel: KernelId::Fluvial,
+        height: height2,
+        flow_dir_rad: flow_dir,
+        flow_accum,
+        flow_distance: flow_distance_m,
+        flow_distance_norm: fdn,
+        hillslope_position: hp,
+        channels,
+        embryos,
+        divides: divide_lines,
+        meta: c1.meta.clone(),
+        diagnostics,
+    }
+}

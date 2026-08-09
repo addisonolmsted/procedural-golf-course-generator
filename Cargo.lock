@@ -728,8 +728,10 @@ dependencies = [
  "course-framing",
  "course-primitives",
  "course-seed",
+ "course-skeleton",
  "course-spec",
  "course-world",
+ "serde_json",
 ]
 
 [[package]]
@@ -797,6 +799,16 @@ dependencies = [
 [[package]]
 name = "course-skeleton"
 version = "0.0.0"
+dependencies = [
+ "course-contracts",
+ "course-primitives",
+ "course-seed",
+ "course-spec",
+ "course-world",
+ "libm",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "course-spec"

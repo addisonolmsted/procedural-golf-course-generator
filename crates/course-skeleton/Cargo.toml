@@ -5,3 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+course-contracts = { path = "../course-contracts" }
+course-seed = { path = "../course-seed" }
+course-spec = { path = "../course-spec" }
+course-world = { path = "../course-world" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+libm = { workspace = true }
+
+[dev-dependencies]
+course-primitives = { path = "../course-primitives" }
