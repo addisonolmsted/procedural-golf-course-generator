@@ -21,6 +21,7 @@ use course_framing::{BoundaryKind, WindowClass};
 use data::{build_case, Case};
 use eframe::egui;
 use render::{render_framing_schematic, render_implied_terrain, ImpliedRelief};
+use stage_lab::render_s2::{render_s2, S2View, S2_VIEWS};
 use stage_lab::render_v2::{render_c1, C1View, C1_VIEWS};
 
 const IMG_PX: u32 = 900;
@@ -50,14 +51,18 @@ enum Tab {
     SpecV2,
     C1,
     C1Gallery,
+    S2,
+    S2Gallery,
     Framing,
     Gallery,
 }
 
-const TABS: [(Tab, &str); 5] = [
+const TABS: [(Tab, &str); 7] = [
     (Tab::SpecV2, "0 Spec (v2)"),
     (Tab::C1, "1 C1 (S1)"),
     (Tab::C1Gallery, "C1 gallery"),
+    (Tab::S2, "2 S2 (skeleton)"),
+    (Tab::S2Gallery, "S2 gallery"),
     (Tab::Framing, "framing (v1)"),
     (Tab::Gallery, "v1 gallery"),
 ];
@@ -134,6 +139,16 @@ struct Lab {
     c1_thumbs: Vec<C1Thumb>,
     c1_gallery_forced: bool,
     spec_rows: Vec<String>,
+    s2_view: S2View,
+    s2_overlays: bool,
+    s2_tex: Option<egui::TextureHandle>,
+    s2_thumbs: Vec<S2Thumb>,
+}
+
+struct S2Thumb {
+    seed: u64,
+    biome: BiomeId,
+    tex: egui::TextureHandle,
 }
 
 impl Default for Lab {
@@ -164,6 +179,10 @@ impl Default for Lab {
             c1_thumbs: Vec::new(),
             c1_gallery_forced: true,
             spec_rows: Vec::new(),
+            s2_view: S2View::Base,
+            s2_overlays: true,
+            s2_tex: None,
+            s2_thumbs: Vec::new(),
         }
     }
 }
@@ -244,6 +263,8 @@ impl Lab {
             Tab::SpecV2 => self.regen_spec_v2(),
             Tab::C1 => self.regen_c1(ctx),
             Tab::C1Gallery => self.regen_c1_gallery(ctx),
+            Tab::S2 => self.regen_s2(ctx),
+            Tab::S2Gallery => self.regen_s2_gallery(ctx),
             _ => {}
         }
         self.dirty = false;
@@ -361,6 +382,55 @@ impl Lab {
         }
     }
 
+    fn regen_s2(&mut self, ctx: &egui::Context) {
+        let t0 = std::time::Instant::now();
+        let (spec, c1) = self.v2_case(self.seed, None);
+        let id = RunIdentity::from_seed(self.seed);
+        let sk = course_skeleton::generate(&spec, &c1, &id);
+        let img = render_s2(&sk, self.s2_view, IMG_PX, self.s2_overlays);
+        self.s2_tex = Some(load_tex(ctx, "s2", &img));
+        let d = &sk.diagnostics;
+        self.stats = format!(
+            "S2 · seed {} · {} · {} channels (Ω {}) · dens {:.2}/{:.2} km/km² · rb {} · rl {} · conn {:.2} · {} embryos · {} ms",
+            self.seed,
+            spec.biome.key(),
+            d.channel_count,
+            sk.channels.iter().map(|c| c.order).max().unwrap_or(0),
+            d.achieved_density_km_km2,
+            d.target_density_km_km2,
+            d.bifurcation_ratio.map_or("—".into(), |v| format!("{v:.1}")),
+            d.length_ratio.map_or("—".into(), |v| format!("{v:.1}")),
+            d.connectivity,
+            sk.embryos.len(),
+            t0.elapsed().as_millis()
+        );
+        self.v2_spec = Some(spec);
+    }
+
+    fn regen_s2_gallery(&mut self, ctx: &egui::Context) {
+        self.s2_thumbs.clear();
+        // Grouped by biome: 3 seeds per biome, biome forced so every row
+        // exists — the S2 P1-review material.
+        for (bi, &biome) in BiomeId::ALL.iter().enumerate() {
+            for k in 0..3u64 {
+                let seed = self.gallery_base + bi as u64 * 3 + k;
+                let id = RunIdentity::from_seed(seed);
+                let spec = SiteSpec::generate_builtin(
+                    id,
+                    &SpecOverridesV2 { forced_biome: Some(biome) },
+                );
+                let c1 = course_primitives::generate(&spec, &id);
+                let sk = course_skeleton::generate(&spec, &c1, &id);
+                let img = render_s2(&sk, S2View::Base, THUMB_PX, true);
+                self.s2_thumbs.push(S2Thumb {
+                    seed,
+                    biome,
+                    tex: load_tex(ctx, &format!("s2t-{bi}-{k}"), &img),
+                });
+            }
+        }
+    }
+
     fn regen_gallery(&mut self, ctx: &egui::Context) {
         self.thumbs.clear();
         let mut seed = self.gallery_base;
@@ -468,7 +538,7 @@ impl eframe::App for Lab {
                 }
             }
 
-            if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::C1Gallery) {
+            if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::C1Gallery | Tab::S2 | Tab::S2Gallery) {
                 ui.separator();
                 let biome_label = self
                     .forced_biome
@@ -500,6 +570,32 @@ impl eframe::App for Lab {
                 if ui.checkbox(&mut self.c1_overlays, "overlays").changed() {
                     self.dirty = true;
                 }
+            }
+            if self.tab == Tab::S2 {
+                for (v, label) in S2_VIEWS {
+                    if ui.selectable_label(self.s2_view == v, label).clicked() {
+                        self.s2_view = v;
+                        self.dirty = true;
+                    }
+                }
+                if ui.checkbox(&mut self.s2_overlays, "overlays").changed() {
+                    self.dirty = true;
+                }
+            }
+            if self.tab == Tab::S2Gallery {
+                ui.horizontal(|ui| {
+                    ui.label("base seed");
+                    if ui
+                        .add(egui::DragValue::new(&mut self.gallery_base).speed(1))
+                        .changed()
+                    {
+                        self.dirty = true;
+                    }
+                    if ui.button("next page").clicked() {
+                        self.gallery_base = self.gallery_base.wrapping_add(18);
+                        self.dirty = true;
+                    }
+                });
             }
             if self.tab == Tab::C1Gallery {
                 ui.horizontal(|ui| {
@@ -628,7 +724,7 @@ impl eframe::App for Lab {
                     });
                 }
             }
-            if matches!(self.tab, Tab::SpecV2 | Tab::C1) {
+            if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::S2) {
                 if let Some(spec) = &self.v2_spec {
                     let json = serde_json::to_string_pretty(spec).unwrap_or_default();
                     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -695,6 +791,44 @@ impl eframe::App for Lab {
                     if let Some(seed) = open_seed {
                         self.seed = seed;
                         self.tab = Tab::C1;
+                        self.dirty = true;
+                    }
+                }
+                Tab::S2 => {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 190, 90),
+                        "S2 is STRUCTURE — candle-wax smoothness between channels is                          EXPECTED (texture is S3's job). Judge the network: space-filling,                          hierarchical, obeying base level and discontinuities; divides                          derived, embryos recorded.",
+                    );
+                    if let Some(tex) = &self.s2_tex {
+                        let avail = ui.available_size();
+                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        ui.image((tex.id(), egui::vec2(side, side)));
+                    }
+                }
+                Tab::S2Gallery => {
+                    let mut open = None;
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::Grid::new("s2gallery").spacing([8.0, 8.0]).show(ui, |ui| {
+                            for (i, t) in self.s2_thumbs.iter().enumerate() {
+                                ui.vertical(|ui| {
+                                    let resp = ui
+                                        .image((t.tex.id(), egui::vec2(THUMB_PX as f32, THUMB_PX as f32)))
+                                        .interact(egui::Sense::click());
+                                    if resp.clicked() {
+                                        open = Some((t.seed, t.biome));
+                                    }
+                                    ui.label(format!("{} · {}", t.seed, t.biome.key()));
+                                });
+                                if (i + 1) % 3 == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                    });
+                    if let Some((seed, biome)) = open {
+                        self.seed = seed;
+                        self.forced_biome = Some(biome);
+                        self.tab = Tab::S2;
                         self.dirty = true;
                     }
                 }

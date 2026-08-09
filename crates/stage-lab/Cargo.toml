@@ -16,3 +16,4 @@ image = { workspace = true }
 serde_json = { workspace = true }
 course-contracts = { workspace = true }
 course-primitives = { workspace = true }
+course-skeleton = { workspace = true }

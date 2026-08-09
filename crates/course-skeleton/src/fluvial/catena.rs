@@ -43,16 +43,54 @@ pub fn assemble(
     near: &[Nearest],
     incision_scale: f64,
 ) -> Grid<f64> {
-    let mut out = implied.clone();
-    debug_assert_eq!(out.data.len(), near.len());
-    for (i, n) in near.iter().enumerate() {
-        if !n.dist_m.is_finite() {
-            continue;
-        }
-        let w = libm::pow(n.dist_m / (n.dist_m + D_HALF_M), THETA);
-        let incision = (n.implied_channel - n.z_channel) * incision_scale;
-        out.data[i] = implied.data[i] - incision * (1.0 - w);
+    debug_assert_eq!(implied.data.len(), near.len());
+    // The incision field is discontinuous across Dijkstra wavefront
+    // boundaries (adjacent cells can carry different source channels with
+    // different base elevations) and those Voronoi seams print through the
+    // hillshade. Blur the INCISION — never the surface — with a 24 m box
+    // footprint: well under the 64 m band boundary, so no structure is
+    // touched, only the seam steps.
+    let mut incision: Vec<f64> = near
+        .iter()
+        .zip(&implied.data)
+        .map(|(n, _)| {
+            if !n.dist_m.is_finite() {
+                return 0.0;
+            }
+            let w = libm::pow(n.dist_m / (n.dist_m + D_HALF_M), THETA);
+            (n.implied_channel - n.z_channel) * incision_scale * (1.0 - w)
+        })
+        .collect();
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    for _ in 0..2 {
+        incision = box3(&incision, nx, ny);
     }
-    let _ = spec;
+    let mut out = implied.clone();
+    for (i, inc) in incision.iter().enumerate() {
+        out.data[i] = implied.data[i] - inc;
+    }
+    out
+}
+
+/// One 3×3 box-blur pass (edge-clamped).
+fn box3(a: &[f64], nx: usize, ny: usize) -> Vec<f64> {
+    let mut out = vec![0.0; a.len()];
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut sum = 0.0;
+            let mut n = 0.0;
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    let (yy, xx) = (y as i64 + dy, x as i64 + dx);
+                    if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
+                        continue;
+                    }
+                    sum += a[yy as usize * nx + xx as usize];
+                    n += 1.0;
+                }
+            }
+            out[y * nx + x] = sum / n;
+        }
+    }
     out
 }

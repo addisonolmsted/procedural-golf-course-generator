@@ -139,6 +139,20 @@ pub fn build(
         junction_arc_m: f64::NAN,
     }];
 
+    // Occupancy rasters, maintained from the trunk onward: every accepted
+    // channel is stamped, and every subsequent tributary TRIMS at its first
+    // touch of an existing channel — tributaries join, they never cross
+    // (the river-valley review caught a crossing knot).
+    let cell = spec8.cell_size;
+    let (rnx, rny) = (spec8.nx as usize, spec8.ny as usize);
+    let mut chan_at: Vec<i32> = vec![-1; rnx * rny];
+    let mut arc_at: Vec<f64> = vec![0.0; rnx * rny];
+    stamp_channel(0, &channels[0].pts, spec8, &mut chan_at, &mut arc_at);
+    let cell_of = |q: Vec2| -> usize {
+        ((q.y / cell).floor() as usize).min(rny - 1) * rnx
+            + ((q.x / cell).floor() as usize).min(rnx - 1)
+    };
+
     // ---- how much tree the remaining budget buys -----------------------
     let l1 = lt * 0.45;
     let subtree_len = l1 * (1.0 + RB as f64 / RL + (RB * RB) as f64 / (RL * RL));
@@ -193,7 +207,28 @@ pub fn build(
                 let side = if (pi + k) % 2 == 0 { 1.0 } else { -1.0 };
                 let ang = side * (0.96 + (ang_u - 0.5) * 0.52);
                 let dir0 = trunk::rotate(tangent, ang);
-                let (pts, stop) = trunk::grow(steer, jp, dir0, *len, *step, step_draws, false);
+                let (grown, stop) = trunk::grow(steer, jp, dir0, *len, *step, step_draws, false);
+                // Trim at the first touch of an existing channel (skipping
+                // the first 100 m — the trib starts ON its parent).
+                let mut pts: Vec<Vec2> = Vec::new();
+                let mut walked = 0.0;
+                'trim: for wnd in std::iter::once(&grown[..]).flat_map(|s| s.windows(2)) {
+                    if pts.is_empty() {
+                        pts.push(wnd[0]);
+                    }
+                    let seg = Vec2::new(wnd[1].x - wnd[0].x, wnd[1].y - wnd[0].y);
+                    let seg_len = (seg.x * seg.x + seg.y * seg.y).sqrt();
+                    let nsub = (seg_len / 30.0).ceil() as usize;
+                    for t in 1..=nsub {
+                        let f = t as f64 / nsub as f64;
+                        let q = Vec2::new(wnd[0].x + seg.x * f, wnd[0].y + seg.y * f);
+                        if walked + seg_len * f > 100.0 && chan_at[cell_of(q)] >= 0 {
+                            break 'trim;
+                        }
+                    }
+                    walked += seg_len;
+                    pts.push(wnd[1]);
+                }
                 let min_len = (0.55 * len).max(140.0);
                 if trunk::arc_len(&pts) < min_len && stop != Stop::Scarp {
                     continue;
@@ -201,13 +236,15 @@ pub fn build(
                 if pts.len() < 2 {
                     continue;
                 }
-                next_parents.push(channels.len());
+                let idx = channels.len();
+                next_parents.push(idx);
                 channels.push(Channel {
-                    pts,
+                    pts: pts.clone(),
                     order: 1,
                     parent: Some(parent_idx as u32),
                     junction_arc_m: arc,
                 });
+                stamp_channel(idx, &pts, spec8, &mut chan_at, &mut arc_at);
             }
         }
         level_parents = std::mem::take(&mut next_parents);
@@ -220,7 +257,7 @@ pub fn build(
     // attach to. Fingers place at the farthest-from-network cell and grow
     // downhill until they attach — headward accretion, order-1 by nature.
     if derangement == 0.0 && !channels.is_empty() {
-        grow_infill(steer, spec8, draws, &mut channels);
+        grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
     assign_strahler(&mut channels);
@@ -305,7 +342,14 @@ fn chamfer(chan_at: &[i32], spec8: &GridSpec) -> (Vec<f64>, Vec<usize>) {
     (d, near)
 }
 
-fn grow_infill(steer: &Steer, spec8: &GridSpec, draws: &Draws, channels: &mut Vec<Channel>) {
+fn grow_infill(
+    steer: &Steer,
+    spec8: &GridSpec,
+    draws: &Draws,
+    channels: &mut Vec<Channel>,
+    chan_at: &mut Vec<i32>,
+    arc_at: &mut Vec<f64>,
+) {
     let cell = spec8.cell_size;
     let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
     let center = |lin: usize| {
@@ -314,12 +358,6 @@ fn grow_infill(steer: &Steer, spec8: &GridSpec, draws: &Draws, channels: &mut Ve
             ((lin / nx) as f64 + 0.5) * cell,
         )
     };
-    let mut chan_at: Vec<i32> = vec![-1; nx * ny];
-    let mut arc_at: Vec<f64> = vec![0.0; nx * ny];
-    for ci in 0..channels.len() {
-        let pts = channels[ci].pts.clone();
-        stamp_channel(ci, &pts, spec8, &mut chan_at, &mut arc_at);
-    }
     let margin = trunk::EDGE_MARGIN_M;
     let extent = course_world::world::EXTENT_M;
     // Failed placements are blacklisted so the argmax moves on — otherwise a
@@ -378,8 +416,51 @@ fn grow_infill(steer: &Steer, spec8: &GridSpec, draws: &Draws, channels: &mut Ve
             dir = Vec2::new(dir.x / dn, dir.y / dn);
             let ang = (u - 0.5) * 0.8 + if si == 0 { (ang_u - 0.5) * 0.6 } else { 0.0 };
             dir = trunk::rotate(dir, ang);
+            // Fingers obey discontinuities, with one difference from the
+            // authored tributaries: at a SCARP a finger deflects parallel
+            // instead of truncating — drainage in front of a scarp runs
+            // along its base to the water gap (subsequent streams), which
+            // is how the upstream province keeps its network without any
+            // channel crossing the scarp face.
+            for disc in &steer.meta.discontinuities {
+                let (_, dd) = trunk::nearest_side(&disc.curve, p);
+                if dd > trunk::DISC_BAND_M {
+                    continue;
+                }
+                match disc.kind {
+                    course_contracts::biome::BoundaryKind::Scarp
+                    | course_contracts::biome::BoundaryKind::ValleyWall => {
+                        let tg = trunk::nearest_tangent(&disc.curve, p);
+                        let along = dir.x * tg.x + dir.y * tg.y;
+                        let sign = if along >= 0.0 { 1.0 } else { -1.0 };
+                        dir = Vec2::new(sign * tg.x, sign * tg.y);
+                    }
+                    course_contracts::biome::BoundaryKind::MaterialContact => {
+                        let g = steer.grad(steer.hardness, p);
+                        let gl = (g.x * g.x + g.y * g.y).sqrt().max(1e-9);
+                        dir = trunk::norm(Vec2::new(dir.x - 0.5 * g.x / gl, dir.y - 0.5 * g.y / gl));
+                    }
+                }
+            }
             let q = Vec2::new(p.x + dir.x * INFILL_STEP_M, p.y + dir.y * INFILL_STEP_M);
             if q.x < margin || q.y < margin || q.x > extent - margin || q.y > extent - margin {
+                break;
+            }
+            // A 110 m step can jump clean over a channel: sample the segment
+            // and attach at the first channel cell it touches, so fingers
+            // never cross existing channels.
+            let mut hit = None;
+            for t in [0.25, 0.5, 0.75, 1.0] {
+                let m = Vec2::new(p.x + dir.x * INFILL_STEP_M * t, p.y + dir.y * INFILL_STEP_M * t);
+                let ml = ((m.y / cell).floor() as usize).min(ny - 1) * nx
+                    + ((m.x / cell).floor() as usize).min(nx - 1);
+                if chan_at[ml] >= 0 {
+                    hit = Some(ml);
+                    break;
+                }
+            }
+            if let Some(ml) = hit {
+                attach = Some((chan_at[ml], arc_at[ml], center(ml)));
                 break;
             }
             pts.push(q);
@@ -403,7 +484,7 @@ fn grow_infill(steer: &Steer, spec8: &GridSpec, draws: &Draws, channels: &mut Ve
             parent: Some(chan as u32),
             junction_arc_m: arc,
         });
-        stamp_channel(idx, &pts, spec8, &mut chan_at, &mut arc_at);
+        stamp_channel(idx, &pts, spec8, chan_at, arc_at);
     }
 }
 

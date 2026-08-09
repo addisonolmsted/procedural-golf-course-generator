@@ -77,8 +77,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
 
     // ---- raster + transform -------------------------------------------
     let base_elev = c1.meta.base_level.elev_m;
-    let d_mouth = (0.30 * relief_budget * integration::incision_scale(m_integration))
-        .clamp(3.0, 26.0);
+    let d_mouth = (0.22 * relief_budget * integration::incision_scale(m_integration))
+        .clamp(3.0, 16.0);
     let cells = flow_distance::rasterize(&channels, &spec8, &implied, base_elev, d_mouth);
     let seeds: Vec<(usize, Nearest)> = if cells.is_empty() {
         flow_distance::edge_seeds(&spec8, c1.meta.base_level.edge, base_elev, &implied)

@@ -106,7 +106,7 @@ pub fn edge_inward(edge: Edge) -> Vec2 {
     }
 }
 
-fn norm(v: Vec2) -> Vec2 {
+pub(crate) fn norm(v: Vec2) -> Vec2 {
     let l = (v.x * v.x + v.y * v.y).sqrt();
     if l > 1e-12 {
         Vec2::new(v.x / l, v.y / l)
@@ -122,7 +122,7 @@ pub fn rotate(v: Vec2, a: f64) -> Vec2 {
 
 /// Signed distance-ish side of `p` relative to the polyline: sign of the
 /// cross product against the nearest segment, with the distance to it.
-fn nearest_side(curve: &[Vec2], p: Vec2) -> (f64, f64) {
+pub(crate) fn nearest_side(curve: &[Vec2], p: Vec2) -> (f64, f64) {
     let mut best_d2 = f64::INFINITY;
     let mut side = 0.0;
     for w in curve.windows(2) {
@@ -147,7 +147,7 @@ fn nearest_side(curve: &[Vec2], p: Vec2) -> (f64, f64) {
 }
 
 /// Tangent direction of the polyline near `p` (nearest segment's direction).
-fn nearest_tangent(curve: &[Vec2], p: Vec2) -> Vec2 {
+pub(crate) fn nearest_tangent(curve: &[Vec2], p: Vec2) -> Vec2 {
     let mut best_d2 = f64::INFINITY;
     let mut tan = Vec2::new(1.0, 0.0);
     for w in curve.windows(2) {
@@ -189,6 +189,12 @@ pub fn grow(
     let mut dir = norm(dir0);
     let mut p = start;
     let mut stop = Stop::Budget;
+    // A path may never revisit a cell it already occupies — a looping
+    // channel is non-physical and the review caught one.
+    let cell8 = 8.0;
+    let key = |q: Vec2| ((q.y / cell8) as i64, (q.x / cell8) as i64);
+    let mut visited: std::collections::BTreeSet<(i64, i64)> = std::collections::BTreeSet::new();
+    visited.insert(key(start));
     let steps = ((max_len_m / step_m).round() as usize).min(jitters.len());
     let grain = steer.meta.grain_axis_rad;
     let grain_w = 0.25 * steer.meta.grain_strength;
@@ -247,6 +253,17 @@ pub fn grow(
             stop = Stop::EdgeMargin;
             break;
         }
+        // 3×3 neighbourhood self-avoidance: an exact-cell test lets wide
+        // loops close between cells (the review caught a looping trunk).
+        let (ky, kx) = key(q);
+        let near_own = (-1..=1).any(|dy| {
+            (-1..=1).any(|dx| visited.contains(&(ky + dy, kx + dx)))
+        });
+        if near_own {
+            stop = Stop::EdgeMargin;
+            break;
+        }
+        visited.insert((ky, kx));
         pts.push(q);
         dir = d;
         p = q;

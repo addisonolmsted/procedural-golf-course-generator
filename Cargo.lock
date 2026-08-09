@@ -3009,6 +3009,7 @@ dependencies = [
  "course-framing",
  "course-primitives",
  "course-seed",
+ "course-skeleton",
  "course-spec",
  "course-viz",
  "course-world",
