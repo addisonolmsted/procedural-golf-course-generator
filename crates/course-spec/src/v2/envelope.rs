@@ -83,6 +83,22 @@ pub struct BiomeEnvelope {
     pub exemplars_per_course: u32,
     /// Per-biome strata template (top-down); v2 keeps this derived-not-drawn.
     pub strata: Vec<StratumTemplate>,
+    /// S2 module intensities — dials, not branches. A biome that does not
+    /// use a module runs it at zero through the identical code path
+    /// (stage-02 doc, "The five modules").
+    pub modules: ModuleIntensities,
+}
+
+/// The five S2 structural modules, as data. All in `[0,1]` except
+/// `integration`, which is signed: negative deranges the network
+/// (heathland's kettle country does not drain to base level).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModuleIntensities {
+    pub trunk_river: f64,
+    pub stratigraphy: f64,
+    pub closed_basin: f64,
+    pub aeolian: f64,
+    pub integration: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -212,6 +228,26 @@ impl EnvelopeSet {
                 if !ok {
                     return Err(EnvelopeError::Invalid(format!("{b}: bad transform support")));
                 }
+            }
+            let m = &env.modules;
+            let unit = [
+                ("trunk_river", m.trunk_river),
+                ("stratigraphy", m.stratigraphy),
+                ("closed_basin", m.closed_basin),
+                ("aeolian", m.aeolian),
+            ];
+            for (name, v) in unit {
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: module {name} must be in [0,1], got {v}"
+                    )));
+                }
+            }
+            if !(-1.0..=1.0).contains(&m.integration) {
+                return Err(EnvelopeError::Invalid(format!(
+                    "{b}: module integration must be in [-1,1], got {}",
+                    m.integration
+                )));
             }
         }
         Ok(())

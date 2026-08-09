@@ -98,6 +98,13 @@
     "t04080_10380"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 0.1,
+    "closed_basin": 0.1,
+    "integration": 0.9,
+    "stratigraphy": 0.5,
+    "trunk_river": 0.1
+   },
    "province2_p": 0.35,
    "strata": [
     {
@@ -236,6 +243,13 @@
     "t04623_08653"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 0.15,
+    "closed_basin": 1.0,
+    "integration": -0.7,
+    "stratigraphy": 0.0,
+    "trunk_river": 0.0
+   },
    "province2_p": 0.1,
    "strata": [],
    "transforms": [
@@ -366,6 +380,13 @@
     "t03695_09115"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 0.0,
+    "closed_basin": 0.0,
+    "integration": 0.5,
+    "stratigraphy": 1.0,
+    "trunk_river": 0.15
+   },
    "province2_p": 0.5,
    "strata": [
     {
@@ -516,6 +537,13 @@
     "t03550_08002"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 0.0,
+    "closed_basin": 0.0,
+    "integration": 0.6,
+    "stratigraphy": 0.15,
+    "trunk_river": 0.2
+   },
    "province2_p": 0.3,
    "strata": [
     {
@@ -651,6 +679,13 @@
     "t04305_09025"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 0.0,
+    "closed_basin": 0.0,
+    "integration": 0.7,
+    "stratigraphy": 0.35,
+    "trunk_river": 1.0
+   },
    "province2_p": 0.4,
    "strata": [
     {
@@ -792,6 +827,13 @@
     "t04246_10082"
    ],
    "exemplars_per_course": 2,
+   "modules": {
+    "aeolian": 1.0,
+    "closed_basin": 0.5,
+    "integration": 0.0,
+    "stratigraphy": 0.0,
+    "trunk_river": 0.0
+   },
    "province2_p": 0.1,
    "strata": [],
    "transforms": [

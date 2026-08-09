@@ -272,6 +272,13 @@ fn derive_dials(
         },
     );
     m.insert("skeleton.density_target".into(), d.density_target);
+    // The five S2 module intensities, straight from the envelope record —
+    // dials, not branches (stage-02 doc). S2 reads only these keys.
+    m.insert("skeleton.trunk_river".into(), env.modules.trunk_river);
+    m.insert("skeleton.stratigraphy".into(), env.modules.stratigraphy);
+    m.insert("skeleton.closed_basin".into(), env.modules.closed_basin);
+    m.insert("skeleton.aeolian".into(), env.modules.aeolian);
+    m.insert("skeleton.integration".into(), env.modules.integration);
     m.insert("amplify.residual_share".into(), 0.35);
     m
 }
