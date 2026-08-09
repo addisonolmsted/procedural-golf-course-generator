@@ -254,6 +254,69 @@ impl Excluded {
     }
 }
 
+// ---------------------------------------------------------------------------
+// review_v2.json — the E4 human-cull ledger. Excludes go to exclude.json
+// (that is what extraction honors); this file only records which surviving
+// tiles a human has looked at and kept, so the queue resumes across sessions.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReviewedTile {
+    pub archetype: String,
+    pub tile: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Review {
+    pub version: u32,
+    pub kept: Vec<ReviewedTile>,
+}
+
+impl Default for Review {
+    fn default() -> Self {
+        Review { version: 1, kept: Vec::new() }
+    }
+}
+
+impl Review {
+    pub fn contains(&self, archetype: &str, tile: &str) -> bool {
+        self.kept
+            .iter()
+            .any(|t| t.archetype == archetype && t.tile == tile)
+    }
+
+    pub fn set(&mut self, archetype: &str, tile: &str) {
+        if self.contains(archetype, tile) {
+            return;
+        }
+        self.kept.push(ReviewedTile {
+            archetype: archetype.to_string(),
+            tile: tile.to_string(),
+        });
+        self.kept.sort_by(|a, b| {
+            (a.archetype.as_str(), a.tile.as_str()).cmp(&(b.archetype.as_str(), b.tile.as_str()))
+        });
+    }
+
+    pub fn remove(&mut self, archetype: &str, tile: &str) {
+        self.kept
+            .retain(|t| !(t.archetype == archetype && t.tile == tile));
+    }
+}
+
+pub fn review_path(out_root: &Path) -> PathBuf {
+    out_root.join("review_v2.json")
+}
+
+pub fn load_review(out_root: &Path) -> Review {
+    read_json(&review_path(out_root)).unwrap_or_default()
+}
+
+pub fn save_review(out_root: &Path, r: &Review) -> io::Result<()> {
+    let text = serde_json::to_string_pretty(r).map_err(io::Error::other)?;
+    std::fs::write(review_path(out_root), text + "\n")
+}
+
 pub fn exclude_path(out_root: &Path) -> PathBuf {
     out_root.join("exclude.json")
 }

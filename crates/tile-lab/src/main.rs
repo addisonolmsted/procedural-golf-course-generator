@@ -21,11 +21,33 @@ use std::path::PathBuf;
 use course_spec::{ArchetypeId, Priors};
 use course_world::math::Vec2;
 use course_world::Grid;
-use data::{Excluded, Regions, TileData, TileEntry};
+use data::{Excluded, Regions, Review, TileData, TileEntry};
 use eframe::egui;
 
-const IMG_PX: u32 = 900;
+const IMG_PX: u32 = 1500;
 const NODATA_RGB: [u8; 3] = [92, 92, 100];
+
+/// The v2 corpus biomes — the E4 review queue covers these and nothing else
+/// (v1-era archetype directories share the same store).
+const V2_BIOMES: [&str; 6] = [
+    "piedmont",
+    "great_plains",
+    "river_valley",
+    "sandhills",
+    "heathland",
+    "hill_country",
+];
+
+/// One-click exclusion reasons for the things the OSM screen cannot see,
+/// bound to number keys 1–6.
+const QUICK_REASONS: [&str; 6] = [
+    "agriculture (pivots/terracing)",
+    "quarry/mine",
+    "reservoir/dam",
+    "lidar artifact (seams/stripes)",
+    "graded/developed",
+    "water dominant",
+];
 
 /// Overlay layers, in draw order. The `u8` is the classes.cgrid bit mask
 /// (0 = vector layer drawn from regions.json instead).
@@ -71,6 +93,7 @@ struct Lab {
     contours: bool,
     contour_step: f64,
     excluded: Excluded,
+    review: Review,
     exclude_reason: String,
     compare: Option<(PathBuf, Grid<f64>)>,
     shared_range: bool,
@@ -84,6 +107,7 @@ impl Lab {
     fn new(root: PathBuf, skeleton: Option<PathBuf>) -> Self {
         let tiles = data::scan_tiles(&root);
         let excluded = data::load_exclude(&root);
+        let review = data::load_review(&root);
         let sel = tiles
             .iter()
             .next()
@@ -101,15 +125,16 @@ impl Lab {
                 }
             }
         });
-        Lab {
+        let mut lab = Lab {
             root,
             tiles,
             sel,
             loaded: None,
             on: DEFAULT_ON.to_vec(),
-            contours: false,
+            contours: true,
             contour_step: 5.0,
             excluded,
+            review,
             exclude_reason: String::new(),
             compare,
             shared_range: true,
@@ -117,7 +142,12 @@ impl Lab {
             tex_cmp: None,
             dirty: true,
             status: String::new(),
+        };
+        // Open on the queue, not on the alphabetically-first (v1) archetype.
+        if let Some(n) = lab.next_unreviewed(None) {
+            lab.sel = Some(n);
         }
+        lab
     }
 
     fn is_on(&self, l: Layer) -> bool {
@@ -130,6 +160,88 @@ impl Lab {
             self.on.push(l);
         }
         self.dirty = true;
+    }
+
+    /// The E4 queue: every non-excluded tile in the six v2 biomes, in
+    /// biome-then-id order. Recomputed on demand — exclusion shrinks it.
+    fn queue(&self) -> Vec<(String, String)> {
+        let mut q = Vec::new();
+        for b in V2_BIOMES {
+            if let Some(ts) = self.tiles.get(b) {
+                for t in ts {
+                    if !self.excluded.contains(b, &t.id) {
+                        q.push((b.to_string(), t.id.clone()));
+                    }
+                }
+            }
+        }
+        q
+    }
+
+    /// First not-yet-kept queue tile after `after` (wrapping), so the queue
+    /// resumes wherever the reviewer is rather than restarting.
+    fn next_unreviewed(&self, after: Option<&(String, String)>) -> Option<(String, String)> {
+        let q = self.queue();
+        let start = after
+            .and_then(|a| q.iter().position(|x| x == a).map(|i| i + 1))
+            .unwrap_or(0);
+        q.iter()
+            .cycle()
+            .skip(start)
+            .take(q.len())
+            .find(|(b, id)| !self.review.contains(b, id))
+            .cloned()
+    }
+
+    fn advance(&mut self) {
+        if let Some(next) = self.next_unreviewed(self.sel.as_ref()) {
+            self.sel = Some(next);
+            self.exclude_reason.clear();
+            self.dirty = true;
+        }
+    }
+
+    fn decide_keep(&mut self) {
+        let Some((a, id)) = self.sel.clone() else { return };
+        if !V2_BIOMES.contains(&a.as_str()) || self.excluded.contains(&a, &id) {
+            return;
+        }
+        self.review.set(&a, &id);
+        if let Err(e) = data::save_review(&self.root, &self.review) {
+            self.status = format!("review_v2.json: {e}");
+        }
+        self.advance();
+    }
+
+    fn decide_exclude(&mut self, reason: &str) {
+        let Some((a, id)) = self.sel.clone() else { return };
+        if !V2_BIOMES.contains(&a.as_str()) || self.excluded.contains(&a, &id) {
+            return;
+        }
+        // Pick the successor while the current tile is still in the queue,
+        // then drop it from both ledgers' points of view.
+        let next = self.next_unreviewed(Some(&(a.clone(), id.clone())));
+        self.review.remove(&a, &id);
+        self.excluded.set(&a, &id, &format!("human: {reason}"));
+        if let Err(e) = data::save_exclude(&self.root, &self.excluded) {
+            self.status = format!("exclude.json: {e}");
+        }
+        if let Err(e) = data::save_review(&self.root, &self.review) {
+            self.status = format!("review_v2.json: {e}");
+        }
+        if let Some(n) = next {
+            self.sel = Some(n);
+            self.exclude_reason.clear();
+            self.dirty = true;
+        }
+    }
+
+    fn unkeep(&mut self) {
+        let Some((a, id)) = self.sel.clone() else { return };
+        self.review.remove(&a, &id);
+        if let Err(e) = data::save_review(&self.root, &self.review) {
+            self.status = format!("review_v2.json: {e}");
+        }
     }
 
     fn entry(&self) -> Option<&TileEntry> {
@@ -446,11 +558,89 @@ fn knob_color(v: Option<f64>, table: Option<[f64; 11]>) -> egui::Color32 {
 
 impl eframe::App for Lab {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Review hotkeys — dead while any text field has focus, so typing a
+        // free-text reason can't fire decisions.
+        if !ctx.wants_keyboard_input() {
+            use egui::Key;
+            if ctx.input(|i| i.key_pressed(Key::K)) {
+                self.decide_keep();
+            }
+            if ctx.input(|i| i.key_pressed(Key::N)) {
+                self.advance();
+            }
+            if ctx.input(|i| i.key_pressed(Key::U)) {
+                self.unkeep();
+            }
+            const NUMS: [egui::Key; 6] =
+                [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6];
+            for (n, reason) in NUMS.iter().zip(QUICK_REASONS) {
+                if ctx.input(|i| i.key_pressed(*n)) {
+                    self.decide_exclude(reason);
+                }
+            }
+        }
+
         egui::SidePanel::left("browser")
             .min_width(320.0)
             .show(ctx, |ui| {
                 ui.heading("tile-lab — campaign QA");
                 ui.label(egui::RichText::new(self.root.display().to_string()).small().weak());
+                ui.separator();
+
+                // ---- E4 review queue ----------------------------------
+                ui.label(egui::RichText::new("E4 review queue (v2)").strong());
+                let q = self.queue();
+                let done = q.iter().filter(|(a, id)| self.review.contains(a, id)).count();
+                if done == q.len() && !q.is_empty() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(120, 210, 120),
+                        format!("queue complete — {done} kept"),
+                    );
+                } else {
+                    ui.label(format!("{done} kept / {} in queue / {} to go", q.len(), q.len() - done));
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for b in V2_BIOMES {
+                        let Some(ts) = self.tiles.get(b) else { continue };
+                        let tot = ts.iter().filter(|t| !self.excluded.contains(b, &t.id)).count();
+                        let k = ts.iter().filter(|t| self.review.contains(b, &t.id)).count();
+                        ui.label(
+                            egui::RichText::new(format!("{b} {k}/{tot}"))
+                                .small()
+                                .color(if k == tot && tot > 0 {
+                                    egui::Color32::from_rgb(120, 210, 120)
+                                } else {
+                                    ui.visuals().text_color()
+                                }),
+                        );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("KEEP (K)").clicked() {
+                        self.decide_keep();
+                    }
+                    if ui.button("skip (N)").clicked() {
+                        self.advance();
+                    }
+                    let kept_now = self
+                        .sel
+                        .as_ref()
+                        .is_some_and(|(a, id)| self.review.contains(a, id));
+                    if kept_now {
+                        ui.colored_label(egui::Color32::from_rgb(120, 210, 120), "KEPT");
+                        if ui.small_button("undo (U)").clicked() {
+                            self.unkeep();
+                        }
+                    }
+                });
+                ui.label(egui::RichText::new("exclude as (1–6):").small());
+                ui.horizontal_wrapped(|ui| {
+                    for (n, reason) in QUICK_REASONS.iter().enumerate() {
+                        if ui.small_button(format!("{} {reason}", n + 1)).clicked() {
+                            self.decide_exclude(reason);
+                        }
+                    }
+                });
                 ui.separator();
 
                 egui::ScrollArea::vertical()
@@ -467,7 +657,12 @@ impl eframe::App for Lab {
                                             == Some(&(e.archetype.clone(), e.id.clone()));
                                         let excluded =
                                             self.excluded.contains(&e.archetype, &e.id);
-                                        let mut text = egui::RichText::new(&e.id);
+                                        let kept = self.review.contains(&e.archetype, &e.id);
+                                        let mut text = egui::RichText::new(if kept {
+                                            format!("✓ {}", e.id)
+                                        } else {
+                                            e.id.clone()
+                                        });
                                         if excluded {
                                             text = text.strikethrough().weak();
                                         }
