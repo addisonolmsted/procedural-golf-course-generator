@@ -11,6 +11,14 @@ def main():
     f.add_argument("--v2", action="store_true",
                    help="use the Heartland v2 regions (regions_v2.py)")
 
+    ev = sub.add_parser(
+        "extract-v2",
+        help="E5: skeleton + residual extraction over the kept v2 corpus",
+    )
+    ev.add_argument("--archetype", default=None)
+    ev.add_argument("--force", action="store_true",
+                    help="re-extract even if current-version output exists")
+
     e = sub.add_parser("extract", help="measure landform knobs per tile")
     e.add_argument("--archetype", default=None)
     e.add_argument(
@@ -57,6 +65,10 @@ def main():
 
             regions = REGIONS_V2
         fetch.run(limit=args.limit, archetype=args.archetype, regions=regions)
+    elif args.cmd == "extract-v2":
+        from . import extract_v2
+
+        extract_v2.run(archetype=args.archetype, force=args.force)
     elif args.cmd == "extract":
         from . import extract
 
