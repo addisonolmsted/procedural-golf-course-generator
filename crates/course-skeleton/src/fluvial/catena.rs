@@ -18,11 +18,16 @@ use course_world::grid::{Grid, GridSpec};
 
 use super::flow_distance::Nearest;
 
-/// Profile-law exponent (calibration target; provisional).
+/// Profile-law curvature exponent (calibration target; provisional).
 pub const THETA: f64 = 0.62;
-/// Distance at which the catena has recovered half its incision — of the
-/// order of the shared invariant `dist_to_channel_p50` (104–120 m).
-pub const D_HALF_M: f64 = 110.0;
+/// Distance over which the hillslope recovers the full incision — of the
+/// order of the corpus's d2c p90 (230–270 m). Incision spans the whole
+/// channel→divide hillslope; the earlier w=(d/(d+D))^θ (θ<1) profile had
+/// divergent slope at d→0 — vertical walls at every channel — and the
+/// review read the result as slot trenches in an undrained plateau. The
+/// current form has finite channel-wall slope ((1+θ)·inc/D_FULL) and zero
+/// slope at the divide (rounded crests).
+pub const D_FULL_M: f64 = 260.0;
 
 /// Channel base profile: elevation gain above base level as a function of
 /// network arc from the outlet. Concave (slope decays downstream) — the
@@ -57,12 +62,17 @@ pub fn assemble(
             if !n.dist_m.is_finite() {
                 return 0.0;
             }
-            let w = libm::pow(n.dist_m / (n.dist_m + D_HALF_M), THETA);
+            let u = (n.dist_m / D_FULL_M).min(1.0);
+            let w = 1.0 - libm::pow(1.0 - u, 1.0 + THETA);
             (n.implied_channel - n.z_channel) * incision_scale * (1.0 - w)
         })
         .collect();
     let (nx, ny) = (spec.nx as usize, spec.ny as usize);
-    for _ in 0..2 {
+    // 4 passes ≈ 72 m footprint: rounds the knife-edge crease where two
+    // valleys' incision fields meet at a divide (the review's "ridges much
+    // too thin"). Removing sub-64 m creases is band-legal; adding sub-64 m
+    // detail would not be.
+    for _ in 0..4 {
         incision = box3(&incision, nx, ny);
     }
     let mut out = implied.clone();

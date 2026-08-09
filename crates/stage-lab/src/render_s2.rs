@@ -88,9 +88,12 @@ pub fn render_s2(sk: &Skeleton, view: S2View, px: u32, overlays: bool) -> RgbaIm
             course_viz::draw_line(&mut img, a, b, color, thick);
         }
     }
-    // Derived divides.
+    // Derived divides — drawn smoothed (5-point moving average): the
+    // artifact is an 8 m staircase chain and drawing it raw reads as
+    // square-ish basins.
     for line in &sk.divides {
-        for wnd in line.windows(2) {
+        let sm = smooth_polyline(line, 2);
+        for wnd in sm.windows(2) {
             let a = course_viz::to_px(wnd[0], w, h);
             let b = course_viz::to_px(wnd[1], w, h);
             course_viz::draw_line(&mut img, a, b, DIVIDE, 0);
@@ -113,6 +116,23 @@ pub fn render_s2(sk: &Skeleton, view: S2View, px: u32, overlays: bool) -> RgbaIm
         course_viz::draw_line(&mut img, a, b, WINDOW_BOX, 0);
     }
     img
+}
+
+fn smooth_polyline(pts: &[Vec2], half: usize) -> Vec<Vec2> {
+    if pts.len() < 3 {
+        return pts.to_vec();
+    }
+    (0..pts.len())
+        .map(|i| {
+            let lo = i.saturating_sub(half);
+            let hi = (i + half).min(pts.len() - 1);
+            let n = (hi - lo + 1) as f64;
+            let (sx, sy) = pts[lo..=hi]
+                .iter()
+                .fold((0.0, 0.0), |(ax, ay), p| (ax + p.x, ay + p.y));
+            Vec2::new(sx / n, sy / n)
+        })
+        .collect()
 }
 
 fn percentile(g: &Grid<f64>, q: f64) -> f64 {
