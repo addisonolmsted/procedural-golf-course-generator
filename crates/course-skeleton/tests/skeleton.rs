@@ -263,3 +263,44 @@ fn golden_skeleton_seed_1() {
     let want = std::fs::read_to_string(path).expect("golden file (UPDATE_GOLDEN=1 to bless)");
     assert_eq!(got, want, "skeleton goldens diverged — re-bless if intended");
 }
+
+#[test]
+fn authored_network_spacing_hits_the_shared_invariant() {
+    // The stage's core calibration: dist-to-authored-channel p50 must land
+    // in the shared-invariant band on integrated biomes AND not separate by
+    // biome (real archetypes measure 104-120 m regardless of identity).
+    // Battery-style accumulation extraction is re-checked post-texture at
+    // G-TERRAIN; pre-texture, the authored network is the conditioning
+    // quantity S3 consumes.
+    let mut biome_medians = Vec::new();
+    for biome in [
+        BiomeId::Piedmont,
+        BiomeId::GreatPlains,
+        BiomeId::HillCountry,
+        BiomeId::RiverValley,
+    ] {
+        let mut per_seed = Vec::new();
+        for seed in [7u64, 41, 101] {
+            let (_, sk) = build(seed, Some(biome));
+            let mut d: Vec<f64> = sk.flow_distance.data.clone();
+            d.sort_by(|a, b| a.total_cmp(b));
+            let p50 = d[d.len() / 2];
+            // per-tile band: the real corpus's p10-p90 runs 88-140 m
+            assert!(
+                (85.0..=150.0).contains(&p50),
+                "{biome:?} seed {seed}: d2c_p50 {p50:.0} m out of band"
+            );
+            per_seed.push(p50);
+        }
+        per_seed.sort_by(|a, b| a.total_cmp(b));
+        biome_medians.push(per_seed[per_seed.len() / 2]);
+    }
+    // The invariant is SHARED: biome medians must not separate (real
+    // archetype medians span 102-122 m — a 20 m spread).
+    let lo = biome_medians.iter().cloned().fold(f64::INFINITY, f64::min);
+    let hi = biome_medians.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        hi - lo < 30.0,
+        "biome-median separation on a shared invariant: {lo:.0}-{hi:.0} m"
+    );
+}

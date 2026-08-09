@@ -12,6 +12,7 @@
 //! Density ≈ 0 (sandhills) yields zero channels through the same formula —
 //! the engine runs, the network is empty, and that is not a special case.
 
+use course_world::grid::GridSpec;
 use course_world::math::Vec2;
 
 use super::trunk::{self, Steer, Stop, STEP_M};
@@ -29,6 +30,18 @@ pub const T1_STEPS: usize = 16;
 pub const T2_STEPS: usize = 8;
 pub const T3_STEPS: usize = 4;
 
+/// Space-filling infill: headward order-1 fingers placed at the farthest
+/// point from the network and grown downhill until they attach. This is
+/// what makes the accumulation network hit the shared d2c invariant — the
+/// hierarchy alone clusters around the trunk corridor.
+pub const MAX_INFILL: usize = 56;
+pub const INFILL_STEPS: usize = 30;
+pub const INFILL_STEP_M: f64 = 110.0;
+/// Stop placing fingers once every cell is within this of a channel.
+pub const INFILL_PLACE_THRESH_M: f64 = 310.0;
+/// A finger attaches when it comes this close to an existing channel.
+pub const INFILL_ATTACH_M: f64 = 60.0;
+
 /// Minimum channel worth growing at all.
 pub const MIN_CHANNEL_M: f64 = 260.0;
 
@@ -39,6 +52,7 @@ pub struct Draws {
     pub t1: Vec<(f64, f64, Vec<f64>)>,  // MAX_T1 × (arc jitter, angle jitter, steps)
     pub t2: Vec<(f64, f64, Vec<f64>)>,  // MAX_T2
     pub t3: Vec<(f64, f64, Vec<f64>)>,  // MAX_T3
+    pub infill: Vec<(f64, Vec<f64>)>,   // MAX_INFILL × (angle jitter, steps)
 }
 
 impl Draws {
@@ -66,7 +80,14 @@ impl Draws {
         let t1 = level(MAX_T1, T1_STEPS);
         let t2 = level(MAX_T2, T2_STEPS);
         let t3 = level(MAX_T3, T3_STEPS);
-        Draws { outlet_t, trunk_steps, t1, t2, t3 }
+        let infill = (0..MAX_INFILL)
+            .map(|_| {
+                let a = trib_rng.next_f64();
+                let s = (0..INFILL_STEPS).map(|_| trib_rng.next_f64()).collect();
+                (a, s)
+            })
+            .collect();
+        Draws { outlet_t, trunk_steps, t1, t2, t3, infill }
     }
 }
 
@@ -74,6 +95,7 @@ impl Draws {
 /// (trunk first), with Strahler orders assigned bottom-up afterwards.
 pub fn build(
     steer: &Steer,
+    spec8: &GridSpec,
     draws: &Draws,
     density_target_km_km2: f64,
     derangement: f64, // [0,1]: fraction of sub-trunk channels dropped (heathland)
@@ -192,8 +214,197 @@ pub fn build(
         let _ = li;
     }
 
+    // ---- space-filling infill ------------------------------------------
+    // Only for integrated networks: infill IS integration, so a deranged
+    // draw (derangement > 0) keeps its gaps and sandhills has nothing to
+    // attach to. Fingers place at the farthest-from-network cell and grow
+    // downhill until they attach — headward accretion, order-1 by nature.
+    if derangement == 0.0 && !channels.is_empty() {
+        grow_infill(steer, spec8, draws, &mut channels);
+    }
+
     assign_strahler(&mut channels);
     channels
+}
+
+/// Stamp a channel's cells into the attach maps: which channel covers a
+/// cell and the arc along it (from ITS downstream end, pts[0]).
+fn stamp_channel(
+    ci: usize,
+    pts: &[Vec2],
+    spec8: &GridSpec,
+    chan_at: &mut [i32],
+    arc_at: &mut [f64],
+) {
+    let cell = spec8.cell_size;
+    let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
+    let total = trunk::arc_len(pts);
+    let mut s = 0.0;
+    while s <= total {
+        let (p, _) = trunk::point_at_arc(pts, s);
+        let (gx, gy) = ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
+        if gx >= 0 && gy >= 0 && (gx as usize) < nx && (gy as usize) < ny {
+            let lin = gy as usize * nx + gx as usize;
+            if chan_at[lin] < 0 {
+                chan_at[lin] = ci as i32;
+                arc_at[lin] = s;
+            }
+        }
+        s += cell * 0.5;
+    }
+}
+
+/// Two-pass 3-4 chamfer distance to the stamped channel cells, carrying the
+/// nearest channel cell's linear index. Distances in metres (approximate).
+fn chamfer(chan_at: &[i32], spec8: &GridSpec) -> (Vec<f64>, Vec<usize>) {
+    let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
+    let unit = spec8.cell_size / 3.0;
+    let big = f64::INFINITY;
+    let mut d: Vec<f64> = chan_at.iter().map(|&c| if c >= 0 { 0.0 } else { big }).collect();
+    let mut near: Vec<usize> = (0..nx * ny).map(|i| if chan_at[i] >= 0 { i } else { usize::MAX }).collect();
+    let relax = |lin: usize, from: usize, w: f64, d: &mut Vec<f64>, near: &mut Vec<usize>| {
+        if d[from] + w < d[lin] {
+            d[lin] = d[from] + w;
+            near[lin] = near[from];
+        }
+    };
+    for y in 0..ny {
+        for x in 0..nx {
+            let lin = y * nx + x;
+            if x > 0 {
+                relax(lin, lin - 1, 3.0 * unit, &mut d, &mut near);
+            }
+            if y > 0 {
+                relax(lin, lin - nx, 3.0 * unit, &mut d, &mut near);
+                if x > 0 {
+                    relax(lin, lin - nx - 1, 4.0 * unit, &mut d, &mut near);
+                }
+                if x + 1 < nx {
+                    relax(lin, lin - nx + 1, 4.0 * unit, &mut d, &mut near);
+                }
+            }
+        }
+    }
+    for y in (0..ny).rev() {
+        for x in (0..nx).rev() {
+            let lin = y * nx + x;
+            if x + 1 < nx {
+                relax(lin, lin + 1, 3.0 * unit, &mut d, &mut near);
+            }
+            if y + 1 < ny {
+                relax(lin, lin + nx, 3.0 * unit, &mut d, &mut near);
+                if x + 1 < nx {
+                    relax(lin, lin + nx + 1, 4.0 * unit, &mut d, &mut near);
+                }
+                if x > 0 {
+                    relax(lin, lin + nx - 1, 4.0 * unit, &mut d, &mut near);
+                }
+            }
+        }
+    }
+    (d, near)
+}
+
+fn grow_infill(steer: &Steer, spec8: &GridSpec, draws: &Draws, channels: &mut Vec<Channel>) {
+    let cell = spec8.cell_size;
+    let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
+    let center = |lin: usize| {
+        Vec2::new(
+            ((lin % nx) as f64 + 0.5) * cell,
+            ((lin / nx) as f64 + 0.5) * cell,
+        )
+    };
+    let mut chan_at: Vec<i32> = vec![-1; nx * ny];
+    let mut arc_at: Vec<f64> = vec![0.0; nx * ny];
+    for ci in 0..channels.len() {
+        let pts = channels[ci].pts.clone();
+        stamp_channel(ci, &pts, spec8, &mut chan_at, &mut arc_at);
+    }
+    let margin = trunk::EDGE_MARGIN_M;
+    let extent = course_world::world::EXTENT_M;
+    // Failed placements are blacklisted so the argmax moves on — otherwise a
+    // stuck corner cell would eat every remaining draw.
+    let mut blocked = vec![false; nx * ny];
+
+    for (ang_u, jits) in &draws.infill {
+        let (dist, nearv) = chamfer(&chan_at, spec8);
+        // Farthest un-blocked INTERIOR cell (growth needs room to move
+        // without instantly exiting the edge margin), lowest index on ties.
+        let inner = margin + INFILL_STEP_M;
+        let (mut best, mut best_lin) = (0.0f64, usize::MAX);
+        for lin in 0..nx * ny {
+            if blocked[lin] {
+                continue;
+            }
+            let c = center(lin);
+            if c.x < inner || c.y < inner || c.x > extent - inner || c.y > extent - inner {
+                continue;
+            }
+            if dist[lin] > best {
+                best = dist[lin];
+                best_lin = lin;
+            }
+        }
+        if best < INFILL_PLACE_THRESH_M || best_lin == usize::MAX {
+            break;
+        }
+        let mut p = center(best_lin);
+        let mut prev = Vec2::new(0.0, 0.0);
+        let mut pts: Vec<Vec2> = vec![p];
+        let mut attach: Option<(i32, f64, Vec2)> = None;
+        for (si, &u) in jits.iter().enumerate() {
+            let pl = ((p.y / cell).floor() as usize).min(ny - 1) * nx
+                + ((p.x / cell).floor() as usize).min(nx - 1);
+            let nl = nearv[pl];
+            if nl == usize::MAX {
+                break;
+            }
+            if dist[pl] <= INFILL_ATTACH_M {
+                attach = Some((chan_at[nl], arc_at[nl], center(nl)));
+                break;
+            }
+            let t = center(nl);
+            let dx = Vec2::new(t.x - p.x, t.y - p.y);
+            let dl = (dx.x * dx.x + dx.y * dx.y).sqrt().max(1e-9);
+            let to_net = Vec2::new(dx.x / dl, dx.y / dl);
+            let g = steer.grad(steer.implied, p);
+            let gl = (g.x * g.x + g.y * g.y).sqrt().max(1e-9);
+            let down = Vec2::new(-g.x / gl, -g.y / gl);
+            let mut dir = Vec2::new(
+                1.3 * to_net.x + 0.6 * down.x + 0.8 * prev.x,
+                1.3 * to_net.y + 0.6 * down.y + 0.8 * prev.y,
+            );
+            let dn = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
+            dir = Vec2::new(dir.x / dn, dir.y / dn);
+            let ang = (u - 0.5) * 0.8 + if si == 0 { (ang_u - 0.5) * 0.6 } else { 0.0 };
+            dir = trunk::rotate(dir, ang);
+            let q = Vec2::new(p.x + dir.x * INFILL_STEP_M, p.y + dir.y * INFILL_STEP_M);
+            if q.x < margin || q.y < margin || q.x > extent - margin || q.y > extent - margin {
+                break;
+            }
+            pts.push(q);
+            prev = dir;
+            p = q;
+        }
+        let Some((chan, arc, anchor)) = attach else {
+            blocked[best_lin] = true;
+            continue;
+        };
+        pts.push(anchor);
+        pts.reverse(); // pts[0] = downstream junction end
+        if trunk::arc_len(&pts) < 150.0 {
+            blocked[best_lin] = true;
+            continue;
+        }
+        let idx = channels.len();
+        channels.push(Channel {
+            pts: pts.clone(),
+            order: 1,
+            parent: Some(chan as u32),
+            junction_arc_m: arc,
+        });
+        stamp_channel(idx, &pts, spec8, &mut chan_at, &mut arc_at);
+    }
 }
 
 /// Bottom-up Strahler orders from the constructed tree.

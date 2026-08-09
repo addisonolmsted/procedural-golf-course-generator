@@ -39,7 +39,7 @@ pub struct Steer<'a> {
 }
 
 impl Steer<'_> {
-    fn grad(&self, g: &Grid<f64>, p: Vec2) -> Vec2 {
+    pub(crate) fn grad(&self, g: &Grid<f64>, p: Vec2) -> Vec2 {
         let h = 8.0;
         let gx = (g.bilinear(Vec2::new(p.x + h, p.y)) - g.bilinear(Vec2::new(p.x - h, p.y)))
             / (2.0 * h);

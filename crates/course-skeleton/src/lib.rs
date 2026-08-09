@@ -73,7 +73,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         meta: &c1.meta,
     };
     let derangement = integration::derangement(m_integration);
-    let channels = tributary::build(&steer, &draws, density, derangement);
+    let channels = tributary::build(&steer, &spec8, &draws, density, derangement);
 
     // ---- raster + transform -------------------------------------------
     let base_elev = c1.meta.base_level.elev_m;
