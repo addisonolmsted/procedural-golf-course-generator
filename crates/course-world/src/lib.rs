@@ -17,6 +17,7 @@
 //! - [`world`]: the fixed 3 km world box + routable core + resolutions
 
 pub mod ease;
+pub mod flow;
 pub mod grid;
 pub mod gridio;
 pub mod math;
