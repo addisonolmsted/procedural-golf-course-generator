@@ -55,7 +55,7 @@ fn mode_and_class_coverage() {
         classes.insert(s.structure_class.window);
         provinces.insert(s.structure_class.provinces);
         let d = &s.descriptors;
-        assert!((5.0..=120.0).contains(&d.relief_budget_m), "relief {}", d.relief_budget_m);
+        assert!((5.0..=260.0).contains(&d.relief_budget_m), "relief {}", d.relief_budget_m);
         assert!(d.density_target >= 0.0);
         assert!((0.0..course_contracts::units::TAU).contains(&d.wind_azimuth_rad));
         assert!(d.wind_speed_mps >= 1.0 && d.wind_speed_mps <= 15.0);
@@ -69,7 +69,8 @@ fn mode_and_class_coverage() {
 
 #[test]
 fn multi_modality_survives_sampling() {
-    // Piedmont's envelope has two relief modes (~e^3.45=31 m and ~e^3.95=52 m).
+    // Piedmont's envelope has two relief modes (E7-fitted center, original
+    // mode separation preserved; see the fit commit).
     // The sampled population must be measurably spread across both, not
     // collapsed to one: check mass on both sides of the between-modes valley.
     let mut lo = 0usize;
@@ -81,7 +82,7 @@ fn multi_modality_survives_sampling() {
                 forced_biome: Some(BiomeId::Piedmont),
             },
         );
-        if s.descriptors.relief_budget_m < 40.0 {
+        if s.descriptors.relief_budget_m < 148.0 {
             lo += 1;
         } else {
             hi += 1;

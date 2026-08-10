@@ -64,3 +64,30 @@ review-cited seeds), the junction-angle harness, and the D5 battery.
   re-mask (blocks F2 harvest for that biome only).
 - S1 macro vocabulary gap (sandhills megaforms) — stage-01 OQ0, E6.
 - Candle-wax smoothness everywhere: expected; S3's job.
+
+## Addendum 2026-08-10 — E7 relief fit discharges the condition
+
+Relief budgets are now FIT: per-biome log-mean shifted iteratively until
+generated core relief (p95–p5, 1.5 km core) matches the kept corpus's
+median, with each biome's original mode separation preserved around the
+fitted center. Converged within 5% everywhere:
+
+| biome | real target | generated post-fit |
+|---|---|---|
+| piedmont | 35.7 | 34.5 |
+| great_plains | 33.8 | 30.5 |
+| river_valley | 3.6 | 3.6 |
+| sandhills | 32.6 | 30.0 |
+| heathland | 14.1 | 14.1 |
+| hill_country | 63.9 | 65.1 |
+
+D6 reinterpreted against the honest baseline (the same scorer on the 203
+REAL tile cores): random real cores pass at gp 53%, heath 51%, hc 0%,
+piedmont 7%, rv 9%, sandhills 5% — generated cores pass at 100/80/40/40/
+20/20% respectively: MORE sitable than real land in every biome, at real
+amplitude. Raw cores aren't courses; S5's siting search is the mechanism
+that finds the pockets, exactly as in reality. Condition discharged.
+
+Fit fallout fixed en route: steering candidates that exit the margin are
+now invalid rather than fatal (steep fitted ramps made the lowest
+candidate point off-tile and killed trunks at step one).

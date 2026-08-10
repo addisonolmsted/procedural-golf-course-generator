@@ -227,6 +227,17 @@ pub fn grow(
             let ang = k as f64 * 0.26; // ±75° in 15° steps
             let cand = rotate(dir, ang);
             let q = Vec2::new(p.x + cand.x * step_m, p.y + cand.y * step_m);
+            // A candidate that exits the margin is INVALID, not "cheap":
+            // on steep fitted ramps the lowest candidate can point back
+            // out of the box, and choosing it killed whole trunks at step
+            // one (E7-fit regression, piedmont-slope seeds).
+            if q.x < EDGE_MARGIN_M
+                || q.y < EDGE_MARGIN_M
+                || q.x > EXTENT_M - EDGE_MARGIN_M
+                || q.y > EXTENT_M - EDGE_MARGIN_M
+            {
+                continue;
+            }
             let turn_pen = (1.0 - libm::cos(ang)) * 14.0; // metres-equivalent
             let acc_bonus = steer.accommodation.bilinear(q).min(6.0).max(-6.0) * 0.4;
             let galign = (cand.x * gvec.x + cand.y * gvec.y).abs();
@@ -243,6 +254,10 @@ pub fn grow(
                 best_score = score;
                 best_d = cand;
             }
+        }
+        if best_score.is_infinite() {
+            stop = Stop::EdgeMargin;
+            break;
         }
         let mut d = rotate(best_d, (u - 0.5) * 0.35);
 
