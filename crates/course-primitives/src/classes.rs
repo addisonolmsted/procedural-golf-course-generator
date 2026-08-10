@@ -43,19 +43,28 @@ pub fn shape(class: WindowClass, along: f64, cross: f64, amp: f64) -> (f64, f64)
             let riser = sstep((along - mid + 300.0) / 600.0);
             (amp * (0.5 - riser), 0.3 + 0.4 * riser)
         }
-        // The rim of a basin whose centre lies beyond the window: relief
-        // rises away from the edge, accommodation rises toward it.
+        // The rim of a basin: the ramp DECELERATES into a terminal flat
+        // and a shallow closed pocket sits at the low end — the visible
+        // basin signature. (The first version was a plain monotone ramp,
+        // and the blind session confused it with piedmont_slope every
+        // time: a margin with no basin is just a slope.)
         WindowClass::BasinMargin => {
-            let toward = sstep(along / EXTENT_M);
-            (amp * (0.5 - 0.9 * toward), 0.3 + 0.55 * toward)
+            let toward = sstep((along - 0.1 * EXTENT_M) / (0.55 * EXTENT_M));
+            let pocket = bump(along - 0.86 * EXTENT_M, 550.0) * bump(cross, 1100.0);
+            (
+                amp * (0.5 - 0.9 * toward) - 0.5 * amp * pocket,
+                0.3 + 0.5 * toward + 0.2 * pocket,
+            )
         }
         // A plain strong ramp: the class is carried by tilt, not relief.
         WindowClass::PiedmontSlope => (0.0, 0.45),
-        // Three broad treads stepping toward the edge.
+        // Three treads stepping toward the edge, with CRISP risers
+        // (~160 m) and genuinely flat treads — the blind session read the
+        // old 400 m-soft staircase as a plain ramp.
         WindowClass::TerraceFlight => {
             let s = along / EXTENT_M * 3.0;
             let tread = s.floor().clamp(0.0, 2.0);
-            let riser = sstep((s - tread) * 3000.0 / 400.0 / 3.0);
+            let riser = sstep((s - tread) * (1000.0 / 160.0));
             let stepped = (tread + riser) / 3.0;
             (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped))
         }
