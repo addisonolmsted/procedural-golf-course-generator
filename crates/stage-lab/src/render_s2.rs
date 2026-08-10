@@ -88,11 +88,12 @@ pub fn render_s2(sk: &Skeleton, view: S2View, px: u32, overlays: bool) -> RgbaIm
             course_viz::draw_line(&mut img, a, b, color, thick);
         }
     }
-    // Derived divides — drawn smoothed (5-point moving average): the
-    // artifact is an 8 m staircase chain and drawing it raw reads as
-    // square-ish basins.
-    for line in &sk.divides {
-        let sm = smooth_polyline(line, 2);
+    // Derived divides — MAJOR chains only (≥ 600 m), smoothed. Drawing
+    // every minor inter-finger catchment tessellates the tile into
+    // square-ish cells (D8 boundaries staircase on a smooth surface — an
+    // artifact S3's texture dissolves, not a landform to exhibit).
+    for line in sk.divides.iter().filter(|l| l.len() >= 75) {
+        let sm = smooth_polyline(line, 3);
         for wnd in sm.windows(2) {
             let a = course_viz::to_px(wnd[0], w, h);
             let b = course_viz::to_px(wnd[1], w, h);

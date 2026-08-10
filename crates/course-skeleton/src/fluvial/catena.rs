@@ -62,14 +62,23 @@ pub fn assemble(
             if !n.dist_m.is_finite() {
                 return 0.0;
             }
-            // Composite concave hillslope: a definite near-channel groove
-            // (30% of the incision within the first 40 m — without it the
-            // groove is centimetres and any cross-slope of the implied
-            // field swamps it, leaving channels perched beside their own
-            // valleys) plus the broad rise to the crest over D_FULL.
-            let ug = (n.dist_m / 40.0).min(1.0);
+            // Composite concave hillslope with an order-scaled FLAT FLOOR:
+            // without the floor the incision profile rises from the very
+            // centreline and the channel renders as a one-cell knife cut
+            // (the review's "sharp indentations"). Real valley floors have
+            // width; the widths here are provisional placeholders until the
+            // corpus transect fit (E7) supplies them per order.
+            let floor_hw = match n.order {
+                0 | 1 => 8.0,
+                2 => 14.0,
+                3 => 22.0,
+                _ => 30.0,
+            };
+            let d_eff = (n.dist_m - floor_hw).max(0.0);
+            // groove: 30% of the incision within the first 40 m of bank
+            let ug = (d_eff / 40.0).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
-            let uh = (n.dist_m / D_FULL_M).min(1.0);
+            let uh = (d_eff / D_FULL_M).min(1.0);
             let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
             let w = 0.3 * groove + 0.7 * hillslope;
             (n.implied_channel - n.z_channel) * incision_scale * (1.0 - w)
