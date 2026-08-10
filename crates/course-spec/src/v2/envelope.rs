@@ -87,6 +87,11 @@ pub struct BiomeEnvelope {
     /// use a module runs it at zero through the identical code path
     /// (stage-02 doc, "The five modules").
     pub modules: ModuleIntensities,
+    /// Class-conditioned relief multipliers (E6): the descriptor draw was
+    /// blind to the class draw, so a river-valley terrace_flight window
+    /// drew floodplain-flat relief. Missing class = 1.0.
+    #[serde(default)]
+    pub class_relief_mult: BTreeMap<WindowClass, f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except
@@ -248,6 +253,13 @@ impl EnvelopeSet {
                     "{b}: module integration must be in [-1,1], got {}",
                     m.integration
                 )));
+            }
+            for (w, v) in &env.class_relief_mult {
+                if !(0.05..=10.0).contains(v) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: class_relief_mult[{w:?}] = {v} out of (0.05,10)"
+                    )));
+                }
             }
         }
         Ok(())

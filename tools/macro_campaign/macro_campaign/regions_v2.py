@@ -109,6 +109,22 @@ REGIONS_V2 = {
         + _grid(32.90, -92.15, 3, 4)               # Upper Ouachita NWR (LA)
         + _grid(33.07, -92.05, 3, 4)               # Felsenthal NWR (AR)
         + [
+            # E6 MARGIN CAMPAIGN (2026-08-10): tiles deliberately straddling
+            # valley EDGES (bluff lines, terrace risers) — the corpus's
+            # centerline/interior tiles are honestly flat and left the
+            # river-valley margin relief unmeasured (review finding).
+            # Lower Wisconsin north bluff line:
+            (43.13, -90.25), (43.14, -90.40), (43.15, -90.55), (43.13, -90.70),
+            # Kickapoo valley (deeply dissected driftless tributary):
+            (43.45, -90.60), (43.40, -90.62), (43.35, -90.60), (43.50, -90.58),
+            # Mississippi valley wall near the Wisconsin confluence:
+            (43.00, -91.10), (42.93, -91.08), (43.08, -91.12), (42.86, -91.05),
+            # White River western valley wall / Grand Prairie terrace edge:
+            (34.50, -91.25), (34.40, -91.28), (34.30, -91.30), (34.20, -91.28),
+            # Ouachita valley margin:
+            (32.95, -92.25), (32.85, -92.22),
+        ]
+        + [
             # Cache River NWR corridor (AR), north to south.
             (35.30, -91.25), (35.24, -91.22), (35.18, -91.20), (35.12, -91.24),
             (35.06, -91.22), (35.00, -91.25), (34.94, -91.28), (34.88, -91.30),

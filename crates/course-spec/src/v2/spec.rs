@@ -179,13 +179,21 @@ impl SiteSpec {
             course_contracts::units::normalize_direction(par.next_f64() * course_contracts::units::TAU);
         let aesthetic_seed = par.next_u64();
 
+        // Class-conditioned relief (E6): the window class scales the drawn
+        // relief budget — a valley-floor window in a river valley is flat,
+        // a terrace-flight window on the same river carries margin relief.
+        let class_mult = env
+            .class_relief_mult
+            .get(&structure_class.window)
+            .copied()
+            .unwrap_or(1.0);
         let get = |k: &str| -> f64 {
             *values
                 .get(k)
                 .unwrap_or_else(|| panic!("envelope for {} missing dim `{k}`", biome.key()))
         };
         let descriptors = SiteDescriptors {
-            relief_budget_m: get("relief_budget_m"),
+            relief_budget_m: get("relief_budget_m") * class_mult,
             density_target: get("density_target"),
             plasticity: Plasticity::new(get("plasticity"))
                 .expect("logit transform keeps plasticity in (0,1)"),
