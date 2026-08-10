@@ -41,28 +41,71 @@ band statistics S3 will draw from. What is NOT yet fitted: catena curvature
 θ and per-biome relief amplitude (E7 targets); ridge/hillslope FORM beyond
 the profile shape (S3's dictionary carries it).
 
-## MUST PASS — judge these
+## MUST PASS — by feature family
 
-1. **Drainage anatomy.** Every hillslope should fall toward some channel;
-   interfluves are rounded crests between valleys, not plateaus with
-   trenches. (The catena profile guarantees finite valley-wall slope and
-   zero crest slope — if you see slot canyons or knife-edge ridges, that
-   is a bug, and was: two were fixed from exactly this review.)
-2. **Space-filling without uniformity.** No large channel-free quarters on
-   integrated biomes — but spacing should VARY (tight clusters and broad
-   interfluves), like the real p25–p90 spread (≈ 50–240 m).
-3. **Hierarchy.** Thin light fingers feed thicker darker streams; junction
-   angles acute (pointing downstream); no channel crosses another; no
-   loops.
-4. **Base-level obedience.** The trunk exits through the blue edge band;
-   elevations fall toward it.
-5. **Discontinuity behavior.** Where C1 drew a scarp: tributaries stop at
-   it, drainage runs along its base, only the trunk crosses (water gap).
-6. **Biome expression through dials, visible:** sandhills = zero channels,
-   dune trains ⊥ wind; heathland = kettle-pocked, channels sparse and
-   dangling (deranged); river_valley = broad trunk floodplain + terrace
-   steps; hill_country = benched slopes; great_plains = low relief, flat-
-   topped interfluves; piedmont = the plain reference case.
+### Channels (the network)
+
+1. **Topology.** No channel crosses another, no loops, no parallel twins
+   closer than ~40 m (they merge in reality). Tributaries join at acute
+   angles opening upstream; confluences are Ys, not Xs or Ts.
+2. **Space-filling WITH variance.** No channel-free quarter on an
+   integrated biome — but the rhythm must vary: tight dissection in the
+   lowlands, broader spacing near divides (real spread is ~50–240 m from
+   p25 to p90). Uniform spacing everywhere is as wrong as clustering.
+3. **Hierarchy legible.** Light thin fingers feed mid-blue streams feed
+   the dark trunk; each order longer and steadier than the one below;
+   the trunk runs continuously from the interior out through the blue
+   base-level band. Status line: Ω ≥ 3, rb ≈ 3–5, rl ≈ 1.5–3.
+4. **Grade sense.** Valleys deepen and widen downstream (floors are
+   order-scaled); dead-flat channel reaches appear ONLY where the land
+   genuinely dips below the spill level (future ponds — rare on
+   integrated biomes).
+5. **Planform character.** Gentle wandering, not dead-straight beelines
+   (watch long infill fingers — the known residual weakness) and not
+   high-frequency scribble.
+
+### Ridges (interfluves and divides)
+
+1. **Anatomy.** Every interfluve is a rounded crest between two valleys,
+   with hillslopes falling to a channel on BOTH sides. No knife-edges,
+   no plateau-with-trenches, and never a ridge line along a channel
+   (the inversion this review process caught and killed).
+2. **Divides ride crests.** The orange lines sit on the visible high
+   ground, never cross a channel, and close around catchments.
+3. **The dual-network read.** Ridge lines should form a connected
+   branching system interlocking with the drainage — where a spur
+   splits, a divide forks. If you can trace ridges as a network, the
+   layout is right; isolated blobs of high ground are not.
+4. **Width family.** Compare against the geomorphon ridge masses on a
+   real tile of the same biome (tile-lab, ridges layer): generated
+   crests should be in the same breadth family. Per-eye for now —
+   measured widths arrive at E7.
+
+### Basins (kettles, blowouts, ponded reaches)
+
+1. **Kettle fields (heathland).** Irregularly spaced (clusters AND
+   voids — a perfect lattice is wrong), sizes varied ~70–200 m, never
+   centred on a channel. Magenta circles mark intent. Smooth bowls are
+   correct pre-S3; hummocky rims are dictionary texture.
+2. **Derangement (heathland).** Channels sparse and DANGLING — they do
+   not reach the base edge (connectivity ≈ 0 in the status line);
+   kettle catchments own most of the ground.
+3. **Sandhills.** Zero channels, dune trains perpendicular to the wind
+   arrow, enclosed interdune lows. The engine ran; it grew nothing —
+   that is the design.
+4. **Ponded reaches elsewhere.** A flat channel segment crossing a
+   terrain dip is legitimate (S4 paints it as water); many of them on a
+   piedmont-like biome means the base level or relief draw is off —
+   flag the seed.
+
+### Cross-biome (the gallery test)
+
+In the S2 gallery, the six biomes must be tellable apart by STRUCTURE —
+river_valley's floodplain + terrace steps, hill_country's benches,
+great_plains' low flat-topped interfluves, piedmont's mid-relief
+reference, heathland's kettles, sandhills' dunes — while their channel
+spacing statistics stay in the same shared band. Identity through
+structure and (later) texture; never through spacing.
 
 ## MUST NOT JUDGE — S3's job, expected "failures"
 
