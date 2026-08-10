@@ -201,6 +201,11 @@ pub fn grow(
     let steps = ((max_len_m / step_m).round() as usize).min(jitters.len());
     let grain = steer.meta.grain_axis_rad;
     let grain_w = 0.25 * steer.meta.grain_strength;
+    // Curvature memory: thalweg steering can wrap a strong local high into
+    // a near-closed teardrop (review: seeds 7/15 post-E7-fit — tripled
+    // amplitudes made highs stronger deflectors). Sustained same-sign
+    // turning accumulates and same-direction candidates pay for it.
+    let mut turn_accum: f64 = 0.0;
 
     for &u in jitters.iter().take(steps) {
         // Thalweg steering. An earlier draft pulled growth UP the implied
@@ -248,8 +253,15 @@ pub fn grow(
             } else {
                 0.0
             };
-            let score =
-                steer.implied.bilinear(q) + turn_pen + baseward_pen - acc_bonus - grain_bonus;
+            // same-direction curvature debt: kicks in beyond ~90° of
+            // accumulated turn, grows steeply toward a closed loop
+            let curl_pen = if turn_accum * ang > 0.0 {
+                (turn_accum.abs() - 1.3).max(0.0) * 26.0 * (ang.abs() / 1.3)
+            } else {
+                0.0
+            };
+            let score = steer.implied.bilinear(q) + turn_pen + baseward_pen + curl_pen
+                - acc_bonus - grain_bonus;
             if score < best_score {
                 best_score = score;
                 best_d = cand;
@@ -328,6 +340,8 @@ pub fn grow(
             visited.insert(key(m));
         }
         pts.push(q);
+        let signed_turn = libm::atan2(dir.x * d.y - dir.y * d.x, dir.x * d.x + dir.y * d.y);
+        turn_accum = turn_accum * 0.90 + signed_turn;
         dir = d;
         p = q;
     }
