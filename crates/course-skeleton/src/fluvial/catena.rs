@@ -62,8 +62,16 @@ pub fn assemble(
             if !n.dist_m.is_finite() {
                 return 0.0;
             }
-            let u = (n.dist_m / D_FULL_M).min(1.0);
-            let w = 1.0 - libm::pow(1.0 - u, 1.0 + THETA);
+            // Composite concave hillslope: a definite near-channel groove
+            // (30% of the incision within the first 40 m — without it the
+            // groove is centimetres and any cross-slope of the implied
+            // field swamps it, leaving channels perched beside their own
+            // valleys) plus the broad rise to the crest over D_FULL.
+            let ug = (n.dist_m / 40.0).min(1.0);
+            let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
+            let uh = (n.dist_m / D_FULL_M).min(1.0);
+            let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
+            let w = 0.3 * groove + 0.7 * hillslope;
             (n.implied_channel - n.z_channel) * incision_scale * (1.0 - w)
         })
         .collect();

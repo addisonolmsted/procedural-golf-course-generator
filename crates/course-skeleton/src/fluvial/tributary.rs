@@ -473,6 +473,24 @@ fn grow_infill(
         };
         pts.push(anchor);
         pts.reverse(); // pts[0] = downstream junction end
+        // Source-area offset: the placement point is the farthest cell from
+        // the network — typically a crest. A channel head AT the summit
+        // inverts the local anatomy (the review measured it), so the top
+        // ~160 m of the path is hillslope, not channel.
+        let mut drop_from = pts.len();
+        let mut tail = 0.0;
+        while drop_from > 2 {
+            let d = Vec2::new(
+                pts[drop_from - 1].x - pts[drop_from - 2].x,
+                pts[drop_from - 1].y - pts[drop_from - 2].y,
+            );
+            tail += (d.x * d.x + d.y * d.y).sqrt();
+            if tail > 160.0 {
+                break;
+            }
+            drop_from -= 1;
+        }
+        pts.truncate(drop_from);
         if trunk::arc_len(&pts) < 150.0 {
             blocked[best_lin] = true;
             continue;

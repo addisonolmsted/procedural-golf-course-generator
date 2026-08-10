@@ -44,7 +44,10 @@ pub struct ChannelCell {
 /// upstream, never zero (a channel is always a cut).
 fn depth(net_arc_m: f64, max_arc_m: f64, d_mouth_m: f64) -> f64 {
     let u = if max_arc_m > 0.0 { (net_arc_m / max_arc_m).clamp(0.0, 1.0) } else { 0.0 };
-    1.0 + (d_mouth_m - 1.0) * libm::pow(1.0 - u, 0.7)
+    // Floor 2.2 m: a first-order swale is still a real cut. With a 1 m
+    // floor, headwater fingers rode the surface and the review measured a
+    // full channels-on-highs inversion.
+    2.2 + (d_mouth_m - 2.2).max(0.0) * libm::pow(1.0 - u, 0.7)
 }
 
 /// Rasterize the network with base elevations. `d_mouth_m` is the incision
@@ -106,11 +109,21 @@ pub fn rasterize(
         while s <= total {
             let (p, _t) = point_at_arc(&c.pts, s);
             let net_arc = down_arc[ci] + s;
-            let z_raw = implied.bilinear(p) - depth(net_arc, max_net_arc, d_mouth_m);
-            // monotone upstream: never fall below the downstream elevation
-            let z_ch = z_raw.max(z_prev + 0.02);
-            z_prev = z_ch;
-            own.push((s, z_ch));
+            let local_implied = implied.bilinear(p);
+            let z_raw = local_implied - depth(net_arc, max_net_arc, d_mouth_m);
+            // Monotone upstream with ZERO minimum grade: where the terrain
+            // dips below the spill level the profile runs dead flat — a
+            // ponded reach, which the flat-resolving router (D2) exists to
+            // route and S4 will paint as water. ANY positive minimum grade
+            // compounds over flat lowland and stilts the channel above the
+            // ground it drains (0.5% grade measured as a 7 m levee).
+            let z_mono = z_raw.max(z_prev);
+            z_prev = z_mono;
+            own.push((s, z_mono));
+            // The STAMPED elevation additionally never sits above local
+            // ground: through a ponded reach the channel bed follows the
+            // basin floor (min), rather than building a dike across it.
+            let z_ch = z_mono.min(local_implied - 0.3);
 
             let (gx, gy) = ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
             if gx >= 0 && gy >= 0 && (gx as usize) < nx && (gy as usize) < ny {
@@ -120,7 +133,7 @@ pub fn rasterize(
                     channel: ci as u32,
                     order: c.order,
                     z_channel: z_ch,
-                    implied: implied.bilinear(p),
+                    implied: local_implied,
                     outlet_arc_m: net_arc,
                 };
                 match &best[lin] {

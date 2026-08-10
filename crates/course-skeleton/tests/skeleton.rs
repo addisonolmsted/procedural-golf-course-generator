@@ -112,11 +112,24 @@ fn channels_flow_downhill_on_the_height_surface() {
     let (_, sk) = build(41, Some(BiomeId::Piedmont));
     let spec8 = sk.flow_distance.spec;
     let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
+    // Ponded reaches are exempt: where fill raises the surface the channel
+    // crosses a basin at spill level and the raw ground genuinely rises at
+    // the lip (S4 paints these as water; the flat router crosses them).
+    let mut h8 = course_world::grid::Grid::filled(spec8, 0.0f64);
+    for y in 0..ny {
+        for x in 0..nx {
+            h8.data[y * nx + x] = *sk.height.get((x * 4) as u32, (y * 4) as u32);
+        }
+    }
+    let ff = course_world::flow::route(&h8);
     let mut bad = 0;
     let mut total = 0;
     for lin in 0..nx * ny {
         if sk.flow_distance.data[lin] != 0.0 {
             continue; // not a channel cell
+        }
+        if ff.filled.data[lin] > h8.data[lin] + 1e-6 {
+            continue; // ponded reach
         }
         let dir = sk.flow_dir_rad.data[lin];
         if !dir.is_finite() {

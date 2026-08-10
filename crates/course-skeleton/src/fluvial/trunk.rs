@@ -200,18 +200,35 @@ pub fn grow(
     let grain_w = 0.25 * steer.meta.grain_strength;
 
     for &u in jitters.iter().take(steps) {
-        // Steering blend: keep heading, climb the implied surface (upstream
-        // is uphill), seek accommodation, align to grain, jitter.
-        let up = norm(steer.grad(steer.implied, p));
-        let acc = norm(steer.grad(steer.accommodation, p));
+        // Thalweg steering. An earlier draft pulled growth UP the implied
+        // gradient ("upstream is uphill") — which walked the network onto
+        // the C1 ridges, and 1–16 m of carving cannot sink a ridge-running
+        // channel below the surface's real lows (the review measured
+        // channels averaging 9.5 m ABOVE the far field: a full inversion).
+        // Real networks occupy the lows of the initial surface, so growth
+        // now picks, among candidate headings, the one that lands on the
+        // LOWEST implied ground, with a momentum penalty for turning, an
+        // accommodation bonus, and a grain-alignment bonus. The channel
+        // long-profile stays monotone by construction regardless — this is
+        // purely planform.
         let gvec = Vec2::new(libm::cos(grain), libm::sin(grain));
-        // grain is an axis, not a direction: take the sign that agrees.
-        let gsign = if gvec.x * dir.x + gvec.y * dir.y >= 0.0 { 1.0 } else { -1.0 };
-        let mut d = Vec2::new(
-            1.35 * dir.x + 0.85 * up.x + 0.45 * acc.x + grain_w * gsign * gvec.x,
-            1.35 * dir.y + 0.85 * up.y + 0.45 * acc.y + grain_w * gsign * gvec.y,
-        );
-        d = rotate(norm(d), (u - 0.5) * 0.9);
+        let mut best_d = dir;
+        let mut best_score = f64::INFINITY;
+        for k in -5i32..=5 {
+            let ang = k as f64 * 0.26; // ±75° in 15° steps
+            let cand = rotate(dir, ang);
+            let q = Vec2::new(p.x + cand.x * step_m, p.y + cand.y * step_m);
+            let turn_pen = (1.0 - libm::cos(ang)) * 14.0; // metres-equivalent
+            let acc_bonus = steer.accommodation.bilinear(q).min(6.0).max(-6.0) * 0.4;
+            let galign = (cand.x * gvec.x + cand.y * gvec.y).abs();
+            let grain_bonus = grain_w * 10.0 * galign;
+            let score = steer.implied.bilinear(q) + turn_pen - acc_bonus - grain_bonus;
+            if score < best_score {
+                best_score = score;
+                best_d = cand;
+            }
+        }
+        let mut d = rotate(best_d, (u - 0.5) * 0.35);
 
         // Discontinuity behavior inside the influence band.
         let mut truncated = false;
