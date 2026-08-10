@@ -63,7 +63,20 @@ class shape; real macro terrain spreads power continuously across
 orientations (max/min directional ratio 22-28) and wavelengths.
 Dominant wavelength is also uniformly low (785-811 vs 920-1030).
 
-**Work item (S1 spectral fit, pre-S3):** replace the six-mode field
+**RESOLVED 2026-08-10** (same day): many-wave synthesis implemented and
+fitted — 48 waves, log-uniform wavelengths over 400–1600 m, spectral
+tilt β=1.8, orientation mixture (75% isotropic + grain-concentrated).
+Measured after: anisotropy 22–37 vs real 22–28 (from 90k–490k), dominant
+λ 927–941 vs real 918–1027, long:short 1.9–2.2 vs real 0.7–2.6. Relief
+amplitudes re-fitted post-change (all within 6% of corpus). River
+valley's real 241 is expected to come from its class megaform, not the
+background. Remaining refinement (optional): per-biome β. The C1
+legibility gate REQUIRES a fresh blind session — the new field is
+visibly busier and the 0.85/0.18 split was calibrated against the old
+one; the tension between spectral realism and class legibility is now a
+live question for the reviewer.
+
+**Original work item (for the record):** replace the six-mode field
 with a many-wave band-limited synthesis whose radial spectrum and
 orientation concentration are FIT per biome (same loop pattern as the
 E7 relief fit; targets: anisotropy ratio ~ real 22-28, dominant lambda

@@ -55,7 +55,10 @@ fn mode_and_class_coverage() {
         classes.insert(s.structure_class.window);
         provinces.insert(s.structure_class.provinces);
         let d = &s.descriptors;
-        assert!((5.0..=260.0).contains(&d.relief_budget_m), "relief {}", d.relief_budget_m);
+        // Support is [5,260] BEFORE the class-conditioned multiplier (E6);
+        // the smallest multiplier (river-valley valley_floor 0.176) can
+        // legitimately land below 5.
+        assert!((0.8..=260.0).contains(&d.relief_budget_m), "relief {}", d.relief_budget_m);
         assert!(d.density_target >= 0.0);
         assert!((0.0..course_contracts::units::TAU).contains(&d.wind_azimuth_rad));
         assert!(d.wind_speed_mps >= 1.0 && d.wind_speed_mps <= 15.0);

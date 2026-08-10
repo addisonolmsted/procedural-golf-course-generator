@@ -3,7 +3,8 @@
 //! Determinism contract — the `primitives/v1` draw transcript, in order,
 //! every count fixed:
 //!   1 grain axis + 1 grain-strength jitter + 1 base edge + 1 base drop
-//!   + 1 tilt jitter + 2 per relief mode (K_MODES phases/orientations)
+//!   + 1 tilt jitter + 4 per relief wave (N_WAVES × wavelength/direction/
+//!   phase/amplitude uniforms)
 //!   + 3 discontinuity params (always drawn, used only with two provinces)
 //!   + 2 class params.
 //!
@@ -22,8 +23,25 @@ use course_world::Grid;
 
 use crate::{classes, discontinuity};
 
-/// Relief modes: fixed wavelengths >= 400 m (the C1 band edge).
-const MODE_WAVELENGTHS_M: [f64; 6] = [1500.0, 1150.0, 850.0, 650.0, 500.0, 400.0];
+/// The relief background is a MANY-WAVE band-limited field, not discrete
+/// modes: six plane waves measured four orders of magnitude too
+/// anisotropic against the corpus (each wave is a single spectral spike
+/// with one orientation; real macro terrain spreads power continuously —
+/// directional max/min ≈ 22–28). See docs/calibration/e6-report.md,
+/// "S1-band spectral realism".
+const N_WAVES: usize = 48;
+/// Band the waves tile (S1 owns ≥ 400 m; measured organization runs to
+/// ~1600 m).
+const WAVE_BAND_M: (f64, f64) = (400.0, 1600.0);
+/// Spectral tilt: amplitude ∝ (λ/λmax)^(BETA/2) with λ uniform in log λ —
+/// FIT dial (targets: per-biome dominant wavelength + long:short power).
+const WAVE_BETA: f64 = 1.8;
+/// Orientation mixture: this fraction of waves is isotropic (uniform
+/// axis); the rest concentrate on the grain axis — FIT dial (target:
+/// band anisotropy ratio ≈ real 22–28, class shape included).
+const WAVE_ISO_FRAC: f64 = 0.75;
+/// Spread of the grain-concentrated waves, radians.
+const WAVE_GRAIN_SPREAD: f64 = 0.45;
 
 pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let mut rng = identity.stream(streams::PRIMITIVES);
@@ -43,16 +61,34 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     // Drawn for the transcript; reserved for a jittered tilt direction once
     // the monotonicity check learns tolerance (stage-01 open question).
     let _tilt_jitter = (rng.next_f64() - 0.5) * 0.5;
-    let mut phases = [0.0f64; MODE_WAVELENGTHS_M.len()];
-    let mut mode_dirs = [0.0f64; MODE_WAVELENGTHS_M.len()];
-    for i in 0..MODE_WAVELENGTHS_M.len() {
-        phases[i] = rng.next_f64() * TAU;
-        // Mode directions cluster around the grain axis by grain_strength.
-        let spread = (1.0 - grain_strength) * std::f64::consts::PI;
-        mode_dirs[i] = grain_axis_rad + (rng.next_f64() - 0.5) * spread;
+    // Per-wave draws, interleaved (λ, θ, φ, amp) × N_WAVES — the
+    // transcript is the contract.
+    let (lam_lo, lam_hi) = WAVE_BAND_M;
+    let log_ratio = libm::log(lam_hi / lam_lo);
+    let mut waves = Vec::with_capacity(N_WAVES);
+    for _ in 0..N_WAVES {
+        let u_lam = rng.next_f64();
+        let u_dir = rng.next_f64();
+        let u_phi = rng.next_f64();
+        let u_amp = rng.next_f64();
+        let lam = lam_lo * libm::exp(u_lam * log_ratio); // uniform in log λ
+        // Orientation mixture: mostly isotropic, some grain-concentrated
+        // (grain_strength narrows the concentrated share further).
+        let dir = if u_dir < WAVE_ISO_FRAC {
+            (u_dir / WAVE_ISO_FRAC) * std::f64::consts::PI
+        } else {
+            let v = (u_dir - WAVE_ISO_FRAC) / (1.0 - WAVE_ISO_FRAC); // [0,1)
+            grain_axis_rad
+                + (v - 0.5) * 2.0 * WAVE_GRAIN_SPREAD * (1.0 - 0.5 * grain_strength)
+        };
+        let phase = u_phi * TAU;
+        // amplitude: spectral tilt × jitter; normalized below
+        let amp = libm::pow(lam / lam_hi, WAVE_BETA / 2.0) * (0.6 + 0.8 * u_amp);
+        waves.push((lam, dir, phase, amp));
     }
-    // Wait — the loop above draws 2 per mode interleaved; keep exactly that
-    // order forever (the transcript is the contract).
+    // Normalize so the wave sum has unit std, then scale by the mode share.
+    let var: f64 = waves.iter().map(|(_, _, _, a)| a * a * 0.5).sum();
+    let wave_norm = 1.0 / var.sqrt().max(1e-9);
     let disc_angle = rng.next_f64() * TAU;
     let disc_offset = (rng.next_f64() - 0.5) * 1200.0;
     let disc_bow = (rng.next_f64() - 0.5) * 700.0;
@@ -91,10 +127,10 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let mut hardness = Grid::filled(grid, hardness_base);
     let mut accommodation = Grid::filled(grid, 0.5f64);
 
-    // The class shape CARRIES the macro form; modes season it. The first
-    // legibility renders had these comparable and every class drowned in
-    // blob noise — the P1 protocol's first catch.
-    let mode_amp = relief_amp * 0.18 / (MODE_WAVELENGTHS_M.len() as f64).sqrt();
+    // The class shape CARRIES the macro form; the wave field seasons it.
+    // (The 0.85/0.18 split survived the many-wave rework numerically; the
+    // C1 legibility gate must be re-run whenever this synthesis changes.)
+    let mode_amp = relief_amp * 0.18 * wave_norm;
     for y in 0..grid.ny {
         for x in 0..grid.nx {
             let p = grid.world_of(x, y);
@@ -107,9 +143,9 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
             let (class_relief, class_accom) =
                 classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85);
             let mut r = class_relief;
-            for i in 0..MODE_WAVELENGTHS_M.len() {
-                let u = p.x * libm::cos(mode_dirs[i]) + p.y * libm::sin(mode_dirs[i]);
-                r += mode_amp * libm::sin(u / MODE_WAVELENGTHS_M[i] * TAU + phases[i]);
+            for (lam, dir, phase, amp) in &waves {
+                let u = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);
+                r += mode_amp * amp * libm::sin(u / lam * TAU + phase);
             }
             let mut a = class_accom;
             let mut h = hardness_base;
