@@ -62,8 +62,13 @@ limit, equalize, close amplitude to the biome band.
   per-biome bands.
 - Energy distance vs the v1 baseline (2.35) on held-out tiles.
 - Seam detector: variogram range + spectral slope anomalies.
-- KNOWN CAVEAT carried: river_valley harvests only from clean cells; its
-  fine_std target must be recomputed post-re-mask before use.
+- QUARANTINE RESOLVED (2026-08-10, post-re-mask): with leveled ground
+  excluded (rv clean fraction 56%), river_valley's clean-masked fine_std
+  is 0.20 m vs 0.19 valid-masked - the low texture was REAL, not
+  contamination: natural bottomland floor is genuinely quiet. Clean-
+  masked per-biome fine_std targets (medians): piedmont 0.46, sandhills
+  0.61, great_plains 0.36, river_valley 0.20, hill_country 0.73,
+  heathland 0.32 m. The harvester uses clean cells by construction.
 
 ## Re-mask outcome (2026-08-10, measured)
 
