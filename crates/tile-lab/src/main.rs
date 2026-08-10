@@ -64,7 +64,7 @@ enum Layer {
 const LAYERS: [(Layer, &str, u8, [u8; 4]); 6] = [
     (
         Layer::Agri,
-        "agriculture (OSM) — EXCLUDED from texture harvest",
+        "leveled/agriculture — EXCLUDED from texture harvest",
         64,
         [200, 170, 40, 110],
     ),

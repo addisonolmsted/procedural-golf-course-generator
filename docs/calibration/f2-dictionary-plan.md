@@ -65,6 +65,18 @@ limit, equalize, close amplitude to the biome band.
 - KNOWN CAVEAT carried: river_valley harvests only from clean cells; its
   fine_std target must be recomputed post-re-mask before use.
 
+## Re-mask outcome (2026-08-10, measured)
+
+OSM landuse coverage is EMPTY across the rural corpus (zero landuse tags
+of any kind on the Louisiana bottomland bbox tested) - the OSM agri mask
+is kept but cannot be relied on. The workhorse is a PHYSICAL screen:
+local fine-band sigma (30 m window) < 4 cm => leveled ground, excluded
+from the clean mask (fields measure 3-9 cm vs >= 15 cm p25 natural; the
+threshold keeps >= 95% of natural cells). Additionally the harvester's
+curation step must carry a per-patch rectilinearity rejector (axis-
+aligned line-energy check) for field-boundary berms that survive the
+smoothness screen.
+
 ## Order of work
 
 1. (running) agri masks for all tiles → re-extract v2 (version 2) →

@@ -223,6 +223,16 @@ def extract_tile(biome: str, tid: str) -> dict:
         clean &= ~developed
     if agri is not None:
         clean &= ~agri
+    # Physical leveled-ground screen (the OSM agri mask is empty across
+    # most of the rural corpus — measured zero landuse tags of ANY kind on
+    # the Louisiana bottomland). Laser-leveled fields carry ~3–9 cm of
+    # local fine-band texture vs ≥ 15 cm p25 on natural ground; the 4 cm
+    # threshold keeps ≥ 95% of natural cells (natural p5 ≈ 5.2 cm).
+    fm = ndimage.uniform_filter(d["fine"], 15)
+    fm2 = ndimage.uniform_filter(d["fine"] ** 2, 15)
+    leveled = np.sqrt(np.maximum(fm2 - fm * fm, 0.0)) < 0.04
+    leveled = ndimage.binary_dilation(leveled, iterations=2)
+    clean &= ~leveled
 
     vdir = OUT / "extract_v2" / biome
     vdir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +280,7 @@ def extract_tile(biome: str, tid: str) -> dict:
     classes[sk["lake"]] |= CLASS_FILL_FLAT
     if agri is not None:
         classes[agri] |= CLASS_AGRI
+    classes[leveled] |= CLASS_AGRI
     if developed is not None:
         classes[developed] |= CLASS_DEVELOPED
 
