@@ -92,8 +92,11 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let disc_angle = rng.next_f64() * TAU;
     let disc_offset = (rng.next_f64() - 0.5) * 1200.0;
     let disc_bow = (rng.next_f64() - 0.5) * 700.0;
-    let _class_a = rng.next_f64();
-    let _class_b = rng.next_f64();
+    // The class draws now carry feature-line curvature (they were
+    // reserved in the transcript from the start — no transcript change).
+    let class_a = rng.next_f64();
+    let class_b = rng.next_f64();
+    let line_curve = classes::LineCurve::from_draws(class_a, class_b);
 
     // ---- geometry helpers ----------------------------------------------
     let toward_edge = match edge {
@@ -141,7 +144,7 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
 
             // Relief: class shape + grain-clustered smooth modes.
             let (class_relief, class_accom) =
-                classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85);
+                classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85, line_curve);
             let mut r = class_relief;
             for (lam, dir, phase, amp) in &waves {
                 let u = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);
