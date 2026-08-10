@@ -28,7 +28,10 @@ pub fn apply(
     // Tread spacing: mean stratum thickness, clamped to the band S2 owns.
     let mean_thick =
         strata.iter().map(|s| s.thickness_m).sum::<f64>() / strata.len() as f64;
-    let spacing = mean_thick.clamp(4.0, 24.0);
+    // Fewer, broader benches: the review read the earlier 4–24 m spacing
+    // as "a lot of ridges in a small area" — real caprock benches come 2–4
+    // per major slope, not 6–8.
+    let spacing = (mean_thick * 2.2).clamp(14.0, 34.0);
 
     for (i, zi) in z.data.iter_mut().enumerate() {
         let frac = *zi / spacing - libm::floor(*zi / spacing); // [0,1) within a band

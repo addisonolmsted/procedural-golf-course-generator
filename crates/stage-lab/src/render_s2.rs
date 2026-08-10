@@ -92,9 +92,22 @@ pub fn render_s2(sk: &Skeleton, view: S2View, px: u32, overlays: bool) -> RgbaIm
     // every minor inter-finger catchment tessellates the tile into
     // square-ish cells (D8 boundaries staircase on a smooth surface — an
     // artifact S3's texture dissolves, not a landform to exhibit).
+    let spec8 = sk.flow_distance.spec;
+    let on_channel = |p: Vec2| {
+        let gx = ((p.x / spec8.cell_size) as u32).min(spec8.nx - 1);
+        let gy = ((p.y / spec8.cell_size) as u32).min(spec8.ny - 1);
+        sk.flow_distance.data[(gy * spec8.nx + gx) as usize] == 0.0
+    };
     for line in sk.divides.iter().filter(|l| l.len() >= 75) {
-        let sm = smooth_polyline(line, 3);
+        let sm = smooth_polyline(line, 2);
         for wnd in sm.windows(2) {
+            // The moving average can bridge a smoothed divide across a
+            // channel meander — skip any segment touching a channel cell
+            // (a divide crossing a channel is definitionally wrong).
+            let mid = Vec2::new((wnd[0].x + wnd[1].x) * 0.5, (wnd[0].y + wnd[1].y) * 0.5);
+            if on_channel(wnd[0]) || on_channel(mid) || on_channel(wnd[1]) {
+                continue;
+            }
             let a = course_viz::to_px(wnd[0], w, h);
             let b = course_viz::to_px(wnd[1], w, h);
             course_viz::draw_line(&mut img, a, b, DIVIDE, 0);

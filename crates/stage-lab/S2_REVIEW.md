@@ -107,6 +107,20 @@ reference, heathland's kettles, sandhills' dunes — while their channel
 spacing statistics stay in the same shared band. Identity through
 structure and (later) texture; never through spacing.
 
+## KNOWN PROVISIONAL — real, acknowledged, scheduled
+
+- **Channel cross-sections.** Floors are order-scaled constants and the
+  bank profile is parametric; walls can read as sharp cuts, especially
+  where the 8 m grid facets under bilinear upsampling. Measured
+  widths/cross-sections come from the corpus valley-transect fit (E7).
+- **Near-parallel streams (~40–60 m).** The separation floor is 40 m;
+  long tangential junction approaches and yazoo-style floodplain
+  parallels can sit just above it (seed 44). Real pattern, tight
+  expression — watch, don't fail.
+- **Rare residual crossings.** Post-smoothing displacement is bounded
+  below the separation floor, so any remaining crossing is a bug —
+  report seed + location.
+
 ## MUST NOT JUDGE — S3's job, expected "failures"
 
 - **Fine dissection / spur-and-hollow texture.** The real hillshade's

@@ -265,6 +265,8 @@ pub fn build(
                 if pts.len() < 2 {
                     continue;
                 }
+                let mut pts = pts;
+                enforce_mouth_angle(&mut pts, &channels[parent_idx].pts, arc);
                 let idx = channels.len();
                 next_parents.push(idx);
                 channels.push(Channel {
@@ -301,6 +303,46 @@ pub fn build(
     channels
 }
 
+/// Junction-angle enforcement (review: 39% of junctions measured > 80° —
+/// the spawn angle is correct but the first thalweg steering step destroys
+/// it). The mouth segment is rotated to leave the parent's DOWNSTREAM
+/// tangent at 30–62°, preserving the side it departs on; Chaikin then
+/// blends the correction into the rest of the path.
+fn enforce_mouth_angle(pts: &mut [Vec2], parent_pts: &[Vec2], junction_arc_m: f64) {
+    if pts.len() < 2 {
+        return;
+    }
+    let (_, up_tan) = trunk::point_at_arc(parent_pts, junction_arc_m);
+    let down = Vec2::new(-up_tan.x, -up_tan.y);
+    let m = Vec2::new(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    let ml = (m.x * m.x + m.y * m.y).sqrt().max(1e-9);
+    let mn = Vec2::new(m.x / ml, m.y / ml);
+    // NOTE: pts[0] is the mouth; the channel FLOWS toward pts[0], so the
+    // upstream-pointing mouth segment forms (180° − junction angle) with
+    // the downstream tangent. Enforce on the flow-frame angle.
+    let dot = (-mn.x) * down.x + (-mn.y) * down.y;
+    let ang = dot.clamp(-1.0, 1.0).acos();
+    let lo = 30f64.to_radians();
+    let hi = 62f64.to_radians();
+    if ang >= lo && ang <= hi {
+        return;
+    }
+    let side = if down.x * mn.y - down.y * mn.x >= 0.0 { 1.0 } else { -1.0 };
+    // REFLECT overshoot into the band rather than clamping: a hard clamp
+    // parked half the junctions at exactly the ceiling (p50 = p75 = 62°),
+    // which is its own kind of mechanical. The overshoot becomes the
+    // in-band position, so a 90° arrival lands mid-band and a 65° arrival
+    // stays near the top.
+    let target_ang = if ang > hi {
+        hi - (ang - hi).min(hi - lo) * 0.8
+    } else {
+        lo
+    };
+    // upstream mouth direction = -(down rotated by side*target)
+    let flow_dir = trunk::rotate(down, side * target_ang);
+    pts[1] = Vec2::new(pts[0].x - flow_dir.x * ml, pts[0].y - flow_dir.y * ml);
+}
+
 /// Endpoint-preserving Chaikin corner cutting.
 fn chaikin(pts: &[Vec2], iters: usize) -> Vec<Vec2> {
     let mut cur = pts.to_vec();
@@ -312,8 +354,12 @@ fn chaikin(pts: &[Vec2], iters: usize) -> Vec<Vec2> {
         out.push(cur[0]);
         for w in cur.windows(2) {
             let (a, b) = (w[0], w[1]);
-            out.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
-            out.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+            // 0.85/0.15 weights bound the corner displacement to well
+            // under the 40 m channel-separation floor, so smoothing can
+            // never re-cross what growth kept apart (a rare-crossing
+            // report traced here).
+            out.push(Vec2::new(0.85 * a.x + 0.15 * b.x, 0.85 * a.y + 0.15 * b.y));
+            out.push(Vec2::new(0.15 * a.x + 0.85 * b.x, 0.15 * a.y + 0.85 * b.y));
         }
         out.push(*cur.last().unwrap());
         cur = out;
@@ -567,6 +613,7 @@ fn grow_infill(
             blocked[best_lin] = true;
             continue;
         }
+        enforce_mouth_angle(&mut pts, &channels[chan as usize].pts, arc);
         let idx = channels.len();
         channels.push(Channel {
             pts: pts.clone(),
