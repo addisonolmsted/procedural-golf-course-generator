@@ -43,6 +43,36 @@ texture family as the identity axis.
 | sandhills | 24.7 | does NOT stand out at this band |
 | great_plains | 22.1 | |
 
+## S1-band spectral realism (added after the macro review question)
+
+Generated C1 macro surfaces measured with the identical band statistics:
+
+| biome | anisotropy gen/real | dom lambda gen/real |
+|---|---|---|
+| piedmont | 488,507 / 26 | 785 / 933 |
+| hill_country | 308,132 / 27 | 796 / 922 |
+| great_plains | 306,953 / 22 | 785 / 1027 |
+| river_valley | 249,259 / 241 | 811 / 765 |
+| sandhills | 112,517 / 25 | 795 / 918 |
+| heathland | 93,581 / 28 | 798 / 956 |
+
+**The generated macro band is pathologically anisotropic - four orders
+of magnitude over real.** Cause: the S1 field is six discrete plane
+waves (each a single spectral spike with one orientation) plus a 1-D
+class shape; real macro terrain spreads power continuously across
+orientations (max/min directional ratio 22-28) and wavelengths.
+Dominant wavelength is also uniformly low (785-811 vs 920-1030).
+
+**Work item (S1 spectral fit, pre-S3):** replace the six-mode field
+with a many-wave band-limited synthesis whose radial spectrum and
+orientation concentration are FIT per biome (same loop pattern as the
+E7 relief fit; targets: anisotropy ratio ~ real 22-28, dominant lambda
+and long:short power in band). Class shapes stay (the megaform is real -
+river_valley's 241 shows a single strong orientation is sometimes
+correct); the mode field supplies the missing cross-orientation power.
+C1 class legibility must be RE-VERIFIED after the change (the 0.85/0.18
+ratio was calibrated against the old field).
+
 Two consequences:
 1. **Class-conditioned relief** (implemented with this report): river
    valley's organization is a single megaform whose expression depends on
