@@ -292,7 +292,7 @@ pub fn build(
                 if pts.len() < 2 {
                     continue;
                 }
-                let pts = enforce_mouth_angle(
+                let pts = validated_child(
                     &pts,
                     &channels[parent_idx].pts,
                     arc,
@@ -300,7 +300,6 @@ pub fn build(
                     parent_idx as i32,
                     spec8,
                 );
-                let pts = chaikin(&pts, 2);
                 let idx = channels.len();
                 next_parents.push(idx);
                 channels.push(Channel {
@@ -325,8 +324,166 @@ pub fn build(
         grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
+    // FINAL GUARANTEE: no channel segment properly crosses another. The
+    // growth-time guards prevent almost everything, but three review
+    // rounds showed each closed hole shifts a rare variant elsewhere —
+    // so the property is enforced by direct sweep: any remaining crossing
+    // trims the later-built channel at the crossing point (unless that
+    // would strand one of its children's junctions, in which case the
+    // earlier channel is tried, else it is left and will show in the
+    // counter). Deterministic, exact, and future-proof against new
+    // growth features.
+    trim_crossings(&mut channels);
+
     assign_strahler(&mut channels);
     channels
+}
+
+/// Pick the best VALIDATED variant of a child's geometry: corrected +
+/// smoothed if it clears the parent, else smoothed raw, else raw. The
+/// mouth-correction guard alone was insufficient because Chaikin runs
+/// after it and can displace the near-mouth curve across a parent that
+/// sits closer than the smoothing displacement.
+fn validated_child(
+    raw: &[Vec2],
+    parent_pts: &[Vec2],
+    junction_arc_m: f64,
+    chan_at: &[i32],
+    parent_id: i32,
+    spec8: &GridSpec,
+) -> Vec<Vec2> {
+    // First crossing segment index, skipping only the anchor-touching
+    // FIRST segment (not a distance zone — distance zones were a 20 m
+    // blind spot that three review rounds of crossings hid inside).
+    let first_cross = |child: &[Vec2]| -> Option<usize> {
+        for (sj, wj) in child.windows(2).enumerate() {
+            for wi in parent_pts.windows(2) {
+                if sj == 0 {
+                    continue;
+                }
+                if proper_cross(wi[0], wi[1], wj[0], wj[1]) {
+                    return Some(sj);
+                }
+            }
+        }
+        None
+    };
+    let v1 = chaikin(
+        &enforce_mouth_angle(raw, parent_pts, junction_arc_m, chan_at, parent_id, spec8),
+        2,
+    );
+    if first_cross(&v1).is_none() {
+        return v1;
+    }
+    let v2 = chaikin(raw, 2);
+    if first_cross(&v2).is_none() {
+        return v2;
+    }
+    // Terminal variant, crossing-free BY CONSTRUCTION: truncate raw before
+    // its first crossing, then shrink the first segment until even it
+    // clears (a short stub beats any crossing).
+    let mut v3: Vec<Vec2> = match first_cross(raw) {
+        Some(sj) => raw[..(sj + 1).max(2)].to_vec(),
+        None => raw.to_vec(),
+    };
+    for _ in 0..8 {
+        let still = parent_pts
+            .windows(2)
+            .any(|w| proper_cross(w[0], w[1], v3[0], v3[1]));
+        if !still {
+            break;
+        }
+        v3[1] = Vec2::new(0.5 * (v3[0].x + v3[1].x), 0.5 * (v3[0].y + v3[1].y));
+        v3.truncate(2);
+    }
+    v3
+}
+
+fn proper_cross(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+    let o = |p: Vec2, q: Vec2, r: Vec2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    let ln = |p: Vec2, q: Vec2| ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt().max(1e-9);
+    let (lab, lcd) = (ln(a, b), ln(c, d));
+    let (d1, d2) = (o(a, b, c) / lab, o(a, b, d) / lab);
+    let (d3, d4) = (o(c, d, a) / lcd, o(c, d, b) / lcd);
+    d1.abs() > 0.5
+        && d2.abs() > 0.5
+        && d3.abs() > 0.5
+        && d4.abs() > 0.5
+        && d1 * d2 < 0.0
+        && d3 * d4 < 0.0
+}
+
+fn trim_crossings(channels: &mut [Channel]) {
+    let arc_upto = |pts: &[Vec2], k: usize| -> f64 {
+        pts[..k]
+            .windows(2)
+            .map(|w| ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt())
+            .sum()
+    };
+    for _sweep in 0..4 {
+        let mut acted = false;
+        for j in 1..channels.len() {
+            // earliest crossing of channel j against any earlier channel,
+            // remembering the earlier channel's own crossing segment for
+            // the fallback.
+            let mut cut: Option<(usize, usize, usize)> = None; // (sj, i, si)
+            for i in 0..j {
+                let (a_pts, b_pts) = (&channels[i].pts, &channels[j].pts);
+                for (sj, wj) in b_pts.windows(2).enumerate() {
+                    for (si, wi) in a_pts.windows(2).enumerate() {
+                        if proper_cross(wi[0], wi[1], wj[0], wj[1]) {
+                            if cut.is_none_or(|(c, _, _)| sj < c) {
+                                cut = Some((sj, i, si));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            let Some((sj, i, si)) = cut else { continue };
+            // Prefer trimming the later channel; fall back to the earlier
+            // one when the cut would strand one of its children.
+            let strands = |idx: usize, keep: usize, chans: &[Channel]| {
+                let new_len = arc_upto(&chans[idx].pts, keep);
+                chans
+                    .iter()
+                    .any(|c| c.parent == Some(idx as u32) && c.junction_arc_m > new_len - 10.0)
+            };
+            let keep_j = (sj + 1).max(2);
+            if !strands(j, keep_j, channels) {
+                channels[j].pts.truncate(keep_j);
+                // A crossing on the FIRST segment survives truncation (a
+                // channel needs 2 points) — shrink the segment toward the
+                // mouth until it clears the other channel.
+                if sj == 0 {
+                    let other = channels[i].pts.clone();
+                    let ch = &mut channels[j];
+                    for _ in 0..6 {
+                        let still = other
+                            .windows(2)
+                            .any(|w| proper_cross(w[0], w[1], ch.pts[0], ch.pts[1]));
+                        if !still {
+                            break;
+                        }
+                        ch.pts[1] = Vec2::new(
+                            0.5 * (ch.pts[0].x + ch.pts[1].x),
+                            0.5 * (ch.pts[0].y + ch.pts[1].y),
+                        );
+                    }
+                }
+                acted = true;
+                continue;
+            }
+            let keep_i = (si + 1).max(2);
+            if !strands(i, keep_i, channels) {
+                channels[i].pts.truncate(keep_i);
+                acted = true;
+            }
+        }
+        if !acted {
+            break;
+        }
+    }
 }
 
 /// Junction-angle enforcement (review: 39% of junctions measured > 80° —
@@ -375,33 +532,49 @@ fn enforce_mouth_angle(
     } else {
         lo
     };
-    let flow_dir = trunk::rotate(down, side * target_ang);
+    // Sign check, worked concretely: down=(1,0), child heading straight
+    // up (mn=(0,1)) ⇒ side=+1. The guide must land on pts[1]'s side
+    // (y>0), which requires flow_dir = rotate(down, −side·target) so that
+    // the upstream direction −flow_dir has +y. The first version used
+    // +side and put the guide on the OPPOSITE side of the parent — the
+    // channel left at the enforced angle, hooked back, and crossed the
+    // parent just upstream of every corrected junction (the review's
+    // recurring pattern, ~3 crossings/seed measured).
+    let flow_dir = trunk::rotate(down, -side * target_ang);
     let guide_len = ml.min(40.0);
     let guide = Vec2::new(pts[0].x - flow_dir.x * guide_len, pts[0].y - flow_dir.y * guide_len);
     let mut out = Vec::with_capacity(pts.len() + 1);
     out.push(pts[0]);
     out.push(guide);
     out.extend_from_slice(&pts[1..]);
-    // collision check on the two modified segments (4 m sampling); the
-    // parent is legal within 80 m of the mouth.
-    let cell = spec8.cell_size;
-    let (rnx, rny) = (spec8.nx as usize, spec8.ny as usize);
-    let mut walked = 0.0;
-    for w in out.windows(2).take(2) {
-        let seg = Vec2::new(w[1].x - w[0].x, w[1].y - w[0].y);
-        let seg_len = (seg.x * seg.x + seg.y * seg.y).sqrt();
-        let nsub = (seg_len / 4.0).ceil().max(1.0) as usize;
-        for t in 1..=nsub {
-            let f = t as f64 / nsub as f64;
-            let q = Vec2::new(w[0].x + seg.x * f, w[0].y + seg.y * f);
-            let lin = ((q.y / cell).floor() as usize).min(rny - 1) * rnx
-                + ((q.x / cell).floor() as usize).min(rnx - 1);
-            let occ = chan_at[lin];
-            if occ >= 0 && !(occ == parent_id && walked + seg_len * f <= 80.0) {
-                return pts.to_vec(); // revert: keep the honest geometry
+    // Exact geometric guard: if either modified segment PROPERLY crosses
+    // the parent polyline, revert (cell-based checks with parent
+    // exemptions kept leaking one variant or another of this — the
+    // review chased three of them; a crossing test cannot be argued with).
+    let crosses_parent = |a: Vec2, b: Vec2| -> bool {
+        for w in parent_pts.windows(2) {
+            let o = |p: Vec2, q: Vec2, r: Vec2| {
+                (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+            };
+            let ln = |p: Vec2, q: Vec2| {
+                ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt().max(1e-9)
+            };
+            let (lab, lcd) = (ln(a, b), ln(w[0], w[1]));
+            let (d1, d2) = (o(a, b, w[0]) / lab, o(a, b, w[1]) / lab);
+            let (d3, d4) = (o(w[0], w[1], a) / lcd, o(w[0], w[1], b) / lcd);
+            if d1.abs() > 0.5 && d2.abs() > 0.5 && d3.abs() > 0.5 && d4.abs() > 0.5
+                && d1 * d2 < 0.0
+                && d3 * d4 < 0.0
+            {
+                return true;
             }
         }
-        walked += seg_len;
+        false
+    };
+    for w in out.windows(2).take(2) {
+        if crosses_parent(w[0], w[1]) {
+            return pts.to_vec();
+        }
     }
     out
 }
@@ -676,8 +849,7 @@ fn grow_infill(
             blocked[best_lin] = true;
             continue;
         }
-        let pts = enforce_mouth_angle(&pts, &channels[chan as usize].pts, arc, chan_at, chan, spec8);
-        let pts = chaikin(&pts, 2);
+        let pts = validated_child(&pts, &channels[chan as usize].pts, arc, chan_at, chan, spec8);
         let idx = channels.len();
         channels.push(Channel {
             pts: pts.clone(),

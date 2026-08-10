@@ -317,3 +317,57 @@ fn authored_network_spacing_hits_the_shared_invariant() {
         "biome-median separation on a shared invariant: {lo:.0}-{hi:.0} m"
     );
 }
+
+#[test]
+fn no_channel_crossings() {
+    // The review found real crossings THREE times while ad-hoc counters
+    // reported zero (junction-zone exclusions and area epsilons kept
+    // hiding exactly the failing pattern). This is the honest test:
+    // proper segment intersection with 1 m clearances, only the anchor
+    // contact (both starts within 20 m of a parent-child junction)
+    // exempt.
+    let o = |p: Vec2, q: Vec2, r: Vec2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    for seed in [6u64, 36, 44, 739, 765, 788, 1006, 1008] {
+        let (_, sk) = build(seed, None);
+        let mut bad = 0;
+        for i in 0..sk.channels.len() {
+            for j in (i + 1)..sk.channels.len() {
+                let (ci, cj) = (&sk.channels[i], &sk.channels[j]);
+                let junction: Option<Vec2> = if cj.parent == Some(i as u32) {
+                    Some(cj.pts[0])
+                } else if ci.parent == Some(j as u32) {
+                    Some(ci.pts[0])
+                } else {
+                    None
+                };
+                for wi in ci.pts.windows(2) {
+                    for wj in cj.pts.windows(2) {
+                        if let Some(jp) = junction {
+                            let di = ((wi[0].x - jp.x).powi(2) + (wi[0].y - jp.y).powi(2)).sqrt();
+                            let dj = ((wj[0].x - jp.x).powi(2) + (wj[0].y - jp.y).powi(2)).sqrt();
+                            if di < 20.0 && dj < 20.0 {
+                                continue;
+                            }
+                        }
+                        let ln = |p: Vec2, q: Vec2| {
+                            ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt().max(1e-9)
+                        };
+                        let (lab, lcd) = (ln(wi[0], wi[1]), ln(wj[0], wj[1]));
+                        let (d1, d2) = (o(wi[0], wi[1], wj[0]) / lab, o(wi[0], wi[1], wj[1]) / lab);
+                        let (d3, d4) = (o(wj[0], wj[1], wi[0]) / lcd, o(wj[0], wj[1], wi[1]) / lcd);
+                        if d1.abs() > 1.0
+                            && d2.abs() > 1.0
+                            && d3.abs() > 1.0
+                            && d4.abs() > 1.0
+                            && d1 * d2 < 0.0
+                            && d3 * d4 < 0.0
+                        {
+                            bad += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(bad, 0, "seed {seed}: {bad} channel crossings");
+    }
+}
