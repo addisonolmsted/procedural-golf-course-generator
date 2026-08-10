@@ -189,8 +189,11 @@ pub fn grow(
     let mut dir = norm(dir0);
     let mut p = start;
     let mut stop = Stop::Budget;
-    // A path may never revisit a cell it already occupies — a looping
-    // channel is non-physical and the review caught one.
+    // A path may never revisit a cell it already occupies — a looping or
+    // self-crossing channel is non-physical. The set holds EVERY 8 m cell
+    // the path's segments pass through (4 m sampling), not just step
+    // endpoints: with 70–120 m steps, an endpoint-only set let segments
+    // cross between the recorded cells (the review kept catching it).
     let cell8 = 8.0;
     let key = |q: Vec2| ((q.y / cell8) as i64, (q.x / cell8) as i64);
     let mut visited: std::collections::BTreeSet<(i64, i64)> = std::collections::BTreeSet::new();
@@ -270,17 +273,32 @@ pub fn grow(
             stop = Stop::EdgeMargin;
             break;
         }
-        // 3×3 neighbourhood self-avoidance: an exact-cell test lets wide
-        // loops close between cells (the review caught a looping trunk).
-        let (ky, kx) = key(q);
-        let near_own = (-1..=1).any(|dy| {
-            (-1..=1).any(|dx| visited.contains(&(ky + dy, kx + dx)))
-        });
-        if near_own {
+        // Self-avoidance over the WHOLE candidate segment: any sampled
+        // cell (beyond the first 20 m, which adjoins the previous segment)
+        // that the path already occupies rejects the step.
+        let seg_len = step_m;
+        let n_sub = (seg_len / 4.0).ceil() as usize;
+        let mut collide = false;
+        for t in 1..=n_sub {
+            let f = t as f64 / n_sub as f64;
+            if f * seg_len < 20.0 {
+                continue;
+            }
+            let m = Vec2::new(p.x + d.x * seg_len * f, p.y + d.y * seg_len * f);
+            if visited.contains(&key(m)) {
+                collide = true;
+                break;
+            }
+        }
+        if collide {
             stop = Stop::EdgeMargin;
             break;
         }
-        visited.insert((ky, kx));
+        for t in 0..=n_sub {
+            let f = t as f64 / n_sub as f64;
+            let m = Vec2::new(p.x + d.x * seg_len * f, p.y + d.y * seg_len * f);
+            visited.insert(key(m));
+        }
         pts.push(q);
         dir = d;
         p = q;

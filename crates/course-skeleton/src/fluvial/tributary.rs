@@ -218,7 +218,7 @@ pub fn build(
                     }
                     let seg = Vec2::new(wnd[1].x - wnd[0].x, wnd[1].y - wnd[0].y);
                     let seg_len = (seg.x * seg.x + seg.y * seg.y).sqrt();
-                    let nsub = (seg_len / 30.0).ceil() as usize;
+                    let nsub = (seg_len / 4.0).ceil() as usize;
                     for t in 1..=nsub {
                         let f = t as f64 / nsub as f64;
                         let q = Vec2::new(wnd[0].x + seg.x * f, wnd[0].y + seg.y * f);
@@ -446,12 +446,14 @@ fn grow_infill(
             if q.x < margin || q.y < margin || q.x > extent - margin || q.y > extent - margin {
                 break;
             }
-            // A 110 m step can jump clean over a channel: sample the segment
-            // and attach at the first channel cell it touches, so fingers
-            // never cross existing channels.
+            // A step can jump clean over an 8 m channel line unless the
+            // segment is sampled at raster pitch: every 4 m, attach at the
+            // first channel cell touched, so fingers never cross channels.
             let mut hit = None;
-            for t in [0.25, 0.5, 0.75, 1.0] {
-                let m = Vec2::new(p.x + dir.x * INFILL_STEP_M * t, p.y + dir.y * INFILL_STEP_M * t);
+            let n_sub = (INFILL_STEP_M / 4.0).ceil() as usize;
+            for t in 1..=n_sub {
+                let f = t as f64 / n_sub as f64;
+                let m = Vec2::new(p.x + dir.x * INFILL_STEP_M * f, p.y + dir.y * INFILL_STEP_M * f);
                 let ml = ((m.y / cell).floor() as usize).min(ny - 1) * nx
                     + ((m.x / cell).floor() as usize).min(nx - 1);
                 if chan_at[ml] >= 0 {

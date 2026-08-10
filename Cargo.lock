@@ -3006,7 +3006,6 @@ name = "stage-lab"
 version = "0.0.0"
 dependencies = [
  "course-contracts",
- "course-framing",
  "course-primitives",
  "course-seed",
  "course-skeleton",

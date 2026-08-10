@@ -18,7 +18,6 @@ mod data;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use course_spec::{ArchetypeId, Priors};
 use course_world::math::Vec2;
 use course_world::Grid;
 use data::{Excluded, Regions, Review, TileData, TileEntry};
@@ -247,11 +246,6 @@ impl Lab {
     fn entry(&self) -> Option<&TileEntry> {
         let (a, id) = self.sel.as_ref()?;
         self.tiles.get(a)?.iter().find(|t| &t.id == id)
-    }
-
-    fn archetype_id(&self) -> Option<ArchetypeId> {
-        let (a, _) = self.sel.as_ref()?;
-        ArchetypeId::ALL.into_iter().find(|x| x.key() == a)
     }
 
     fn regen(&mut self, ctx: &egui::Context) {
@@ -508,25 +502,6 @@ impl Lab {
         s
     }
 
-    /// Per-knob comparison against the archetype's committed prior table —
-    /// the same tables `fit` writes and generation samples, so an out-of-band
-    /// tile is visible before it moves a quantile.
-    fn knob_rows(&self) -> Vec<(String, Option<f64>, Option<[f64; 11]>)> {
-        let Some(k) = self.loaded.as_ref().and_then(|d| d.knobs.as_ref()) else {
-            return Vec::new();
-        };
-        let priors = Priors::builtin();
-        let entry = self.archetype_id().map(|a| priors.entry(a));
-        k.knobs
-            .iter()
-            .map(|(name, v)| {
-                let table = entry
-                    .and_then(|e| e.params.get(&format!("landform.{name}")))
-                    .map(|q| q.q);
-                (name.clone(), *v, table)
-            })
-            .collect()
-    }
 }
 
 fn pt(p: [f64; 2]) -> Vec2 {
@@ -539,21 +514,6 @@ fn fmt_opt(v: Option<f64>) -> String {
 
 fn layer_color(l: Layer) -> [u8; 4] {
     LAYERS.iter().find(|(x, ..)| *x == l).unwrap().3
-}
-
-/// Green inside [q10,q90], yellow in the tails, red outside the table or
-/// missing entirely.
-fn knob_color(v: Option<f64>, table: Option<[f64; 11]>) -> egui::Color32 {
-    let (Some(v), Some(q)) = (v, table) else {
-        return egui::Color32::from_rgb(220, 110, 110);
-    };
-    if v >= q[1] && v <= q[9] {
-        egui::Color32::from_rgb(120, 210, 120)
-    } else if v >= q[0] && v <= q[10] {
-        egui::Color32::from_rgb(225, 205, 100)
-    } else {
-        egui::Color32::from_rgb(220, 110, 110)
-    }
 }
 
 impl eframe::App for Lab {
@@ -583,6 +543,10 @@ impl eframe::App for Lab {
         egui::SidePanel::left("browser")
             .min_width(320.0)
             .show(ctx, |ui| {
+              egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .id_salt("side-panel")
+                .show(ui, |ui| {
                 ui.heading("tile-lab — campaign QA");
                 ui.label(egui::RichText::new(self.root.display().to_string()).small().weak());
                 ui.separator();
@@ -644,7 +608,8 @@ impl eframe::App for Lab {
                 ui.separator();
 
                 egui::ScrollArea::vertical()
-                    .max_height(260.0)
+                    .id_salt("tile-list")
+                    .max_height(420.0)
                     .show(ui, |ui| {
                         let sel = self.sel.clone();
                         let mut pick: Option<(String, String)> = None;
@@ -750,41 +715,23 @@ impl eframe::App for Lab {
 
                 ui.separator();
                 if let Some(k) = self.loaded.as_ref().and_then(|d| d.knobs.as_ref()) {
-                    if !k.extras.is_empty() {
-                        // Not knobs, but the gates that decide knobs — the
-                        // dune estimator is anisotropy-gated, so seeing
-                        // aniso_ratio next to dune_wavelength_m matters.
-                        let extras: Vec<String> = k
-                            .extras
+                    // The v2 extract metrics for this tile (extract_v2
+                    // writes them): spacing, density, band amplitudes.
+                    let mut lines: Vec<String> = k
+                        .knobs
+                        .iter()
+                        .map(|(n, v)| format!("{n:<24} {}", fmt_opt(*v)))
+                        .collect();
+                    lines.extend(
+                        k.extras
                             .iter()
-                            .map(|(n, v)| format!("{n} {}", fmt_opt(*v)))
-                            .collect();
-                        ui.monospace(extras.join("\n"));
+                            .map(|(n, v)| format!("{n:<24} {}", fmt_opt(*v))),
+                    );
+                    if !lines.is_empty() {
+                        ui.monospace(lines.join("\n"));
                     }
                 }
-
-                ui.separator();
-                ui.label("knobs vs archetype prior");
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (name, v, table) in self.knob_rows() {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(knob_color(v, table), "●");
-                            ui.monospace(format!("{name:<24}"));
-                            ui.monospace(match v {
-                                Some(v) => format!("{v:>10.4}"),
-                                None => "      null".to_string(),
-                            });
-                        })
-                        .response
-                        .on_hover_text(match table {
-                            Some(q) => format!(
-                                "prior q0 {:.4}  q10 {:.4}  med {:.4}  q90 {:.4}  q100 {:.4}",
-                                q[0], q[1], q[5], q[9], q[10]
-                            ),
-                            None => "not a prior knob".to_string(),
-                        });
-                    }
-                });
+              });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {

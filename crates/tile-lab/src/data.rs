@@ -20,7 +20,18 @@ pub struct TileEntry {
     pub cgrid: PathBuf,
 }
 
-/// `out/tiles/<archetype>/<id>.cgrid` → archetype → tiles (sorted).
+/// The v2 corpus biomes — the only directories the viewer shows (retired
+/// v1 archetype folders share the same store).
+pub const V2_BIOMES: [&str; 6] = [
+    "piedmont",
+    "great_plains",
+    "river_valley",
+    "sandhills",
+    "heathland",
+    "hill_country",
+];
+
+/// `out/tiles/<biome>/<id>.cgrid` → biome → tiles (sorted).
 pub fn scan_tiles(out_root: &Path) -> BTreeMap<String, Vec<TileEntry>> {
     let mut map: BTreeMap<String, Vec<TileEntry>> = BTreeMap::new();
     let Ok(archs) = std::fs::read_dir(out_root.join("tiles")) else {
@@ -33,6 +44,9 @@ pub fn scan_tiles(out_root: &Path) -> BTreeMap<String, Vec<TileEntry>> {
             continue;
         }
         let archetype = dir.file_name().unwrap().to_string_lossy().to_string();
+        if !V2_BIOMES.contains(&archetype.as_str()) {
+            continue;
+        }
         let Ok(files) = std::fs::read_dir(&dir) else { continue };
         let mut entries: Vec<TileEntry> = files
             .filter_map(Result::ok)
