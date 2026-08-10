@@ -49,6 +49,20 @@ Two consequences:
    where the window sits — descriptor draws now scale by the drawn window
    class (`class_relief_mult`, default 1.0). River_valley's multipliers are
    fitted from the margin campaign (valley-edge tiles fetched 2026-08-10).
+
+   **Margin campaign result** (27 fetched, 9 survived the OSM screen —
+   the driftless bluff tops carry roads/farms, as expected): margin core
+   relief is BIMODAL — driftless bluff lines 63–84 m, lowland terrace
+   edges ~7 m, Ouachita margin 21 m. River_valley now draws five classes
+   (escarpment_face added at 0.10 — half the surviving margin tiles are
+   bluffs) with fitted multipliers; generated per-class core relief:
+   valley_floor 3.6, terrace_flight 9.4, basin_margin 23.6,
+   escarpment_face 57.3 m — each within ~15% of its measured regime.
+   Note the escarpment multiplier is NOT relief-ratio-naive: the class
+   shape converts budget to relief ~2.4× more efficiently than a
+   floodplain window, so the multiplier is fitted against measured
+   output, not assumed linear. Margin tiles enter the tile-lab review
+   queue for the standard human pass before any texture harvesting.
 2. **Stage-01 OQ0 (sandhills massifs) — deprioritized by data**: measured
    macro anisotropy does not single sandhills out; the massif impression
    likely lives in the S2 aeolian band + amplitude (both now fitted /

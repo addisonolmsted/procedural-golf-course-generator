@@ -586,10 +586,19 @@
     "material_contact": 0.3,
     "valley_wall": 0.7
    },
-   "class_weights": {
-    "interfluve": 0.15,
+   "class_relief_mult": {
+    "basin_margin": 1.0,
+    "escarpment_face": 1.35,
+    "interfluve": 0.35,
     "terrace_flight": 0.35,
-    "valley_floor": 0.5
+    "valley_floor": 0.176
+   },
+   "class_weights": {
+    "basin_margin": 0.08,
+    "escarpment_face": 0.1,
+    "interfluve": 0.12,
+    "terrace_flight": 0.28,
+    "valley_floor": 0.42
    },
    "components": [
     {
@@ -621,7 +630,7 @@
       ]
      ],
      "mean": [
-      2.5587625347290692,
+      4.298253575411367,
       2.7,
       0.0,
       1.5,
@@ -658,7 +667,7 @@
       ]
      ],
      "mean": [
-      2.9087625347290693,
+      4.648253575411368,
       3.1,
       0.1,
       1.5,
