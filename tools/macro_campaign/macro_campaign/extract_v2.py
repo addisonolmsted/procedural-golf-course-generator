@@ -31,17 +31,19 @@ piedmont/sandhills directories — v1 is superseded on this branch.
 Determinism: pure function of the tile bytes + the OSM develop mask; no
 draws, no iteration-order dependence. ``EXTRACT_V2_VERSION`` gates re-runs.
 
-KNOWN CAVEAT (2026-08 review): the fill-flat mask lights up LARGE
-RECTANGLES on many tiles — laser-leveled agricultural fields (dominant in
-river_valley bottomland), drained peat blocks (heathland), and
-hydro-flattened water polygons in the source DEM. These are real artifacts
-of human land-leveling, not extraction bugs. They ARE excluded from the
-clean mask (lake rule) when they pond during fill, but graded-but-drained
-fields can slip through. Before F2 harvests patches: (a) add OSM
-landuse=farmland/orchard to the develop screen mask, and (b) consider a
-rectangularity screen on flats. river_valley's low fine_std (0.19 m) is
-partly this contamination and must not be treated as a texture target
-until re-masked.
+KNOWN CAVEATS (2026-08 review):
+- The "perfect rectangles" first reported over every tile were CHANNEL
+  COMPONENT BOUNDING BOXES drawn by tile-lab's v1 vector layer, not data;
+  the viewer no longer draws them (regions.json still records components
+  for the count). Diagnosis history kept because it changed twice.
+- The fill-flat mask genuinely sprawls over leveled/ditched agricultural
+  ground (river_valley bottomland above all) and drained peat (heathland).
+  Ponding areas are excluded from the clean mask; graded-but-drained
+  fields can slip through. Before F2 harvests patches: (a) add OSM
+  landuse=farmland/orchard to the develop screen mask, (b) consider a
+  flatness screen on the fine band. river_valley's low fine_std (0.19 m)
+  is partly this contamination and must not be treated as a texture
+  target until re-masked.
 """
 
 import json

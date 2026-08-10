@@ -18,9 +18,8 @@ mod data;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use course_world::math::Vec2;
 use course_world::Grid;
-use data::{Excluded, Regions, Review, TileData, TileEntry};
+use data::{Excluded, Review, TileData, TileEntry};
 use eframe::egui;
 
 const IMG_PX: u32 = 1500;
@@ -57,31 +56,39 @@ enum Layer {
     FillFlat,
     Channels,
     RidgesRaw,
-    RidgesAccepted,
-    Basins,
-    BasinsRejected,
-    Scarps,
-    Transects,
-    Centerlines,
 }
 
-const LAYERS: [(Layer, &str, u8, [u8; 4]); 11] = [
+/// Every layer states its calibration role — anything not feeding the
+/// v2 calibration was removed from the UI (review request 2026-08).
+const LAYERS: [(Layer, &str, u8, [u8; 4]); 5] = [
     (Layer::Nodata, "nodata", 1, [255, 0, 255, 160]),
-    (Layer::Developed, "developed (OSM roads/buildings)", 128, [180, 30, 30, 130]),
-    (Layer::FillFlat, "fill flats (lakes/pits)", 32, [200, 60, 200, 90]),
-    (Layer::Channels, "channels", 2, [64, 132, 244, 130]),
-    (Layer::RidgesRaw, "ridges (geomorphon)", 4, [235, 140, 50, 80]),
-    (Layer::RidgesAccepted, "ridges (accepted)", 64, [235, 140, 50, 150]),
-    (Layer::Basins, "basins (accepted)", 8, [90, 200, 220, 140]),
-    (Layer::BasinsRejected, "basins (rejected)", 16, [120, 120, 120, 110]),
-    (Layer::Scarps, "scarps (terrace edges)", 0, [220, 60, 60, 255]),
-    (Layer::Transects, "valley transects", 0, [255, 240, 120, 255]),
-    (Layer::Centerlines, "valley centerlines", 0, [40, 240, 200, 255]),
+    (
+        Layer::Channels,
+        "channels — SPACING/DENSITY calibration",
+        2,
+        [64, 132, 244, 130],
+    ),
+    (
+        Layer::RidgesRaw,
+        "ridges (geomorphon) — reference only, nothing fitted",
+        4,
+        [235, 140, 50, 80],
+    ),
+    (
+        Layer::FillFlat,
+        "fill flats — EXCLUDED from texture harvest",
+        32,
+        [200, 60, 200, 90],
+    ),
+    (
+        Layer::Developed,
+        "developed (OSM) — EXCLUDED from everything",
+        128,
+        [180, 30, 30, 130],
+    ),
 ];
 
-/// Layers on by default: the three that answer "did it find the landforms".
-const DEFAULT_ON: [Layer; 4] =
-    [Layer::Channels, Layer::Basins, Layer::Scarps, Layer::Developed];
+const DEFAULT_ON: [Layer; 3] = [Layer::Channels, Layer::FillFlat, Layer::Developed];
 
 struct Lab {
     root: PathBuf,
@@ -326,194 +333,32 @@ impl Lab {
                 }
             }
         }
-        let Some(r) = &d.regions else { return img };
-
-        if self.is_on(Layer::Scarps) {
-            for sc in &r.scarps {
-                if sc.centerline_m.len() < 2 {
-                    continue;
-                }
-                let pts: Vec<Vec2> = sc.centerline_m.iter().map(|p| pt(*p)).collect();
-                // Accepted risers read solid; candidates that missed the
-                // height/length gate are drawn thin and dim.
-                let (c, thick) = if sc.accepted {
-                    ([220, 60, 60, 255], 1)
-                } else {
-                    ([170, 120, 120, 255], 0)
-                };
-                course_viz::draw_polyline(&mut img, &pts, c, thick);
-            }
-        }
-        if self.is_on(Layer::Basins) || self.is_on(Layer::BasinsRejected) {
-            for b in &r.basins {
-                let show = if b.accepted {
-                    self.is_on(Layer::Basins)
-                } else {
-                    self.is_on(Layer::BasinsRejected)
-                };
-                if !show {
-                    continue;
-                }
-                let c = if b.accepted {
-                    [90, 200, 220, 255]
-                } else {
-                    [140, 140, 140, 255]
-                };
-                course_viz::draw_circle(&mut img, pt(b.center_m), b.radius_m, c, 0);
-            }
-        }
-        if self.is_on(Layer::Channels) {
-            // Bounding boxes of the components that counted as valleys —
-            // `valley_count` is exactly len(these).
-            let c = [64, 132, 244, 255];
-            for ch in &r.channels {
-                let [x0, y0, x1, y1] = ch.bbox_m;
-                let box_pts = [
-                    Vec2::new(x0, y0),
-                    Vec2::new(x1, y0),
-                    Vec2::new(x1, y1),
-                    Vec2::new(x0, y1),
-                    Vec2::new(x0, y0),
-                ];
-                course_viz::draw_polyline(&mut img, &box_pts, c, 0);
-            }
-        }
-        if self.is_on(Layer::Transects) {
-            let c = layer_color(Layer::Transects);
-            for t in &r.transects {
-                let ctr = pt(t.center_m);
-                let dir = Vec2::new(t.perp_xy[0], t.perp_xy[1]);
-                course_viz::draw_polyline(&mut img, &[ctr, ctr + dir * t.hw_m], c, 0);
-            }
-        }
-        if self.is_on(Layer::RidgesAccepted) {
-            let c = [255, 170, 70, 255];
-            for rr in &r.ridges {
-                if rr.kind == "accepted" && rr.centerline_m.len() > 1 {
-                    let pts: Vec<Vec2> = rr.centerline_m.iter().map(|p| pt(*p)).collect();
-                    course_viz::draw_polyline(&mut img, &pts, c, 1);
-                }
-            }
-        }
-        if self.is_on(Layer::Centerlines) {
-            let c = layer_color(Layer::Centerlines);
-            for cl in &r.valley_centerlines {
-                if cl.pts_m.len() > 1 {
-                    let pts: Vec<Vec2> = cl.pts_m.iter().map(|p| pt(*p)).collect();
-                    course_viz::draw_polyline(&mut img, &pts, c, 1);
-                }
-            }
-        }
+        // The raster masks ARE the data; the v1 vector decorations (channel
+        // component BBOXES above all — the review's "perfect rectangles" —
+        // basins, scarps, transects, centerlines) are gone with v1.
         img
     }
 
-    /// What the detectors found, as counts — the fast "is this tile even
-    /// the right landscape?" read before looking at the overlays.
+    /// The v2 extract summary: channel components + regional tilt.
     fn detections(&self) -> String {
         let Some(r) = self.loaded.as_ref().and_then(|d| d.regions.as_ref()) else {
             return String::new();
         };
-        let accepted = r.basins.iter().filter(|b| b.accepted).count();
-        let mut s = format!(
-            "channels {}  ridges {}  basins {} ({} rejected)  scarps {}/{}  transects {}",
-            r.channels.len(),
-            r.ridges.len(),
-            accepted,
-            r.basins.len() - accepted,
-            r.scarps.iter().filter(|s| s.accepted).count(),
-            r.scarps.len(),
-            r.transects.len(),
-        );
+        let mut s = format!("channel components ≥800 m: {}", r.channels.len());
         if let Some(t) = &r.tilt {
-            s += &format!("\ntilt grade {:.5}", t.grade);
+            s += &format!("
+tilt grade {:.5}", t.grade);
             if let Some(d) = t.downhill_xy {
                 s += &format!("  downhill ({:.2}, {:.2})", d[0], d[1]);
             }
-        }
-        let falls: Vec<f64> = r.channels.iter().filter_map(|c| c.fall_grad).collect();
-        if !falls.is_empty() {
-            let lo = falls.iter().cloned().fold(f64::INFINITY, f64::min);
-            let hi = falls.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            s += &format!("\nchannel fall {lo:.5}–{hi:.5}");
-        }
-        let longest = r
-            .channels
-            .iter()
-            .map(|c| c.diag_m)
-            .fold(0.0f64, f64::max);
-        if longest > 0.0 {
-            s += &format!("\nlongest channel span {longest:.0} m");
-        }
-        if !r.valley_centerlines.is_empty() {
-            let with_meander = r
-                .valley_centerlines
-                .iter()
-                .filter(|c| c.meander.is_some())
-                .count();
-            s += &format!(
-                "\ncenterlines {} ({with_meander} with meander fits)",
-                r.valley_centerlines.len()
-            );
-            if let Some(m) = r
-                .valley_centerlines
-                .iter()
-                .find_map(|c| c.meander.as_ref())
-            {
-                s += &format!(
-                    "\n  first: intensity {}  λ×W {}  sinuosity {}",
-                    fmt_opt(m.intensity),
-                    fmt_opt(m.wavelength_mult),
-                    fmt_opt(m.sinuosity)
-                );
-            }
-        }
-        if let Some(w) = r.valley_centerlines.iter().find_map(|c| c.top_width_m) {
-            s += &format!("\n  top width {w:.0} m");
-        }
-        let ridge_span = r
-            .ridges
-            .iter()
-            .filter_map(|rr| rr.diag_m.or(rr.len_m))
-            .fold(0.0f64, f64::max);
-        if ridge_span > 0.0 {
-            s += &format!("\nlongest ridge span {ridge_span:.0} m");
-        }
-        if let Some(rr) = r.ridges.iter().find(|r| r.kind == "accepted") {
-            s += &format!(
-                "\naccepted ridge: crest hw {}  bbox {}",
-                fmt_opt(rr.crest_hw_m),
-                rr.bbox_m.map_or("—".to_string(), |b| format!(
-                    "{:.0},{:.0}–{:.0},{:.0}",
-                    b[0], b[1], b[2], b[3]
-                ))
-            );
-        }
-        if let Some(sc) = r
-            .scarps
-            .iter()
-            .filter(|s| s.accepted)
-            .max_by(|a, b| a.height_m.total_cmp(&b.height_m))
-        {
-            s += &format!(
-                "\ntallest scarp {:.1} m  face {:.2}  len {:.0} m",
-                sc.height_m, sc.face_grad, sc.length_m
-            );
         }
         s
     }
 
 }
 
-fn pt(p: [f64; 2]) -> Vec2 {
-    Vec2::new(p[0], p[1])
-}
-
 fn fmt_opt(v: Option<f64>) -> String {
     v.map_or("—".to_string(), |v| format!("{v:.3}"))
-}
-
-fn layer_color(l: Layer) -> [u8; 4] {
-    LAYERS.iter().find(|(x, ..)| *x == l).unwrap().3
 }
 
 impl eframe::App for Lab {
@@ -749,11 +594,10 @@ impl eframe::App for Lab {
             ui.horizontal(|ui| {
                 if let Some(tex) = &self.tex {
                     ui.vertical(|ui| {
-                        let resp = ui.image((tex.id(), egui::vec2(side, side)));
+                        ui.image((tex.id(), egui::vec2(side, side)));
                         if two {
                             ui.label("real");
                         }
-                        self.hover_inspect(ui, &resp, side);
                     });
                 }
                 if let Some(tex) = &self.tex_cmp {
@@ -767,74 +611,6 @@ impl eframe::App for Lab {
     }
 }
 
-impl Lab {
-    /// Nearest point-feature under the cursor (basins, transects, accepted
-    /// ridge crests) as a tooltip — the "what is this blob?" affordance.
-    fn hover_inspect(&self, _ui: &mut egui::Ui, resp: &egui::Response, side: f32) {
-        let Some(pos) = resp.hover_pos() else { return };
-        let Some(r) = self.loaded.as_ref().and_then(|d| d.regions.as_ref()) else {
-            return;
-        };
-        let rect = resp.rect;
-        let fx = ((pos.x - rect.min.x) / side).clamp(0.0, 1.0) as f64;
-        let fy = ((pos.y - rect.min.y) / side).clamp(0.0, 1.0) as f64;
-        let world = Vec2::new(fx * 3000.0, (1.0 - fy) * 3000.0);
-        if let Some(text) = nearest_feature(r, world) {
-            resp.clone().on_hover_text(text);
-        }
-    }
-}
-
-fn nearest_feature(r: &Regions, world: Vec2) -> Option<String> {
-    let mut best: Option<(f64, String)> = None;
-    let mut consider = |d: f64, text: String| {
-        if best.as_ref().is_none_or(|(bd, _)| d < *bd) {
-            best = Some((d, text));
-        }
-    };
-    for b in &r.basins {
-        let c = pt(b.center_m);
-        let d = (c.distance(world) - b.radius_m).max(0.0);
-        consider(
-            d,
-            format!(
-                "basin {} — r {:.0} m, depth {:.1} m, ecc {}",
-                if b.accepted { "accepted" } else { "REJECTED (<1.5 m)" },
-                b.radius_m,
-                b.depth_m,
-                b.ecc.map_or("—".into(), |e| format!("{e:.2}"))
-            ),
-        );
-    }
-    for t in &r.transects {
-        let d = pt(t.center_m).distance(world);
-        consider(
-            d,
-            format!(
-                "transect — halfwidth {:.0} m, wall {}",
-                t.hw_m,
-                t.wall_grade.map_or("—".into(), |w| format!("{w:.3}"))
-            ),
-        );
-    }
-    for rr in &r.ridges {
-        if rr.kind != "accepted" {
-            continue;
-        }
-        for p in &rr.centerline_m {
-            let d = pt(*p).distance(world);
-            consider(
-                d,
-                format!(
-                    "ridge — prominence {} m, len {} m",
-                    rr.prominence_m.map_or("—".into(), |v| format!("{v:.1}")),
-                    rr.len_m.map_or("—".into(), |v| format!("{v:.0}"))
-                ),
-            );
-        }
-    }
-    best.filter(|(d, _)| *d < 120.0).map(|(_, t)| t)
-}
 
 fn main() -> eframe::Result {
     let mut args = std::env::args().skip(1);

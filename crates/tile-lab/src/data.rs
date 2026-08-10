@@ -76,16 +76,6 @@ pub struct Regions {
     pub tilt: Option<Tilt>,
     #[serde(default)]
     pub channels: Vec<Channel>,
-    #[serde(default)]
-    pub ridges: Vec<RidgeRegion>,
-    #[serde(default)]
-    pub basins: Vec<Basin>,
-    #[serde(default)]
-    pub scarps: Vec<Scarp>,
-    #[serde(default)]
-    pub transects: Vec<Transect>,
-    #[serde(default)]
-    pub valley_centerlines: Vec<Centerline>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -96,78 +86,9 @@ pub struct Tilt {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Channel {
+    #[serde(default)]
+    #[allow(dead_code)]
     pub diag_m: f64,
-    pub bbox_m: [f64; 4],
-    #[serde(default)]
-    pub fall_grad: Option<f64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RidgeRegion {
-    pub kind: String,
-    #[serde(default)]
-    pub diag_m: Option<f64>,
-    #[serde(default)]
-    pub bbox_m: Option<[f64; 4]>,
-    #[serde(default)]
-    pub centerline_m: Vec<[f64; 2]>,
-    #[serde(default)]
-    pub prominence_m: Option<f64>,
-    #[serde(default)]
-    pub len_m: Option<f64>,
-    #[serde(default)]
-    pub crest_hw_m: Option<f64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Basin {
-    pub center_m: [f64; 2],
-    pub radius_m: f64,
-    pub depth_m: f64,
-    #[serde(default)]
-    pub ecc: Option<f64>,
-    pub accepted: bool,
-}
-
-/// A traced terrace edge (blufffit). Replaced the old axis-aligned "bench
-/// band", which could not represent a curved scarp.
-#[derive(Clone, Debug, Deserialize)]
-pub struct Scarp {
-    #[serde(default)]
-    pub centerline_m: Vec<[f64; 2]>,
-    pub height_m: f64,
-    pub face_grad: f64,
-    pub length_m: f64,
-    pub accepted: bool,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Transect {
-    pub center_m: [f64; 2],
-    pub perp_xy: [f64; 2],
-    pub hw_m: f64,
-    #[serde(default)]
-    pub wall_grade: Option<f64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Centerline {
-    #[serde(default)]
-    pub pts_m: Vec<[f64; 2]>,
-    #[serde(default)]
-    pub top_width_m: Option<f64>,
-    #[serde(default)]
-    pub meander: Option<Meander>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Meander {
-    #[serde(default)]
-    pub intensity: Option<f64>,
-    #[serde(default)]
-    pub wavelength_mult: Option<f64>,
-    #[serde(default)]
-    pub sinuosity: Option<f64>,
 }
 
 /// `<id>.json` — the per-tile knob record the prior fit consumes.
