@@ -50,7 +50,7 @@ fn main() {
     // Labeled study sheets: 2 per class, overlays ON (learn the vocabulary).
     for &class in &WindowClass::ALL {
         for k in 0..2u64 {
-            let c1 = case(100 + k, class);
+            let c1 = case(700 + k, class);
             let img = render_c1(&c1, C1View::Implied, 640, true);
             img.save(labeled.join(format!("{}_{k}.png", class_key(class)))).unwrap();
         }
@@ -61,12 +61,12 @@ fn main() {
     let mut entries = Vec::new();
     for (ci, &class) in WindowClass::ALL.iter().enumerate() {
         for k in 0..3u64 {
-            entries.push((class, 200 + ci as u64 * 3 + k));
+            entries.push((class, 800 + ci as u64 * 3 + k));
         }
     }
     // Fixed permutation via a small LCG (no external RNG in examples).
     let mut order: Vec<usize> = (0..entries.len()).collect();
-    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut state: u64 = 0xC2B2AE3D27D4EB4F;
     for i in (1..order.len()).rev() {
         state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         let j = (state >> 33) as usize % (i + 1);

@@ -64,7 +64,7 @@ pub fn shape(class: WindowClass, along: f64, cross: f64, amp: f64) -> (f64, f64)
         WindowClass::TerraceFlight => {
             let s = along / EXTENT_M * 3.0;
             let tread = s.floor().clamp(0.0, 2.0);
-            let riser = sstep((s - tread) * (1000.0 / 160.0));
+            let riser = sstep((s - tread) * (1000.0 / 260.0));
             let stepped = (tread + riser) / 3.0;
             (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped))
         }
