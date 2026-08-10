@@ -208,8 +208,13 @@ pub fn build(
                 let ang = side * (0.96 + (ang_u - 0.5) * 0.52);
                 let dir0 = trunk::rotate(tangent, ang);
                 let (grown, stop) = trunk::grow(steer, jp, dir0, *len, *step, step_draws, false);
-                // Trim at the first touch of an existing channel (skipping
-                // the first 100 m — the trib starts ON its parent).
+                // Trim at the first touch of an existing channel. The ONLY
+                // exemption is the PARENT's own cells within the first 60 m
+                // (the trib starts on its parent and must leave its
+                // corridor). An earlier draft exempted ALL channels for the
+                // first 100 m — in a dense junction cluster that window is
+                // exactly where every stub crossed every other (the seed-6
+                // knot the review caught).
                 let mut pts: Vec<Vec2> = Vec::new();
                 let mut walked = 0.0;
                 'trim: for wnd in std::iter::once(&grown[..]).flat_map(|s| s.windows(2)) {
@@ -222,7 +227,31 @@ pub fn build(
                     for t in 1..=nsub {
                         let f = t as f64 / nsub as f64;
                         let q = Vec2::new(wnd[0].x + seg.x * f, wnd[0].y + seg.y * f);
-                        if walked + seg_len * f > 100.0 && chan_at[cell_of(q)] >= 0 {
+                        // ±40 m separation neighbourhood: channels closer
+                        // than that would have merged in reality — the
+                        // review caught a tributary paralleling its trunk
+                        // ~30 m away for a kilometre.
+                        let qc = cell_of(q);
+                        let (qy, qx) = ((qc / rnx) as i64, (qc % rnx) as i64);
+                        let mut blocked_here = false;
+                        'nb: for dy in -5i64..=5 {
+                            for dx in -5i64..=5 {
+                                let (yy, xx) = (qy + dy, qx + dx);
+                                if yy < 0 || xx < 0 || yy >= rny as i64 || xx >= rnx as i64 {
+                                    continue;
+                                }
+                                let occ = chan_at[yy as usize * rnx + xx as usize];
+                                if occ >= 0 {
+                                    let near_junction = walked + seg_len * f <= 130.0;
+                                    let is_parent = occ as usize == parent_idx;
+                                    if !(near_junction && is_parent) {
+                                        blocked_here = true;
+                                        break 'nb;
+                                    }
+                                }
+                            }
+                        }
+                        if blocked_here {
                             break 'trim;
                         }
                     }
