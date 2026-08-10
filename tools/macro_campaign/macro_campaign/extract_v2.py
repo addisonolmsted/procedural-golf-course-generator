@@ -64,7 +64,7 @@ from . import cgrid, develop, flow, structure  # noqa: E402
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "out"
 
-EXTRACT_V2_VERSION = 1
+EXTRACT_V2_VERSION = 2
 
 V2_BIOMES = (
     "piedmont", "sandhills", "great_plains",
@@ -87,6 +87,7 @@ CLASS_NODATA = 1
 CLASS_CHANNEL = 2
 CLASS_RIDGE = 4
 CLASS_FILL_FLAT = 32
+CLASS_AGRI = 64
 CLASS_DEVELOPED = 128
 
 # tile-lab draws a bbox per channel component; sub-800 m fragments are
@@ -196,6 +197,9 @@ def extract_tile(biome: str, tid: str) -> dict:
     developed = develop.load_mask(biome, tid)
     if developed is not None and developed.shape != z.shape:
         developed = None
+    agri = develop.load_agri_mask(biome, tid)
+    if agri is not None and agri.shape != z.shape:
+        agri = None
 
     d = decompose(z, cell)
     sk = skeleton(z, cell, developed)
@@ -217,6 +221,8 @@ def extract_tile(biome: str, tid: str) -> dict:
     clean = d["valid"] & ~sk["lake"]
     if developed is not None:
         clean &= ~developed
+    if agri is not None:
+        clean &= ~agri
 
     vdir = OUT / "extract_v2" / biome
     vdir.mkdir(parents=True, exist_ok=True)
@@ -262,6 +268,8 @@ def extract_tile(biome: str, tid: str) -> dict:
     classes[sk["channels"]] |= CLASS_CHANNEL
     classes[ridge] |= CLASS_RIDGE
     classes[sk["lake"]] |= CLASS_FILL_FLAT
+    if agri is not None:
+        classes[agri] |= CLASS_AGRI
     if developed is not None:
         classes[developed] |= CLASS_DEVELOPED
 
@@ -287,7 +295,8 @@ def extract_tile(biome: str, tid: str) -> dict:
             "slope_median": scalars["slope_median"],
         },
         "extras": {
-            "channel_frac": scalars["channel_frac"],
+            "clean_frac": float(clean.mean()),
+        "channel_frac": scalars["channel_frac"],
             "lake_frac": scalars["lake_frac"],
             "local_relief_200m": scalars["local_relief_200m"],
         },

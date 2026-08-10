@@ -29,6 +29,10 @@ def main():
     s.add_argument("--archetype", default=None)
     s.add_argument("--force", action="store_true")
 
+    ag = sub.add_parser("agri", help="OSM agricultural-landuse masks (texture-harvest exclusion only)")
+    ag.add_argument("--archetype", default=None)
+    ag.add_argument("--force", action="store_true")
+
     d = sub.add_parser("develop", help="OSM development screen per tile (auto-culls built-up tiles)")
     d.add_argument("--archetype", default=None)
     d.add_argument("--force", action="store_true")
@@ -77,6 +81,10 @@ def main():
         from . import shape
 
         shape.run(archetype=args.archetype, force=args.force)
+    elif args.cmd == "agri":
+        from . import develop
+
+        develop.run_agri(archetype=args.archetype, force=args.force)
     elif args.cmd == "develop":
         from . import develop
 

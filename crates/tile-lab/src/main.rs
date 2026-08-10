@@ -56,11 +56,18 @@ enum Layer {
     FillFlat,
     Channels,
     RidgesRaw,
+    Agri,
 }
 
 /// Every layer states its calibration role — anything not feeding the
 /// v2 calibration was removed from the UI (review request 2026-08).
-const LAYERS: [(Layer, &str, u8, [u8; 4]); 5] = [
+const LAYERS: [(Layer, &str, u8, [u8; 4]); 6] = [
+    (
+        Layer::Agri,
+        "agriculture (OSM) — EXCLUDED from texture harvest",
+        64,
+        [200, 170, 40, 110],
+    ),
     (Layer::Nodata, "nodata", 1, [255, 0, 255, 160]),
     (
         Layer::Channels,

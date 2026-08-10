@@ -208,3 +208,94 @@ def _auto_exclude(summary):
         p.write_text(json.dumps(doc, indent=1) + "\n")
     print(f"\nauto-excluded {added} tile(s) over {MAX_DEVELOPED_FRAC * 100:.0f}% developed"
           f" -> {p}")
+
+
+# --------------------------------------------------------------------------
+# Agricultural landuse (E6/F2 re-mask). Land-levelled agriculture — laser-
+# levelled fields, orchards — is real ground that must NOT feed the texture
+# dictionary (its residual is earthmoving, not landform). It deliberately
+# does NOT count toward the tile cull: river bottomland runs 30%+ fields
+# and the tiles are otherwise good landscape samples.
+# --------------------------------------------------------------------------
+
+AGRI_VERSION = 1
+AGRI_LANDUSE = "farmland|orchard|vineyard|farmyard|greenhouse_horticulture|paddy"
+
+
+def agri_query(bbox_ll: tuple[float, float, float, float]) -> str:
+    b = ",".join(f"{v:.6f}" for v in bbox_ll)
+    sel = f'["landuse"~"{AGRI_LANDUSE}"]'
+    return (
+        "[out:json][timeout:90];("
+        f"way{sel}({b});relation{sel}({b});"
+        ");out geom tags;"
+    )
+
+
+def build_agri_mask(meta: dict, shape: tuple[int, int]) -> tuple[np.ndarray, dict]:
+    """Rasterize OSM agricultural landuse polygons (harvest exclusion only)."""
+    bbox = tile_bbox_ll(meta)
+    resp = osm.overpass(agri_query(bbox))
+    mask = np.zeros(shape, dtype=bool)
+    n = 0
+    for el in resp.get("elements", []):
+        geom = el.get("geometry")
+        if not geom or len(geom) < 3:
+            continue
+        coords = [[g["lon"], g["lat"]] for g in geom]
+        if coords[0] != coords[-1]:
+            coords.append(coords[0])
+        local = _to_local(coords, meta)
+        mask |= _rasterize([{"type": "Polygon", "coordinates": [local]}], shape)
+        n += 1
+    info = {"agri_version": AGRI_VERSION, "polys": n, "agri_frac": float(mask.mean())}
+    return mask, info
+
+
+def agri_mask_path(archetype: str, tile: str) -> pathlib.Path:
+    return DEVELOP / archetype / f"{tile}.agri.cgrid"
+
+
+def load_agri_mask(archetype: str, tile: str) -> np.ndarray | None:
+    p = agri_mask_path(archetype, tile)
+    if not p.exists():
+        return None
+    data, _ = cgrid.read_u8(p)
+    return data > 0
+
+
+def run_agri(archetype: str | None = None, force: bool = False):
+    """Build agri masks for every non-excluded tile on disk."""
+    import time
+
+    ex_p = OUT / "exclude.json"
+    ex = json.loads(ex_p.read_text()) if ex_p.exists() else {"tiles": []}
+    exset = {(t["archetype"], t["tile"]) for t in ex["tiles"]}
+    n_done = 0
+    for arch_dir in sorted((OUT / "tiles").iterdir()):
+        arch = arch_dir.name
+        if not arch_dir.is_dir():
+            continue
+        if archetype and arch != archetype:
+            continue
+        for meta_p in sorted(arch_dir.glob("*.json")):
+            tid = meta_p.stem
+            if (arch, tid) in exset:
+                continue
+            outp = agri_mask_path(arch, tid)
+            if outp.exists() and not force:
+                continue
+            meta = json.loads(meta_p.read_text())
+            shape = (int(TILE_M / CELL_M), int(TILE_M / CELL_M))
+            try:
+                mask, info = build_agri_mask(meta, shape)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [FAIL] {arch}/{tid}: {exc}")
+                continue
+            outp.parent.mkdir(parents=True, exist_ok=True)
+            cgrid.write_u8(outp, mask.astype(np.uint8), 0.0, 0.0, CELL_M)
+            (DEVELOP / arch / f"{tid}.agri.json").write_text(json.dumps(info))
+            print(f"  [ok] {arch}/{tid}  agri {info['agri_frac']:.1%} ({info['polys']} polys)")
+            n_done += 1
+            time.sleep(1.0)
+    print(f"agri masks: {n_done} built")
