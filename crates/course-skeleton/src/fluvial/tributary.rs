@@ -34,11 +34,11 @@ pub const T3_STEPS: usize = 4;
 /// point from the network and grown downhill until they attach. This is
 /// what makes the accumulation network hit the shared d2c invariant — the
 /// hierarchy alone clusters around the trunk corridor.
-pub const MAX_INFILL: usize = 56;
-pub const INFILL_STEPS: usize = 30;
+pub const MAX_INFILL: usize = 88;
+pub const INFILL_STEPS: usize = 42;
 pub const INFILL_STEP_M: f64 = 110.0;
 /// Stop placing fingers once every cell is within this of a channel.
-pub const INFILL_PLACE_THRESH_M: f64 = 310.0;
+pub const INFILL_PLACE_THRESH_M: f64 = 265.0;
 /// A finger attaches when it comes this close to an existing channel.
 pub const INFILL_ATTACH_M: f64 = 60.0;
 
@@ -317,10 +317,14 @@ pub fn build(
 
     // ---- space-filling infill ------------------------------------------
     // Only for integrated networks: infill IS integration, so a deranged
-    // draw (derangement > 0) keeps its gaps and sandhills has nothing to
-    // attach to. Fingers place at the farthest-from-network cell and grow
-    // downhill until they attach — headward accretion, order-1 by nature.
-    if derangement == 0.0 && !channels.is_empty() {
+    // draw (derangement > 0) keeps its gaps. And it needs a REAL fluvial
+    // budget: a vestigial 300 m trunk from a near-zero density draw
+    // (sandhills reaches 0.05) must not unlock tile-wide finger growth.
+    // NOTE: this guard was applied once before and silently lost in a
+    // structural edit of this block — the D5 battery caught its absence
+    // (sandhills seeds carrying 2.2 km/km² networks). If it goes missing
+    // again, the battery will fail again; that is the intended tripwire.
+    if derangement == 0.0 && !channels.is_empty() && density_target_km_km2 >= 0.5 {
         grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
@@ -413,7 +417,7 @@ fn proper_cross(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
         && d3 * d4 < 0.0
 }
 
-fn trim_crossings(channels: &mut [Channel]) {
+fn trim_crossings(channels: &mut Vec<Channel>) {
     let arc_upto = |pts: &[Vec2], k: usize| -> f64 {
         pts[..k]
             .windows(2)
@@ -478,7 +482,85 @@ fn trim_crossings(channels: &mut [Channel]) {
             if !strands(i, keep_i, channels) {
                 channels[i].pts.truncate(keep_i);
                 acted = true;
+                continue;
             }
+            // Both trims would strand children: remove a WHOLE subtree —
+            // whichever of the two is smaller by total length (removing
+            // the later one unconditionally nuked trunk-level subtrees on
+            // scarpy hill-country seeds and the invariant test caught the
+            // sparse result). Always resolvable, deterministic.
+            let subtree_len = |root: usize, chans: &[Channel]| -> f64 {
+                let mut in_tree = vec![false; chans.len()];
+                in_tree[root] = true;
+                loop {
+                    let mut grew = false;
+                    for c in 0..chans.len() {
+                        if in_tree[c] {
+                            continue;
+                        }
+                        if let Some(p) = chans[c].parent {
+                            if in_tree[p as usize] {
+                                in_tree[c] = true;
+                                grew = true;
+                            }
+                        }
+                    }
+                    if !grew {
+                        break;
+                    }
+                }
+                (0..chans.len())
+                    .filter(|&c| in_tree[c])
+                    .map(|c| trunk::arc_len(&chans[c].pts))
+                    .sum()
+            };
+            // never remove the trunk's subtree (that is the whole network)
+            let cand_j = subtree_len(j, channels);
+            let cand_i = if channels[i].parent.is_some() {
+                subtree_len(i, channels)
+            } else {
+                f64::INFINITY
+            };
+            let victim = if cand_i < cand_j { i } else { j };
+            let mut kill = vec![false; channels.len()];
+            kill[victim] = true;
+            loop {
+                let mut grew = false;
+                for c in 0..channels.len() {
+                    if kill[c] {
+                        continue;
+                    }
+                    if let Some(p) = channels[c].parent {
+                        if kill[p as usize] {
+                            kill[c] = true;
+                            grew = true;
+                        }
+                    }
+                }
+                if !grew {
+                    break;
+                }
+            }
+            let mut remap = vec![u32::MAX; channels.len()];
+            let mut next = 0u32;
+            for (idx, k) in kill.iter().enumerate() {
+                if !k {
+                    remap[idx] = next;
+                    next += 1;
+                }
+            }
+            let old: Vec<Channel> = std::mem::take(channels);
+            for (idx, mut c) in old.into_iter().enumerate() {
+                if kill[idx] {
+                    continue;
+                }
+                if let Some(p) = c.parent {
+                    c.parent = Some(remap[p as usize]);
+                }
+                channels.push(c);
+            }
+            acted = true;
+            break; // indices changed: restart the sweep
         }
         if !acted {
             break;
@@ -681,6 +763,20 @@ fn chamfer(chan_at: &[i32], spec8: &GridSpec) -> (Vec<f64>, Vec<usize>) {
     (d, near)
 }
 
+fn block_around(blocked: &mut [bool], lin: usize, nx: usize, ny: usize, r_cells: f64) {
+    let (cy, cx) = ((lin / nx) as i64, (lin % nx) as i64);
+    let r = r_cells.ceil() as i64;
+    for dy in -r..=r {
+        for dx in -r..=r {
+            let (y, x) = (cy + dy, cx + dx);
+            if y < 0 || x < 0 || y >= ny as i64 || x >= nx as i64 {
+                continue;
+            }
+            blocked[y as usize * nx + x as usize] = true;
+        }
+    }
+}
+
 fn grow_infill(
     steer: &Steer,
     spec8: &GridSpec,
@@ -794,9 +890,28 @@ fn grow_infill(
                     }
                 }
             }
-            let q = Vec2::new(p.x + dir.x * INFILL_STEP_M, p.y + dir.y * INFILL_STEP_M);
+            let mut q = Vec2::new(p.x + dir.x * INFILL_STEP_M, p.y + dir.y * INFILL_STEP_M);
             if q.x < margin || q.y < margin || q.x > extent - margin || q.y > extent - margin {
-                break;
+                // Slide along the margin instead of dying: near the box
+                // edge the downhill term can point outward (the implied
+                // surface dips toward base level) and killed fingers here
+                // burned the whole draw budget on doomed corner retries —
+                // the D5 battery caught the resulting sparse networks.
+                if q.x < margin || q.x > extent - margin {
+                    dir.x = 0.0;
+                }
+                if q.y < margin || q.y > extent - margin {
+                    dir.y = 0.0;
+                }
+                let l = (dir.x * dir.x + dir.y * dir.y).sqrt();
+                if l < 1e-9 {
+                    break;
+                }
+                dir = Vec2::new(dir.x / l, dir.y / l);
+                q = Vec2::new(p.x + dir.x * INFILL_STEP_M, p.y + dir.y * INFILL_STEP_M);
+                if q.x < margin || q.y < margin || q.x > extent - margin || q.y > extent - margin {
+                    break;
+                }
             }
             // A step can jump clean over an 8 m channel line unless the
             // segment is sampled at raster pitch: every 4 m, attach at the
@@ -822,7 +937,14 @@ fn grow_infill(
             p = q;
         }
         let Some((chan, arc, anchor)) = attach else {
-            blocked[best_lin] = true;
+            if std::env::var("INFILL_DBG").is_ok() {
+                let last = pts.last().unwrap();
+                eprintln!("FAIL from ({:.0},{:.0}) gap {:.0}: {} pts, ended ({:.0},{:.0})",
+                    center(best_lin).x, center(best_lin).y, best, pts.len(), last.x, last.y);
+            }
+            // Blacklist a NEIGHBOURHOOD: a single-cell block just shuffled
+            // the next placement 8 m over into the same doomed spot.
+            block_around(&mut blocked, best_lin, nx, ny, 150.0 / cell);
             continue;
         };
         pts.push(anchor);
