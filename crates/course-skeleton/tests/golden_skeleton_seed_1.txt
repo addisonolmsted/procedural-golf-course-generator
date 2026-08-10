@@ -1,2 +1,2 @@
-Piedmont e5180261b87d1a8d d1d215b1cce8a683 6c3188f24d0048f8 8e89c5c80e3fead4 f5cd097aafc374bb channels=45
+Piedmont 198d3fd32bc248f6 5dc521b1cce8a683 dfac0f5784e9ea6f 66ead5a80edb6469 1dd31fd20661c404 channels=39
 Heathland 0b54b76d25e60315 b2f42cc1cce8a683 3d93bade73eb32de d2877a7f7eaf8d07 92254e10049896f3 channels=1

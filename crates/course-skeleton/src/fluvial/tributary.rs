@@ -131,6 +131,11 @@ pub fn build(
     if trunk_pts.len() < 2 {
         return Vec::new();
     }
+    // Smooth BEFORE anything anchors to it: a final smoothing pass moved
+    // parents ~15 m sideways under already-anchored children and every
+    // junction became a crossing candidate (measured ~8/seed). With
+    // parents smoothed first, children anchor to FINAL geometry.
+    let trunk_pts = chaikin(&trunk_pts, 2);
     let lt = trunk::arc_len(&trunk_pts);
     let mut channels = vec![Channel {
         pts: trunk_pts,
@@ -198,16 +203,27 @@ pub fn build(
                         continue;
                     }
                 }
-                // arc position: spread children along the parent
-                let frac = (k as f64 + 0.5) / per_parent as f64;
+                // Arc position: spread children along the parent, with the
+                // two SIDES interleaved by half a spacing — evenly-spaced
+                // alternating stubs land nearly opposite each other and a
+                // mirror pair reads as one channel crossing the parent
+                // (the review's "crossings" at seed 765 were exactly this;
+                // the geometric counter finds zero true crossings).
+                let side_phase = 0.5 * (((pi + k) % 2) as f64);
+                let frac = (k as f64 + 0.25 + side_phase) / per_parent as f64;
                 let arc = plen * (0.12 + 0.72 * frac) + (arc_u - 0.5) * 0.15 * plen;
                 let arc = arc.clamp(0.05 * plen, 0.95 * plen);
                 let (jp, tangent) = trunk::point_at_arc(&parent_pts, arc);
+                let spawn_side_of = |q: Vec2| {
+                    let v = Vec2::new(q.x - jp.x, q.y - jp.y);
+                    tangent.x * v.y - tangent.y * v.x
+                };
                 // alternate sides; ±55° ± 15° jitter
                 let side = if (pi + k) % 2 == 0 { 1.0 } else { -1.0 };
                 let ang = side * (0.96 + (ang_u - 0.5) * 0.52);
                 let dir0 = trunk::rotate(tangent, ang);
                 let (grown, stop) = trunk::grow(steer, jp, dir0, *len, *step, step_draws, false);
+                let spawn_side = spawn_side_of(Vec2::new(jp.x + dir0.x, jp.y + dir0.y));
                 // Trim at the first touch of an existing channel. The ONLY
                 // exemption is the PARENT's own cells within the first 60 m
                 // (the trib starts on its parent and must leave its
@@ -251,6 +267,17 @@ pub fn build(
                                 }
                             }
                         }
+                        // The parent exemption lets the child TOUCH its
+                        // parent's corridor while leaving — but never
+                        // CROSS to the far side (the instrumented counter
+                        // showed every crossing was child × own parent
+                        // inside this window).
+                        if !blocked_here
+                            && walked + seg_len * f <= 150.0
+                            && spawn_side_of(q) * spawn_side < 0.0
+                        {
+                            blocked_here = true;
+                        }
                         if blocked_here {
                             break 'trim;
                         }
@@ -265,8 +292,15 @@ pub fn build(
                 if pts.len() < 2 {
                     continue;
                 }
-                let mut pts = pts;
-                enforce_mouth_angle(&mut pts, &channels[parent_idx].pts, arc);
+                let pts = enforce_mouth_angle(
+                    &pts,
+                    &channels[parent_idx].pts,
+                    arc,
+                    &chan_at,
+                    parent_idx as i32,
+                    spec8,
+                );
+                let pts = chaikin(&pts, 2);
                 let idx = channels.len();
                 next_parents.push(idx);
                 channels.push(Channel {
@@ -291,14 +325,6 @@ pub fn build(
         grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
-    // Curvature smoothing (review findings: 15°-quantized steering reads
-    // angular; junction elbows). Two endpoint-preserving Chaikin rounds
-    // turn the polygonal step chains into fluid curves; endpoints stay
-    // exact so junction anchors keep touching their parents.
-    for c in channels.iter_mut() {
-        c.pts = chaikin(&c.pts, 2);
-    }
-
     assign_strahler(&mut channels);
     channels
 }
@@ -308,39 +334,76 @@ pub fn build(
 /// it). The mouth segment is rotated to leave the parent's DOWNSTREAM
 /// tangent at 30–62°, preserving the side it departs on; Chaikin then
 /// blends the correction into the rest of the path.
-fn enforce_mouth_angle(pts: &mut [Vec2], parent_pts: &[Vec2], junction_arc_m: f64) {
+/// Returns the (possibly) modified points. The correction INSERTS a short
+/// 40 m guide point at the corrected angle instead of swinging the whole
+/// first segment (an earlier draft rotated pts[1] — up to a 100 m lever —
+/// through unchecked territory and crossings spiked to ~8/seed), and the
+/// two affected segments are collision-checked against the occupancy
+/// raster; on any hit the original geometry is kept (a T-junction is
+/// better than a crossing).
+#[allow(clippy::too_many_arguments)]
+fn enforce_mouth_angle(
+    pts: &[Vec2],
+    parent_pts: &[Vec2],
+    junction_arc_m: f64,
+    chan_at: &[i32],
+    parent_id: i32,
+    spec8: &GridSpec,
+) -> Vec<Vec2> {
     if pts.len() < 2 {
-        return;
+        return pts.to_vec();
     }
     let (_, up_tan) = trunk::point_at_arc(parent_pts, junction_arc_m);
     let down = Vec2::new(-up_tan.x, -up_tan.y);
     let m = Vec2::new(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
     let ml = (m.x * m.x + m.y * m.y).sqrt().max(1e-9);
     let mn = Vec2::new(m.x / ml, m.y / ml);
-    // NOTE: pts[0] is the mouth; the channel FLOWS toward pts[0], so the
-    // upstream-pointing mouth segment forms (180° − junction angle) with
-    // the downstream tangent. Enforce on the flow-frame angle.
+    // pts[0] is the mouth; flow runs toward pts[0], so enforce on the
+    // flow-frame angle vs the parent's downstream tangent.
     let dot = (-mn.x) * down.x + (-mn.y) * down.y;
     let ang = dot.clamp(-1.0, 1.0).acos();
     let lo = 30f64.to_radians();
     let hi = 62f64.to_radians();
     if ang >= lo && ang <= hi {
-        return;
+        return pts.to_vec();
     }
     let side = if down.x * mn.y - down.y * mn.x >= 0.0 { 1.0 } else { -1.0 };
-    // REFLECT overshoot into the band rather than clamping: a hard clamp
-    // parked half the junctions at exactly the ceiling (p50 = p75 = 62°),
-    // which is its own kind of mechanical. The overshoot becomes the
-    // in-band position, so a 90° arrival lands mid-band and a 65° arrival
-    // stays near the top.
+    // Reflect overshoot into the band (a hard clamp parked half the
+    // mouths at exactly the ceiling).
     let target_ang = if ang > hi {
         hi - (ang - hi).min(hi - lo) * 0.8
     } else {
         lo
     };
-    // upstream mouth direction = -(down rotated by side*target)
     let flow_dir = trunk::rotate(down, side * target_ang);
-    pts[1] = Vec2::new(pts[0].x - flow_dir.x * ml, pts[0].y - flow_dir.y * ml);
+    let guide_len = ml.min(40.0);
+    let guide = Vec2::new(pts[0].x - flow_dir.x * guide_len, pts[0].y - flow_dir.y * guide_len);
+    let mut out = Vec::with_capacity(pts.len() + 1);
+    out.push(pts[0]);
+    out.push(guide);
+    out.extend_from_slice(&pts[1..]);
+    // collision check on the two modified segments (4 m sampling); the
+    // parent is legal within 80 m of the mouth.
+    let cell = spec8.cell_size;
+    let (rnx, rny) = (spec8.nx as usize, spec8.ny as usize);
+    let mut walked = 0.0;
+    for w in out.windows(2).take(2) {
+        let seg = Vec2::new(w[1].x - w[0].x, w[1].y - w[0].y);
+        let seg_len = (seg.x * seg.x + seg.y * seg.y).sqrt();
+        let nsub = (seg_len / 4.0).ceil().max(1.0) as usize;
+        for t in 1..=nsub {
+            let f = t as f64 / nsub as f64;
+            let q = Vec2::new(w[0].x + seg.x * f, w[0].y + seg.y * f);
+            let lin = ((q.y / cell).floor() as usize).min(rny - 1) * rnx
+                + ((q.x / cell).floor() as usize).min(rnx - 1);
+            let occ = chan_at[lin];
+            if occ >= 0 && !(occ == parent_id && walked + seg_len * f <= 80.0) {
+                return pts.to_vec(); // revert: keep the honest geometry
+            }
+        }
+        walked += seg_len;
+    }
+    out
 }
 
 /// Endpoint-preserving Chaikin corner cutting.
@@ -613,7 +676,8 @@ fn grow_infill(
             blocked[best_lin] = true;
             continue;
         }
-        enforce_mouth_angle(&mut pts, &channels[chan as usize].pts, arc);
+        let pts = enforce_mouth_angle(&pts, &channels[chan as usize].pts, arc, chan_at, chan, spec8);
+        let pts = chaikin(&pts, 2);
         let idx = channels.len();
         channels.push(Channel {
             pts: pts.clone(),

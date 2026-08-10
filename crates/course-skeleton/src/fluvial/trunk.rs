@@ -215,6 +215,12 @@ pub fn grow(
         // long-profile stays monotone by construction regardless — this is
         // purely planform.
         let gvec = Vec2::new(libm::cos(grain), libm::sin(grain));
+        // Trunks must PROGRESS INLAND: pure thalweg-seeking rounds a high
+        // and follows the lows straight back toward base level — the
+        // review's "horseshoe trunks" (~15% of seeds). Headings with a
+        // base-ward component pay a stiff metres-equivalent penalty;
+        // tributaries stay free to run any direction.
+        let inward = edge_inward(steer.meta.base_level.edge);
         let mut best_d = dir;
         let mut best_score = f64::INFINITY;
         for k in -5i32..=5 {
@@ -225,7 +231,14 @@ pub fn grow(
             let acc_bonus = steer.accommodation.bilinear(q).min(6.0).max(-6.0) * 0.4;
             let galign = (cand.x * gvec.x + cand.y * gvec.y).abs();
             let grain_bonus = grain_w * 10.0 * galign;
-            let score = steer.implied.bilinear(q) + turn_pen - acc_bonus - grain_bonus;
+            let baseward_pen = if is_trunk {
+                let toward_base = -(cand.x * inward.x + cand.y * inward.y);
+                toward_base.max(0.0) * 12.0
+            } else {
+                0.0
+            };
+            let score =
+                steer.implied.bilinear(q) + turn_pen + baseward_pen - acc_bonus - grain_bonus;
             if score < best_score {
                 best_score = score;
                 best_d = cand;
