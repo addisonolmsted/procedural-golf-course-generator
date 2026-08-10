@@ -130,6 +130,20 @@ addition, since C1 has no vocabulary for located features).
 
 ## Open questions
 
+0. **Class-vocabulary coverage (2026-08 review).** The six window classes
+   are fluvial window positions; the corpus shows macro organizations they
+   cannot express — the flagged example is a recurring sandhills pattern of
+   2–3 large dune massifs with broad valleys between them (wind-organized
+   megaforms at the ≥ 400 m band, which S1 owns; the isotropic relief modes
+   cannot produce elongated wind-aligned massifs). Path: E6's empirical
+   confirmation should measure which S1-band organizations each biome's
+   corpus actually expresses, then either (a) extend `WindowClass` (e.g. a
+   ridge-and-swale / dune-massif class with per-biome envelope weights —
+   schema-consistent, identity stays data) or (b) give the mode field
+   wind-aligned anisotropy for aeolian biomes. Leaning (a) + (b) together:
+   the pattern is categorical AND directional.
+
+
 1. **How much of `relief_budget_m` does S1 spend?** The split between S1, S2,
    and S3 is unfixed. Proposal: S1 ≤ 40%, and S11 measures the total. Needs a
    number before implementation.

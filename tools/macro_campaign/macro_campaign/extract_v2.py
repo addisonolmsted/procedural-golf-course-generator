@@ -30,6 +30,18 @@ piedmont/sandhills directories — v1 is superseded on this branch.
 
 Determinism: pure function of the tile bytes + the OSM develop mask; no
 draws, no iteration-order dependence. ``EXTRACT_V2_VERSION`` gates re-runs.
+
+KNOWN CAVEAT (2026-08 review): the fill-flat mask lights up LARGE
+RECTANGLES on many tiles — laser-leveled agricultural fields (dominant in
+river_valley bottomland), drained peat blocks (heathland), and
+hydro-flattened water polygons in the source DEM. These are real artifacts
+of human land-leveling, not extraction bugs. They ARE excluded from the
+clean mask (lake rule) when they pond during fill, but graded-but-drained
+fields can slip through. Before F2 harvests patches: (a) add OSM
+landuse=farmland/orchard to the develop screen mask, and (b) consider a
+rectangularity screen on flats. river_valley's low fine_std (0.19 m) is
+partly this contamination and must not be treated as a texture target
+until re-masked.
 """
 
 import json
