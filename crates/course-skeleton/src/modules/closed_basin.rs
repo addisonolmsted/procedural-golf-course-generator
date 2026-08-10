@@ -34,7 +34,7 @@ pub fn apply(
     let want = ((intensity * 26.0).round() as usize).min(MAX_EMBRYOS);
     let cell = z.spec.cell_size;
     let nx = z.spec.nx as usize;
-    let mut out = Vec::new();
+    let mut out: Vec<BasinEmbryo> = Vec::new();
     for k in 0..MAX_EMBRYOS {
         if out.len() >= want {
             break;
@@ -55,6 +55,19 @@ pub fn apply(
             continue;
         }
         let radius = 70.0 + 130.0 * us;
+        // Separation: overlapping stamped Gaussians double-deepen and the
+        // drawn circles overlapped constantly (review). Real compound
+        // kettles exist but as the exception; candidates too close to an
+        // accepted embryo are skipped (no draws consumed conditionally —
+        // all pre-drawn).
+        let too_close = out.iter().any(|e: &BasinEmbryo| {
+            let dx = e.center.x - c.x;
+            let dy = e.center.y - c.y;
+            (dx * dx + dy * dy).sqrt() < 0.85 * (e.radius_m + radius)
+        });
+        if too_close {
+            continue;
+        }
         let depth = (1.6 + 2.6 * us) * (relief_budget_m / 30.0).clamp(0.4, 1.6);
         stamp_pit(z, c, radius, depth);
         out.push(BasinEmbryo { center: c, radius_m: radius, depth_m: depth });

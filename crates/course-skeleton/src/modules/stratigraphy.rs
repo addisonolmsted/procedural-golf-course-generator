@@ -9,8 +9,19 @@
 use course_contracts::metadata::Stratum;
 use course_world::grid::Grid;
 
-/// Apply in place on the 8 m base surface.
-pub fn apply(z: &mut Grid<f64>, hardness: &Grid<f64>, strata: &[Stratum], intensity: f64) {
+use crate::fluvial::flow_distance::Nearest;
+
+/// Apply in place on the 8 m base surface. Benches express on valley
+/// SIDES and uplands — never on valley floors (alluvium is not bedrock):
+/// the review caught tread edges crossing trunk corridors as evenly
+/// spaced perpendicular ridges.
+pub fn apply(
+    z: &mut Grid<f64>,
+    hardness: &Grid<f64>,
+    near: &[Nearest],
+    strata: &[Stratum],
+    intensity: f64,
+) {
     if intensity <= 0.0 || strata.is_empty() {
         return;
     }
@@ -24,7 +35,8 @@ pub fn apply(z: &mut Grid<f64>, hardness: &Grid<f64>, strata: &[Stratum], intens
         // Pull toward the tread (frac→0.5 compresses risers): a smooth
         // sawtooth displacement, strongest mid-riser.
         let pull = -libm::sin(frac * std::f64::consts::TAU) * spacing / std::f64::consts::TAU;
-        let w = (intensity * hardness.data[i]).clamp(0.0, 1.0) * 0.8;
+        let dist_fade = (near[i].dist_m / 120.0).clamp(0.0, 1.0);
+        let w = (intensity * hardness.data[i]).clamp(0.0, 1.0) * 0.8 * dist_fade;
         *zi += pull * w;
     }
 }

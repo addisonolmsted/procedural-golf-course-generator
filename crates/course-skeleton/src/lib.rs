@@ -104,7 +104,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     let mut height8 = catena::assemble(&spec8, &implied, &near, 1.0);
     let max_order = channels.iter().map(|c| c.order).max().unwrap_or(0);
     trunk_river::apply(&mut height8, &near, m_trunk_river, max_order);
-    stratigraphy::apply(&mut height8, &c1.hardness, &spec.descriptors.strata, m_strat);
+    stratigraphy::apply(&mut height8, &c1.hardness, &near, &spec.descriptors.strata, m_strat);
     let embryos = closed_basin::apply(&mut height8, &near, &embryo_draws, m_basin, relief_budget);
     aeolian::apply(
         &mut height8,

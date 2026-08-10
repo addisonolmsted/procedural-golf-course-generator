@@ -123,6 +123,21 @@ pub fn polylines(mask: &[bool], spec: &GridSpec, min_len_m: f64) -> Vec<Vec<Vec2
                 } else {
                     chain.insert(0, nlin);
                 }
+                // Where the mask runs 2 cells thick (diagonal label
+                // boundaries) the greedy walk went up one side and back
+                // down the other — the review's ridge HAIRPINS. Marking
+                // the departed cell's mask-neighbours visited blocks the
+                // parallel return path; forward motion is unaffected.
+                for (dy, dx) in D8 {
+                    let (yy, xx) = (y + dy, x + dx);
+                    if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
+                        continue;
+                    }
+                    let side = yy as usize * nx + xx as usize;
+                    if side != nlin && mask[side] {
+                        visited[side] = true;
+                    }
+                }
                 cur = nlin;
             }
         }

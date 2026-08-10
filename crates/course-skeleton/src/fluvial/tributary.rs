@@ -289,8 +289,36 @@ pub fn build(
         grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
+    // Curvature smoothing (review findings: 15°-quantized steering reads
+    // angular; junction elbows). Two endpoint-preserving Chaikin rounds
+    // turn the polygonal step chains into fluid curves; endpoints stay
+    // exact so junction anchors keep touching their parents.
+    for c in channels.iter_mut() {
+        c.pts = chaikin(&c.pts, 2);
+    }
+
     assign_strahler(&mut channels);
     channels
+}
+
+/// Endpoint-preserving Chaikin corner cutting.
+fn chaikin(pts: &[Vec2], iters: usize) -> Vec<Vec2> {
+    let mut cur = pts.to_vec();
+    for _ in 0..iters {
+        if cur.len() < 3 {
+            break;
+        }
+        let mut out = Vec::with_capacity(cur.len() * 2);
+        out.push(cur[0]);
+        for w in cur.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            out.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            out.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        out.push(*cur.last().unwrap());
+        cur = out;
+    }
+    cur
 }
 
 /// Stamp a channel's cells into the attach maps: which channel covers a
@@ -437,9 +465,22 @@ fn grow_infill(
             let g = steer.grad(steer.implied, p);
             let gl = (g.x * g.x + g.y * g.y).sqrt().max(1e-9);
             let down = Vec2::new(-g.x / gl, -g.y / gl);
+            // Tangential approach (review findings 5+6): aiming AT the
+            // nearest channel arrives perpendicular — a T-junction with a
+            // last-moment swerve. Within 220 m the finger blends in the
+            // target channel's DOWNSTREAM tangent so it curves in and
+            // joins at an acute angle like a real tributary.
+            let mut tang = Vec2::new(0.0, 0.0);
+            if dist[pl] < 220.0 {
+                let parent = &channels[chan_at[nl] as usize];
+                let (_, up_tan) = trunk::point_at_arc(&parent.pts, arc_at[nl]);
+                let down_tan = Vec2::new(-up_tan.x, -up_tan.y);
+                let wgt = 1.4 * (1.0 - dist[pl] / 220.0);
+                tang = Vec2::new(down_tan.x * wgt, down_tan.y * wgt);
+            }
             let mut dir = Vec2::new(
-                1.3 * to_net.x + 0.6 * down.x + 0.8 * prev.x,
-                1.3 * to_net.y + 0.6 * down.y + 0.8 * prev.y,
+                1.3 * to_net.x + 0.6 * down.x + 0.8 * prev.x + tang.x,
+                1.3 * to_net.y + 0.6 * down.y + 0.8 * prev.y + tang.y,
             );
             let dn = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
             dir = Vec2::new(dir.x / dn, dir.y / dn);
