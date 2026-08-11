@@ -113,10 +113,22 @@ structure and (later) texture; never through spacing.
   bank profile is parametric; walls can read as sharp cuts, especially
   where the 8 m grid facets under bilinear upsampling. Measured
   widths/cross-sections come from the corpus valley-transect fit (E7).
-- **Near-parallel streams (~40–60 m).** The separation floor is 40 m;
-  long tangential junction approaches and yazoo-style floodplain
-  parallels can sit just above it (seed 44). Real pattern, tight
-  expression — watch, don't fail.
+- **Planform straightness + parallelism — MEASURED OUT OF RANGE
+  (2026-08-10, planform instrument).** The reviewer's "dead straight
+  and parallel long channels" observation was quantified against the
+  real corpus (`course-skeleton/examples/planform.rs` vs
+  `tools/macro_campaign/real_planform.py`, same statistics, real paths
+  traced by the E5 router): generated networks run 2–4× straighter
+  (600 m-window sinuosity p50 1.01–1.03 vs real 1.06–1.10; dead-straight
+  window fraction 14–46 % vs real 0–15 %) and carry **43–46 % of channel
+  length in long parallel runs vs 3–11 % real** — an order of magnitude.
+  Longest generated straight/parallel runs reach 3.0–3.7 km vs real
+  0.7–1.7 km. This is S2's job (macro planform, not S3 texture) and is
+  now the top open S2 defect. Root causes: gradient steering on smooth
+  macro fields is locally uniform (straight descent), and the 40 m
+  separation floor plus tangential junction approaches hold neighbours
+  in sustained 40–200 m bands instead of converging. Supersedes the
+  earlier "watch, don't fail" note on near-parallel streams.
 - **Rare residual crossings.** Post-smoothing displacement is bounded
   below the separation floor, so any remaining crossing is a bug —
   report seed + location.
@@ -147,4 +159,5 @@ structure and (later) texture; never through spacing.
 | Date | Reviewer | Verdict | Notes |
 |------|----------|---------|-------|
 | 2026-08-09 | davisolmsted + agent | 3 fixes | "square-ish basins, ridges much too thin" → catena profile rebuilt (finite wall slope, full-hillslope incision, D_FULL 260 m), incision blur 72 m, divides drawn smoothed. Trench anatomy resolved; fine texture correctly deferred to S3. |
+| 2026-08-10 | davisolmsted + agent | 1 finding (open) | "quite a few dead straight and parallel long channels throughout the seeds" → measured vs real corpus (planform instrument): straightness 2–4× real, parallel-run fraction 43–46% vs 3–11% real. Promoted to top open S2 defect (see KNOWN PROVISIONAL); fix direction = per-order meander wander in path growth + convergence pressure replacing sustained separation-floor bands. |
 | 2026-08-09 | davisolmsted + agent | 7 findings, 7 fixes | Session on seeds 1006–1012: overlapping embryos → separation rejection; trunk "ridging" → stratigraphy fades within 120 m of channels (alluvium isn't benched); ridge hairpins → divide chaining blocks the 2-cell-thick return path; angular channels/90° kinks → 2× endpoint-preserving Chaikin on all polylines; T-junctions + last-moment swerves → fingers blend the target's downstream tangent within 220 m and join tangentially; sandhills corduroy → sinuous crests (±55 m wave) + second train rotated 7° (crest merges/splits). |
