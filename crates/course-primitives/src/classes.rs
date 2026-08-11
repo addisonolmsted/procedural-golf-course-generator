@@ -27,26 +27,53 @@ fn bump(d: f64, width: f64) -> f64 {
 /// (previously reserved).
 #[derive(Clone, Copy)]
 pub struct LineCurve {
-    pub c0: f64,
-    pub c1: f64,
-    pub phase: f64,
+    ca0: f64,
+    ca1: f64,
+    pa: f64,
+    cc0: f64,
+    cc1: f64,
+    pc: f64,
 }
 
 impl LineCurve {
+    /// The along-warp and cross-warp curvatures are DECORRELATED (review:
+    /// correlated warps made every line in a site bend together), expanded
+    /// from the two transcript draws via SplitMix64. Base curvature is
+    /// HEAVY-TAILED — sign·(2u−1)² — so most sites bow gently (~±80 m at
+    /// the edge) and the occasional site bows hard (~±340 m).
     pub fn from_draws(a: f64, b: f64) -> LineCurve {
+        let mut s = (a.to_bits() ^ b.to_bits().rotate_left(17))
+            .wrapping_mul(0x9E3779B97F4A7C15);
+        let mut next = || {
+            s ^= s >> 30;
+            s = s.wrapping_mul(0xBF58476D1CE4E5B9);
+            s ^= s >> 27;
+            s = s.wrapping_mul(0x94D049BB133111EB);
+            s ^= s >> 31;
+            (s >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let heavy = |u: f64| {
+            let t = 2.0 * u - 1.0;
+            t.signum() * t * t * 3.0e-4
+        };
         LineCurve {
-            // ±1.6e-4 /m ⇒ up to ~±180 m of bow at the tile edge
-            c0: (a - 0.5) * 2.0 * 1.6e-4,
-            c1: 0.8e-4,
-            phase: b * std::f64::consts::TAU,
+            ca0: heavy(next()),
+            ca1: 1.2e-4 * (0.5 + next()),
+            pa: next() * std::f64::consts::TAU,
+            cc0: heavy(next()),
+            cc1: 1.2e-4 * (0.5 + next()),
+            pc: next() * std::f64::consts::TAU,
         }
     }
 
-    /// Curvature at a profile position (metres along), slowly varying.
-    fn at(&self, along: f64) -> f64 {
-        self.c0
-            + self.c1
-                * libm::sin(along / EXTENT_M * std::f64::consts::TAU + self.phase)
+    fn at_along(&self, along: f64) -> f64 {
+        self.ca0
+            + self.ca1 * libm::sin(along / EXTENT_M * std::f64::consts::TAU + self.pa)
+    }
+
+    fn at_cross(&self, x: f64) -> f64 {
+        self.cc0
+            + self.cc1 * libm::sin(x / EXTENT_M * std::f64::consts::TAU + self.pc)
     }
 }
 
@@ -69,8 +96,8 @@ pub fn shape(
     // Warp: along-features (risers, rims) bow with cross²; axial features
     // (valley/interfluve axes) bow with (along−mid)². Constant second
     // derivative per the review; the modulation varies it line-to-line.
-    let along = along + 0.5 * curve.at(along) * cross * cross;
-    let cross = cross + 0.5 * curve.at(cross + mid) * (along - mid) * (along - mid);
+    let along = along + 0.5 * curve.at_along(along) * cross * cross;
+    let cross = cross + 0.5 * curve.at_cross(cross) * (along - mid) * (along - mid);
     match class {
         // A broad axial trough: relief dips along the axis, accommodation
         // concentrates in the floor.
@@ -98,11 +125,14 @@ pub fn shape(
         // and the blind session confused it with piedmont_slope every
         // time: a margin with no basin is just a slope.)
         WindowClass::BasinMargin => {
-            let toward = sstep((along - 0.1 * EXTENT_M) / (0.55 * EXTENT_M));
-            let pocket = bump(along - 0.86 * EXTENT_M, 550.0) * bump(cross, 1100.0);
+            let toward = sstep((along - 0.1 * EXTENT_M) / (0.5 * EXTENT_M));
+            let pocket = bump(along - 0.82 * EXTENT_M, 700.0) * bump(cross, 1300.0);
+            // classic basin rim: a subtle raised lip on the pocket's outer
+            // shoulder makes the closed low unmistakable from any ramp
+            let rim = bump(along - 0.58 * EXTENT_M, 300.0) * bump(cross, 1300.0);
             (
-                amp * (0.5 - 0.9 * toward) - 0.5 * amp * pocket,
-                0.3 + 0.5 * toward + 0.2 * pocket,
+                amp * (0.5 - 0.9 * toward) - 0.8 * amp * pocket + 0.18 * amp * rim,
+                0.3 + 0.5 * toward + 0.25 * pocket,
             )
         }
         // A plain strong ramp: the class is carried by tilt, not relief.
