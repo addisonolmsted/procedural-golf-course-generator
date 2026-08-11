@@ -21,7 +21,7 @@ hardest. Viewer locations given per row.
 | Catena profile shape (finite wall slope, D_FULL 260, composite groove) | S2 hillshade valley form | Inversion/trench reviews |
 | Channel floors 8/14/22/30 m by order | S2: valley floor widths | "knife cut" review (provisional widths until transect fit) |
 | Junction angle band 30–62°, reflect-overshoot | S2 junctions | T-junction measurement session |
-| Dune sinuosity ±55 m @ 760 m + 7° second train | S2 sandhills | corduroy review |
+| ~~Dune sinuosity two-sinusoid trains~~ | S2 sandhills | superseded 2026-08-10 by the multi-wave rework (row above) |
 | Bench spacing 2.2× thickness, 14–34 m, fade ≤120 m of channels | S2 hill_country/gp | density + trunk-ridging reviews |
 
 ## MANUAL provisional (audit these)
@@ -33,11 +33,11 @@ hardest. Viewer locations given per row.
 | Plasticity, wind speed/azimuth ranges, water table | Spec tab | E7 / design |
 | Strata templates (thickness/hardness/dip) | S2 benches | E7 from bench measurements |
 | Module intensities (trunk_river, strat, basin, aeolian, integration) | S2 per-biome character | E6/E7 |
-| S1 mode wavelengths [1500…400], isotropy | C1 relief views | E6 spectral fit — KNOWN GAP: no wind-aligned megaforms (stage-01 OQ0) |
+| ~~S1 mode wavelengths, isotropy~~ | C1 relief views | RESOLVED 2026-08-10: many-wave spectral fit + per-biome dials + sandhills megaform continuum (see S1 macro variety table) |
 | relief_share 0.4 / incision 0.22×budget cap 16 | S2 valley depth vs upland | E7 once transects measured |
 | Catena θ 0.62 | S2 hillslope curvature | E7 slope–area / hypsometry fit |
 | Kettle radius 70–200 m, depth 1.6–4.2×scale | S2 heathland circles | E7 from corpus basin stats (v1 extractor measured these) |
-| Aeolian wavelengths 210/340 m | S2 sandhills | E7 directional spectra (v1 dune probe exists) |
+| ~~Aeolian wavelengths 210/340 m~~ | S2 sandhills | RESOLVED 2026-08-10: 14-wave mid-band field 120–400 m, amp FIT to real mid-band std 3.58 m, continuum-coupled |
 | Floodplain widths 60+320×intensity, riser 2.2 m | S2 river_valley | E7 transect fit |
 
 ## Planform (added 2026-08-10, planform-instrument fit)
