@@ -122,3 +122,10 @@ findable calm ground than real hc land, in the same low-to-mid terrain
 band. (3) Caveat: generated surfaces are pre-texture candle-wax — S3
 will erode part of that margin, so D6-W re-runs after S3 (the real
 numbers already include full texture).
+
+**Extension 2026-08-11:** the full six-province three-way analysis (real
+land offers vs 60 real courses accept vs generated offers) lives in
+`docs/calibration/d6w-siting-baseline.md` — headline: no v2 biome
+produces unroutable seeds, real courses accept calm fractions of
+0.42–0.85 (not calm maxima), and rv courses invert the position rule
+(high flood-free ground, not the valley floor).
