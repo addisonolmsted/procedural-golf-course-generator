@@ -83,8 +83,40 @@ battery (the shared invariants still pass) and expensive to trace later.
 This gate is cheap now and unpayable after S3. That asymmetry is why the
 blind test runs before Phase D starts.
 
+## Gate scope (revised 2026-08-10, after five blind sessions)
+
+The blind gate covers FIVE classes: valley_floor, interfluve,
+escarpment_face, terrace_flight, piedmont_slope. **basin_margin is
+retained as a class but exempted from C1-level blind legibility**, by
+the following evidence and rationale:
+
+- Across five sessions and three targeted shape rounds (pocket added;
+  pocket enlarged + rim; wave-suppressed calm floor), every other
+  confusion was resolved — but PS↔BM flips persisted to the end, while
+  all non-BM judgments in the final sessions were correct (15/15 on the
+  five-class basis in session 5).
+- The reviewer's verdict: the basin_margin CONCEPT is worth keeping;
+  its C1 expression is inherently subtle — a rim window onto a basin
+  mostly beyond the tile reads as a slope until water and drainage make
+  the basin literal.
+- basin_margin's real work is downstream and unaffected: its
+  accommodation signature conditions S2 (ponding, embryo country), its
+  class-relief multiplier drives river-valley margin sites (E6 fit),
+  and S4's water will render the basin floor as the visibly enclosed
+  wet flat it is. **BM legibility is therefore judged at S2/S4 review**
+  (a BM window should show a calm, accommodation-rich, pond-prone
+  terminal flat), not on the bare C1 hillshade.
+- Future coupling noted, not yet implemented: S2's closed-basin embryo
+  placement could weight by C1 accommodation, which would make BM
+  windows literally kettle/pond-rich — strengthening the downstream
+  legibility this re-scope relies on.
+
 ## Session log
 
 | Date | Reviewer | Blind score | Confusions | Verdict |
 |------|----------|------------|------------|---------|
 | 2026-08-08 | davisolmsted | 17/18 | basin_margin→piedmont_slope (c1_d only; low-relief seed — flat + toe break sink into the modes; c1_j, same class at normal relief, read correctly) | **PASS** (gate 15/18). Not a shape bug; revisit only if the pair recurs. |
+| 2026-08-10 s2 | davisolmsted | 11/18 | all 7 in ramp family {BM,PS,TF} after the many-wave field landed | ramp family under-authored; BM given a pocket, TF risers sharpened |
+| 2026-08-10 s3 | davisolmsted | 11/18 | BM black hole: 0/3 recognized + 3 false positives | pocket enlarged + rim; curves decorrelated + heavy-tailed |
+| 2026-08-10 s4 | davisolmsted | 12/18 | all 6 = PS↔BM flips | wave-suppressed calm basin floor (geomorphic: depositional flats) |
+| 2026-08-10 s5 | davisolmsted | 12/18 (15/15 on five classes) | PS↔BM only, again | **GATE RE-SCOPED** to five classes: PASS. BM retained, judged at S2/S4 (see Gate scope). |
