@@ -715,6 +715,11 @@ dependencies = [
 [[package]]
 name = "course-amplify"
 version = "0.0.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "course-calibration"

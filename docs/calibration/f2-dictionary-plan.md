@@ -90,3 +90,16 @@ smoothness screen.
    coverage, diversity failures per biome).
 3. Bake + fingerprint + loader skeleton.
 4. F3 held-out QA report → dictionary certified → S3 begins.
+
+## Status (2026-08-11): BUILT AND CERTIFIED
+
+`assets/dictionary_v2.bin` — 45.5 MB, 44.8k patches, 6 biomes × 2
+levels, blake3-interlocked (loader: `course-amplify::dictionary`, with
+held-out-leak and cond→bucket round-trip guarantees under test).
+Builder: `tools/dictionary/build.py`; QA: `tools/dictionary/qa.py`;
+full numbers in `tools/dictionary/report.md`. F3 verdict: 23/29
+held-out reconstructions in-band, all amplitudes in-band, misses are
+slope-only on biome-outlier tiles. Budget note: 45.5 MB vs the 40 MB
+target — accepted (report documents; i16 heights already halve the
+gradient-pair format). S3 unblocked.
+
