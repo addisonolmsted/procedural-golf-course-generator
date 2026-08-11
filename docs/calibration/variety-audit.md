@@ -75,3 +75,54 @@ Re-run after any S0/S1 envelope or class change:
 The audit is the acceptance test for the sandhills megaform work and the
 rv anisotropy work; the relief-tail items fold into the consolidated
 relief refit.
+
+## Fix pass (same day) — all four findings addressed
+
+Five fit rounds against this audit + the E7 totals. What changed:
+
+- **S1 aeolian macro (sandhills)**: new always-drawn transcript block in
+  `course-primitives` — a train-vs-mound continuum (shared course scalar
+  `RunIdentity::AEOLIAN_SALT`, smoothstep-mapped) blending two beating
+  transverse crest waves (λ 1100–1500 m, along-crest swing) against a
+  10-wave isotropic mound field (λ 1050–1550 m), at 0.30 relief share.
+- **S2 aeolian module rework**: the 210/340 m two-sinusoid corduroy
+  (right variance, wrong spectrum) became a 14-wave mid-band field
+  (λ 120–400 m, ±28° around the wind axis), SplitMix-expanded from the
+  same 5-draw transcript; amplitude calibrated to the real mid-band
+  (64–400 m) residual std 3.58 m; intensity coupled to the SAME
+  continuum scalar so mound-field courses keep small dunes, not
+  train-strength ridges (measured 2.05–4.07 m across seeds vs real
+  ~2.9–4.3 m).
+- **river_valley grain**: envelope `wave_iso_frac` 0.12 + new
+  `grain_lock` = 1.0 (the drawn grain axis rotates onto the base-edge
+  axis BEFORE the waves consume it — the wave-VECTOR axis perpendicular
+  to the valley direction; the transposed version measurably collapsed
+  orientation, round-4 lesson).
+- **great_plains / hill_country tails**: relief chol σ widened (gp ×3.7
+  net, hc ×2.0 net) + gp log-mean +0.12.
+- **heathland**: `wave_share` 0.46, `wave_iso_frac` 0.45, log-mean +0.09.
+- **sandhills totals**: log-mean −0.10 compensates the added macro.
+
+Post-fix audit (gen, 20 seeds) vs real:
+
+| biome | A p10/50/90 | λ p50 | band relief p10/50/90 | total (target) |
+|---|---|---|---|---|
+| piedmont | .142/.366/.629 (real .165/.307/.486) | 1073 (1041) | 17.6/26.3/44.8 (13.2/21.4/42.5) | 36.1 (35.7) |
+| great_plains | .214/.357/.533 (.110/.308/.614) | 1065 (1102) | 6.1/12.9/38.9→42.6 (9.5/17.1/42.7) | 34.0 (33.8) |
+| river_valley | .247/.522/.632 (.366/.611/.823) | 1082 (1000) | 1.1/2.2/9.3 (1.0/2.0/6.9) | 3.6 (3.6) |
+| hill_country | .132/.334/.605 (.198/.390/.556) | 1109 (981) | 20.9/28.8/50.5 (23.0/30.2/75.0) | 67.6 (63.9) |
+| heathland | .253/.446/.653 (.224/.410/.695) | 1061 (1066) | 5.9/9.2/14.5 (2.9/8.4/15.3) | 14.1 (14.1) |
+| sandhills | .162/.371/.616 (.186/.400/.755) | 1125 (1190) | 14.0/19.8/26.6 (9.4/20.3/32.1) | 32.2 (32.6) |
+
+**Documented residuals** (accepted, not bugs): hill_country's band-relief
+p90 (75 real vs ~51) is dissection, not S1 amplitude — widening σ moved
+it not at all across three rounds; it belongs to S2 carving depth + S3
+texture. river_valley's extreme top-end orientation (real p90 .823) and
+sandhills' very strongest trains (real p90 .755) are compressed ~20%.
+great_plains' low-end A is slightly high (.214 vs .110).
+
+**C1 legibility note**: the S1 synthesis changed for rv/heathland/gp
+(orientation, share) and sandhills (new macro) — per C1_REVIEW.md, a
+fresh blind session is warranted when convenient; sandhills is not a
+window class so the five-class gate is likely unaffected.
+

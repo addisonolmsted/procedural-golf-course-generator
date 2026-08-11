@@ -15,13 +15,24 @@ fn main() {
             let spec =
                 SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(*biome) });
             let c1 = course_primitives::generate(&spec, &id);
-            let sk = course_skeleton::generate(&spec, &c1, &id);
-            let g = &sk.height; // 2 m grid, 1500²
+            let s1_only = std::env::var("S1_ONLY").is_ok();
             let mut buf: Vec<u8> = Vec::with_capacity(375 * 375 * 4);
-            for y in 0..375u32 {
-                for x in 0..375u32 {
-                    let v = *g.get(x * 4, y * 4) as f32;
-                    buf.extend_from_slice(&v.to_le_bytes());
+            if s1_only {
+                // the C1 "Implied" view: tilt + relief, 8 m grid
+                for y in 0..375u32 {
+                    for x in 0..375u32 {
+                        let v = (*c1.tilt.get(x, y) + *c1.relief.get(x, y)) as f32;
+                        buf.extend_from_slice(&v.to_le_bytes());
+                    }
+                }
+            } else {
+                let sk = course_skeleton::generate(&spec, &c1, &id);
+                let g = &sk.height; // 2 m grid, 1500 squared
+                for y in 0..375u32 {
+                    for x in 0..375u32 {
+                        let v = *g.get(x * 4, y * 4) as f32;
+                        buf.extend_from_slice(&v.to_le_bytes());
+                    }
                 }
             }
             let path = format!("{}/{}_{}.f32", out_dir, biome.key(), seed);

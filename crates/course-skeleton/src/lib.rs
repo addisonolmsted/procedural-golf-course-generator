@@ -41,7 +41,12 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     let m_trunk_river = dial("skeleton.trunk_river", 0.0);
     let m_strat = dial("skeleton.stratigraphy", 0.0);
     let m_basin = dial("skeleton.closed_basin", 0.0);
-    let m_aeolian = dial("skeleton.aeolian", 0.0);
+    // Couple the mid-band aeolian intensity to the SAME train-vs-mound
+    // continuum S1's macro dunes drew (shared course scalar): a mound-
+    // field course keeps small dunes but not train-strength ridges.
+    let ae_u = identity.course_scalar(course_seed::RunIdentity::AEOLIAN_SALT);
+    let ae_w = ae_u * ae_u * (3.0 - 2.0 * ae_u);
+    let m_aeolian = dial("skeleton.aeolian", 0.0) * (0.40 + 0.60 * ae_w);
     let m_integration = dial("skeleton.integration", 0.5);
     let relief_budget = spec.descriptors.relief_budget_m;
 

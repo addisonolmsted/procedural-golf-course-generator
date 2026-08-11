@@ -118,6 +118,25 @@ impl RunIdentity {
     /// (stages 0–1) key off the master seed and are identical on every
     /// attempt, `Attempt` streams (stages 2+) key off the attempt seed.
     /// `reroll/v1` is internal to course-seed and rejected here.
+    /// Salt for the shared sandhills train-vs-mound continuum scalar —
+    /// read by S1 (macro dunes) and S2 (mid-band aeolian module).
+    pub const AEOLIAN_SALT: u64 = 0xAE0_11A5;
+
+    /// A single deterministic scalar in [0,1) derived from the course seed
+    /// and a salt — for per-course values that MULTIPLE stages must agree
+    /// on without threading a contract field through (first use: the
+    /// sandhills train-vs-mound continuum, which S1's macro dunes and
+    /// S2's mid-band aeolian module both read so a mound-field course
+    /// does not get train-strength mid-band ridges).
+    pub fn course_scalar(&self, salt: u64) -> f64 {
+        let mut z = self.stream_seed() ^ salt.rotate_left(23);
+        z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    }
+
     pub fn stream(&self, name: &str) -> DetRng {
         let scope = streams::scope(name).unwrap_or_else(|| panic!("unregistered stream: {name}"));
         assert_ne!(

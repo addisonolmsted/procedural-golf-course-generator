@@ -92,6 +92,24 @@ pub struct BiomeEnvelope {
     /// drew floodplain-flat relief. Missing class = 1.0.
     #[serde(default)]
     pub class_relief_mult: BTreeMap<WindowClass, f64>,
+    /// S1 wave-field orientation mixture: fraction of background waves
+    /// drawn isotropic (the rest concentrate on the grain axis). Missing =
+    /// the pre-variety-audit global 0.75. Fitted per biome against the
+    /// corpus macro orientation order (docs/calibration/variety-audit.md).
+    #[serde(default)]
+    pub wave_iso_frac: Option<f64>,
+    /// S1 background-wave share of the relief amplitude. Missing = the
+    /// global 0.18. Heathland carries its relief in the 400–1600 m band
+    /// (kettle-and-ridge country), which the audit found ×2 low.
+    #[serde(default)]
+    pub wave_share: Option<f64>,
+    /// How strongly the grain axis locks to the base-edge (class) axis,
+    /// [0,1]. Real river-valley bottomland has ONE axis — bluffs, meander
+    /// belts and terraces all share the valley direction — so its drawn
+    /// grain must not be independent of the class orientation. 0 (default)
+    /// keeps the independent draw.
+    #[serde(default)]
+    pub grain_lock: Option<f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except
@@ -253,6 +271,27 @@ impl EnvelopeSet {
                     "{b}: module integration must be in [-1,1], got {}",
                     m.integration
                 )));
+            }
+            if let Some(f) = env.wave_iso_frac {
+                if !(0.0..=1.0).contains(&f) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: wave_iso_frac = {f} out of [0,1]"
+                    )));
+                }
+            }
+            if let Some(f) = env.grain_lock {
+                if !(0.0..=1.0).contains(&f) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: grain_lock = {f} out of [0,1]"
+                    )));
+                }
+            }
+            if let Some(f) = env.wave_share {
+                if !(0.02..=0.8).contains(&f) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: wave_share = {f} out of [0.02,0.8]"
+                    )));
+                }
             }
             for (w, v) in &env.class_relief_mult {
                 if !(0.05..=10.0).contains(v) {

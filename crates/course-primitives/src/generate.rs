@@ -6,7 +6,9 @@
 //!   + 1 tilt jitter + 4 per relief wave (N_WAVES × wavelength/direction/
 //!   phase/amplitude uniforms)
 //!   + 3 discontinuity params (always drawn, used only with two provinces)
-//!   + 2 class params.
+//!   + 2 class params
+//!   + 5 aeolian-macro scalars + 4 per mound wave (N_MOUND_WAVES; always
+//!     drawn, used only where `primitives.aeolian_macro` > 0).
 //!
 //! Every surface primitive here lives at >= 400 m wavelength, so the C1
 //! band-limit holds by construction; the constructor's mean-zero invariant is
@@ -36,12 +38,25 @@ const WAVE_BAND_M: (f64, f64) = (400.0, 1600.0);
 /// Spectral tilt: amplitude ∝ (λ/λmax)^(BETA/2) with λ uniform in log λ —
 /// FIT dial (targets: per-biome dominant wavelength + long:short power).
 const WAVE_BETA: f64 = 1.8;
-/// Orientation mixture: this fraction of waves is isotropic (uniform
-/// axis); the rest concentrate on the grain axis — FIT dial (target:
-/// band anisotropy ratio ≈ real 22–28, class shape included).
+/// Orientation mixture default: this fraction of waves is isotropic
+/// (uniform axis); the rest concentrate on the grain axis. Overridden per
+/// biome via the `primitives.wave_iso_frac` dial (variety audit: real
+/// river-valley bottomland is the most grain-organized biome in the
+/// corpus, orientation order 0.61 vs the 0.30 this global default gave).
 const WAVE_ISO_FRAC: f64 = 0.75;
 /// Spread of the grain-concentrated waves, radians.
 const WAVE_GRAIN_SPREAD: f64 = 0.45;
+/// Default background-wave share of relief amplitude; per-biome via the
+/// `primitives.wave_share` dial (heathland's band relief measured ×2 low).
+const WAVE_SHARE: f64 = 0.18;
+/// Macro aeolian structure (sandhills): mound waves in the isotropic
+/// component, and the amplitude share of the whole aeolian macro field.
+/// The corpus scatter it is fitted to: orientation order 0.19/0.40/0.75
+/// (p10/50/90), dominant λ ~1.0–1.3 km, band relief ~20 m median
+/// (docs/calibration/variety-audit.md).
+const N_MOUND_WAVES: usize = 10;
+const MOUND_BAND_M: (f64, f64) = (1050.0, 1550.0);
+const AEOLIAN_MACRO_SHARE: f64 = 0.30;
 
 pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let mut rng = identity.stream(streams::PRIMITIVES);
@@ -57,7 +72,43 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         _ => Edge::W,
     };
     let relief_amp = spec.dials.get("primitives.relief_amp_m").copied().unwrap_or(8.0);
+    let wave_iso_frac = spec
+        .dials
+        .get("primitives.wave_iso_frac")
+        .copied()
+        .unwrap_or(WAVE_ISO_FRAC);
+    let wave_share = spec.dials.get("primitives.wave_share").copied().unwrap_or(WAVE_SHARE);
+    let aeolian_macro = spec
+        .dials
+        .get("primitives.aeolian_macro")
+        .copied()
+        .unwrap_or(0.0);
+    let grain_lock = spec.dials.get("primitives.grain_lock").copied().unwrap_or(0.0);
     let base_drop = (0.3 + 0.4 * rng.next_f64()) * relief_amp;
+    // Grain lock (variety audit): rotate the drawn grain axis toward the
+    // base-edge/class axis BEFORE the waves consume it. At lock=1 the
+    // biome has ONE axis, like real bottomland (bluffs, meander belts and
+    // terraces all share the valley direction). Axis angles live mod π.
+    let grain_axis_rad = {
+        // The grain axis is a WAVE-VECTOR axis: a valley whose crests and
+        // floors run along `toward_edge` carries its spectral power on the
+        // PERPENDICULAR axis (round-4 lesson: the transposed version put
+        // the locked waves orthogonal to the class power and orientation
+        // order collapsed instead of rising).
+        let edge_axis = match edge {
+            Edge::N | Edge::S | Edge::CornerNe | Edge::CornerNw | Edge::CornerSe
+            | Edge::CornerSw => 0.0,
+            Edge::E | Edge::W => std::f64::consts::FRAC_PI_2,
+        };
+        let mut d = grain_axis_rad - edge_axis;
+        while d > std::f64::consts::FRAC_PI_2 {
+            d -= std::f64::consts::PI;
+        }
+        while d < -std::f64::consts::FRAC_PI_2 {
+            d += std::f64::consts::PI;
+        }
+        normalize_axis(edge_axis + d * (1.0 - grain_lock))
+    };
     // Drawn for the transcript; reserved for a jittered tilt direction once
     // the monotonicity check learns tolerance (stage-01 open question).
     let _tilt_jitter = (rng.next_f64() - 0.5) * 0.5;
@@ -74,10 +125,10 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         let lam = lam_lo * libm::exp(u_lam * log_ratio); // uniform in log λ
         // Orientation mixture: mostly isotropic, some grain-concentrated
         // (grain_strength narrows the concentrated share further).
-        let dir = if u_dir < WAVE_ISO_FRAC {
-            (u_dir / WAVE_ISO_FRAC) * std::f64::consts::PI
+        let dir = if u_dir < wave_iso_frac {
+            (u_dir / wave_iso_frac.max(1e-9)) * std::f64::consts::PI
         } else {
-            let v = (u_dir - WAVE_ISO_FRAC) / (1.0 - WAVE_ISO_FRAC); // [0,1)
+            let v = (u_dir - wave_iso_frac) / (1.0 - wave_iso_frac).max(1e-9); // [0,1)
             grain_axis_rad
                 + (v - 0.5) * 2.0 * WAVE_GRAIN_SPREAD * (1.0 - 0.5 * grain_strength)
         };
@@ -97,6 +148,37 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     let class_a = rng.next_f64();
     let class_b = rng.next_f64();
     let line_curve = classes::LineCurve::from_draws(class_a, class_b);
+    // Aeolian macro block: ALWAYS drawn (fixed transcript), used only
+    // where the dial is nonzero. 5 scalars + 4 per mound wave, appended
+    // AFTER the class draws so every earlier draw is unchanged.
+    let ae_lam = 1100.0 + 400.0 * rng.next_f64(); // train wavelength, m
+    // Reserved draw (transcript slot kept); the continuum value itself
+    // comes from the shared course scalar so S2's mid-band aeolian module
+    // reads the SAME train-vs-mound position (salt = AEOLIAN_SALT).
+    let _ae_orient_reserved = rng.next_f64();
+    let ae_orient_u = identity.course_scalar(course_seed::RunIdentity::AEOLIAN_SALT);
+    let ae_phase1 = rng.next_f64() * TAU;
+    let ae_phase2 = rng.next_f64() * TAU;
+    let ae_swing_phase = rng.next_f64() * TAU;
+    let (mb_lo, mb_hi) = MOUND_BAND_M;
+    let mb_log = libm::log(mb_hi / mb_lo);
+    let mut mound_waves = Vec::with_capacity(N_MOUND_WAVES);
+    for _ in 0..N_MOUND_WAVES {
+        let u_lam = rng.next_f64();
+        let u_dir = rng.next_f64();
+        let u_phi = rng.next_f64();
+        let u_amp = rng.next_f64();
+        let lam = mb_lo * libm::exp(u_lam * mb_log);
+        mound_waves.push((lam, u_dir * std::f64::consts::PI, u_phi * TAU, 0.6 + 0.8 * u_amp));
+    }
+    let mound_var: f64 = mound_waves.iter().map(|(_, _, _, a)| a * a * 0.5).sum();
+    let mound_norm = 1.0 / mound_var.sqrt().max(1e-9);
+    // The continuum: the corpus is roughly one-third strongly-oriented
+    // trains, 40% weakly-oriented mound fields, the rest mixed. A uniform
+    // draw through a smoothstep spans the range; the variety audit is the
+    // fit target for this mapping.
+    let w_train = ae_orient_u * ae_orient_u * (3.0 - 2.0 * ae_orient_u);
+    let wind = spec.descriptors.wind_azimuth_rad;
 
     // ---- geometry helpers ----------------------------------------------
     let toward_edge = match edge {
@@ -133,7 +215,20 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
     // The class shape CARRIES the macro form; the wave field seasons it.
     // (The 0.85/0.18 split survived the many-wave rework numerically; the
     // C1 legibility gate must be re-run whenever this synthesis changes.)
-    let mode_amp = relief_amp * 0.18 * wave_norm;
+    let mode_amp = relief_amp * wave_share * wave_norm;
+    // Aeolian macro field: crests PERPENDICULAR to the wind (transverse
+    // ridges), so the ridge-normal coordinate runs along the wind. Two
+    // components beating at slightly different wavelength and angle give
+    // barchanoid merge/split; the along-crest swing bends the crests.
+    let ae_amp = relief_amp * AEOLIAN_MACRO_SHARE * aeolian_macro;
+    let wind_n = Vec2::new(libm::cos(wind), libm::sin(wind));
+    let wind_c = Vec2::new(-wind_n.y, wind_n.x);
+    let wind_n2 = {
+        let a = wind + 0.09; // second train rotated ~5 degrees
+        Vec2::new(libm::cos(a), libm::sin(a))
+    };
+    // train variance: components 1.0 and 0.6 -> (1 + 0.36)/2
+    let train_norm = 1.0 / libm::sqrt((1.0 + 0.36) * 0.5);
     for y in 0..grid.ny {
         for x in 0..grid.nx {
             let p = grid.world_of(x, y);
@@ -149,6 +244,22 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
             for (lam, dir, phase, amp) in &waves {
                 let u = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);
                 r += wave_mult * mode_amp * amp * libm::sin(u / lam * TAU + phase);
+            }
+            if ae_amp > 0.0 {
+                let u = p.x * wind_n.x + p.y * wind_n.y;
+                let v = p.x * wind_c.x + p.y * wind_c.y;
+                let u2 = p.x * wind_n2.x + p.y * wind_n2.y;
+                let swing = 0.45 * libm::sin(v / 1400.0 * TAU + ae_swing_phase);
+                let train = train_norm
+                    * (libm::sin(u / ae_lam * TAU + ae_phase1 + swing)
+                        + 0.6 * libm::sin(u2 / (ae_lam * 1.18) * TAU + ae_phase2));
+                let mut mounds = 0.0;
+                for (lam, dir, phase, amp) in &mound_waves {
+                    let m = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);
+                    mounds += amp * libm::sin(m / lam * TAU + phase);
+                }
+                mounds *= mound_norm;
+                r += wave_mult * ae_amp * (w_train * train + (1.0 - w_train) * mounds);
             }
             let mut a = class_accom;
             let mut h = hardness_base;

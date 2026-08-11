@@ -279,6 +279,18 @@ fn derive_dials(
             _ => 0.0,
         },
     );
+    // S1 wave-field dials — per-biome, variety-audit fitted; missing
+    // envelope fields fall back to the pre-audit global constants.
+    m.insert(
+        "primitives.wave_iso_frac".into(),
+        env.wave_iso_frac.unwrap_or(0.75),
+    );
+    m.insert("primitives.wave_share".into(), env.wave_share.unwrap_or(0.18));
+    m.insert("primitives.grain_lock".into(), env.grain_lock.unwrap_or(0.0));
+    // S1 macro aeolian structure (dune trains / mound fields, ≥400 m) is
+    // gated by the same per-biome intensity as S2's mid-band aeolian
+    // module — one dial, two band-owners.
+    m.insert("primitives.aeolian_macro".into(), env.modules.aeolian);
     m.insert("skeleton.density_target".into(), d.density_target);
     // The five S2 module intensities, straight from the envelope record —
     // dials, not branches (stage-02 doc). S2 reads only these keys.

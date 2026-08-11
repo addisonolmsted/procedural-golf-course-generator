@@ -51,3 +51,15 @@ hardest. Viewer locations given per row.
 | parent-corridor repulsion | 250 m / 20 m-equiv, past 150 m arc | MANUAL (defence-in-depth; measured contribution small) |
 | in-band commit rule | +0.6 net-pull per step after 3 in-band steps | MANUAL (bounds approach glides) |
 | INFILL_PLACE_THRESH_M | 300 (was 265) | FIT: restores d2c medians to 96–100 after wander shortened them |
+
+## S1 macro variety (added 2026-08-10, variety-audit fit)
+
+| Parameter | Value | Tier |
+|---|---|---|
+| wave_iso_frac (envelope, per biome) | rv 0.12, heathland 0.45, gp 0.55, others 0.75 | FIT (audit orientation order) |
+| wave_share (envelope, per biome) | heathland 0.46, others 0.18 | FIT (audit band relief) |
+| grain_lock (envelope) | rv 1.0, others 0 | FIT+REVIEW (one-axis bottomland) |
+| gp/hc relief chol widening; gp/heathland/sandhills log-mean shifts | see envelope JSON | FIT (audit tails + E7 totals) |
+| S1 aeolian macro: train λ 1100–1500, mound band 1050–1550, share 0.30, smoothstep continuum | generate.rs | FIT (audit A/λ/relief scatter, 44 real tiles) |
+| S2 aeolian: 14 waves 120–400 m, ±28° spread, amp 0.123·budget clamp [1.0,5.6], continuum coupling 0.40+0.60·w | aeolian.rs | FIT (real mid-band std 3.58 m) |
+
