@@ -77,8 +77,14 @@ impl LineCurve {
     }
 }
 
-/// The class's structural relief contribution (metres, amplitude `amp`) and
-/// its accommodation field value in [0, 1], for a world point.
+/// The class's structural relief contribution (metres, amplitude `amp`),
+/// its accommodation field value in [0, 1], and a WAVE MULTIPLIER in
+/// [0, 1] — depositional flats (basin floors, valley floors) suppress the
+/// background wave field, because real playa/floodplain floors are the
+/// smoothest surfaces in nature. The suppression is also what makes a
+/// basin legible: under the many-wave field every wave low rings closed
+/// contours, so "a closed low" alone discriminates nothing — "a LARGE,
+/// CALM closed low" does (review sessions 3–4).
 ///
 /// `along` = signed coordinate toward the base-level edge (0 at the far side,
 /// EXTENT at the edge); `cross` = perpendicular offset from the site axis
@@ -91,7 +97,7 @@ pub fn shape(
     cross: f64,
     amp: f64,
     curve: LineCurve,
-) -> (f64, f64) {
+) -> (f64, f64, f64) {
     let mid = EXTENT_M / 2.0;
     // Warp: along-features (risers, rims) bow with cross²; axial features
     // (valley/interfluve axes) bow with (along−mid)². Constant second
@@ -103,12 +109,12 @@ pub fn shape(
         // concentrates in the floor.
         WindowClass::ValleyFloor => {
             let floor = bump(cross, 700.0);
-            (-amp * floor, 0.35 + 0.6 * floor)
+            (-amp * floor, 0.35 + 0.6 * floor, 1.0 - 0.4 * floor)
         }
         // The inverse: a broad axial crest, accommodation pushed off it.
         WindowClass::Interfluve => {
             let crest = bump(cross, 800.0);
-            (amp * crest, 0.6 - 0.45 * crest)
+            (amp * crest, 0.6 - 0.45 * crest, 1.0)
         }
         // One big riser across mid-site, high side away from the edge.
         // The step CARRIES the class: benches above and below are near-
@@ -117,7 +123,7 @@ pub fn shape(
         // is basin_margin's silhouette; the review confused the two).
         WindowClass::EscarpmentFace => {
             let riser = sstep((along - mid + 250.0) / 500.0);
-            (amp * (0.5 - riser), 0.3 + 0.4 * riser)
+            (amp * (0.5 - riser), 0.3 + 0.4 * riser, 1.0)
         }
         // The rim of a basin: the ramp DECELERATES into a terminal flat
         // and a shallow closed pocket sits at the low end — the visible
@@ -126,17 +132,18 @@ pub fn shape(
         // time: a margin with no basin is just a slope.)
         WindowClass::BasinMargin => {
             let toward = sstep((along - 0.1 * EXTENT_M) / (0.5 * EXTENT_M));
-            let pocket = bump(along - 0.82 * EXTENT_M, 700.0) * bump(cross, 1300.0);
+            let pocket = bump(along - 0.80 * EXTENT_M, 1000.0) * bump(cross, 1600.0);
             // classic basin rim: a subtle raised lip on the pocket's outer
-            // shoulder makes the closed low unmistakable from any ramp
-            let rim = bump(along - 0.58 * EXTENT_M, 300.0) * bump(cross, 1300.0);
+            // shoulder separates the enclosed low from the descent
+            let rim = bump(along - 0.55 * EXTENT_M, 300.0) * bump(cross, 1500.0);
             (
                 amp * (0.5 - 0.9 * toward) - 0.8 * amp * pocket + 0.18 * amp * rim,
                 0.3 + 0.5 * toward + 0.25 * pocket,
+                1.0 - 0.75 * pocket,
             )
         }
         // A plain strong ramp: the class is carried by tilt, not relief.
-        WindowClass::PiedmontSlope => (0.0, 0.45),
+        WindowClass::PiedmontSlope => (0.0, 0.45, 1.0),
         // Three treads stepping toward the edge, with CRISP risers
         // (~160 m) and genuinely flat treads — the blind session read the
         // old 400 m-soft staircase as a plain ramp.
@@ -145,7 +152,7 @@ pub fn shape(
             let tread = s.floor().clamp(0.0, 2.0);
             let riser = sstep((s - tread) * (1000.0 / 320.0));
             let stepped = (tread + riser) / 3.0;
-            (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped))
+            (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped), 1.0)
         }
     }
 }

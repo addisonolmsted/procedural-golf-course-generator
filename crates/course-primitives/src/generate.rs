@@ -143,12 +143,12 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
             tilt.set(x, y, -tilt_grade * along);
 
             // Relief: class shape + grain-clustered smooth modes.
-            let (class_relief, class_accom) =
+            let (class_relief, class_accom, wave_mult) =
                 classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85, line_curve);
             let mut r = class_relief;
             for (lam, dir, phase, amp) in &waves {
                 let u = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);
-                r += mode_amp * amp * libm::sin(u / lam * TAU + phase);
+                r += wave_mult * mode_amp * amp * libm::sin(u / lam * TAU + phase);
             }
             let mut a = class_accom;
             let mut h = hardness_base;
