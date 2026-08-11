@@ -84,8 +84,12 @@ pub fn shape(
             (amp * crest, 0.6 - 0.45 * crest)
         }
         // One big riser across mid-site, high side away from the edge.
+        // The step CARRIES the class: benches above and below are near-
+        // flat (tilt_share dropped to 0.2 — the old 0.5 ramp turned
+        // "plateau / cliff / plain" into "ramp with a steeper bit", which
+        // is basin_margin's silhouette; the review confused the two).
         WindowClass::EscarpmentFace => {
-            let riser = sstep((along - mid + 300.0) / 600.0);
+            let riser = sstep((along - mid + 250.0) / 500.0);
             (amp * (0.5 - riser), 0.3 + 0.4 * riser)
         }
         // The rim of a basin: the ramp DECELERATES into a terminal flat
@@ -109,7 +113,7 @@ pub fn shape(
         WindowClass::TerraceFlight => {
             let s = along / EXTENT_M * 3.0;
             let tread = s.floor().clamp(0.0, 2.0);
-            let riser = sstep((s - tread) * (1000.0 / 260.0));
+            let riser = sstep((s - tread) * (1000.0 / 320.0));
             let stepped = (tread + riser) / 3.0;
             (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped))
         }
@@ -120,7 +124,7 @@ pub fn shape(
 pub fn tilt_share(class: WindowClass) -> f64 {
     match class {
         WindowClass::PiedmontSlope => 0.9,
-        WindowClass::EscarpmentFace => 0.5,
+        WindowClass::EscarpmentFace => 0.2,
         WindowClass::TerraceFlight => 0.5,
         WindowClass::ValleyFloor | WindowClass::BasinMargin => 0.25,
         WindowClass::Interfluve => 0.35,
