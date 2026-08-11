@@ -66,3 +66,27 @@ Re-run `site_window_audit.py` after S3 lands (pre-texture candle-wax
 inflates generated calm; the real numbers include full lidar texture).
 The per-province accepted-calm bands above are the empirical envelope
 for S5's feasibility floors.
+
+## Follow-up 2026-08-11 — river_valley terrace expression
+
+Reviewer question: are the terraces (rv's distinguishing sittable
+feature) actually present, or are the flat-looking seeds missing them?
+
+Measured (`course-skeleton/examples/rv_terrace_check.rs`, 40 rv seeds):
+the class mix is by design (42% valley_floor at ~1–3 m relief — the
+corpus's genuinely flat bottomland — 28% terrace_flight, 18%
+margin/escarpment carrying 17–41 m), and escarpment/margin seeds express
+strongly. But **every terrace_flight seed measured ZERO detectable
+risers**: the riser transition width was a constant 320 m (tuned for
+legibility at piedmont amplitude where risers are ~4 m), which dissolves
+rv's ~2 m risers into 0.6% ramps.
+
+Fix: riser width now scales with riser height at the constant ~1.3%
+scarp slope the reviewer approved in the C1 tuning sessions (piedmont
+amplitude stays byte-identical at the 320 m clamp; rv risers tighten to
+~100–190 m). Post-fix renders show the two scarp bands clearly with
+flat treads between — soft low-terrace character, not knife lines.
+Remaining flatness in rv is REAL (valley-floor seeds match the corpus),
+and the sub-metre texture arrives with S3 (rv fine band is genuinely
+quiet: 0.20 m std, ridge-and-swale).
+

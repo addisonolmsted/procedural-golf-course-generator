@@ -150,7 +150,20 @@ pub fn shape(
         WindowClass::TerraceFlight => {
             let s = along / EXTENT_M * 3.0;
             let tread = s.floor().clamp(0.0, 2.0);
-            let riser = sstep((s - tread) * (1000.0 / 320.0));
+            // Riser width scales with riser HEIGHT at a constant scarp
+            // slope of ~1.3% — the exact look the reviewer approved in the
+            // C1 tuning sessions (piedmont-amplitude risers ≈ 4 m over the
+            // approved 320 m; the 160 m width they rejected as "too much"
+            // is 2.6% at that height, so the slope constant must stay at
+            // the approved value). The 320 clamp keeps piedmont-and-above
+            // byte-identical to the approved shape. At river-valley
+            // amplitude the riser is ~2 m and the old CONSTANT 320 m width
+            // dissolved it to a 0.6% ramp — the terrace-expression check
+            // measured ZERO detectable risers across every rv terrace
+            // seed; height-scaled width brings those in at ~140 m.
+            let riser_h = amp / 3.0;
+            let riser_w = (riser_h / 0.0128).clamp(60.0, 320.0);
+            let riser = sstep((s - tread) * (1000.0 / riser_w));
             let stepped = (tread + riser) / 3.0;
             (amp * (0.5 - stepped), 0.35 + 0.3 * (1.0 - stepped), 1.0)
         }
