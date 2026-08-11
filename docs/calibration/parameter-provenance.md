@@ -39,3 +39,15 @@ hardest. Viewer locations given per row.
 | Kettle radius 70–200 m, depth 1.6–4.2×scale | S2 heathland circles | E7 from corpus basin stats (v1 extractor measured these) |
 | Aeolian wavelengths 210/340 m | S2 sandhills | E7 directional spectra (v1 dune probe exists) |
 | Floodplain widths 60+320×intensity, riser 2.2 m | S2 river_valley | E7 transect fit |
+
+## Planform (added 2026-08-10, planform-instrument fit)
+
+| Parameter | Value | Tier |
+|---|---|---|
+| wander θ range | 0.40–0.75 rad | REVIEW→FIT: tuned until 600 m-window sinuosity matched the real corpus (1.06–1.10) via examples/planform.rs vs real_planform.py |
+| wander λ range | 500–1150 m | same fit loop |
+| wander score weight | 30 m-equiv | MANUAL (2:1 vs turn penalty; terrain still dominates at metre-scale relief) |
+| infill `to_net` fade-in | < 600 m of network | REVIEW: kills far-field compass beelines; terrain carries the far field |
+| parent-corridor repulsion | 250 m / 20 m-equiv, past 150 m arc | MANUAL (defence-in-depth; measured contribution small) |
+| in-band commit rule | +0.6 net-pull per step after 3 in-band steps | MANUAL (bounds approach glides) |
+| INFILL_PLACE_THRESH_M | 300 (was 265) | FIT: restores d2c medians to 96–100 after wander shortened them |

@@ -129,6 +129,23 @@ structure and (later) texture; never through spacing.
   separation floor plus tangential junction approaches hold neighbours
   in sustained 40–200 m bands instead of converging. Supersedes the
   earlier "watch, don't fail" note on near-parallel streams.
+  **RESOLVED (same day):** (1) per-channel meander wander — a position-
+  seeded sinusoidal desired-turn signal (θ 0.40–0.75 rad, λ 500–1150 m)
+  the terrain score can override; (2) infill fingers follow the TERRAIN
+  in the far field (the straight-line `to_net` compass now fades in only
+  below 600 m of the network) with the wander applied as an absolute
+  heading offset; (3) parent-corridor repulsion past the junction-
+  leaving window plus an in-band commit rule on gliding approaches.
+  Post-fix, same instruments: sinuosity p50 1.07–1.13 vs real
+  1.06–1.10; dead-straight fraction 4–10% vs real 0–16%; parallel-run
+  fraction 0.06–0.10 vs real 0.03–0.11 — all inside the real band.
+  (Honest note: the original 43–46% parallel figure was inflated by a
+  junction-contact exemption in the generated-side metric that the
+  real-side twin lacked; with the metric fixed the true pre-fix gap was
+  smaller, but the straightness gap — metric-independent — was real and
+  is what the fix closed.) INFILL_PLACE_THRESH 265→300 m compensates
+  the wiggle-induced d2c drop (battery: 96–100 m medians, spread 4 m,
+  zero crossings, junctions 45–47°, PASS).
 - **Rare residual crossings.** Post-smoothing displacement is bounded
   below the separation floor, so any remaining crossing is a bug —
   report seed + location.

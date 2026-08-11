@@ -55,6 +55,7 @@ fn main() {
         let mut par_runs: Vec<f64> = Vec::new(); // arc m of parallel-band runs
         let mut total_len = 0.0f64;
         let mut par_len = 0.0f64; // channel length sitting in runs > 400 m
+        let mut par_rel_len = [0.0f64; 3]; // by dominant relation: pc/sib/unrel
         for k in 0..20u64 {
             let id = RunIdentity::from_seed(41_000 + k);
             let spec =
@@ -98,8 +99,10 @@ fn main() {
                 sk.channels.iter().map(|c| resample(&c.pts, PAR_SAMPLE_M)).collect();
             for (i, si) in sampled.iter().enumerate() {
                 let mut run = 0.0f64;
+                let mut run_rel = [0usize; 3]; // parent-child / sibling / unrelated votes
                 for p in si {
                     let mut dmin = f64::INFINITY;
+                    let mut rel = 2usize;
                     for (j, sj) in sampled.iter().enumerate() {
                         if j == i {
                             continue;
@@ -108,27 +111,35 @@ fn main() {
                         // touch at the mouth by construction
                         let related = sk.channels[i].parent == Some(j as u32)
                             || sk.channels[j].parent == Some(i as u32);
+                        let sib = sk.channels[i].parent.is_some()
+                            && sk.channels[i].parent == sk.channels[j].parent;
                         for q in sj {
                             let d = ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
-                            if related && d < PAR_BAND.0 {
-                                continue;
+                            if d < dmin {
+                                dmin = d;
+                                rel = if related { 0 } else if sib { 1 } else { 2 };
                             }
-                            dmin = dmin.min(d);
                         }
                     }
                     if dmin >= PAR_BAND.0 && dmin <= PAR_BAND.1 {
                         run += PAR_SAMPLE_M;
+                        run_rel[rel] += 1;
                     } else {
                         if run > 400.0 {
                             par_runs.push(run);
                             par_len += run;
+                            let dom = (0..3).max_by_key(|k| run_rel[*k]).unwrap();
+                            par_rel_len[dom] += run;
                         }
                         run = 0.0;
+                        run_rel = [0; 3];
                     }
                 }
                 if run > 400.0 {
                     par_runs.push(run);
                     par_len += run;
+                    let dom = (0..3).max_by_key(|k| run_rel[*k]).unwrap();
+                    par_rel_len[dom] += run;
                 }
             }
         }
@@ -166,11 +177,14 @@ fn main() {
             sr.last().copied().unwrap_or(f64::NAN)
         );
         print!(
-            "\"par_run_p50\":{:.0},\"par_run_p90\":{:.0},\"par_run_max\":{:.0},\"par_frac\":{:.3}}}",
+            "\"par_run_p50\":{:.0},\"par_run_p90\":{:.0},\"par_run_max\":{:.0},\"par_frac\":{:.3},\"par_pc\":{:.3},\"par_sib\":{:.3},\"par_unrel\":{:.3}}}",
             quant(&mut pr, 0.5),
             quant(&mut pr, 0.9),
             pr.last().copied().unwrap_or(f64::NAN),
-            if total_len > 0.0 { par_len / total_len } else { 0.0 }
+            if total_len > 0.0 { par_len / total_len } else { 0.0 },
+            if total_len > 0.0 { par_rel_len[0] / total_len } else { 0.0 },
+            if total_len > 0.0 { par_rel_len[1] / total_len } else { 0.0 },
+            if total_len > 0.0 { par_rel_len[2] / total_len } else { 0.0 }
         );
     }
     println!("}}");

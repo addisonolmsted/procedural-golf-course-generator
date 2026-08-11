@@ -38,7 +38,7 @@ pub const MAX_INFILL: usize = 88;
 pub const INFILL_STEPS: usize = 42;
 pub const INFILL_STEP_M: f64 = 110.0;
 /// Stop placing fingers once every cell is within this of a channel.
-pub const INFILL_PLACE_THRESH_M: f64 = 265.0;
+pub const INFILL_PLACE_THRESH_M: f64 = 300.0;
 /// A finger attaches when it comes this close to an existing channel.
 pub const INFILL_ATTACH_M: f64 = 60.0;
 
@@ -119,6 +119,8 @@ pub fn build(
         STEP_M,
         &draws.trunk_steps,
         true,
+        Some(trunk::wander_from(start, 0)),
+        None,
     );
     // Negative integration (derangement) cuts the trunk's downstream reach:
     // a deranged network dangles in the interior instead of reaching base
@@ -222,7 +224,17 @@ pub fn build(
                 let side = if (pi + k) % 2 == 0 { 1.0 } else { -1.0 };
                 let ang = side * (0.96 + (ang_u - 0.5) * 0.52);
                 let dir0 = trunk::rotate(tangent, ang);
-                let (grown, stop) = trunk::grow(steer, jp, dir0, *len, *step, step_draws, false);
+                let (grown, stop) = trunk::grow(
+                    steer,
+                    jp,
+                    dir0,
+                    *len,
+                    *step,
+                    step_draws,
+                    false,
+                    Some(trunk::wander_from(jp, (li as u64) << 32 | spawned as u64)),
+                    Some(&parent_pts),
+                );
                 let spawn_side = spawn_side_of(Vec2::new(jp.x + dir0.x, jp.y + dir0.y));
                 // Trim at the first touch of an existing channel. The ONLY
                 // exemption is the PARENT's own cells within the first 60 m
@@ -324,7 +336,11 @@ pub fn build(
     // structural edit of this block — the D5 battery caught its absence
     // (sandhills seeds carrying 2.2 km/km² networks). If it goes missing
     // again, the battery will fail again; that is the intended tripwire.
-    if derangement == 0.0 && !channels.is_empty() && density_target_km_km2 >= 0.5 {
+    if derangement == 0.0
+        && !channels.is_empty()
+        && density_target_km_km2 >= 0.5
+        && std::env::var("INFILL_OFF").is_err()
+    {
         grow_infill(steer, spec8, draws, &mut channels, &mut chan_at, &mut arc_at);
     }
 
@@ -825,6 +841,16 @@ fn grow_infill(
         let mut prev = Vec2::new(0.0, 0.0);
         let mut pts: Vec<Vec2> = vec![p];
         let mut attach: Option<(i32, f64, Vec2)> = None;
+        // Fingers get the same meander wander as authored channels — they
+        // were the straightest population (order-1 beelines down a smooth
+        // gradient) in the planform measurement.
+        let wander = trunk::wander_from(p, 0x1F1F ^ best_lin as u64);
+        // Consecutive steps spent gliding in the 40–200 m corridor band of
+        // an existing channel. Real approaches converge; a finger that has
+        // ridden the band for ~300 m must COMMIT to the junction — the
+        // escalating pull below is what finally killed the measured
+        // 40%+ parallel-run fraction (real corpus: 3–11%).
+        let mut in_band_steps = 0usize;
         for (si, &u) in jits.iter().enumerate() {
             let pl = ((p.y / cell).floor() as usize).min(ny - 1) * nx
                 + ((p.x / cell).floor() as usize).min(nx - 1);
@@ -856,14 +882,39 @@ fn grow_infill(
                 let wgt = 1.4 * (1.0 - dist[pl] / 220.0);
                 tang = Vec2::new(down_tan.x * wgt, down_tan.y * wgt);
             }
+            // The planform instrument caught the compass problem: with a
+            // constant 1.3 weight, `to_net` (straight line to the nearest
+            // channel) dominates the blend over kilometres, and neighbouring
+            // fingers placed by the regular farthest-point argmax all
+            // beeline down the same slope — the measured 43–46% parallel
+            // fraction (vs 3–11% real) lived almost entirely in this
+            // population. Real headwater streams follow the TERRAIN; the
+            // network pull is only the endgame that closes the junction. So
+            // the compass fades in below 600 m of the network and the
+            // downhill term carries the far field.
+            if dist[pl] > 40.0 && dist[pl] < 200.0 {
+                in_band_steps += 1;
+            } else {
+                in_band_steps = 0;
+            }
+            let commit = in_band_steps.saturating_sub(3) as f64 * 0.6;
+            let prox = 1.0 - (dist[pl] / 600.0).min(1.0);
+            let w_net = 0.5 + 0.8 * prox + commit;
+            let w_down = 1.0 - 0.4 * prox;
             let mut dir = Vec2::new(
-                1.3 * to_net.x + 0.6 * down.x + 0.8 * prev.x + tang.x,
-                1.3 * to_net.y + 0.6 * down.y + 0.8 * prev.y + tang.y,
+                w_net * to_net.x + w_down * down.x + 0.8 * prev.x + tang.x,
+                w_net * to_net.y + w_down * down.y + 0.8 * prev.y + tang.y,
             );
             let dn = (dir.x * dir.x + dir.y * dir.y).sqrt().max(1e-9);
             dir = Vec2::new(dir.x / dn, dir.y / dn);
             let ang = (u - 0.5) * 0.8 + if si == 0 { (ang_u - 0.5) * 0.6 } else { 0.0 };
-            dir = trunk::rotate(dir, ang);
+            // Wander as an ABSOLUTE heading offset (a per-step turn is
+            // diluted ~70% by the momentum term because the blend rebuilds
+            // the heading each step). Fades out inside the tangential-
+            // approach zone so the junction still closes at an acute angle.
+            let wfade = (dist[pl] / 220.0).min(1.0);
+            let th_head = trunk::wander_heading(&wander, si as f64 * INFILL_STEP_M);
+            dir = trunk::rotate(dir, ang + th_head * wfade);
             // Fingers obey discontinuities, with one difference from the
             // authored tributaries: at a SCARP a finger deflects parallel
             // instead of truncating — drainage in front of a scarp runs
