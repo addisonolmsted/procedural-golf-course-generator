@@ -91,3 +91,34 @@ that finds the pockets, exactly as in reality. Condition discharged.
 Fit fallout fixed en route: steering candidates that exit the margin are
 now invalid rather than fatal (steep fitted ramps made the lowest
 candidate point off-tile and killed trunks at step one).
+
+## Addendum 2026-08-11 — D6-W: the siting-window question
+
+Reviewer concern after the variety fixes widened relief tails: do
+high-relief seeds (hill_country especially) still contain routable
+ground, and where do real courses sit in such terrain?
+
+Measured with `tools/macro_campaign/site_window_audit.py` (S5's exact
+search geometry: best 600 m window in the 1.5 km core, fraction of
+cells under the 8% fairway grade, and the window's terrain position —
+0 = valley floor, 1 = hilltop):
+
+| | best-window calm p50 | ≥70% calm | position p50 |
+|---|---|---|---|
+| real hill_country | 0.25 | 1/27 | 0.36 |
+| gen hill_country | 0.84 | 13/20 | 0.49 |
+| real piedmont | 0.61 | 10/27 | 0.47 |
+| gen piedmont | 0.92 | 14/20 | 0.58 |
+| real great_plains | 0.95 | 35/36 | 0.60 |
+| gen great_plains | 1.00 | 18/20 | 0.36 |
+
+Findings: (1) REAL hill-country land almost never contains a fully calm
+window (≥85%: 0/27) — real courses exist because architects take the
+valley-floor/bench land (best windows sit LOW, position p50 0.36) and
+shape the rest; siting-then-earthworks is how reality does it, and S5 +
+the plasticity-weighted scorer preset is that same mechanism. (2) The
+widened tails did NOT strand seeds: generated hc still offers MORE
+findable calm ground than real hc land, in the same low-to-mid terrain
+band. (3) Caveat: generated surfaces are pre-texture candle-wax — S3
+will erode part of that margin, so D6-W re-runs after S3 (the real
+numbers already include full texture).
