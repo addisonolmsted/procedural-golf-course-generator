@@ -60,10 +60,24 @@ impl Ord for Ord64 {
 /// `(z, insertion_order)`, borders seeded left/right column per row then
 /// top/bottom row per column, `eps = 1e-4 * cell`.
 pub fn fill_depressions(z: &Grid<f64>) -> Grid<f64> {
+    fill_depressions_masked(z, &[])
+}
+
+/// Priority-flood fill that LEAVES chosen pits unfilled: any cell whose
+/// `keep_pit` flag is set keeps its original elevation and is never raised.
+///
+/// This is what makes intended closed basins survive routing — heathland's
+/// kettles capture flow and deranged drainage emerges from the same code
+/// path as integrated drainage (S2 carve; stage-02 open question 1). Pass
+/// an empty slice for the plain fill; `fill_depressions` does exactly that,
+/// so the parity-pinned behaviour is a special case of this function and
+/// cannot drift from it.
+pub fn fill_depressions_masked(z: &Grid<f64>, keep_pit: &[bool]) -> Grid<f64> {
     let (ny, nx) = (z.spec.ny as usize, z.spec.nx as usize);
     let eps = 1e-4 * z.spec.cell_size;
     let mut filled = z.clone();
     let mut closed = vec![false; ny * nx];
+    let kept = |lin: usize| keep_pit.get(lin).copied().unwrap_or(false);
     // (z, order, lin) — order makes ties FIFO like Python's heapq tuples.
     let mut pq: BinaryHeap<Reverse<(Ord64, u64, usize)>> = BinaryHeap::new();
     let mut order: u64 = 0;
@@ -98,7 +112,14 @@ pub fn fill_depressions(z: &Grid<f64>) -> Grid<f64> {
             }
             let nlin = ny2 as usize * nx + nx2 as usize;
             if !closed[nlin] {
-                let zn = z.data[nlin].max(zc + eps);
+                // A kept pit enters the flood at its OWN elevation: it is
+                // never raised to the spill level, so it stays a sink and
+                // its catchment drains into it instead of through it.
+                let zn = if kept(nlin) {
+                    z.data[nlin]
+                } else {
+                    z.data[nlin].max(zc + eps)
+                };
                 pq.push(Reverse((Ord64(zn), order, nlin)));
                 order += 1;
                 closed[nlin] = true;
@@ -332,5 +353,46 @@ mod tests {
             .map(|(_, a)| a)
             .sum();
         assert_eq!(outlet_sum, 400, "no basin silently dropped (2-cycle guard)");
+    }
+
+    #[test]
+    fn masked_fill_keeps_chosen_pits_and_they_capture_flow() {
+        // A tilted plane with one dug pit away from the border.
+        let mut g = grid(24, 24, |y, x| (y + x) as f64 * 0.1 + 5.0);
+        let pit = 12 * 24 + 12;
+        // Bowl: rim cells dug 1.5, centre dug 3.0, so the centre is the
+        // unambiguous low point of the cluster on the tilted plane.
+        for (dy, dx) in D8 {
+            let lin = ((12 + dy) as usize) * 24 + (12 + dx) as usize;
+            g.data[lin] -= 1.5;
+        }
+        g.data[pit] -= 3.0;
+
+        // Plain fill erases the pit; masked fill preserves it.
+        let plain = fill_depressions(&g);
+        assert!(plain.data[pit] > g.data[pit] + 1.0, "plain fill raises the pit");
+
+        let mut keep = vec![false; g.data.len()];
+        for (dy, dx) in [(0i64, 0i64)].into_iter().chain(D8) {
+            keep[((12 + dy) as usize) * 24 + (12 + dx) as usize] = true;
+        }
+        let masked = fill_depressions_masked(&g, &keep);
+        assert_eq!(masked.data[pit], g.data[pit], "kept pit is never raised");
+
+        // ... and the pit is a genuine sink: it terminates its own drainage.
+        let (rec, _) = receivers(&masked, masked.spec.cell_size);
+        let acc = accumulate(&rec);
+        assert_eq!(rec[pit], -1, "kept pit is an outlet (undrained sink)");
+        assert!(acc[pit] > 1, "kept pit captures upslope flow: {}", acc[pit]);
+    }
+
+    #[test]
+    fn empty_mask_is_exactly_the_plain_fill() {
+        let g = grid(18, 18, |y, x| {
+            ((y as f64 * 0.5).sin() + (x as f64 * 0.9).cos()) * 1.5 + (y + x) as f64 * 0.05
+        });
+        let a = fill_depressions(&g);
+        let b = fill_depressions_masked(&g, &[]);
+        assert_eq!(a.data, b.data, "the parity-pinned path must not drift");
     }
 }

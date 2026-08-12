@@ -1,0 +1,469 @@
+//! The derived channel network: erode, then extract.
+//!
+//! S2 used to AUTHOR channel polylines — grow a trunk, sprout tributaries,
+//! then defend the result with crossing guards, separation neighbourhoods,
+//! mouth-angle enforcement, curl penalties and a final trim sweep. Ten
+//! structural patches later the review still found loops and long parallel
+//! pairs (seed 48). The paradigm was the bug: geometry authored in path
+//! space has to be *argued* into consistency with the terrain it sits on.
+//!
+//! Here the terrain decides. A light stream-power erosion runs on C1's
+//! implied surface (plus a sub-macro roughness seed that gives drainage
+//! something to compete over), and the network is EXTRACTED from the
+//! resulting flow field. What the review asked for becomes structural:
+//!
+//! - **No loops.** A D8 receiver graph is a forest; a loop is unreachable.
+//! - **No crossings.** Two flow paths that meet share every cell after the
+//!   meeting point — they merge, they cannot cross.
+//! - **Sensible junctions.** Confluences sit where terrain converges, and
+//!   the merge angle is the angle at which the two valleys arrive.
+//! - **Parallel only where earned.** Neighbouring channels stay separate
+//!   exactly when a divide separates them.
+//!
+//! Density stops being a growth budget and becomes one extraction
+//! threshold: rills below it stay in the surface as texture for S3.
+//!
+//! Everything is fixed-count and position-seeded: N erosion iterations, a
+//! fixed wave transcript, no data-dependent loops (stage-02's budget rule).
+
+use course_contracts::metadata::Edge;
+use course_seed::DetRng;
+use course_world::flow;
+use course_world::grid::{Grid, GridSpec};
+use course_world::math::Vec2;
+use course_world::world::EXTENT_M;
+
+use crate::kernel::Channel;
+
+/// Sub-macro roughness waves: the convergence seed. C1's field is
+/// band-limited to >= 400 m, and flow over a surface that smooth runs in
+/// near-parallel sheets — the roughness is what makes valleys compete and
+/// capture. Wavelengths sit in S2's own band (>= 64 m), so this is not S3
+/// texture leaking upstream; it is the spur-and-hollow degree of freedom
+/// the pipeline revision identified as missing.
+pub const N_WAVES: usize = 32;
+pub const WAVE_BAND_M: (f64, f64) = (96.0, 384.0);
+/// Draws consumed: 4 per wave + 1 threshold jitter.
+pub const DRAWS: usize = N_WAVES * 4 + 1;
+
+/// Default erosion iterations (fixed — never "until converged").
+pub const ITERS: usize = 15;
+/// Per-iteration vertical clamp (m): keeps a single step from cutting a
+/// gorge where accumulation is huge.
+pub const STEP_CLAMP_M: f64 = 0.45;
+/// Minimum roughness amplitude (m) regardless of relief — the flat-biome
+/// symmetry breaker (see `carve`).
+pub const ROUGH_FLOOR_M: f64 = 0.55;
+
+/// The carve's own dials, derived from the biome dials by the caller.
+pub struct CarveParams {
+    /// Roughness amplitude as a fraction of the C1 relief amplitude.
+    pub roughness_frac: f64,
+    /// Stream-power coefficient (metres per unit sqrt(area)*slope).
+    pub k: f64,
+    /// Channel-extraction threshold in drained AREA (m²).
+    pub area_threshold_m2: f64,
+    /// Scales total incision (negative integration shrinks it).
+    pub incision_scale: f64,
+    /// Erosion iterations.
+    pub iters: usize,
+    /// Per-iteration vertical clamp (m).
+    pub step_clamp_m: f64,
+}
+
+/// What the carve produces: the eroded surface plus the extracted network.
+pub struct Carved {
+    /// The carved base surface (8 m) — valleys are cut into it already.
+    pub z: Grid<f64>,
+    /// Per-cell channel membership: `channel_of[lin]` = Some(index).
+    pub channel_of: Vec<Option<u32>>,
+    /// Strahler order per channel cell (0 where not a channel).
+    pub order_at: Vec<u8>,
+    /// D8 receiver index per cell on the carved surface (-1 = outlet).
+    pub rec: Vec<i64>,
+    /// Drained area, m².
+    pub area: Vec<f64>,
+    /// The traced vector network (for QA instruments and the viewer).
+    pub channels: Vec<Channel>,
+}
+
+/// Amplitude and band of the flat-breaking perturbation (see `carve`).
+pub const DEFLAT_AMP_M: f64 = 0.10;
+pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
+
+/// Deterministic roughness field: a fixed-count wave sum, mean-zero.
+fn roughness(spec: &GridSpec, rng: &mut DetRng, amp: f64) -> Vec<f64> {
+    roughness_at(spec, rng, amp, WAVE_BAND_M, N_WAVES)
+}
+
+/// Wave-sum field with an explicit band and count.
+fn roughness_at(
+    spec: &GridSpec,
+    rng: &mut DetRng,
+    amp: f64,
+    band: (f64, f64),
+    count: usize,
+) -> Vec<f64> {
+    let (lo, hi) = band;
+    let log_ratio = libm::log(hi / lo);
+    let mut waves = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (u_lam, u_dir, u_phi, u_amp) =
+            (rng.next_f64(), rng.next_f64(), rng.next_f64(), rng.next_f64());
+        let lam = lo * libm::exp(u_lam * log_ratio);
+        let dir = u_dir * std::f64::consts::PI;
+        let phase = u_phi * std::f64::consts::TAU;
+        // mild red tilt: longer waves carry more amplitude
+        let a = libm::pow(lam / hi, 0.5) * (0.6 + 0.8 * u_amp);
+        waves.push((lam, libm::cos(dir), libm::sin(dir), phase, a));
+    }
+    let var: f64 = waves.iter().map(|w| w.4 * w.4 * 0.5).sum();
+    let norm = amp / var.sqrt().max(1e-9);
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let mut out = vec![0.0; nx * ny];
+    for y in 0..ny {
+        for x in 0..nx {
+            let p = spec.world_of(x as u32, y as u32);
+            let mut v = 0.0;
+            for (lam, ca, sa, phase, a) in &waves {
+                let u = p.x * ca + p.y * sa;
+                v += a * libm::sin(u / lam * std::f64::consts::TAU + phase);
+            }
+            out[y * nx + x] = v * norm;
+        }
+    }
+    out
+}
+
+/// Erode `implied` into a carved surface whose flow field IS the network.
+///
+/// `keep_pit` marks cells that must stay sinks (basin embryos): they are
+/// excluded from depression filling, so they capture their catchment and
+/// deranged drainage emerges instead of being special-cased.
+/// `erodibility` is a per-cell multiplier (C1 hardness): resistant ground
+/// deflects channels physically, which is what the old geometric
+/// discontinuity rules were imitating.
+pub fn carve(
+    spec: &GridSpec,
+    implied: &Grid<f64>,
+    erodibility: &[f64],
+    keep_pit: &[bool],
+    base_edge: Edge,
+    rng: &mut DetRng,
+    p: &CarveParams,
+    relief_amp_m: f64,
+) -> Carved {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let n = nx * ny;
+    let cell = spec.cell_size;
+    let cell_area = cell * cell;
+
+    // ---- seed surface: implied + roughness -----------------------------
+    // ABSOLUTE FLOOR on the roughness amplitude. Scaling it purely by
+    // relief starves the flat biomes (river_valley's relief_amp is ~1.4 m,
+    // giving 7 cm of seed) and D8 then routes their flats along grid rows —
+    // the first carve renders showed exactly that: kilometre-long dead
+    // straight horizontal channels on bottomland. The floor is what breaks
+    // the symmetry that flats otherwise resolve axis-aligned.
+    let amp = (p.roughness_frac * relief_amp_m).max(ROUGH_FLOOR_M);
+    let rough = roughness(spec, rng, amp);
+    let mut z = implied.clone();
+    for i in 0..n {
+        z.data[i] += rough[i];
+    }
+
+    // Outlet band: the base-level edge must stay the lowest ground so the
+    // network drains THERE rather than off an arbitrary side.
+    let outlet = outlet_mask(spec, base_edge);
+
+    // ---- erosion loop (fixed iterations) -------------------------------
+    let mut rec = vec![-1i64; n];
+    let mut area = vec![cell_area; n];
+    if p.k > 0.0 {
+        // Start from a depression-free surface: the roughness sum and C1's
+        // own wave interference both create closed lows, and a pooled cell
+        // has zero slope so the carve can never drain it. Pre-filling makes
+        // every lake a flat at spill level whose OUTLET carries the full
+        // upstream area — the outlet then incises and the lake drains, the
+        // way drainage integration actually works.
+        z = flow::fill_depressions_masked(&z, keep_pit);
+        // De-flatten. A priority-flood fill grades its lakes by epsilon
+        // (8e-4 m here), and an eps-flat under a PLANAR macro tilt gives D8
+        // an exactly axis-parallel descent — the probe found a 712 m dead
+        // straight due-east channel, invariant to every erosion dial,
+        // because the pattern is baked in before erosion starts and then
+        // reinforced by it. A short-wave perturbation, three orders of
+        // magnitude above eps but far below visible relief, gives the flow
+        // real (if tiny) terrain to follow across former lake floors.
+        let deflat = roughness_at(spec, &mut rng.clone(), DEFLAT_AMP_M, DEFLAT_BAND_M, 8);
+        for i in 0..n {
+            if z.data[i] > implied.data[i] + rough[i] + 1e-6 {
+                z.data[i] += deflat[i];
+            }
+        }
+        for _ in 0..p.iters {
+            let zf = flow::fill_depressions_masked(&z, keep_pit);
+            let (r, slope) = flow::receivers(&zf, cell);
+            let acc = flow::accumulate(&r);
+            for i in 0..n {
+                area[i] = acc[i] as f64 * cell_area;
+            }
+            rec = r;
+            // Carve DOWNSTREAM-FIRST, capping each cell's cut at half its
+            // drop to the already-carved receiver. Two artifacts died here:
+            // unconstrained carving digs pits (fill turns them into flat
+            // pools, and D8 crosses a pool along grid rows), while
+            // repairing pits afterwards flattens whole reaches onto a
+            // uniform minimum-drop ramp — which reads as a dead-straight
+            // channel, exactly the 696 m horizontal run the probe found.
+            // Capping by the local drop keeps the surface strictly
+            // drainable with the terrain's own gradients intact.
+            carve_downstream(
+                &mut z, &rec, &slope, &area, erodibility, &outlet, cell_area, p,
+            );
+        }
+        // Final route on the carved surface: this is the field the network
+        // is extracted from, so it must match the surface exactly.
+        let zf = flow::fill_depressions_masked(&z, keep_pit);
+        let (r, _) = flow::receivers(&zf, cell);
+        let acc = flow::accumulate(&r);
+        rec = r;
+        for i in 0..n {
+            area[i] = acc[i] as f64 * cell_area;
+        }
+    }
+
+    // ---- extraction ----------------------------------------------------
+    let is_channel: Vec<bool> = (0..n)
+        .map(|i| p.k > 0.0 && area[i] >= p.area_threshold_m2)
+        .collect();
+    let order_at = strahler(&rec, &is_channel, n);
+    let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &z);
+
+    Carved { z, channel_of, order_at, rec, area, channels }
+}
+
+/// One carving pass in downstream-to-upstream order: a cell is cut only
+/// after its receiver, and never by more than half its remaining drop to
+/// that receiver. Strict monotonicity holds by construction (no pits, so
+/// no flat pools) without imposing any artificial uniform gradient.
+/// O(n), no recursion, deterministic.
+#[allow(clippy::too_many_arguments)]
+fn carve_downstream(
+    z: &mut Grid<f64>,
+    rec: &[i64],
+    slope: &[f64],
+    area: &[f64],
+    erodibility: &[f64],
+    outlet: &[bool],
+    cell_area: f64,
+    p: &CarveParams,
+) {
+    let n = rec.len();
+    let mut donors: Vec<Vec<u32>> = vec![Vec::new(); n];
+    let mut stack: Vec<usize> = Vec::new();
+    for i in 0..n {
+        let r = rec[i];
+        if r >= 0 {
+            donors[r as usize].push(i as u32);
+        } else {
+            stack.push(i);
+        }
+    }
+    while let Some(i) = stack.pop() {
+        for &d in &donors[i] {
+            let d = d as usize;
+            if !outlet[d] {
+                let a_term = (area[d] / cell_area).sqrt();
+                let want = p.k * a_term * slope[d] * erodibility[d] * p.incision_scale;
+                // never take more than half the drop to the receiver, and
+                // never more than the per-iteration clamp
+                let head = (z.data[d] - z.data[i]).max(0.0) * 0.5;
+                z.data[d] -= want.min(p.step_clamp_m).min(head);
+            }
+            stack.push(d);
+        }
+    }
+}
+
+/// Cells on (or just inside) the base-level edge: protected from carving so
+/// the outlet band stays the drain.
+fn outlet_mask(spec: &GridSpec, edge: Edge) -> Vec<bool> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    // ONE cell. A wide protected band is uncarved ground that arriving
+    // flow has to cross with no channel to follow, so the eps-graded fill
+    // routes it along grid rows — the long straight horizontal runs at the
+    // base edge in the first carve renders. Pinning only the border row
+    // keeps base level fixed while letting channels cut right up to it.
+    let band = 1usize;
+    let mut m = vec![false; nx * ny];
+    for y in 0..ny {
+        for x in 0..nx {
+            let on = match edge {
+                Edge::S => y < band,
+                Edge::N => y + band >= ny,
+                Edge::W => x < band,
+                Edge::E => x + band >= nx,
+                Edge::CornerSw => y < band || x < band,
+                Edge::CornerSe => y < band || x + band >= nx,
+                Edge::CornerNw => y + band >= ny || x < band,
+                Edge::CornerNe => y + band >= ny || x + band >= nx,
+            };
+            m[y * nx + x] = on;
+        }
+    }
+    m
+}
+
+/// Strahler order over the flow forest, restricted to channel cells.
+/// Computed bottom-up in the same in-degree topological order `accumulate`
+/// uses, so it is O(n) and deterministic.
+fn strahler(rec: &[i64], is_channel: &[bool], n: usize) -> Vec<u8> {
+    let mut order = vec![0u8; n];
+    let mut indeg = vec![0u32; n];
+    for i in 0..n {
+        if !is_channel[i] {
+            continue;
+        }
+        let r = rec[i];
+        if r >= 0 && is_channel[r as usize] {
+            indeg[r as usize] += 1;
+        }
+    }
+    // heads first
+    let mut stack: Vec<usize> = (0..n)
+        .filter(|&i| is_channel[i] && indeg[i] == 0)
+        .collect();
+    // per-cell running state: (max child order, count of children at max)
+    let mut best = vec![0u8; n];
+    let mut best_count = vec![0u32; n];
+    let mut pending = indeg.clone();
+    while let Some(i) = stack.pop() {
+        let o = if best_count[i] >= 2 { best[i] + 1 } else { best[i].max(1) };
+        order[i] = o;
+        let r = rec[i];
+        if r >= 0 && is_channel[r as usize] {
+            let r = r as usize;
+            match o.cmp(&best[r]) {
+                std::cmp::Ordering::Greater => {
+                    best[r] = o;
+                    best_count[r] = 1;
+                }
+                std::cmp::Ordering::Equal => best_count[r] += 1,
+                std::cmp::Ordering::Less => {}
+            }
+            pending[r] -= 1;
+            if pending[r] == 0 {
+                stack.push(r);
+            }
+        }
+    }
+    order
+}
+
+/// Trace the raster network into polylines: one `Channel` per maximal
+/// constant-order reach, walking downstream through `rec` exactly the way
+/// `tools/macro_campaign/real_planform.py` traces real lidar — so the QA
+/// instruments compare like with like.
+fn trace(
+    spec: &GridSpec,
+    rec: &[i64],
+    is_channel: &[bool],
+    order_at: &[u8],
+    z: &Grid<f64>,
+) -> (Vec<Channel>, Vec<Option<u32>>) {
+    let (nx, _ny) = (spec.nx as usize, spec.ny as usize);
+    let n = rec.len();
+    let center = |lin: usize| -> Vec2 {
+        spec.world_of((lin % nx) as u32, (lin / nx) as u32)
+    };
+    // A reach STARTS at a channel cell that is either a head (no channel
+    // donor) or a confluence (>=2 channel donors), and runs downstream
+    // until the next confluence or the network's end.
+    let mut donors = vec![0u32; n];
+    for i in 0..n {
+        if !is_channel[i] {
+            continue;
+        }
+        let r = rec[i];
+        if r >= 0 && is_channel[r as usize] {
+            donors[r as usize] += 1;
+        }
+    }
+    let mut channel_of: Vec<Option<u32>> = vec![None; n];
+    let mut starts: Vec<usize> = (0..n)
+        .filter(|&i| is_channel[i] && donors[i] != 1)
+        .collect();
+    // Deterministic order: by linear index (already ascending).
+    starts.sort_unstable();
+
+    let mut channels: Vec<Channel> = Vec::new();
+    // reach id per START cell, so children can look up their parent later
+    let mut reach_of_cell: Vec<Option<u32>> = vec![None; n];
+    let mut raw: Vec<(Vec<usize>, u8)> = Vec::new();
+    for &s in &starts {
+        let mut path = vec![s];
+        let mut cur = s;
+        loop {
+            let r = rec[cur];
+            if r < 0 || !is_channel[r as usize] {
+                break;
+            }
+            let r = r as usize;
+            path.push(r);
+            // stop when we reach a confluence (it starts its own reach)
+            if donors[r] >= 2 {
+                break;
+            }
+            cur = r;
+        }
+        if path.len() < 2 {
+            continue;
+        }
+        let o = order_at[s].max(1);
+        let id = raw.len() as u32;
+        for &c in &path[..path.len() - 1] {
+            channel_of[c] = Some(id);
+            reach_of_cell[c] = Some(id);
+        }
+        raw.push((path, o));
+    }
+
+    // Parent linkage: a reach's parent is the reach owning its downstream
+    // terminal cell. Arc position = distance along that parent to the cell.
+    for (id, (path, o)) in raw.iter().enumerate() {
+        let pts: Vec<Vec2> = path.iter().map(|&l| center(l)).collect();
+        let end = *path.last().unwrap();
+        let parent = channel_of[end].filter(|&p| p != id as u32);
+        let junction_arc_m = match parent {
+            Some(p) => {
+                let ppath = &raw[p as usize].0;
+                let mut arc = 0.0;
+                let mut acc = 0.0;
+                for w in ppath.windows(2) {
+                    let (a, b) = (center(w[0]), center(w[1]));
+                    acc += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+                    if w[1] == end {
+                        arc = acc;
+                        break;
+                    }
+                }
+                arc
+            }
+            None => f64::NAN,
+        };
+        // pts[0] is the UPSTREAM end here; the rest of the crate expects
+        // pts[0] = downstream (the old grower emitted mouth-first), so
+        // reverse and translate the arc accordingly.
+        let mut pts_rev = pts.clone();
+        pts_rev.reverse();
+        channels.push(Channel {
+            pts: pts_rev,
+            order: *o,
+            parent,
+            junction_arc_m,
+        });
+    }
+    let _ = z;
+    (channels, channel_of)
+}
