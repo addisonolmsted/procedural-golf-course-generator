@@ -126,3 +126,34 @@ great_plains' low-end A is slightly high (.214 vs .110).
 fresh blind session is warranted when convenient; sandhills is not a
 window class so the five-class gate is likely unaffected.
 
+## Addendum 2026-08-11 — position-dependent amplitude ("should the floor
+be quieter than the flanks?")
+
+Reviewer question at C1: is equal wave amplitude on low vs high ground
+realistic, or should some regions suppress it? Measured three ways (the
+dictionary's own per-relief-pos bucket amplitudes; macro-band 400–1600 m
+local envelope vs relief-position tercile on real tiles; the same on
+generated S1+S2 surfaces). The real answer has TWO regimes:
+
+- **Depositional lows are quieter** — heathland outwash flats 0.59
+  low/high, sandhills interdune 0.75. The existing wave_mult suppression
+  (valley_floor keeps 60%, basin pocket 25%) is the right mechanism and
+  measures correctly: generated heathland 0.68 vs real 0.59, gp 0.86 vs
+  0.92.
+- **Erosional/fluvial lows are LOUDER, not quieter** — piedmont 1.17,
+  hill_country 1.45, river_valley 1.63: at 400–1600 m the "noise" in the
+  lows IS drainage form (incised valleys, meander belts, oxbows). That
+  energy belongs to S2's carving and the trunk-river module, never to
+  the S1 wave field — no suppression rule should be inverted for it.
+
+Generated vs real ratios: piedmont 1.05/1.17 ✓, gp 0.86/0.92 ✓,
+heathland 0.68/0.59 ✓; three recorded gaps: **river_valley 0.85 vs 1.63**
+(the biggest — real bottomland lows carry the meander-belt's own macro
+topography: scars, oxbows, belt ridges; our trunk-river carving is too
+plain — an S2 module enrichment, natural to do alongside the E7 transect
+fit), **hill_country 0.99 vs 1.45** (dissection energy in the lows —
+same family as the known hc dissection-tail residual; transect-fit item),
+**sandhills 0.93 vs 0.75** (the crest/floor asymmetry already noted in
+D6-W; the dictionary's relief-pos conditioning carries the corrective
+texture at S3 — its sandhills buckets measure low/high 0.79–0.84).
+
