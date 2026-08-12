@@ -50,23 +50,31 @@ fn main() {
     // Labeled study sheets: 2 per class, overlays ON (learn the vocabulary).
     for &class in &WindowClass::ALL {
         for k in 0..2u64 {
-            let c1 = case(3000 + k, class);
+            let c1 = case(5000 + k, class);
             let img = render_c1(&c1, C1View::Implied, 640, true);
             img.save(labeled.join(format!("{}_{k}.png", class_key(class)))).unwrap();
         }
     }
 
-    // Blind set: 3 per class, overlays OFF (glyphs would leak the answer),
-    // seeds disjoint from the study sheets. Deterministic shuffle.
+    // Blind set: 3 per class over the FIVE gated classes (C1_REVIEW.md,
+    // "Gate scope": basin_margin is retained but judged at S2/S4, so it
+    // has study sheets above and no blind slots). Overlays OFF (glyphs
+    // would leak the answer); seeds disjoint from the study sheets.
+    // Fresh seed block + shuffle for the post-variety-fixes session.
+    let gated: Vec<WindowClass> = WindowClass::ALL
+        .iter()
+        .copied()
+        .filter(|c| !matches!(c, WindowClass::BasinMargin))
+        .collect();
     let mut entries = Vec::new();
-    for (ci, &class) in WindowClass::ALL.iter().enumerate() {
+    for (ci, &class) in gated.iter().enumerate() {
         for k in 0..3u64 {
-            entries.push((class, 3100 + ci as u64 * 3 + k));
+            entries.push((class, 5100 + ci as u64 * 3 + k));
         }
     }
     // Fixed permutation via a small LCG (no external RNG in examples).
     let mut order: Vec<usize> = (0..entries.len()).collect();
-    let mut state: u64 = 0x8B72E1963FCA4D59;
+    let mut state: u64 = 0x51C3_7A2E_9D4B_F015;
     for i in (1..order.len()).rev() {
         state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         let j = (state >> 33) as usize % (i + 1);
