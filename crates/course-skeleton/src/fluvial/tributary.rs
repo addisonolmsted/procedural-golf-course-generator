@@ -144,6 +144,7 @@ pub fn build(
         order: 1, // reassigned below
         parent: None,
         junction_arc_m: f64::NAN,
+        area_m2: 0.0,
     }];
 
     // Occupancy rasters, maintained from the trunk onward: every accepted
@@ -319,6 +320,7 @@ pub fn build(
                     order: 1,
                     parent: Some(parent_idx as u32),
                     junction_arc_m: arc,
+                    area_m2: 0.0,
                 });
                 stamp_channel(idx, &pts, spec8, &mut chan_at, &mut arc_at);
             }
@@ -1029,6 +1031,7 @@ fn grow_infill(
             order: 1,
             parent: Some(chan as u32),
             junction_arc_m: arc,
+            area_m2: 0.0,
         });
         stamp_channel(idx, &pts, spec8, chan_at, arc_at);
     }

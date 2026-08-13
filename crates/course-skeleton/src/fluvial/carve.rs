@@ -100,6 +100,16 @@ pub struct Carved {
 pub const DEFLAT_AMP_M: f64 = 0.10;
 /// Length of the base-level drawdown ramp (m).
 pub const BASE_RAMP_M: f64 = 900.0;
+/// External catchment (m²) entering at the trunk inlet, per unit of the
+/// biome's `trunk_river` dial. A river valley (dial 1.0) gets 20 km² —
+/// two orders above the tile's own 9 km², which is what makes its trunk a
+/// through-going river rather than one more tributary; at 2.5 km² (the
+/// first attempt) the external river was merely comparable to the tile's
+/// own catchments and failed to dominate on half the seeds. Biomes with
+/// the dial at zero (heathland kettle country, sandhills) get no external
+/// river at all, which is correct for them.
+pub const INFLOW_PER_TRUNK_DIAL_M2: f64 = 2.0e7;
+
 /// Default extraction threshold (m² of drained area). The corpus cut is
 /// 6e4 (extract_v2's CHANNEL_AREA_M2); with the three non-base borders
 /// rimmed, all of the tile's water is forced through the base edge, so the
@@ -256,9 +266,17 @@ pub fn carve(
                 if !on_border || outlet_side(base_edge, spec, x, y) {
                     continue;
                 }
-                // require the far half: at least half the tile away from
-                // the base edge, measured along the drainage direction
+                // Require the far half AND the middle 60% of that edge:
+                // the lowest far cell is often a corner, and a corner inlet
+                // makes the trunk hug the rimmed border instead of crossing
+                // the site (the old engine placed its outlet in the middle
+                // 60% for the same reason).
                 if edge_distance_m(spec, base_edge, x, y) < 0.5 * EXTENT_M {
+                    continue;
+                }
+                let (fx, fy) = (x as f64 / (nx - 1) as f64, y as f64 / (ny - 1) as f64);
+                let along = if matches!(base_edge, Edge::E | Edge::W) { fy } else { fx };
+                if !(0.2..=0.8).contains(&along) {
                     continue;
                 }
                 let lin = y * nx + x;
@@ -346,7 +364,7 @@ pub fn carve(
     let is_channel: Vec<bool> =
         (0..n).map(|i| area[i] >= p.area_threshold_m2).collect();
     let order_at = strahler(&rec, &is_channel, n);
-    let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &z);
+    let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
     Carved { z, channel_of, order_at, rec, area, channels }
 }
@@ -518,11 +536,13 @@ fn strahler(rec: &[i64], is_channel: &[bool], n: usize) -> Vec<u8> {
 /// constant-order reach, walking downstream through `rec` exactly the way
 /// `tools/macro_campaign/real_planform.py` traces real lidar — so the QA
 /// instruments compare like with like.
+#[allow(clippy::too_many_arguments)]
 fn trace(
     spec: &GridSpec,
     rec: &[i64],
     is_channel: &[bool],
     order_at: &[u8],
+    area: &[f64],
     z: &Grid<f64>,
 ) -> (Vec<Channel>, Vec<Option<u32>>) {
     let (nx, _ny) = (spec.nx as usize, spec.ny as usize);
@@ -615,6 +635,7 @@ fn trace(
             order: *o,
             parent,
             junction_arc_m,
+            area_m2: area[end],
         });
     }
     let _ = z;

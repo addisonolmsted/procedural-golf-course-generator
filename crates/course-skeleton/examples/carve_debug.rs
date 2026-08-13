@@ -88,8 +88,8 @@ fn main() {
             area_threshold_m2: envf("THRESH", carve::AREA_THRESHOLD_M2),
             incision_scale: 1.0,
             base_drop_m: envf("BASEDROP", 4.0),
-            inflow_area_m2: envf("INFLOW", 2.5e6)
-                * spec.dials.get("skeleton.trunk_river").copied().unwrap_or(0.0).max(0.15),
+            inflow_area_m2: envf("INFLOW", carve::INFLOW_PER_TRUNK_DIAL_M2)
+                * spec.dials.get("skeleton.trunk_river").copied().unwrap_or(0.0),
             close_borders: std::env::var("OPEN").is_err(),
             iters: envf("ITERS", 15.0) as usize,
             step_clamp_m: envf("CLAMP", 0.45),
@@ -157,13 +157,18 @@ fn main() {
             px[i * 3 + 2] = shade[i];
         }
         let overlay = std::env::var("NO_OVERLAY").is_err();
+        let max_area = c.channels.iter().map(|c| c.area_m2).fold(1.0f64, f64::max);
         for ch in c.channels.iter().filter(|_| overlay) {
-            let (r, g, b) = match ch.order {
-                0 | 1 => (120u8, 170u8, 235u8),
-                2 => (40, 110, 200),
-                _ => (10, 50, 140),
+            // colour + width by DISCHARGE relative to this tile's biggest
+            // channel — absolute cuts marked nearly everything dark
+            let f = ch.area_m2 / max_area;
+            let (r, g, b, thick) = if f >= 0.45 {
+                (10u8, 50u8, 140u8, 2i64)
+            } else if f >= 0.15 {
+                (40, 110, 200, 1)
+            } else {
+                (120, 170, 235, 0)
             };
-            let thick = (ch.order.min(4) as i64) - 1;
             for w in ch.pts.windows(2) {
                 let steps = 8;
                 for s in 0..=steps {
@@ -185,6 +190,53 @@ fn main() {
                         }
                     }
                 }
+            }
+        }
+        // MAIN STEM: from the biggest outlet, walk upstream always taking
+        // the largest-discharge donor. This is the "single characteristic
+        // channel" a viewer looks for; Strahler order does not identify it
+        // (a through-going trunk fed from outside the tile has huge area
+        // but few upstream branches).
+        if overlay {
+            let mut outlet = (0.0f64, usize::MAX);
+            for i in 0..n {
+                if c.rec[i] < 0 && c.area[i] > outlet.0 {
+                    outlet = (c.area[i], i);
+                }
+            }
+            let mut donors: Vec<Vec<u32>> = vec![Vec::new(); n];
+            for i in 0..n {
+                let r = c.rec[i];
+                if r >= 0 {
+                    donors[r as usize].push(i as u32);
+                }
+            }
+            let mut cur = outlet.1;
+            let mut guard = 0;
+            while cur != usize::MAX && guard < n {
+                let (cy, cx) = ((cur / nx) as i64, (cur % nx) as i64);
+                for dy in -2i64..=2 {
+                    for dx in -2i64..=2 {
+                        let (yy, xx) = (cy + dy, cx + dx);
+                        if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
+                            continue;
+                        }
+                        let i = yy as usize * nx + xx as usize;
+                        px[i * 3] = 200;
+                        px[i * 3 + 1] = 30;
+                        px[i * 3 + 2] = 30;
+                    }
+                }
+                match donors[cur]
+                    .iter()
+                    .copied()
+                    .filter(|&d| c.channel_of[d as usize].is_some())
+                    .max_by(|&a, &b| c.area[a as usize].total_cmp(&c.area[b as usize]))
+                {
+                    Some(d) => cur = d as usize,
+                    None => break,
+                }
+                guard += 1;
             }
         }
         save_rgb(

@@ -34,6 +34,13 @@ pub struct Channel {
     pub parent: Option<u32>,
     /// Arc position (m from the parent's upstream end) of the junction.
     pub junction_arc_m: f64,
+    /// Drained area at the reach's downstream end (m²) — DISCHARGE, which
+    /// is what makes a river a river. Strahler order counts branching, so
+    /// a through-going trunk fed from outside the tile can carry 5 km² and
+    /// still be order 2; width, rendering and floodplain must key off this
+    /// instead (review: "the river valley trunk doesn't read as a trunk").
+    #[serde(default)]
+    pub area_m2: f64,
 }
 
 /// A closed-basin embryo — recorded because S3's polish and S7's repair both
