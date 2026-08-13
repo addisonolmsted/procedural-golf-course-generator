@@ -42,7 +42,7 @@ use crate::kernel::Channel;
 /// texture leaking upstream; it is the spur-and-hollow degree of freedom
 /// the pipeline revision identified as missing.
 pub const N_WAVES: usize = 32;
-pub const WAVE_BAND_M: (f64, f64) = (96.0, 384.0);
+pub const WAVE_BAND_M: (f64, f64) = (140.0, 520.0);
 /// Draws consumed: 4 per wave + 1 threshold jitter.
 pub const DRAWS: usize = N_WAVES * 4 + 1;
 
@@ -98,6 +98,9 @@ pub struct Carved {
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
 pub const DEFLAT_AMP_M: f64 = 0.10;
+/// Width of the perturbed skirt inside the rimmed borders (m).
+pub const RIM_SKIRT_M: f64 = 260.0;
+
 /// Length of the base-level drawdown ramp (m).
 pub const BASE_RAMP_M: f64 = 900.0;
 /// External catchment (m²) entering at the trunk inlet, per unit of the
@@ -111,13 +114,15 @@ pub const BASE_RAMP_M: f64 = 900.0;
 pub const INFLOW_PER_TRUNK_DIAL_M2: f64 = 2.0e7;
 
 /// Default extraction threshold (m² of drained area). The corpus cut is
-/// 6e4 (extract_v2's CHANNEL_AREA_M2); with the three non-base borders
-/// rimmed, all of the tile's water is forced through the base edge, so the
-/// same threshold yields a denser network than an open-boundary tile. 1e5
-/// restores the corpus's measured density band (2.3–2.7 km/km²) and sits
-/// on the LOW side of it by review request — sub-threshold rills stay in
-/// the surface as texture for S3's dictionary.
-pub const AREA_THRESHOLD_M2: f64 = 1.0e5;
+/// 6e4 (extract_v2's CHANNEL_AREA_M2), but that number is not directly
+/// transferable: our tile is rimmed (all water leaves by one edge) and its
+/// routing surface is perturbed to avoid grid artifacts, both of which
+/// change how accumulation concentrates. The dial is therefore fitted to
+/// the corpus's measured DENSITY band (2.3–2.7 km/km²) rather than copied,
+/// and sits on the low side of it by review request — sub-threshold rills
+/// stay in the surface as texture for S3's dictionary. Final calibration
+/// happens against the D5 battery once the engine is integrated.
+pub const AREA_THRESHOLD_M2: f64 = 2.5e4;
 fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
@@ -301,22 +306,40 @@ pub fn carve(
         // upstream area — the outlet then incises and the lake drains, the
         // way drainage integration actually works.
         z = flow::fill_depressions_masked(&z, keep_pit);
-        // De-flatten. A priority-flood fill grades its lakes by epsilon
-        // (8e-4 m here), and an eps-flat under a PLANAR macro tilt gives D8
-        // an exactly axis-parallel descent — the probe found a 712 m dead
-        // straight due-east channel, invariant to every erosion dial,
-        // because the pattern is baked in before erosion starts and then
-        // reinforced by it. A short-wave perturbation, three orders of
-        // magnitude above eps but far below visible relief, gives the flow
-        // real (if tiny) terrain to follow across former lake floors.
+        // De-flatten — ON THE ROUTING SURFACE ONLY. A priority-flood fill
+        // grades its lakes by epsilon (8e-4 m), and an eps-flat under a
+        // PLANAR macro tilt gives D8 an exactly axis-parallel descent (the
+        // probe found a 712 m dead-straight due-east channel, invariant to
+        // every erosion dial). A short-wave perturbation gives the flow
+        // real terrain to follow across former lake floors. Applying it to
+        // the TERRAIN instead dug fresh pits that the next fill turned back
+        // into lakes — 47% of channel cells ended up pooled, and the
+        // straight runs returned. The routing surface is the only place it
+        // is needed, and the carved terrain stays depression-free.
         let deflat = roughness_at(spec, &mut rng.clone(), DEFLAT_AMP_M, DEFLAT_BAND_M, 8);
-        for i in 0..n {
-            if z.data[i] > implied.data[i] + rough[i] + 1e-6 {
-                z.data[i] += deflat[i];
+        // The rim is a wall, and water pinned against a wall runs dead
+        // straight along it: the probe's last 696 m run sat in row y = 1,
+        // one cell inside the rimmed border. Real tiles have no walls, so
+        // the wall's inner face gets the same perturbation the lake floors
+        // get, and border-parallel flow wanders like everything else.
+        let near_rim: Vec<bool> = (0..n)
+            .map(|i| {
+                let (y, x) = (i / nx, i % nx);
+                let d = (y.min(ny - 1 - y).min(x).min(nx - 1 - x)) as f64 * cell;
+                d < RIM_SKIRT_M && !outlet_side(base_edge, spec, x, y)
+            })
+            .collect();
+        let route_surface = |z: &Grid<f64>, keep_pit: &[bool]| -> Grid<f64> {
+            let mut zf = flow::fill_depressions_masked(z, keep_pit);
+            for i in 0..zf.data.len() {
+                if zf.data[i] > z.data[i] + 1e-6 || near_rim[i] {
+                    zf.data[i] += deflat[i];
+                }
             }
-        }
+            zf
+        };
         for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
-            let zf = flow::fill_depressions_masked(&z, keep_pit);
+            let zf = route_surface(&z, keep_pit);
             let (r, slope) = flow::receivers(&zf, cell);
             let acc = flow::accumulate(&r);
             for i in 0..n {
@@ -342,7 +365,7 @@ pub fn carve(
         // for EVERY biome, including the ones that do not erode (k = 0):
         // flow still concentrates on their surface, and those lines are the
         // dry drainage the corpus measures at d2c ~103–118 m everywhere.
-        let zf = flow::fill_depressions_masked(&z, keep_pit);
+        let zf = route_surface(&z, keep_pit);
         let (r, _) = flow::receivers(&zf, cell);
         let acc = flow::accumulate(&r);
         rec = r;
