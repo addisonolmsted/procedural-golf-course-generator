@@ -31,6 +31,7 @@ fn main() {
                 base_drop_m: 4.0 * relief_amp.min(2.0),
                 inflow_area_m2: carve::INFLOW_PER_TRUNK_DIAL_M2 * tr,
                 close_borders: true,
+                derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
                 iters: 15,
                 step_clamp_m: 0.45,
             };

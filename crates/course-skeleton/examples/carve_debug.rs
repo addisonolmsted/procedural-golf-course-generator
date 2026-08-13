@@ -91,6 +91,7 @@ fn main() {
             inflow_area_m2: envf("INFLOW", carve::INFLOW_PER_TRUNK_DIAL_M2)
                 * spec.dials.get("skeleton.trunk_river").copied().unwrap_or(0.0),
             close_borders: std::env::var("OPEN").is_err(),
+            derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
             iters: envf("ITERS", 15.0) as usize,
             step_clamp_m: envf("CLAMP", 0.45),
         };

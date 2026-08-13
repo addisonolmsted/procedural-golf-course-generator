@@ -5,11 +5,10 @@ use course_skeleton::fluvial::carve::{self, CarveParams};
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
 
 fn main() {
-    let id = RunIdentity::from_seed(48);
-    let spec = SiteSpec::generate_builtin(
-        id,
-        &SpecOverridesV2 { forced_biome: Some(BiomeId::Piedmont) },
-    );
+    let id = RunIdentity::from_seed(std::env::var("SEED").ok().and_then(|v| v.parse().ok()).unwrap_or(48));
+    let bkey = std::env::var("BIOME").unwrap_or_else(|_| "piedmont".into());
+    let biome = *BiomeId::ALL.iter().find(|b| b.key() == bkey).expect("biome");
+    let spec = SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(biome) });
     let c1 = course_primitives::generate(&spec, &id);
     let spec8 = c1.grid;
     let (nx, ny) = (spec8.nx as usize, spec8.ny as usize);
@@ -32,6 +31,7 @@ fn main() {
         base_drop_m: envf("BASEDROP", 4.0),
         inflow_area_m2: envf("INFLOW", 2.5e6),
             close_borders: std::env::var("OPEN").is_err(),
+            derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
         iters: envf("ITERS", 15.0) as usize,
         step_clamp_m: envf("CLAMP", 0.45),
     };

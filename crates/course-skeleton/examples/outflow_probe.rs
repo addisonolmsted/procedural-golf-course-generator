@@ -25,6 +25,7 @@ fn main() {
                 area_threshold_m2: carve::AREA_THRESHOLD_M2, incision_scale: 1.0,
                 base_drop_m: std::env::var("BD").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(6.0) * relief_amp, inflow_area_m2: 2.5e6,
                 close_borders: std::env::var("OPEN").is_err(),
+            derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
                 iters: 15, step_clamp_m: 0.45,
             };
             let mut rng = id.stream(streams::SKELETON_MODULE);

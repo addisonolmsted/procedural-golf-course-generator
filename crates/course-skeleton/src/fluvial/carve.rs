@@ -74,6 +74,10 @@ pub struct CarveParams {
     /// Rim the three non-base borders so all outflow leaves via the base
     /// edge (S2's contract). See `carve`.
     pub close_borders: bool,
+    /// Keep NATURAL closed depressions unfilled, in [0,1] — the fraction
+    /// of the drawn integration dial's derangement. A deranged landscape
+    /// does not route its water to base level; its basins swallow it.
+    pub derangement: f64,
     /// Erosion iterations.
     pub iters: usize,
     /// Per-iteration vertical clamp (m).
@@ -307,6 +311,33 @@ pub fn carve(
         // every lake a flat at spill level whose OUTLET carries the full
         // upstream area — the outlet then incises and the lake drains, the
         // way drainage integration actually works.
+        // NATURAL CLOSED BASINS. A deranged landscape keeps its own
+        // depressions: interdune lows in the sandhills swallow their
+        // catchment and never pass it on (the Nebraska Sandhills famously
+        // shed no surface water). Filling them instead forces flow ACROSS
+        // each basin floor, and a filled floor is flat, so the crossing is
+        // a dead-straight line — 61% of sandhills channel cells sat in
+        // filled pools and the review saw the result as "awkward straight
+        // sections". The deepest depressions are handed to the router as
+        // kept pits, in proportion to the drawn derangement, so flow ends
+        // in them exactly as it does in the field.
+        let mut pits: Vec<bool> = keep_pit.to_vec();
+        if pits.len() < n {
+            pits.resize(n, false);
+        }
+        if p.derangement > 0.0 {
+            let zf0 = flow::fill_depressions(&z);
+            let mut depth: Vec<(f64, usize)> = (0..n)
+                .map(|i| (zf0.data[i] - z.data[i], i))
+                .filter(|(d, _)| *d > 0.05)
+                .collect();
+            depth.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+            let keep_n = ((depth.len() as f64) * p.derangement) as usize;
+            for &(_, i) in depth.iter().take(keep_n) {
+                pits[i] = true;
+            }
+        }
+        let keep_pit: &[bool] = &pits;
         z = flow::fill_depressions_masked(&z, keep_pit);
         // De-flatten — ON THE ROUTING SURFACE ONLY. A priority-flood fill
         // grades its lakes by epsilon (8e-4 m), and an eps-flat under a
@@ -414,8 +445,13 @@ pub fn carve(
     // What differs per biome is incision depth (k) and integration, not
     // whether the lines exist. Gating extraction on k produced zero
     // channels for two biomes against a measured invariant.
-    let is_channel: Vec<bool> =
-        (0..n).map(|i| area[i] >= p.area_threshold_m2).collect();
+    // A deranged landscape's basins swallow their catchments, so no cell
+    // ever accumulates much: at the integrated threshold sandhills fell to
+    // 0.42 km/km² against a corpus 2.36. Its swales are real, they simply
+    // drain small areas — the cut scales down with derangement so the
+    // measured density band is met without re-opening the basins.
+    let thresh = p.area_threshold_m2 * (1.0 - 0.85 * p.derangement).max(0.05);
+    let is_channel: Vec<bool> = (0..n).map(|i| area[i] >= thresh).collect();
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
