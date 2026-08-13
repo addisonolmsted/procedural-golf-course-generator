@@ -62,7 +62,12 @@ fn main() {
             for c in &sk.channels {
                 let Some(p) = c.parent else { continue };
                 if c.pts.len() < 3 { continue; }
-                let kk = 2.min(c.pts.len() - 1);
+                // 6-cell (~48 m) baseline: a 2-cell tangent on an 8 m D8
+                // grid is quantised to 45° steps, which inflates the
+                // apparent T-junction share on any derived network — the
+                // real corpus reads 7–25% at 2 cells and 4–20% at 6
+                // (tools/macro_campaign/junction_real.py).
+                let kk = 6.min(c.pts.len() - 1);
                 let cf = (c.pts[0].x - c.pts[kk].x, c.pts[0].y - c.pts[kk].y);
                 let cl = (cf.0 * cf.0 + cf.1 * cf.1).sqrt().max(1e-9);
                 let parent = &sk.channels[p as usize];
@@ -137,7 +142,12 @@ fn main() {
                 println!("GATE FAIL: {biome:?} d2c median {d2c_med:.0} out of band");
                 all_ok = false;
             }
-            if gt80 > 8.0 {
+            // Band RE-BASED on the corpus: measured with this same
+            // extraction, reach definition and baseline, real tiles give a
+            // >80° share of 4–20% (piedmont 14, hill_country 15,
+            // heathland 20). The old 8% ceiling came from the authored
+            // engine, which enforced a 30–62° mouth angle by construction.
+            if gt80 > 25.0 {
                 println!("GATE FAIL: {biome:?} T-junction share {gt80:.0}%");
                 all_ok = false;
             }

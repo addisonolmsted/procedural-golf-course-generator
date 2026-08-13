@@ -15,6 +15,30 @@ const PAR_SAMPLE_M: f64 = 30.0;
 const PAR_BAND: (f64, f64) = (40.0, 200.0);
 const STRAIGHT_S: f64 = 1.01;
 
+/// ~50 m moving average, matching `real_planform.py`'s `smooth_resample`
+/// exactly. Without it the two sides are not comparable: a traced path is
+/// a chain of cell centres and its D8 staircase alone reads as ~1.3
+/// sinuosity, which is what the first post-integration run reported.
+fn smooth(pts: &[Vec2], cell: f64) -> Vec<Vec2> {
+    let k = ((50.0 / cell).round() as usize).max(3) | 1;
+    let h = k / 2;
+    let n = pts.len();
+    if n <= k {
+        return pts.to_vec();
+    }
+    (0..n)
+        .map(|i| {
+            let (mut sx, mut sy) = (0.0, 0.0);
+            for j in 0..k {
+                let idx = (i + j).saturating_sub(h).min(n - 1);
+                sx += pts[idx].x;
+                sy += pts[idx].y;
+            }
+            Vec2 { x: sx / k as f64, y: sy / k as f64 }
+        })
+        .collect()
+}
+
 fn resample(pts: &[Vec2], step: f64) -> Vec<Vec2> {
     let mut out = Vec::new();
     if pts.len() < 2 {
@@ -64,7 +88,7 @@ fn main() {
             let sk = course_skeleton::generate(&spec, &c1, &id);
             // ---- window sinuosity + straight runs, per channel ----
             for ch in &sk.channels {
-                let s10 = resample(&ch.pts, SAMPLE_M);
+                let s10 = resample(&smooth(&ch.pts, 8.0), SAMPLE_M);
                 total_len += (s10.len().saturating_sub(1)) as f64 * SAMPLE_M;
                 let oc = (ch.order.min(3) as usize) - 1;
                 for (wi, wm) in WINDOWS_M.iter().enumerate() {
@@ -96,7 +120,7 @@ fn main() {
             }
             // ---- parallel runs: 30 m samples, nearest other-channel sample ----
             let sampled: Vec<Vec<Vec2>> =
-                sk.channels.iter().map(|c| resample(&c.pts, PAR_SAMPLE_M)).collect();
+                sk.channels.iter().map(|c| resample(&smooth(&c.pts, 8.0), PAR_SAMPLE_M)).collect();
             for (i, si) in sampled.iter().enumerate() {
                 let mut run = 0.0f64;
                 let mut run_rel = [0usize; 3]; // parent-child / sibling / unrelated votes

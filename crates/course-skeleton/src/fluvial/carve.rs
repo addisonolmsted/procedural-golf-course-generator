@@ -712,6 +712,15 @@ fn trace(
         // reverse and translate the arc accordingly.
         let mut pts_rev = pts.clone();
         pts_rev.reverse();
+        // A traced path is a chain of cell CENTRES, so it staircases at
+        // 45°/90° every cell — real lidar paths are measured after a ~50 m
+        // smoothing for exactly this reason, and without the same
+        // treatment the planform instrument read 1.32–1.43 sinuosity
+        // against a real 1.06–1.10 (all of it grid staircase). Two
+        // endpoint-preserving Chaikin passes put the emitted geometry on
+        // the same footing as the corpus. The RASTER is untouched: this is
+        // the vector representation S3, S4 and the viewer consume.
+        let pts_rev = chaikin(&pts_rev, 2);
         channels.push(Channel {
             pts: pts_rev,
             order: *o,
@@ -798,4 +807,24 @@ pub fn point_at_arc(pts: &[Vec2], s: f64) -> (Vec2, Vec2) {
         Vec2::new(1.0, 0.0)
     };
     (pts[n - 1], tan)
+}
+
+/// Endpoint-preserving Chaikin corner cutting.
+fn chaikin(pts: &[Vec2], passes: usize) -> Vec<Vec2> {
+    let mut cur = pts.to_vec();
+    for _ in 0..passes {
+        if cur.len() < 3 {
+            break;
+        }
+        let mut out = Vec::with_capacity(cur.len() * 2);
+        out.push(cur[0]);
+        for w in cur.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            out.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            out.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        out.push(*cur.last().unwrap());
+        cur = out;
+    }
+    cur
 }
