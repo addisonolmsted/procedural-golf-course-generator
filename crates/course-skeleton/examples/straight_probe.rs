@@ -27,8 +27,11 @@ fn main() {
     let p = CarveParams {
         roughness_frac: envf("ROUGH", 0.05),
         k: envf("K", 0.9),
-        area_threshold_m2: envf("THRESH", 6.0e4),
+        area_threshold_m2: envf("THRESH", carve::AREA_THRESHOLD_M2),
         incision_scale: 1.0,
+        base_drop_m: envf("BASEDROP", 4.0),
+        inflow_area_m2: envf("INFLOW", 2.5e6),
+            close_borders: std::env::var("OPEN").is_err(),
         iters: envf("ITERS", 15.0) as usize,
         step_clamp_m: envf("CLAMP", 0.45),
     };

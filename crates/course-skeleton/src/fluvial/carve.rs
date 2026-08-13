@@ -65,6 +65,15 @@ pub struct CarveParams {
     pub area_threshold_m2: f64,
     /// Scales total incision (negative integration shrinks it).
     pub incision_scale: f64,
+    /// Base-level drawdown (m) applied as a ramp into the base edge —
+    /// the tile drains to something, and that something is lower.
+    pub base_drop_m: f64,
+    /// Upstream drainage area (m²) entering at the trunk inlet — the
+    /// catchment that lies OUTSIDE the tile. Zero disables the inlet.
+    pub inflow_area_m2: f64,
+    /// Rim the three non-base borders so all outflow leaves via the base
+    /// edge (S2's contract). See `carve`.
+    pub close_borders: bool,
     /// Erosion iterations.
     pub iters: usize,
     /// Per-iteration vertical clamp (m).
@@ -89,6 +98,17 @@ pub struct Carved {
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
 pub const DEFLAT_AMP_M: f64 = 0.10;
+/// Length of the base-level drawdown ramp (m).
+pub const BASE_RAMP_M: f64 = 900.0;
+/// Default extraction threshold (m² of drained area). The corpus cut is
+/// 6e4 (extract_v2's CHANNEL_AREA_M2); with the three non-base borders
+/// rimmed, all of the tile's water is forced through the base edge, so the
+/// same threshold yields a denser network than an open-boundary tile. 1e5
+/// restores the corpus's measured density band (2.3–2.7 km/km²) and sits
+/// on the LOW side of it by review request — sub-threshold rills stay in
+/// the surface as texture for S3's dictionary.
+pub const AREA_THRESHOLD_M2: f64 = 1.0e5;
+fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
 /// Deterministic roughness field: a fixed-count wave sum, mean-zero.
@@ -172,14 +192,80 @@ pub fn carve(
         z.data[i] += rough[i];
     }
 
+    // BASE-LEVEL DRAWDOWN. All four borders are open outlets to the flow
+    // router, so without this the tile drains radially like an island and
+    // the drawn base edge carries whatever share it happens to win (12–82%
+    // measured across seeds). Real tiles are not single catchments either
+    // (corpus max-edge share is 46–78%), but the base edge must be the
+    // DOMINANT one — it is where S1 says base level sits. A ramp lowering
+    // the last ~900 m into that edge states it physically, without
+    // touching interior relief.
+    {
+        let (nx_, ny_) = (spec.nx as usize, spec.ny as usize);
+        for y in 0..ny_ {
+            for x in 0..nx_ {
+                let d = edge_distance_m(spec, base_edge, x, y);
+                let t = (1.0 - (d / base_ramp_m()).min(1.0)).clamp(0.0, 1.0);
+                z.data[y * nx_ + x] -= p.base_drop_m * t * t * (3.0 - 2.0 * t);
+            }
+        }
+    }
+
+    // CLOSED BOUNDARIES. The flow router treats every border cell as an
+    // open outlet, so a tile drains radially like an island: measured base-
+    // edge outflow was 12–82% and a regional gradient up to 1.5x relief did
+    // not fix it (water leaves by whichever border it reaches first).
+    // S2's contract is explicit that the trunk runs from the interior out
+    // through the base-level band, so the three non-base borders are RIMMED
+    // — raised out of reach — and every drop of water has to find the base
+    // edge. This is the standard landscape-evolution boundary condition:
+    // one open boundary, the rest no-flux.
+    if p.close_borders {
+        let rim = 40.0 + 4.0 * relief_amp_m;
+        for y in 0..ny {
+            for x in 0..nx {
+                let on_border = y == 0 || y == ny - 1 || x == 0 || x == nx - 1;
+                if on_border && !outlet_side(base_edge, spec, x, y) {
+                    z.data[y * nx + x] += rim;
+                }
+            }
+        }
+    }
+
     // Outlet band: the base-level edge must stay the lowest ground so the
     // network drains THERE rather than off an arbitrary side.
     let outlet = outlet_mask(spec, base_edge);
 
+    // TRUNK INLET: the lowest border cell that is NOT on the base edge —
+    // where the through-going river enters. A tile is a window in a larger
+    // landscape, and a bottomland tile's main river carries a catchment
+    // that lies mostly outside it; without external inflow the biggest
+    // channel only ever drains the tile's own 9 km², which is why river
+    // valley seeds read as random dendritic drainage instead of "a river
+    // crossing the tile" (review observation 3).
+    let inlet = if p.inflow_area_m2 > 0.0 {
+        let mut best = (f64::INFINITY, usize::MAX);
+        for y in 0..ny {
+            for x in 0..nx {
+                let on_border = y == 0 || y == ny - 1 || x == 0 || x == nx - 1;
+                if !on_border || outlet_side(base_edge, spec, x, y) {
+                    continue;
+                }
+                let lin = y * nx + x;
+                if z.data[lin] < best.0 {
+                    best = (z.data[lin], lin);
+                }
+            }
+        }
+        best.1
+    } else {
+        usize::MAX
+    };
+
     // ---- erosion loop (fixed iterations) -------------------------------
-    let mut rec = vec![-1i64; n];
+    let mut rec;
     let mut area = vec![cell_area; n];
-    if p.k > 0.0 {
+    {
         // Start from a depression-free surface: the roughness sum and C1's
         // own wave interference both create closed lows, and a pooled cell
         // has zero slope so the carve can never drain it. Pre-filling makes
@@ -201,13 +287,14 @@ pub fn carve(
                 z.data[i] += deflat[i];
             }
         }
-        for _ in 0..p.iters {
+        for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
             let zf = flow::fill_depressions_masked(&z, keep_pit);
             let (r, slope) = flow::receivers(&zf, cell);
             let acc = flow::accumulate(&r);
             for i in 0..n {
                 area[i] = acc[i] as f64 * cell_area;
             }
+            add_inflow(&mut area, &r, inlet, p.inflow_area_m2);
             rec = r;
             // Carve DOWNSTREAM-FIRST, capping each cell's cut at half its
             // drop to the already-carved receiver. Two artifacts died here:
@@ -223,7 +310,10 @@ pub fn carve(
             );
         }
         // Final route on the carved surface: this is the field the network
-        // is extracted from, so it must match the surface exactly.
+        // is extracted from, so it must match the surface exactly. It runs
+        // for EVERY biome, including the ones that do not erode (k = 0):
+        // flow still concentrates on their surface, and those lines are the
+        // dry drainage the corpus measures at d2c ~103–118 m everywhere.
         let zf = flow::fill_depressions_masked(&z, keep_pit);
         let (r, _) = flow::receivers(&zf, cell);
         let acc = flow::accumulate(&r);
@@ -231,12 +321,20 @@ pub fn carve(
         for i in 0..n {
             area[i] = acc[i] as f64 * cell_area;
         }
+        add_inflow(&mut area, &rec, inlet, p.inflow_area_m2);
     }
 
     // ---- extraction ----------------------------------------------------
-    let is_channel: Vec<bool> = (0..n)
-        .map(|i| p.k > 0.0 && area[i] >= p.area_threshold_m2)
-        .collect();
+    // Extraction is INDEPENDENT of how hard the biome erodes. The corpus
+    // measures d2c 103–118 m and density 2.3–2.7 km/km² in EVERY biome
+    // including heathland and sandhills — flow concentrates on any real
+    // surface whether or not a perennial stream runs there, and those are
+    // the "dried channel-like features" the review saw on heathland tiles.
+    // What differs per biome is incision depth (k) and integration, not
+    // whether the lines exist. Gating extraction on k produced zero
+    // channels for two biomes against a measured invariant.
+    let is_channel: Vec<bool> =
+        (0..n).map(|i| area[i] >= p.area_threshold_m2).collect();
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &z);
 
@@ -282,6 +380,51 @@ fn carve_downstream(
                 z.data[d] -= want.min(p.step_clamp_m).min(head);
             }
             stack.push(d);
+        }
+    }
+}
+
+/// Distance (m) from a cell to the base-level edge.
+fn edge_distance_m(spec: &GridSpec, edge: Edge, x: usize, y: usize) -> f64 {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let cell = spec.cell_size;
+    let (dl, dr) = (x as f64 * cell, (nx - 1 - x) as f64 * cell);
+    let (db, dt) = (y as f64 * cell, (ny - 1 - y) as f64 * cell);
+    match edge {
+        Edge::S => db,
+        Edge::N => dt,
+        Edge::W => dl,
+        Edge::E => dr,
+        Edge::CornerSw => db.min(dl),
+        Edge::CornerSe => db.min(dr),
+        Edge::CornerNw => dt.min(dl),
+        Edge::CornerNe => dt.min(dr),
+    }
+}
+
+/// Is this border cell on the base-level side?
+fn outlet_side(edge: Edge, spec: &GridSpec, x: usize, y: usize) -> bool {
+    edge_distance_m(spec, edge, x, y) < 1.0
+}
+
+/// Add an external upstream catchment entering at `inlet`, propagated
+/// downstream along the receiver chain.
+fn add_inflow(area: &mut [f64], rec: &[i64], inlet: usize, extra: f64) {
+    if inlet == usize::MAX || extra <= 0.0 {
+        return;
+    }
+    let mut cur = inlet;
+    let mut guard = 0usize;
+    loop {
+        area[cur] += extra;
+        let r = rec[cur];
+        if r < 0 {
+            break;
+        }
+        cur = r as usize;
+        guard += 1;
+        if guard > rec.len() {
+            break; // defensive: the flow graph is a forest, this cannot loop
         }
     }
 }

@@ -85,8 +85,11 @@ fn main() {
             // real d2c/density targets were measured with, so generated
             // and real numbers mean the same thing.
             k: if density >= 0.5 { envf("K", 0.9) } else { 0.0 },
-            area_threshold_m2: envf("THRESH", 6.0e4),
+            area_threshold_m2: envf("THRESH", carve::AREA_THRESHOLD_M2),
             incision_scale: 1.0,
+            base_drop_m: envf("BASEDROP", 4.0),
+            inflow_area_m2: envf("INFLOW", 2.5e6),
+            close_borders: std::env::var("OPEN").is_err(),
             iters: envf("ITERS", 15.0) as usize,
             step_clamp_m: envf("CLAMP", 0.45),
         };
@@ -94,7 +97,8 @@ fn main() {
         // Snapshots: rerun the carve with a truncated iteration budget by
         // calling the public entry with a scratch RNG each time (cheap at
         // 375^2, and keeps carve.rs free of debug hooks).
-        for &it in SNAPSHOTS.iter() {
+        let net_only = std::env::var("NET_ONLY").is_ok();
+        for &it in SNAPSHOTS.iter().filter(|_| !net_only) {
             let mut rng = id.stream(streams::SKELETON_MODULE);
             let mut pp = CarveParams { ..p };
             let _ = carve::ITERS;
