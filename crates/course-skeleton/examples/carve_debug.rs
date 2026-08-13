@@ -88,7 +88,8 @@ fn main() {
             area_threshold_m2: envf("THRESH", carve::AREA_THRESHOLD_M2),
             incision_scale: 1.0,
             base_drop_m: envf("BASEDROP", 4.0),
-            inflow_area_m2: envf("INFLOW", 2.5e6),
+            inflow_area_m2: envf("INFLOW", 2.5e6)
+                * spec.dials.get("skeleton.trunk_river").copied().unwrap_or(0.0).max(0.15),
             close_borders: std::env::var("OPEN").is_err(),
             iters: envf("ITERS", 15.0) as usize,
             step_clamp_m: envf("CLAMP", 0.45),
@@ -155,7 +156,8 @@ fn main() {
             px[i * 3 + 1] = shade[i];
             px[i * 3 + 2] = shade[i];
         }
-        for ch in &c.channels {
+        let overlay = std::env::var("NO_OVERLAY").is_err();
+        for ch in c.channels.iter().filter(|_| overlay) {
             let (r, g, b) = match ch.order {
                 0 | 1 => (120u8, 170u8, 235u8),
                 2 => (40, 110, 200),

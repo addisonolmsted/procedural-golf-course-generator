@@ -243,12 +243,22 @@ pub fn carve(
     // channel only ever drains the tile's own 9 km², which is why river
     // valley seeds read as random dendritic drainage instead of "a river
     // crossing the tile" (review observation 3).
+    // The inlet sits on the FAR half of the tile from base level: a main
+    // river should cross the tile edge to edge, and picking the globally
+    // lowest non-base border cell often put the inlet right beside the
+    // outlet, so the trunk clipped a corner instead of spanning the site
+    // (review: "a single meandering channel from one edge to another").
     let inlet = if p.inflow_area_m2 > 0.0 {
         let mut best = (f64::INFINITY, usize::MAX);
         for y in 0..ny {
             for x in 0..nx {
                 let on_border = y == 0 || y == ny - 1 || x == 0 || x == nx - 1;
                 if !on_border || outlet_side(base_edge, spec, x, y) {
+                    continue;
+                }
+                // require the far half: at least half the tile away from
+                // the base edge, measured along the drainage direction
+                if edge_distance_m(spec, base_edge, x, y) < 0.5 * EXTENT_M {
                     continue;
                 }
                 let lin = y * nx + x;
