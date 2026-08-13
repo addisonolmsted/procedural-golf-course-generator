@@ -116,13 +116,35 @@ fn network_is_hierarchical_on_integrated_biomes() {
     // identical cut and reach splitting: Rb median 2.1–3.1 (p10 1.75–2.33)
     // and Rl median 0.92–1.16 with a p10 spread down to 0.51, across the
     // six biomes, with Ω of 2–3.
-    let (_, sk) = build(41, Some(BiomeId::Piedmont));
-    let max_order = sk.channels.iter().map(|c| c.order).max().unwrap_or(0);
-    assert!(max_order >= 2, "Strahler max {max_order} < 2 — flat network");
-    let rb = sk.diagnostics.bifurcation_ratio.expect("rb");
-    let rl = sk.diagnostics.length_ratio.expect("rl");
-    assert!((1.7..=4.5).contains(&rb), "bifurcation ratio {rb} outside the corpus band");
-    assert!((0.5..=1.9).contains(&rl), "length ratio {rl} outside the corpus band");
+    // MEDIAN over several seeds, because that is how the corpus band was
+    // measured (a per-tile median across 10 tiles). A single tile's ratio
+    // is noisy on both sides — real piedmont spans 1.83–3.44 tile to tile,
+    // and a one-seed assertion just samples that spread.
+    let mut rbs = Vec::new();
+    let mut rls = Vec::new();
+    let mut max_orders = Vec::new();
+    for seed in [41u64, 42, 43, 44, 45, 46, 47, 48] {
+        let (_, sk) = build(seed, Some(BiomeId::Piedmont));
+        max_orders.push(sk.channels.iter().map(|c| c.order).max().unwrap_or(0));
+        if let Some(rb) = sk.diagnostics.bifurcation_ratio {
+            rbs.push(rb);
+        }
+        if let Some(rl) = sk.diagnostics.length_ratio {
+            rls.push(rl);
+        }
+    }
+    max_orders.sort_unstable();
+    assert!(
+        max_orders[max_orders.len() / 2] >= 2,
+        "median Strahler max {} < 2 — flat network",
+        max_orders[max_orders.len() / 2]
+    );
+    rbs.sort_by(|a, b| a.total_cmp(b));
+    rls.sort_by(|a, b| a.total_cmp(b));
+    let rb = rbs[rbs.len() / 2];
+    let rl = rls[rls.len() / 2];
+    assert!((1.7..=4.5).contains(&rb), "median bifurcation ratio {rb} outside the corpus band");
+    assert!((0.5..=1.9).contains(&rl), "median length ratio {rl} outside the corpus band");
 }
 
 #[test]

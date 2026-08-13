@@ -62,12 +62,21 @@ fn main() {
             for c in &sk.channels {
                 let Some(p) = c.parent else { continue };
                 if c.pts.len() < 3 { continue; }
-                // 6-cell (~48 m) baseline: a 2-cell tangent on an 8 m D8
-                // grid is quantised to 45° steps, which inflates the
-                // apparent T-junction share on any derived network — the
-                // real corpus reads 7–25% at 2 cells and 4–20% at 6
-                // (tools/macro_campaign/junction_real.py).
-                let kk = 6.min(c.pts.len() - 1);
+                // Baseline measured in METRES, not points. A 2-cell tangent
+                // on an 8 m D8 grid is quantised to 45° steps, which
+                // inflates the apparent T-junction share on any derived
+                // network (real corpus: 7–25% at 2 cells, 4–20% at 6 —
+                // tools/macro_campaign/junction_real.py). Counting POINTS
+                // is a trap here: Chaikin quadruples point density, so a
+                // 6-point baseline collapsed to ~12 m and the share went
+                // UP to 34%.
+                let mut kk = 1usize;
+                let mut arc = 0.0;
+                while kk < c.pts.len() - 1 && arc < 48.0 {
+                    let d = (c.pts[kk].x - c.pts[kk - 1].x, c.pts[kk].y - c.pts[kk - 1].y);
+                    arc += (d.0 * d.0 + d.1 * d.1).sqrt();
+                    kk += 1;
+                }
                 let cf = (c.pts[0].x - c.pts[kk].x, c.pts[0].y - c.pts[kk].y);
                 let cl = (cf.0 * cf.0 + cf.1 * cf.1).sqrt().max(1e-9);
                 let parent = &sk.channels[p as usize];

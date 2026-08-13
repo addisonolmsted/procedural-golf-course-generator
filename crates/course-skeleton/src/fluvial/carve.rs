@@ -112,6 +112,10 @@ pub const K_STREAM_POWER: f64 = 0.9;
 /// Base-level drawdown (m) at the outlet edge.
 pub const BASE_DROP_M: f64 = 4.0;
 
+/// Slope above which the routing dither fades out entirely: ground this
+/// steep resolves its own flow directions.
+pub const DITHER_SLOPE_MAX: f64 = 0.02;
+
 /// Length of the base-level drawdown ramp (m).
 pub const BASE_RAMP_M: f64 = 900.0;
 /// External catchment (m²) entering at the trunk inlet, per unit of the
@@ -375,14 +379,71 @@ pub fn carve(
                 ((h >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2.0 * DEFLAT_AMP_M
             })
             .collect();
+        // BLUR the dither into a spatially correlated field (~40 m). Pure
+        // per-cell white noise breaks ties, but it also re-randomises the
+        // flow direction at every step, so tributaries arrive at whatever
+        // angle the noise dictates: the T-junction share sat at 25% against
+        // a real 4-20%. A correlated field still has no preferred
+        // direction — so no corduroy — but neighbouring cells now agree
+        // about which way is downhill.
+        let deflat = {
+            let mut d = deflat;
+            for _ in 0..3 {
+                let mut out = vec![0.0; n];
+                for y in 0..ny {
+                    for x in 0..nx {
+                        let mut acc = 0.0;
+                        let mut cnt = 0.0;
+                        for dy in -1i64..=1 {
+                            for dx in -1i64..=1 {
+                                let (yy, xx) = (y as i64 + dy, x as i64 + dx);
+                                if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
+                                    continue;
+                                }
+                                acc += d[yy as usize * nx + xx as usize];
+                                cnt += 1.0;
+                            }
+                        }
+                        out[y * nx + x] = acc / cnt;
+                    }
+                }
+                d = out;
+            }
+            // blurring shrinks the amplitude; restore it
+            let rms = (d.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt().max(1e-12);
+            let g = (DEFLAT_AMP_M / 1.732) / rms;
+            d.iter().map(|v| v * g).collect::<Vec<f64>>()
+        };
         let route_surface = |z: &Grid<f64>, keep_pit: &[bool]| -> Grid<f64> {
             // Dither FIRST, then flood once: applying it after the fill
             // needs a second flood to clear the pits it creates, and the
             // priority-flood is this stage's dominant cost (two per
             // iteration put S2 at 828 ms against a 900 ms budget).
             let mut zf = z.clone();
-            for i in 0..zf.data.len() {
-                zf.data[i] += deflat[i];
+            // Only FLAT ground gets the dither. Applied everywhere it adds
+            // cell-scale noise to slopes that already drain perfectly well,
+            // which showed up as a 25% T-junction share (real: 4-20%) and
+            // 15-20% excess sinuosity — tributaries arriving at whatever
+            // angle the noise dictated instead of the angle the valley
+            // dictates. The local gradient is computed on the RAW surface,
+            // before any fill, so no ordering problem arises.
+            let (gnx, gny) = (zf.spec.nx as usize, zf.spec.ny as usize);
+            let gcell = zf.spec.cell_size;
+            for y in 0..gny {
+                for x in 0..gnx {
+                    let i = y * gnx + x;
+                    let xm = x.saturating_sub(1);
+                    let xp = (x + 1).min(gnx - 1);
+                    let ym = y.saturating_sub(1);
+                    let yp = (y + 1).min(gny - 1);
+                    let gx = (z.data[y * gnx + xp] - z.data[y * gnx + xm]) / (2.0 * gcell);
+                    let gy = (z.data[yp * gnx + x] - z.data[ym * gnx + x]) / (2.0 * gcell);
+                    let slope = (gx * gx + gy * gy).sqrt();
+                    // taper in over the last decade of slope so there is no
+                    // seam between dithered and undithered ground
+                    let w = (1.0 - slope / DITHER_SLOPE_MAX).clamp(0.0, 1.0);
+                    zf.data[i] += deflat[i] * w * w;
+                }
             }
             // The flood then guarantees a depression-free routing surface,
             // dither included — applying the dither afterwards left every
