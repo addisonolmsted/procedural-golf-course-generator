@@ -33,10 +33,10 @@ pub const ARCH_PARAMS: &str = "arch/params/v1";
 pub const FRAMING: &str = "framing/v1";
 /// S1: macro structure (fields, discontinuities).
 pub const PRIMITIVES: &str = "primitives/v1";
-/// S2: trunk growth.
-pub const SKELETON_TRUNK: &str = "skeleton/trunk/v1";
-/// S2: tributary growth.
-pub const SKELETON_TRIBUTARY: &str = "skeleton/tributary/v1";
+/// S2: the carve — roughness seed for the erosion that forms the network.
+/// Supersedes `skeleton/trunk/v1` + `skeleton/tributary/v1`: S2 no longer
+/// grows channel paths, it erodes a surface and extracts them.
+pub const SKELETON_CARVE: &str = "skeleton/carve/v2";
 /// S2: the structural modules.
 pub const SKELETON_MODULE: &str = "skeleton/module/v1";
 /// S3: amplification (patch selection, seams, fill).
@@ -68,13 +68,12 @@ pub const REROLL: &str = "reroll/v1";
 pub const FIXTURE: &str = "fixture/v1";
 
 /// All registered streams with their scopes (doc/test cross-check).
-pub const ALL: [(&str, Scope); 20] = [
+pub const ALL: [(&str, Scope); 19] = [
     (ARCH_SELECT, Scope::Stable),
     (ARCH_PARAMS, Scope::Stable),
     (FRAMING, Scope::Stable),
     (PRIMITIVES, Scope::Stable),
-    (SKELETON_TRUNK, Scope::Stable),
-    (SKELETON_TRIBUTARY, Scope::Stable),
+    (SKELETON_CARVE, Scope::Stable),
     (SKELETON_MODULE, Scope::Stable),
     (AMPLIFY, Scope::Stable),
     (HYDRO, Scope::Stable),

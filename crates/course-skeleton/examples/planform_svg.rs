@@ -134,7 +134,7 @@ fn main() {
             ci,
             ch.order,
             ch.parent,
-            course_skeleton::fluvial::trunk::arc_len(&ch.pts),
+            course_skeleton::fluvial::carve::arc_len(&ch.pts),
             ch.pts.len(),
             maxseg,
             ch.pts[0].x,

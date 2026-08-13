@@ -4,7 +4,7 @@
 //! 90° = T-junction. Real tributary junctions cluster ~30–70°.
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
-use course_skeleton::fluvial::trunk;
+use course_skeleton::fluvial::carve as trunk;
 
 fn main() {
     let mut all: Vec<f64> = Vec::new();

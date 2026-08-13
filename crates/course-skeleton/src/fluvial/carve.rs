@@ -104,8 +104,13 @@ pub struct Carved {
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
 pub const DEFLAT_AMP_M: f64 = 0.10;
-/// Width of the perturbed skirt inside the rimmed borders (m).
-pub const RIM_SKIRT_M: f64 = 260.0;
+/// Roughness amplitude as a fraction of the C1 relief amplitude.
+pub const ROUGHNESS_FRAC: f64 = 0.05;
+/// Stream-power coefficient (review-tuned; the fit target is valley depth
+/// against the corpus transects, scheduled with E7).
+pub const K_STREAM_POWER: f64 = 0.9;
+/// Base-level drawdown (m) at the outlet edge.
+pub const BASE_DROP_M: f64 = 4.0;
 
 /// Length of the base-level drawdown ramp (m).
 pub const BASE_RAMP_M: f64 = 900.0;
@@ -128,7 +133,7 @@ pub const INFLOW_PER_TRUNK_DIAL_M2: f64 = 2.0e7;
 /// and sits on the low side of it by review request — sub-threshold rills
 /// stay in the surface as texture for S3's dictionary. Final calibration
 /// happens against the D5 battery once the engine is integrated.
-pub const AREA_THRESHOLD_M2: f64 = 1.0e5;
+pub const AREA_THRESHOLD_M2: f64 = 1.2e5;
 fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
@@ -370,33 +375,21 @@ pub fn carve(
                 ((h >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2.0 * DEFLAT_AMP_M
             })
             .collect();
-        // The rim is a wall, and water pinned against a wall runs dead
-        // straight along it: the probe's last 696 m run sat in row y = 1,
-        // one cell inside the rimmed border. Real tiles have no walls, so
-        // the wall's inner face gets the same perturbation the lake floors
-        // get, and border-parallel flow wanders like everything else.
-        let near_rim: Vec<bool> = (0..n)
-            .map(|i| {
-                let (y, x) = (i / nx, i % nx);
-                let d = (y.min(ny - 1 - y).min(x).min(nx - 1 - x)) as f64 * cell;
-                d < RIM_SKIRT_M && !outlet_side(base_edge, spec, x, y)
-            })
-            .collect();
         let route_surface = |z: &Grid<f64>, keep_pit: &[bool]| -> Grid<f64> {
-            let mut zf = flow::fill_depressions_masked(z, keep_pit);
+            // Dither FIRST, then flood once: applying it after the fill
+            // needs a second flood to clear the pits it creates, and the
+            // priority-flood is this stage's dominant cost (two per
+            // iteration put S2 at 828 ms against a 900 ms budget).
+            let mut zf = z.clone();
             for i in 0..zf.data.len() {
-                if zf.data[i] > z.data[i] + 1e-6 || near_rim[i] {
-                    zf.data[i] += deflat[i];
-                }
+                zf.data[i] += deflat[i];
             }
-            // RE-FILL. The dither pushes some cells below every neighbour,
-            // and each of those is an artificial PIT: the router turns it
-            // into an outlet, accumulation resets there, and the network
-            // shatters into short disconnected rills — seed 48's entire
-            // 20 km² river was terminating two cells after its inlet. The
-            // second flood raises those cells by at most the dither
-            // amplitude, so the tie-breaking survives everywhere it
-            // matters while the surface goes back to depression-free.
+            // The flood then guarantees a depression-free routing surface,
+            // dither included — applying the dither afterwards left every
+            // cell it pushed below its neighbours as an artificial PIT,
+            // which the router reads as an outlet, and the network
+            // shattered into disconnected rills (seed 48's 20 km² river
+            // died two cells after its inlet).
             flow::fill_depressions_masked(&zf, keep_pit)
         };
         for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
@@ -729,4 +722,80 @@ fn trace(
     }
     let _ = z;
     (channels, channel_of)
+}
+
+/// Arc length of a polyline, metres.
+pub fn arc_len(pts: &[Vec2]) -> f64 {
+    pts.windows(2)
+        .map(|w| ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt())
+        .sum()
+}
+
+/// Horton bifurcation and length ratios from the extracted network.
+/// Both are `None` when fewer than two orders are present (sandhills at
+/// zero density, or any tile whose network never branches).
+pub fn horton_ratios(channels: &[Channel]) -> (Option<f64>, Option<f64>) {
+    let max_o = channels.iter().map(|c| c.order).max().unwrap_or(0) as usize;
+    if max_o < 2 {
+        return (None, None);
+    }
+    let mut count = vec![0.0f64; max_o + 1];
+    let mut length = vec![0.0f64; max_o + 1];
+    for c in channels {
+        let o = c.order as usize;
+        if o == 0 || o > max_o {
+            continue;
+        }
+        count[o] += 1.0;
+        length[o] += arc_len(&c.pts);
+    }
+    let ratio = |v: &[f64], mean_len: bool| -> Option<f64> {
+        let mut acc = Vec::new();
+        for o in 1..max_o {
+            let (a, b) = if mean_len {
+                (
+                    v[o + 1] / count[o + 1].max(1.0),
+                    v[o] / count[o].max(1.0),
+                )
+            } else {
+                (v[o], v[o + 1])
+            };
+            if b > 0.0 && a > 0.0 {
+                acc.push(a / b);
+            }
+        }
+        if acc.is_empty() {
+            None
+        } else {
+            acc.sort_by(|x, y| x.total_cmp(y));
+            Some(acc[acc.len() / 2])
+        }
+    };
+    (ratio(&count, false), ratio(&length, true))
+}
+
+/// Point at arc position `s` along a polyline (clamped), with the local
+/// tangent. Used by the junction-angle instruments.
+pub fn point_at_arc(pts: &[Vec2], s: f64) -> (Vec2, Vec2) {
+    let norm = |d: Vec2| {
+        let l = (d.x * d.x + d.y * d.y).sqrt();
+        if l > 1e-12 { Vec2::new(d.x / l, d.y / l) } else { Vec2::new(1.0, 0.0) }
+    };
+    let mut acc = 0.0;
+    for w in pts.windows(2) {
+        let d = Vec2::new(w[1].x - w[0].x, w[1].y - w[0].y);
+        let l = (d.x * d.x + d.y * d.y).sqrt();
+        if acc + l >= s && l > 1e-12 {
+            let t = (s - acc) / l;
+            return (Vec2::new(w[0].x + d.x * t, w[0].y + d.y * t), norm(d));
+        }
+        acc += l;
+    }
+    let n = pts.len();
+    let tan = if n >= 2 {
+        norm(Vec2::new(pts[n - 1].x - pts[n - 2].x, pts[n - 1].y - pts[n - 2].y))
+    } else {
+        Vec2::new(1.0, 0.0)
+    };
+    (pts[n - 1], tan)
 }

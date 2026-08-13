@@ -4,7 +4,7 @@
 use course_contracts::biome::BiomeId;
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
-use course_skeleton::fluvial::trunk;
+use course_skeleton::fluvial::carve as trunk;
 use course_world::math::Vec2;
 
 const SEEDS_PER_BIOME: u64 = 150;

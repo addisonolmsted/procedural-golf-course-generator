@@ -1,20 +1,31 @@
 //! Stage S2 — the skeleton kernel. The base six are all served by one
-//! fluvial engine: trunk splines, top-down Horton tributaries, a flow-
-//! distance transform, derived divides, and a parametric catena base
-//! surface. Five modules — dials, not branches — add the structural forms.
+//! fluvial engine: a light stream-power CARVE of C1's macro surface, the
+//! channel network EXTRACTED from the resulting flow field, derived
+//! divides, and a bank profile hung off the carved valleys. Five modules —
+//! dials, not branches — add the structural forms.
 //!
-//! S2 *authors* structure in flow-distance/drainage space; it does NOT
-//! carry archetype identity (drainage spacing is a shared invariant of real
-//! landscapes — 104–120 m in every archetype). Its output is a correct,
-//! characterless base; S3 supplies texture. Candle-wax interfluves are
-//! expected and fine here.
+//! S2 no longer authors channel paths. The previous engine grew trunk and
+//! tributary polylines and then defended them with crossing guards,
+//! separation neighbourhoods, mouth-angle enforcement and a trim sweep;
+//! ten structural patches later the review still found loops and parallel
+//! pairs. Geometry authored in path space has to be argued into agreement
+//! with the terrain it sits on. Here the terrain decides, and the review's
+//! requirements hold structurally: a D8 receiver graph is a forest, so
+//! loops are unreachable; two paths that meet share every cell afterwards,
+//! so they merge rather than cross; confluences sit where terrain
+//! converges. See `fluvial::carve`.
 //!
-//! Determinism: three streams with fixed transcripts —
-//!   `skeleton/trunk/v1`      1 + MAX_TRUNK_STEPS uniforms
-//!   `skeleton/tributary/v1`  Σ level count × (2 + steps) uniforms
-//!   `skeleton/module/v1`     MAX_EMBRYOS×3 + 3 uniforms
-//! Growth consumes prefixes of pre-drawn slices; no draw count ever
-//! depends on geometry. No `if biome` anywhere in this crate (grep it).
+//! S2 does NOT carry archetype identity (drainage spacing is a shared
+//! invariant of real landscapes — 104–120 m in every archetype, heathland
+//! and sandhills included). Its output is a correct, characterless base;
+//! S3 supplies texture. Candle-wax interfluves are expected and fine here.
+//!
+//! Determinism: two streams with fixed transcripts —
+//!   `skeleton/carve/v2`      carve::DRAWS uniforms (roughness waves)
+//!   `skeleton/module/v1`     MAX_EMBRYOS×3 + aeolian::DRAWS uniforms
+//! Every count is a compile-time constant; the erosion runs a fixed
+//! iteration count and never loops until a target is met. No `if biome`
+//! anywhere in this crate (grep it).
 //!
 //! Stage doc: `docs/stages/stage-02-skeleton-kernel.md`.
 
@@ -29,8 +40,7 @@ use course_world::grid::Grid;
 use course_world::world::{world_spec, RES_FULL_M};
 
 use fluvial::flow_distance::{self, Nearest};
-use fluvial::trunk::Steer;
-use fluvial::{catena, divides, tributary};
+use fluvial::{carve, catena, divides};
 use kernel::{KernelId, Skeleton, SkeletonDiagnostics, SKELETON_VERSION};
 use modules::{aeolian, closed_basin, integration, stratigraphy, trunk_river};
 
@@ -61,52 +71,86 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     }
 
     // ---- draws (fixed transcripts) ------------------------------------
-    let mut trunk_rng = identity.stream(streams::SKELETON_TRUNK);
-    let mut trib_rng = identity.stream(streams::SKELETON_TRIBUTARY);
-    let draws = tributary::Draws::from_streams(&mut trunk_rng, &mut trib_rng);
+    let mut carve_rng = identity.stream(streams::SKELETON_CARVE);
     let mut module_rng = identity.stream(streams::SKELETON_MODULE);
     let embryo_draws: Vec<f64> = (0..closed_basin::MAX_EMBRYOS * closed_basin::DRAWS_PER_EMBRYO)
         .map(|_| module_rng.next_f64())
         .collect();
     let aeolian_draws: Vec<f64> = (0..aeolian::DRAWS).map(|_| module_rng.next_f64()).collect();
 
-    // ---- network -------------------------------------------------------
-    let steer = Steer {
-        implied: &implied,
-        accommodation: &c1.accommodation,
-        hardness: &c1.hardness,
-        meta: &c1.meta,
+    // ---- carve: erode, then extract the network ------------------------
+    // Erodibility from C1 hardness: resistant ground deflects channels
+    // physically, which is what the retired engine's geometric
+    // discontinuity rules were imitating.
+    let erodibility: Vec<f64> = c1
+        .hardness
+        .data
+        .iter()
+        .map(|h| (1.6 - h).clamp(0.3, 1.6))
+        .collect();
+    // Intended pits (S2's closed-basin embryos are stamped after the
+    // carve, so the carve's own kept pits are the NATURAL depressions a
+    // deranged landscape keeps — see carve::CarveParams::derangement).
+    let keep_pit: Vec<bool> = vec![false; n8];
+    let relief_amp = dial("primitives.relief_amp_m", 8.0);
+    let carve_params = carve::CarveParams {
+        roughness_frac: carve::ROUGHNESS_FRAC,
+        k: if density >= 0.5 { carve::K_STREAM_POWER } else { 0.0 },
+        area_threshold_m2: carve::AREA_THRESHOLD_M2,
+        incision_scale: integration::incision_scale(m_integration),
+        base_drop_m: carve::BASE_DROP_M,
+        inflow_area_m2: carve::INFLOW_PER_TRUNK_DIAL_M2 * m_trunk_river,
+        close_borders: true,
+        derangement: ((0.5 - m_integration) * 1.6).clamp(0.0, 0.9),
+        iters: carve::ITERS,
+        step_clamp_m: carve::STEP_CLAMP_M,
     };
-    let derangement = integration::derangement(m_integration);
-    let channels = tributary::build(&steer, &spec8, &draws, density, derangement);
+    let carved = carve::carve(
+        &spec8,
+        &implied,
+        &erodibility,
+        &keep_pit,
+        c1.meta.base_level.edge,
+        &mut carve_rng,
+        &carve_params,
+        relief_amp,
+    );
+    let channels = carved.channels.clone();
 
-    // ---- raster + transform -------------------------------------------
+    // ---- flow-distance transform ---------------------------------------
+    // The carved surface already holds the valleys, so the channel cells
+    // seed the wavefront directly; no polyline rasterization step.
     let base_elev = c1.meta.base_level.elev_m;
-    let d_mouth = (0.22 * relief_budget * integration::incision_scale(m_integration))
-        .clamp(3.0, 16.0);
-    let cells = flow_distance::rasterize(&channels, &spec8, &implied, base_elev, d_mouth);
-    let seeds: Vec<(usize, Nearest)> = if cells.is_empty() {
-        flow_distance::edge_seeds(&spec8, c1.meta.base_level.edge, base_elev, &implied)
-    } else {
-        cells
-            .iter()
-            .map(|c| {
+    let seeds: Vec<(usize, Nearest)> = {
+        let v: Vec<(usize, Nearest)> = (0..n8)
+            .filter(|&lin| carved.channel_of[lin].is_some())
+            .map(|lin| {
                 (
-                    c.lin,
+                    lin,
                     Nearest {
                         dist_m: 0.0,
-                        z_channel: c.z_channel,
-                        implied_channel: c.implied,
-                        order: c.order,
+                        z_channel: carved.z.data[lin],
+                        implied_channel: implied.data[lin],
+                        order: carved.order_at[lin].max(1),
                     },
                 )
             })
-            .collect()
+            .collect();
+        if v.is_empty() {
+            flow_distance::edge_seeds(&spec8, c1.meta.base_level.edge, base_elev, &implied)
+        } else {
+            v
+        }
     };
     let near = flow_distance::dijkstra(&spec8, &seeds);
+    let has_channels = carved.channel_of.iter().any(|c| c.is_some());
 
-    // ---- catena + modules ---------------------------------------------
-    let mut height8 = catena::assemble(&spec8, &implied, &near, 1.0);
+    // ---- bank profile + modules ----------------------------------------
+    // The carve did the incising, so the catena only shapes BANKS here:
+    // order-scaled floors and the groove/hillslope blend, applied to the
+    // carved surface rather than cutting a second set of valleys into the
+    // implied one.
+    let mut height8 = catena::banks(&spec8, &carved.z, &near);
     let max_order = channels.iter().map(|c| c.order).max().unwrap_or(0);
     trunk_river::apply(&mut height8, &near, m_trunk_river, max_order);
     stratigraphy::apply(&mut height8, &c1.hardness, &near, &spec.descriptors.strata, m_strat);
@@ -118,10 +162,13 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         c1.meta.wind_azimuth_rad,
         relief_budget,
     );
-    // Channel cells are the base profile EXACTLY, whatever the modules did
-    // around them — monotone descent along the network is structural.
-    for c in &cells {
-        height8.data[c.lin] = c.z_channel;
+    // Channel cells keep the carved elevation EXACTLY, whatever the
+    // modules did around them — monotone descent along the network is
+    // structural, and the carve guaranteed it by construction.
+    for lin in 0..n8 {
+        if carved.channel_of[lin].is_some() {
+            height8.data[lin] = carved.z.data[lin].min(height8.data[lin]);
+        }
     }
 
     // ---- flow fields on the built surface ------------------------------
@@ -142,8 +189,10 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
 
     // ---- divides (derived), connectivity, normalized coordinates -------
     let mut channel_of = vec![0u32; n8];
-    for c in &cells {
-        channel_of[c.lin] = c.channel + 1;
+    for lin in 0..n8 {
+        if let Some(c) = carved.channel_of[lin] {
+            channel_of[lin] = c + 1;
+        }
     }
     let labels = divides::basin_labels(&ff.rec, &channel_of);
     let dmask = divides::divide_mask(&labels, &channel_of, &spec8);
@@ -153,32 +202,52 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     // LENGTH in a connected component that reaches base level. A component
     // reaches base level iff its root trunk's downstream end sits on the
     // box border (a deranged trunk was cut and dangles in the interior).
-    let connectivity = if channels.is_empty() {
-        0.0
-    } else {
-        let root_of = |mut i: usize| {
-            while let Some(p) = channels[i].parent {
-                i = p as usize;
+    // Connectivity is now measured on the FLOW FIELD rather than on a
+    // parent tree: the fraction of channel cells whose receiver chain
+    // reaches the box border. A deranged landscape's basins swallow their
+    // water, so its channel cells terminate in interior sinks and this
+    // falls toward zero — the same separation the old tree-walk gave, but
+    // read from the thing that actually routes.
+    let connectivity = {
+        let mut reaches_edge = vec![false; n8];
+        let mut order: Vec<usize> = (0..n8).collect();
+        order.sort_by(|&a, &b| carved.area[b].total_cmp(&carved.area[a]));
+        for lin in 0..n8 {
+            let (y, x) = (lin / (spec8.nx as usize), lin % (spec8.nx as usize));
+            let on_border = y == 0
+                || x == 0
+                || y + 1 == spec8.ny as usize
+                || x + 1 == spec8.nx as usize;
+            if on_border && carved.rec[lin] < 0 {
+                reaches_edge[lin] = true;
             }
-            i
-        };
-        let reaches = |i: usize| {
-            let p0 = channels[root_of(i)].pts[0];
-            let m = 60.0;
-            p0.x < m
-                || p0.y < m
-                || p0.x > course_world::world::EXTENT_M - m
-                || p0.y > course_world::world::EXTENT_M - m
-        };
-        let total: f64 = channels.iter().map(|c| fluvial::trunk::arc_len(&c.pts)).sum();
-        let conn: f64 = (0..channels.len())
-            .filter(|&i| reaches(i))
-            .map(|i| fluvial::trunk::arc_len(&channels[i].pts))
-            .sum();
-        if total > 0.0 {
-            conn / total
-        } else {
+        }
+        // propagate upstream: a cell reaches the edge iff its receiver does
+        let mut stack: Vec<usize> = (0..n8).filter(|&i| reaches_edge[i]).collect();
+        let mut donors: Vec<Vec<u32>> = vec![Vec::new(); n8];
+        for i in 0..n8 {
+            let r = carved.rec[i];
+            if r >= 0 {
+                donors[r as usize].push(i as u32);
+            }
+        }
+        while let Some(i) = stack.pop() {
+            for &d in &donors[i] {
+                let d = d as usize;
+                if !reaches_edge[d] {
+                    reaches_edge[d] = true;
+                    stack.push(d);
+                }
+            }
+        }
+        let total = carved.channel_of.iter().filter(|c| c.is_some()).count();
+        if total == 0 {
             0.0
+        } else {
+            let conn = (0..n8)
+                .filter(|&i| carved.channel_of[i].is_some() && reaches_edge[i])
+                .count();
+            conn as f64 / total as f64
         }
     };
 
@@ -203,7 +272,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
 
     let mut fdn = Grid::filled(spec8, 1.0f64);
     let mut hp = Grid::filled(spec8, 0.5f64);
-    if cells.is_empty() {
+    if !has_channels {
         // Degenerate case: all hillslope. flow_distance_norm = 1 everywhere;
         // hillslope_position = normalized relative elevation.
         let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
@@ -242,8 +311,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     for lin in 0..n8 {
         flow_distance_m.data[lin] = near[lin].dist_m;
     }
-    let total_len_m: f64 = channels.iter().map(|c| fluvial::trunk::arc_len(&c.pts)).sum();
-    let (rb, rl) = tributary::horton_ratios(&channels);
+    let total_len_m: f64 = channels.iter().map(|c| carve::arc_len(&c.pts)).sum();
+    let (rb, rl) = carve::horton_ratios(&channels);
     let diagnostics = SkeletonDiagnostics {
         target_density_km_km2: density,
         achieved_density_km_km2: total_len_m / 1000.0 / 9.0,

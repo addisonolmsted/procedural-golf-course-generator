@@ -194,8 +194,7 @@ Details and the three ladder rules: [docs/01-conventions.md](docs/01-conventions
    | `arch/params/v1` | stable | S0 descriptor sampling |
    | `framing/v1` | stable | v1 stage 01 (retained with `course-framing`; retires with it) |
    | `primitives/v1` | stable | S1 macro structure |
-   | `skeleton/trunk/v1` | stable | S2 trunk growth |
-   | `skeleton/tributary/v1` | stable | S2 tributary growth |
+   | `skeleton/carve/v2` | stable | S2 erosion roughness seed |
    | `skeleton/module/v1` | stable | S2 structural modules |
    | `amplify/v1` | stable | S3 amplification |
    | `hydro/v1` | stable | S4 hydrology & transforms |

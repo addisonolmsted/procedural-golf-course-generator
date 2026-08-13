@@ -121,3 +121,49 @@ fn box3(a: &[f64], nx: usize, ny: usize) -> Vec<f64> {
     }
     out
 }
+
+/// Bank profile for an ALREADY-CARVED surface.
+///
+/// The derived engine erodes the valleys itself, so the catena's job
+/// shrank from "cut valleys into the implied surface" to "give the cut
+/// ones a bank": an order-scaled flat floor and a groove/hillslope blend
+/// over the first `D_FULL_M`. It only ever LOWERS ground toward the
+/// nearest channel's elevation, never raises it, so the carve's drainage
+/// monotonicity survives untouched.
+pub fn banks(spec: &GridSpec, carved: &Grid<f64>, near: &[Nearest]) -> Grid<f64> {
+    debug_assert_eq!(carved.data.len(), near.len());
+    let mut cut: Vec<f64> = near
+        .iter()
+        .zip(&carved.data)
+        .map(|(n, z)| {
+            if !n.dist_m.is_finite() {
+                return 0.0;
+            }
+            let floor_hw = match n.order {
+                0 | 1 => 8.0,
+                2 => 14.0,
+                3 => 22.0,
+                _ => 30.0,
+            };
+            let d_eff = (n.dist_m - floor_hw).max(0.0);
+            let ug = (d_eff / 40.0).min(1.0);
+            let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
+            let uh = (d_eff / D_FULL_M).min(1.0);
+            let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
+            let w = 0.3 * groove + 0.7 * hillslope;
+            // how far this cell still stands above the channel it drains to
+            ((z - n.z_channel).max(0.0)) * (1.0 - w)
+        })
+        .collect();
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    // same 4-pass smoothing the incision field used: removes the crease
+    // where two valleys' fields meet, and stays under the 64 m band edge
+    for _ in 0..4 {
+        cut = box3(&cut, nx, ny);
+    }
+    let mut out = carved.clone();
+    for (i, c) in cut.iter().enumerate() {
+        out.data[i] = carved.data[i] - c;
+    }
+    out
+}

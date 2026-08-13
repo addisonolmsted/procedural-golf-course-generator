@@ -4,5 +4,3 @@ pub mod carve;
 pub mod catena;
 pub mod divides;
 pub mod flow_distance;
-pub mod trunk;
-pub mod tributary;

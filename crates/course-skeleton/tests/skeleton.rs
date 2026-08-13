@@ -60,14 +60,27 @@ fn all_six_biomes_produce_skeletons() {
 }
 
 #[test]
-fn sandhills_grows_zero_channels_and_stays_defined() {
+fn sandhills_is_deranged_but_still_carries_dry_drainage() {
+    // This test used to assert sandhills has NO channels. The corpus says
+    // otherwise: measured with the same accumulation cut as everything
+    // else, real sandhills carries d2c 118 m and 2.36 km/km² — flow
+    // concentrates on any real surface whether or not a perennial stream
+    // runs there, and those lines are the dry swales between dunes (the
+    // review saw them on the tiles). What makes sandhills sandhills is
+    // that its basins swallow the water: the network exists but does not
+    // reach base level.
     let (_, sk) = build(21, Some(BiomeId::Sandhills));
-    assert_eq!(sk.channels.len(), 0, "sandhills density ≈ 0 ⇒ no channels");
-    assert!(sk.flow_distance_norm.data.iter().all(|&v| v == 1.0));
+    assert!(
+        sk.diagnostics.channel_count > 0,
+        "sandhills should carry dry drainage lines (corpus d2c 118 m)"
+    );
+    assert!(
+        sk.diagnostics.connectivity < 0.5,
+        "sandhills must be deranged, connectivity {}",
+        sk.diagnostics.connectivity
+    );
     assert!(sk.flow_distance.data.iter().all(|v| v.is_finite()));
-    // Aeolian module is dominant: the surface must carry dune trains, i.e.
-    // more band variance than the bare implied surface would have.
-    assert!(sk.diagnostics.channel_count == 0);
+    assert!(sk.flow_distance_norm.data.iter().all(|v| (0.0..=1.0).contains(v)));
 }
 
 #[test]
@@ -95,13 +108,21 @@ fn heathland_is_deranged_and_separates_from_integrated_biomes() {
 
 #[test]
 fn network_is_hierarchical_on_integrated_biomes() {
+    // Bands RE-BASED on the corpus (tools/macro_campaign/horton_real.py).
+    // The old 3–5 / 1.5–3 band came from the authored engine, which built
+    // its hierarchy top-down so the ratios held by construction. A DERIVED
+    // network's ratios are an outcome, and they depend on the extraction
+    // cut and the reach definition — so the corpus was measured with the
+    // identical cut and reach splitting: Rb median 2.1–3.1 (p10 1.75–2.33)
+    // and Rl median 0.92–1.16 with a p10 spread down to 0.51, across the
+    // six biomes, with Ω of 2–3.
     let (_, sk) = build(41, Some(BiomeId::Piedmont));
     let max_order = sk.channels.iter().map(|c| c.order).max().unwrap_or(0);
-    assert!(max_order >= 3, "Strahler max {max_order} < 3 — flat network");
+    assert!(max_order >= 2, "Strahler max {max_order} < 2 — flat network");
     let rb = sk.diagnostics.bifurcation_ratio.expect("rb");
     let rl = sk.diagnostics.length_ratio.expect("rl");
-    assert!((2.0..=8.0).contains(&rb), "bifurcation ratio {rb}");
-    assert!((1.2..=4.5).contains(&rl), "length ratio {rl}");
+    assert!((1.7..=4.5).contains(&rb), "bifurcation ratio {rb} outside the corpus band");
+    assert!((0.5..=1.9).contains(&rl), "length ratio {rl} outside the corpus band");
 }
 
 #[test]
