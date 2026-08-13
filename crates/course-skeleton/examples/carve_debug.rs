@@ -230,7 +230,7 @@ fn main() {
                 match donors[cur]
                     .iter()
                     .copied()
-                    .filter(|&d| c.channel_of[d as usize].is_some())
+                    .filter(|&d| c.area[d as usize] >= p.area_threshold_m2)
                     .max_by(|&a, &b| c.area[a as usize].total_cmp(&c.area[b as usize]))
                 {
                     Some(d) => cur = d as usize,

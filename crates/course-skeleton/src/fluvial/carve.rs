@@ -94,6 +94,8 @@ pub struct Carved {
     pub area: Vec<f64>,
     /// The traced vector network (for QA instruments and the viewer).
     pub channels: Vec<Channel>,
+    /// Where external inflow enters (usize::MAX if none) — diagnostic.
+    pub inlet: usize,
 }
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
@@ -122,7 +124,7 @@ pub const INFLOW_PER_TRUNK_DIAL_M2: f64 = 2.0e7;
 /// and sits on the low side of it by review request — sub-threshold rills
 /// stay in the surface as texture for S3's dictionary. Final calibration
 /// happens against the D5 battery once the engine is integrated.
-pub const AREA_THRESHOLD_M2: f64 = 2.5e4;
+pub const AREA_THRESHOLD_M2: f64 = 1.0e5;
 fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
@@ -316,7 +318,27 @@ pub fn carve(
         // into lakes — 47% of channel cells ended up pooled, and the
         // straight runs returned. The routing surface is the only place it
         // is needed, and the carved terrain stays depression-free.
-        let deflat = roughness_at(spec, &mut rng.clone(), DEFLAT_AMP_M, DEFLAT_BAND_M, 8);
+        // ISOTROPIC per-cell dither, NOT a wave sum. A sum of a few plane
+        // waves has parallel crests and troughs; used as the routing
+        // surface's tie-breaker it handed flow a corduroy to follow, and
+        // the review immediately saw dead-straight parallel tributaries
+        // across the flats. Position-hashed noise has no preferred
+        // direction, so ties break every which way.
+        let deflat: Vec<f64> = (0..n)
+            .map(|i| {
+                let (y, x) = ((i / nx) as u64, (i % nx) as u64);
+                let mut h = x
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ y.rotate_left(32).wrapping_mul(0xBF58_476D_1CE4_E5B9)
+                    ^ 0x51C3_7A2E_9D4B_F015;
+                h ^= h >> 30;
+                h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                h ^= h >> 27;
+                h = h.wrapping_mul(0x94D0_49BB_1331_11EB);
+                h ^= h >> 31;
+                ((h >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2.0 * DEFLAT_AMP_M
+            })
+            .collect();
         // The rim is a wall, and water pinned against a wall runs dead
         // straight along it: the probe's last 696 m run sat in row y = 1,
         // one cell inside the rimmed border. Real tiles have no walls, so
@@ -336,7 +358,15 @@ pub fn carve(
                     zf.data[i] += deflat[i];
                 }
             }
-            zf
+            // RE-FILL. The dither pushes some cells below every neighbour,
+            // and each of those is an artificial PIT: the router turns it
+            // into an outlet, accumulation resets there, and the network
+            // shatters into short disconnected rills — seed 48's entire
+            // 20 km² river was terminating two cells after its inlet. The
+            // second flood raises those cells by at most the dither
+            // amplitude, so the tie-breaking survives everywhere it
+            // matters while the surface goes back to depression-free.
+            flow::fill_depressions_masked(&zf, keep_pit)
         };
         for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
             let zf = route_surface(&z, keep_pit);
@@ -389,7 +419,7 @@ pub fn carve(
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
-    Carved { z, channel_of, order_at, rec, area, channels }
+    Carved { z, channel_of, order_at, rec, area, channels, inlet }
 }
 
 /// One carving pass in downstream-to-upstream order: a cell is cut only

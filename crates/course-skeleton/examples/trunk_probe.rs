@@ -29,7 +29,7 @@ fn main() {
                 area_threshold_m2: carve::AREA_THRESHOLD_M2,
                 incision_scale: 1.0,
                 base_drop_m: 4.0 * relief_amp.min(2.0),
-                inflow_area_m2: 2.5e6 * tr.max(0.15),
+                inflow_area_m2: carve::INFLOW_PER_TRUNK_DIAL_M2 * tr,
                 close_borders: true,
                 iters: 15,
                 step_clamp_m: 0.45,
@@ -48,8 +48,11 @@ fn main() {
             let mut len_m = 0.0;
             let mut steps = 0;
             while steps < n {
+                // follow discharge, not reach membership: channel_of is
+                // None at every reach boundary, which stopped the walk
+                // after one cell and made the trunk look nonexistent
                 let best = donors[cur].iter().copied()
-                    .filter(|&d| c.channel_of[d as usize].is_some())
+                    .filter(|&d| c.area[d as usize] >= carve::AREA_THRESHOLD_M2)
                     .max_by(|&a, &b| c.area[a as usize].total_cmp(&c.area[b as usize]));
                 match best { Some(d) => { len_m += cell; cur = d as usize; steps += 1; } None => break }
             }
@@ -59,6 +62,15 @@ fn main() {
                 let dy = y.min((ny - 1) as f64 - y);
                 dx.min(dy) * cell
             };
+            let il = c.inlet;
+            let (ix, iy) = if il == usize::MAX { (0, 0) } else { (il % nx, il / nx) };
+            let mut plen = 0;
+            if il != usize::MAX {
+                let mut cur = il;
+                while c.rec[cur] >= 0 && plen < n { plen += 1; cur = c.rec[cur] as usize; }
+            }
+            println!("    inlet ({ix},{iy}) rec={} area={:.1}km2 inflow-path {plen} cells",
+                c.rec[il.min(n-1)], c.area[il.min(n-1)] / 1e6);
             println!(
                 "{:13} seed {:5}: main stem {:5.0} m | head {:4.0} m from a border, mouth {:4.0} m | outlet area {:.1} km2 (tile is 9)",
                 biome.key(), seed, len_m, d_border(cur), d_border(outlet.1), outlet.0 / 1e6
