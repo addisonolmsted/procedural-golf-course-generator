@@ -44,8 +44,8 @@ the spur-and-hollow structure that no distance transform can.
   not just a thing it decorates around.
 - **Contracts:** consumes C1. Emits no guarded contract — the base surface and
   the skeleton travel to S3 as an internal artifact.
-- **Streams:** `skeleton/trunk/v1`, `skeleton/tributary/v1`,
-  `skeleton/module/v1`.
+- **Streams:** `skeleton/carve/v2`, `skeleton/module/v1`. (The v1 trunk and
+  tributary streams retired with the authored engine.)
 
 ## Inputs / Outputs
 
@@ -80,39 +80,81 @@ more accurate than re-deriving them downstream.
 
 ### The fluvial engine (Kernel I), in order
 
-1. **Trunk splines.** Root the trunk at `meta.base_level` and grow it upstream,
-   biased by C1's `relief` and `accommodation`. This is the drainage backbone
-   everything else hangs from.
-2. **Hierarchical tributary growth.** Grow tributaries as a **Horton–Strahler
-   network**, not a flat trunk-plus-branches set: order-1 streams feeding
-   order-2 feeding the trunk, with the bifurcation and length ratios real
-   networks obey (bifurcation typically 3–5, length ratio ~2). Spacing is set
-   by `density_target`; deflection is biased by `hardness`, elongated along
-   `grain_axis_rad`, and **deflected or truncated by C1's discontinuities**.
+**S2 derives its network; it does not author one.** The first implementation
+grew trunk and tributary polylines and then defended them with crossing
+guards, separation neighbourhoods, mouth-angle enforcement, curl penalties
+and a whole-network trim sweep. Ten structural patches later the review was
+still finding loops and long parallel pairs. Geometry authored in path space
+has to be *argued* into agreement with the terrain it sits on, and every
+closed hole moved a rare variant somewhere else. Letting the terrain decide
+makes the same properties structural:
 
-   Hierarchy matters for realism in a way a two-level network cannot fake — a
-   landscape whose every tributary is the same size reads wrong even when its
-   density is exactly right. `tools/macro_campaign/macro_campaign/netstats.py`
-   already implements `_strahler()`, junction spacing/angle statistics, and the
-   pivot-centred log-log fits, so the targets are measurable with existing code.
-3. **Flow-distance transform.** Compute distance-to-nearest-channel over the
-   grid, plus the normalized channel→divide coordinate and hillslope position.
-   These are the coordinates the catena is expressed in, and the conditioning
-   coordinates S3 reconstructs against.
-4. **Derived divides.** Extract divides *from the flow field*, never author
+- **No loops.** A D8 receiver graph is a forest; a loop is unreachable.
+- **No crossings.** Two paths that meet share every cell after the meeting
+  point — they merge, they cannot cross.
+- **Sensible confluences.** Junctions sit where terrain converges, at the
+  angle the two valleys arrive.
+- **Parallel only where earned.** Neighbouring channels stay separate
+  exactly when a divide separates them.
+
+1. **Roughness seed.** C1 is band-limited to ≥ 400 m, and flow over a
+   surface that smooth runs in near-parallel sheets. A fixed-count wave sum
+   in S2's own band (140–520 m) gives drainage something to compete over.
+   This is also the spur-and-hollow degree of freedom the pipeline revision
+   identified as missing.
+2. **Boundary condition.** The three non-base borders are rimmed and the
+   base edge is drawn down: one open boundary, the rest no-flux. Without it
+   the tile drains radially like an island — measured base-edge outflow was
+   12–82%, and a regional gradient up to 1.5× relief did not fix it, since
+   water leaves by whichever border it reaches first. Real 3 km windows *do*
+   drain multi-edge (corpus max-edge share 46–78%), but our tile is a site
+   draining to a declared base level.
+3. **Trunk inflow.** A tile is a window in a larger landscape, and a
+   bottomland river carries a catchment that lies mostly outside it. An
+   external area (20 km² per unit of the `trunk_river` dial) enters at the
+   middle of the far boundary, so a through-going main river exists rather
+   than only the tile's own 9 km².
+4. **Erosion.** A fixed 15 iterations of `dz = k·√A·S`, carved
+   downstream-first with each cut capped at half the drop to the
+   already-carved receiver — that cap is what keeps the surface drainable by
+   construction, so no pits form and no flat pools appear for D8 to cross in
+   straight lines. `k` scales with C1 `hardness`, so resistant ground
+   deflects channels *physically* instead of by geometric rule.
+   **Routing dither:** the flood grades its flats by epsilon, and an
+   eps-flat under a planar tilt gives D8 an exactly axis-parallel descent.
+   A correlated (~40 m), isotropic, slope-tapered dither on the *routing
+   surface* breaks that without touching the terrain.
+5. **Derangement.** A deranged landscape keeps its depressions: interdune
+   lows and kettles swallow their catchment and never pass it on. That
+   fraction of the deepest natural depressions is handed to the router as
+   kept pits, so heathland and sandhills derangement **emerges** from the
+   same code path rather than being special-cased (this closes open
+   question 1 below).
+6. **Extraction.** Channel raster = drained area ≥ threshold; the threshold
+   IS the density dial, and sub-threshold rills stay in the surface as
+   texture for S3. Strahler order comes from the flow forest; the vector
+   network is traced downstream from each head through the receivers — the
+   same method `tools/macro_campaign/real_planform.py` uses on real lidar,
+   so generated and corpus planform statistics mean the same thing. Two
+   Chaikin passes smooth the emitted polylines (a chain of cell centres
+   staircases at 45°/90°, which alone reads as ~1.3 sinuosity); the raster
+   is untouched.
+7. **Flow-distance transform.** Multi-source Dijkstra from the channel
+   cells: distance-to-channel, the normalized channel→divide coordinate,
+   and hillslope position. These are the coordinates S3 reconstructs
+   against.
+8. **Derived divides.** Extract divides *from the flow field*, never author
    them. An authored divide that disagrees with the flow field is the exact
    failure mode of the retired generator.
-5. **Catena base elevation.** Assign elevation as a function of flow distance
-   and hillslope position, from a calibrated profile family. The profile law's
-   exponent θ is a fit target
-   ([../calibration/metric-battery.md](../calibration/metric-battery.md)).
+9. **Bank profile.** The erosion already cut the valleys, so the catena
+   shapes BANKS only: order-scaled flat floors and a groove/hillslope
+   blend, applied to the carved surface. It only ever lowers ground, so the
+   carve's drainage monotonicity survives.
 
    **Keep this simple.** The catena's job is a correct mean surface, not a
-   characterful one — it should hit slope–area scaling and the hypsometric
-   integral and stop. Effort spent making it look good is effort spent
-   competing with [S3](stage-03-amplification.md), which has real data and will
-   win. Earlier drafts specified a rich sampled "catena library"; a parametric
-   family is now the right call.
+   characterful one. Effort spent making it look good is effort spent
+   competing with [S3](stage-03-amplification.md), which has real data and
+   will win.
 
 ### The five modules — structure only
 
@@ -157,15 +199,19 @@ sound.
 ## Determinism & budget
 
 **900 ms** — the largest pre-routing cost
-([../02-performance-budget.md](../02-performance-budget.md)). Growth phases run
-at 8 m; the catena raster is written at 2 m. The flow-distance transform
-dominates; use a multi-source BFS/Dijkstra over the 8 m grid, not a per-node
-search.
+([../02-performance-budget.md](../02-performance-budget.md)). Everything runs
+at 8 m; the presentation raster is written at 2 m. Measured: **570–600 ms**
+integrated, 240 ms deranged.
 
-Fixed iteration counts on tributary growth — **never grow until a density
-target is met**, which is a data-dependent loop and a budget hazard. Draw a
-fixed number of tributaries and let the achieved density be what it is; the
-envelope guarantees it lands near the target.
+The **priority-flood dominates**, one per erosion iteration. That is worth
+knowing precisely: dithering the routing surface *after* the fill needs a
+second flood to clear the pits the dither creates, which cost 828 ms of the
+900 ms budget. Dithering *before* it is equivalent and needs one.
+
+Fixed iteration counts everywhere — **never iterate until a target is met**,
+which is a data-dependent loop and a budget hazard. The erosion runs a fixed
+15 iterations and the achieved density is whatever the extraction threshold
+yields.
 
 ## Calibration †
 
@@ -208,6 +254,18 @@ special case — Sandhills already exercises that path within Kernel I, which is
 useful validation of the trait's shape before an external kernel needs it.
 
 ## Open questions
+
+**Closed by the derived-network rework (2026-08-12):**
+- *Does negative integration need its own code path?* No. Kept pits give
+  derangement through the identical path; heathland and sandhills measure
+  connectivity 0.05–0.06 against 1.00 for the integrated four.
+- *Horton ratio enforcement — grow to a fixed count or construct top-down?*
+  Neither: the ratios are now an OUTCOME, and the acceptance band was
+  re-based on the corpus measured with the identical extraction and reach
+  definition (Rb 2.14–3.08, Rl 0.92–1.16, Ω 2–3 —
+  `tools/macro_campaign/horton_real.py`). The old 3–5 / 1.5–3 band was only
+  ever achievable by construction.
+
 
 1. **Does negative integration need its own code path?** Heathland's deranged
    network may not be expressible as "the same growth with a dial turned down".

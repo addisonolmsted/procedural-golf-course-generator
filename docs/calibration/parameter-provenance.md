@@ -63,3 +63,31 @@ hardest. Viewer locations given per row.
 | S1 aeolian macro: train λ 1100–1500, mound band 1050–1550, share 0.30, smoothstep continuum | generate.rs | FIT (audit A/λ/relief scatter, 44 real tiles) |
 | S2 aeolian: 14 waves 120–400 m, ±28° spread, amp 0.123·budget clamp [1.0,5.6], continuum coupling 0.40+0.60·w | aeolian.rs | FIT (real mid-band std 3.58 m) |
 
+## S2 derived network (2026-08-12, replaces the authored-growth rows)
+
+The rows for growth steering, wander, parent repulsion, commit rules and
+infill placement are RETIRED — that engine is deleted. Its replacement:
+
+| Parameter | Value | Tier |
+|---|---|---|
+| Roughness band / share | 140–520 m, 0.05 × relief_amp | REVIEW: short end made every channel wiggle identically; long end matches the observed meander scaling |
+| Erosion iterations / clamp | 15 / 0.45 m per step | MANUAL (fixed count is a budget requirement) |
+| Stream-power k | 0.9, × (1.6 − hardness) | REVIEW (fit target: valley depth vs the corpus transects, with E7) |
+| Extraction threshold | 1.2e5 m², × (1 − 0.85·derangement) | FIT to the corpus DENSITY band (2.28–2.75 km/km²); the corpus's own 6e4 cut is not transferable because our tile is rimmed |
+| Derangement | ((0.5 − integration) × 1.6) clamped to 0.9 | FIT: separates connectivity 1.00 (integrated) from 0.05–0.06 (deranged), matching the design intent |
+| External inflow | 20 km² per unit trunk_river dial | REVIEW: two orders above the tile's own 9 km², which is what makes a trunk a trunk |
+| Base drawdown / rim | 4 m over 900 m; 3 borders rimmed | MANUAL (boundary condition; the contract says the trunk exits at base level) |
+| Routing dither | 0.10 m, blurred to ~40 m, faded out above 2% slope | FIT: T-junction share and sinuosity, both against corpus-measured bands |
+
+### Acceptance bands re-based on the corpus (not on the old engine)
+
+| Band | Old (authored) | New (corpus-measured) | Instrument |
+|---|---|---|---|
+| Horton Rb / Rl | 3–5 / 1.5–3 | 1.7–4.5 / 0.5–1.9 | `horton_real.py` (real: Rb 2.14–3.08, Rl 0.92–1.16, Ω 2–3) |
+| T-junction share | ≤ 8% | ≤ 25%, 48 m baseline | `junction_real.py` (real: 4–20% at 48 m, 7–25% at 16 m) |
+| Sandhills channels | exactly zero | present but connectivity < 0.5 | corpus d2c 118 m, density 2.36 km/km² |
+
+Both old bands were achievable only because the previous engine constructed
+those quantities directly; a derived network produces them as outcomes, so
+the bands had to come from the corpus measured the identical way.
+

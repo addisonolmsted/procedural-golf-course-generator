@@ -41,13 +41,32 @@ band statistics S3 will draw from. What is NOT yet fitted: catena curvature
 θ and per-biome relief amplitude (E7 targets); ridge/hillslope FORM beyond
 the profile shape (S3's dictionary carries it).
 
+## How the network is made (changed 2026-08-12)
+
+S2 no longer authors channel paths. It erodes C1's macro surface with a
+light fixed-iteration stream-power carve and EXTRACTS the network from the
+resulting flow field. Three of the properties this guide used to ask you to
+check are now structural rather than tuned, and cannot fail:
+
+- **no loops** — a D8 receiver graph is a forest;
+- **no crossings** — two paths that meet share every cell afterwards;
+- **junctions at terrain convergence** — a confluence is where two valleys
+  actually meet, at the angle they arrive.
+
+What remains worth your eye is everything the flow field does NOT
+guarantee: whether the drainage reads as heading somewhere, whether the
+main river dominates, whether basins behave, and whether the biomes still
+tell apart. Judge those.
+
 ## MUST PASS — by feature family
 
 ### Channels (the network)
 
-1. **Topology.** No channel crosses another, no loops, no parallel twins
-   closer than ~40 m (they merge in reality). Tributaries join at acute
-   angles opening upstream; confluences are Ys, not Xs or Ts.
+1. **Topology.** Crossings and loops are structural now — report any as a
+   bug, do not hunt for them. What CAN still go wrong: parallel twins that
+   no divide separates, and long axis-aligned runs (a D8 artifact of flat
+   ground; the corpus-matched instruments put generated parallel-run
+   fraction at 0.016–0.071 against a real 0.031–0.113).
 2. **Space-filling WITH variance.** No channel-free quarter on an
    integrated biome — but the rhythm must vary: tight dissection in the
    lowlands, broader spacing near divides (real spread is ~50–240 m from
@@ -177,4 +196,5 @@ structure and (later) texture; never through spacing.
 |------|----------|---------|-------|
 | 2026-08-09 | davisolmsted + agent | 3 fixes | "square-ish basins, ridges much too thin" → catena profile rebuilt (finite wall slope, full-hillslope incision, D_FULL 260 m), incision blur 72 m, divides drawn smoothed. Trench anatomy resolved; fine texture correctly deferred to S3. |
 | 2026-08-10 | davisolmsted + agent | 1 finding (open) | "quite a few dead straight and parallel long channels throughout the seeds" → measured vs real corpus (planform instrument): straightness 2–4× real, parallel-run fraction 43–46% vs 3–11% real. Promoted to top open S2 defect (see KNOWN PROVISIONAL); fix direction = per-order meander wander in path growth + convergence pressure replacing sustained separation-floor bands. |
+| 2026-08-12 | davisolmsted + agent | ENGINE REPLACED + 6 review rounds | Authored growth retired for a derived network (docs/stages/stage-02). Review rounds fixed, in order: outward drainage (rimmed boundaries, base drawdown); heathland/sandhills having no channels at all (extraction was gated on erosion, against a corpus that measures d2c 103–118 m in EVERY biome); the river-valley trunk not spanning (channels now carry DISCHARGE, not just Strahler order; external inflow 20 km²; inlet on the far boundary's middle 60%); meander wavelength not scaling with channel size; a self-inflicted regression where the routing dither shattered the flow network into parallel rills; and sandhills' straight sections (deranged biomes keep their closed basins). |
 | 2026-08-09 | davisolmsted + agent | 7 findings, 7 fixes | Session on seeds 1006–1012: overlapping embryos → separation rejection; trunk "ridging" → stratigraphy fades within 120 m of channels (alluvium isn't benched); ridge hairpins → divide chaining blocks the 2-cell-thick return path; angular channels/90° kinks → 2× endpoint-preserving Chaikin on all polylines; T-junctions + last-moment swerves → fingers blend the target's downstream tangent within 220 m and join tangentially; sandhills corduroy → sinuous crests (±55 m wave) + second train rotated 7° (crest merges/splits). |
