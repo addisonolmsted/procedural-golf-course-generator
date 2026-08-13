@@ -129,3 +129,53 @@ land offers vs 60 real courses accept vs generated offers) lives in
 produces unroutable seeds, real courses accept calm fractions of
 0.42–0.85 (not calm maxima), and rv courses invert the position rule
 (high flood-free ground, not the valley floor).
+
+---
+
+## Re-certification 2026-08-12 — the derived-network engine: **PASS**
+
+The authored-growth engine was retired (review: loops and parallel pairs
+survived ten structural patches). S2 now erodes C1's macro surface and
+extracts the network from the flow field. Full D5 battery, 150 seeds ×
+6 biomes:
+
+| biome | d2c p50 [p10–p90] | density | Rb | Rl | Ω≥3 | junc p50 | >80° | crossings | conn | ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Piedmont | 145 [136–157] | 2.21 | 2.3 | 1.3 | 99% | 45° | 22% | 0 | 1.00 | 584 |
+| GreatPlains | 139 [117–155] | 2.31 | 2.5 | 1.3 | 99% | 45° | 23% | 0 | 1.00 | 604 |
+| RiverValley | 126 [113–145] | 2.37 | 2.6 | 1.2 | 86% | 45° | 23% | 0 | 1.00 | 588 |
+| Sandhills | 129 [120–138] | 1.88 | 8.7 | 0.8 | 73% | 33° | 10% | 0 | 0.06 | 246 |
+| Heathland | 123 [115–136] | 1.78 | 9.7 | 0.8 | 73% | 29° | 8% | 0 | 0.05 | 245 |
+| HillCountry | 147 [137–158] | 2.15 | 2.5 | 1.4 | 99% | 45° | 22% | 0 | 1.00 | 556 |
+
+Integrated d2c spread 126–147 m (gate < 30 m apart). **PASS.**
+
+What improved against the retired engine:
+- **Crossings are structural, not policed.** A D8 receiver graph is a
+  forest and merging paths share every downstream cell, so loops and
+  crossings are unreachable — the honest counter reports zero without any
+  trim sweep, mouth-angle enforcement or separation machinery behind it.
+- **All six biomes carry drainage.** Sandhills and heathland used to
+  produce zero channels against a corpus that measures d2c 103–118 m and
+  2.3–2.7 km/km² in EVERY biome; they now sit at 123–129 m with
+  connectivity 0.05–0.06 against 1.00 for the integrated four — the
+  derangement separation is cleaner than the old engine's, and it emerges
+  from kept pits rather than a special code path.
+- **Faster**: 556–604 ms integrated, 245 ms deranged, against 900 ms.
+
+Bands re-based on corpus measurement rather than inherited (see
+`docs/calibration/parameter-provenance.md`): Horton Rb/Rl, T-junction
+share, and the retired "sandhills grows zero channels" rule. Each was
+achievable before only because the old engine constructed the quantity
+directly.
+
+Known residuals, tracked not gating:
+- d2c runs ~20 m sparse of the corpus (123–147 vs 103–118).
+- 600 m sinuosity 1.19–1.23 vs a real 1.06–1.10 on the reach-based
+  instrument; the path-based one (`meander_scaling.py`) shows closer
+  agreement — the two sample different populations.
+- Piedmont's large-river long-wavelength meander is short of real.
+- Rb 8.7–9.7 on the deranged biomes is an artifact of a network of many
+  tiny disconnected basins; it is not meaningful there and is excluded
+  from the gate.
+
