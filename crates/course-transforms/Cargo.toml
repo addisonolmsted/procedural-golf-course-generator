@@ -5,3 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+course-amplify = { workspace = true }
+course-contracts = { workspace = true }
+course-seed = { workspace = true }
+course-skeleton = { workspace = true }
+course-spec = { workspace = true }
+course-world = { workspace = true }
+libm = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+course-primitives = { workspace = true }

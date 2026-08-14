@@ -15,6 +15,7 @@
 //! Stage doc: `docs/stages/stage-04-hydrology.md`.
 
 pub mod basins;
+pub mod hydrology;
 pub mod datum;
 pub mod floodplain;
 pub mod flow;
