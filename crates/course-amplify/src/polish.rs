@@ -96,11 +96,23 @@ pub fn polish(
     // blobs. Instead, raise each unintended pit only enough that at most
     // PIT_CAP_M of depth remains — small hollows stay (S4's water logic
     // owns whether they pond), drainage-blocking holes are gone.
-    for i in 0..amplified2.data.len() {
-        let floor = filled.data[i] - PIT_CAP_M;
-        if amplified2.data[i] < floor {
-            amplified2.data[i] = floor;
-        }
+    //
+    // The raise is applied SMOOTHED: the keep mask lives on 8 m blocks
+    // and the spill on a 4 m grid, so a hard per-cell raise builds a
+    // cliff along the blocky keep boundary — the reviewer's basins with
+    // axis-aligned "staircase" edges. Diffusing the raise over ~20 m
+    // turns those cliffs into shore ramps; pit interiors still rise to
+    // the cap (their raise field is locally constant, and a box filter
+    // preserves constants).
+    let n = amplified2.data.len();
+    let mut raise: Vec<f64> = (0..n)
+        .map(|i| (filled.data[i] - PIT_CAP_M - amplified2.data[i]).max(0.0))
+        .collect();
+    for _ in 0..2 {
+        raise = crate::synth::box_filter(&raise, nx2, 11);
+    }
+    for i in 0..n {
+        amplified2.data[i] += raise[i];
     }
 }
 

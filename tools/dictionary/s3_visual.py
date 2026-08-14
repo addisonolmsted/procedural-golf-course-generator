@@ -27,7 +27,15 @@ sys.path.insert(0, str(ROOT / "tools" / "macro_campaign"))
 from macro_campaign import cgrid, extract_v2  # noqa: E402
 
 BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]
-SEEDS = [48, 7]
+
+
+def seeds_in(dump):
+    """Discover dumped seeds instead of hardcoding them, so each review
+    round can use fresh generated tiles."""
+    out = set()
+    for f in dump.glob("*_*.f32"):
+        out.add(int(f.stem.rsplit("_", 1)[1]))
+    return sorted(out)
 
 
 def hillshade(z, cell, ex=1.6):
@@ -58,12 +66,15 @@ def main():
     out = pathlib.Path(sys.argv[2])
     (out / "ab_pairs").mkdir(parents=True, exist_ok=True)
 
+    seeds = seeds_in(dump)
+    t_seed = seeds[0]
+
     # ---- triptychs ------------------------------------------------------
     for biome in BIOMES:
-        gen = np.frombuffer((dump / f"{biome}_48.f32").read_bytes(), dtype="<f4")
+        gen = np.frombuffer((dump / f"{biome}_{t_seed}.f32").read_bytes(), dtype="<f4")
         n = int(len(gen) ** 0.5)
         gen = gen.reshape(n, n).astype(np.float64)
-        base = np.array(Image.open(dump / f"{biome}_48_base.png").convert("L"))
+        base = np.array(Image.open(dump / f"{biome}_{t_seed}_base.png").convert("L"))
         rz, rcell, rtid = real_tile(biome)
         panels = [
             ("S2 base", np.flipud(base[int(750 / 2):int(2250 / 2), int(750 / 2):int(2250 / 2)])),
@@ -81,11 +92,11 @@ def main():
         print(f"triptych {biome}")
 
     # ---- blind A/B pairs ------------------------------------------------
-    rng = random.Random(20260813)
+    rng = random.Random(20260815)  # bumped per review round: fresh real tiles + crops
     key = {}
     pair_i = 0
     for biome in BIOMES:
-        for seed in SEEDS:
+        for seed in seeds:
             f = dump / f"{biome}_{seed}.f32"
             if not f.exists():
                 continue
