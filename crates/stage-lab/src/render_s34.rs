@@ -11,6 +11,7 @@
 //! red/blue instrument the acceptance work used).
 
 use course_skeleton::kernel::Skeleton;
+use course_world::world::{CORE_MAX_M, CORE_MIN_M};
 use course_transforms::hydrology::Hydrology;
 use course_world::grid::Grid;
 use course_world::math::Vec2;
@@ -89,24 +90,25 @@ pub fn render_s4(h: &Hydrology, sk: &Skeleton, view: S4View, px: u32, overlays: 
             if overlays {
                 for w in &h.water {
                     let c = if w.permanent { WATER_PERM } else { WATER_INTERMITTENT };
-                    fill_poly(&mut img, &w.polygon, c);
-                    course_viz::draw_polyline(&mut img, &w.polygon, opaque(c), 0);
-                    if let Some(last) = w.polygon.last() {
-                        let a = course_viz::to_px(*last, img.width(), img.height());
-                        let b = course_viz::to_px(w.polygon[0], img.width(), img.height());
-                        course_viz::draw_line(&mut img, a, b, opaque(c), 0);
-                    }
+                    let ring = smooth_ring(&w.polygon);
+                    fill_poly(&mut img, &ring, c);
+                    draw_ring(&mut img, &ring, opaque(c));
                 }
                 // The inventory keeps every >=0.25 m pit (S7's repair pass
                 // wants them all); the REVIEW view shows only basins big
                 // enough to matter to routing, else ~250 texture-scale
-                // rings bury the hillshade.
+                // rings bury the hillshade. Degenerate traces (1-cell-wide
+                // flats whose outline encloses ~no area) are dropped too —
+                // they drew as stray one-pixel scratches.
                 for b in &h.basins {
                     if b.area_m2 < 1.0e4 && !b.closed {
                         continue;
                     }
+                    if ring_area(&b.polygon) < 0.4 * b.area_m2 {
+                        continue;
+                    }
                     let c = if b.closed { BASIN_CLOSED } else { BASIN_OPEN };
-                    draw_ring(&mut img, &b.polygon, c);
+                    draw_ring(&mut img, &smooth_ring(&b.polygon), c);
                 }
             }
             course_viz::draw_core_box(&mut img);
@@ -236,4 +238,108 @@ fn fill_poly(img: &mut RgbaImage, poly: &[Vec2], c: [u8; 4]) {
             }
         }
     }
+}
+
+/// Slope/relief stats over the 1.5 km core, computed on an 8 m
+/// block-mean grid — the SAME definition the corpus reference numbers
+/// were measured with (tools: block-mean to 8 m, np.gradient, median;
+/// relief = p99.5 − p0.5), so generated-vs-real is like-for-like.
+pub struct TerrainStats {
+    /// Slope histogram, 24 bins × 1.25 % covering 0–30 % (last bin open).
+    pub hist: [f64; 24],
+    pub median_pct: f64,
+    pub p90_pct: f64,
+    pub relief_m: f64,
+}
+
+/// Corpus means per biome (n=27–44 real tiles each): median slope %,
+/// robust relief m. Provenance: docs/calibration + the 2026-08-14 sweep.
+pub const BIOME_REF: [(&str, f64, f64); 6] = [
+    ("piedmont", 10.81, 62.7),
+    ("great_plains", 5.32, 52.8),
+    ("river_valley", 1.77, 10.0),
+    ("hill_country", 20.45, 92.9),
+    ("heathland", 2.31, 19.9),
+    ("sandhills", 9.61, 44.6),
+];
+
+pub fn terrain_stats(h: &Grid<f64>) -> TerrainStats {
+    let n2 = h.spec.nx as usize;
+    let cell = h.spec.cell_size;
+    let (c0, c1) = ((CORE_MIN_M / cell) as usize, (CORE_MAX_M / cell) as usize);
+    let f = (8.0 / cell).round() as usize; // 4 at 2 m
+    let n8 = (c1 - c0) / f;
+    let mut z8 = vec![0.0f64; n8 * n8];
+    for y in 0..n8 {
+        for x in 0..n8 {
+            let mut s = 0.0;
+            for dy in 0..f {
+                for dx in 0..f {
+                    s += h.data[(c0 + y * f + dy) * n2 + c0 + x * f + dx];
+                }
+            }
+            z8[y * n8 + x] = s / (f * f) as f64;
+        }
+    }
+    let mut slopes = Vec::with_capacity(n8 * n8);
+    let mut hist = [0.0f64; 24];
+    for y in 0..n8 {
+        for x in 0..n8 {
+            let (x0, x1) = (x.saturating_sub(1), (x + 1).min(n8 - 1));
+            let (y0, y1) = (y.saturating_sub(1), (y + 1).min(n8 - 1));
+            let gx = (z8[y * n8 + x1] - z8[y * n8 + x0]) / ((x1 - x0).max(1) as f64 * 8.0);
+            let gy = (z8[y1 * n8 + x] - z8[y0 * n8 + x]) / ((y1 - y0).max(1) as f64 * 8.0);
+            let s = (gx * gx + gy * gy).sqrt() * 100.0;
+            slopes.push(s);
+            hist[((s / 1.25) as usize).min(23)] += 1.0;
+        }
+    }
+    let total: f64 = hist.iter().sum();
+    for b in &mut hist {
+        *b /= total.max(1.0);
+    }
+    slopes.sort_by(|a, b| a.total_cmp(b));
+    let q = |p: f64| slopes[((slopes.len() - 1) as f64 * p) as usize];
+    let mut zs = z8;
+    zs.sort_by(|a, b| a.total_cmp(b));
+    let zq = |p: f64| zs[((zs.len() - 1) as f64 * p) as usize];
+    TerrainStats {
+        hist,
+        median_pct: q(0.5),
+        p90_pct: q(0.9),
+        relief_m: zq(0.995) - zq(0.005),
+    }
+}
+
+/// One round of closed-ring Chaikin corner cutting.
+fn chaikin_closed(pts: &[Vec2]) -> Vec<Vec2> {
+    let n = pts.len();
+    let mut out = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        out.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+        out.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+    }
+    out
+}
+
+/// Display polygon: two Chaikin rounds knock the 8 m staircase off the
+/// traced outlines without moving them more than ~4 m.
+pub fn smooth_ring(pts: &[Vec2]) -> Vec<Vec2> {
+    if pts.len() < 3 {
+        return pts.to_vec();
+    }
+    chaikin_closed(&chaikin_closed(pts))
+}
+
+/// Shoelace area — degenerate traces (a 1-cell-wide flat walks out and
+/// back, enclosing ~nothing) are dropped from the overlay by comparing
+/// this against the component''s cell area.
+pub fn ring_area(pts: &[Vec2]) -> f64 {
+    let mut a = 0.0;
+    for i in 0..pts.len() {
+        let (p, q) = (pts[i], pts[(i + 1) % pts.len()]);
+        a += p.x * q.y - q.x * p.y;
+    }
+    a.abs() * 0.5
 }

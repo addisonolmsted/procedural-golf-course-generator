@@ -19,7 +19,8 @@ use course_spec::v2::{SiteSpec, SpecOverridesV2};
 use eframe::egui;
 use stage_lab::render_s2::{render_s2, S2View, S2_VIEWS};
 use stage_lab::render_s34::{
-    render_s3_delta, render_s3_pair, render_s4, S3View, S4View, S3_VIEWS, S4_VIEWS,
+    render_s3_delta, render_s3_pair, render_s4, terrain_stats, S3View, S4View, TerrainStats,
+    BIOME_REF, S3_VIEWS, S4_VIEWS,
 };
 use stage_lab::render_v2::{render_c1, C1View, C1_VIEWS};
 
@@ -116,6 +117,8 @@ struct Lab {
     s4_tex_accum: Option<egui::TextureHandle>,
     s4_tex_agree: Option<egui::TextureHandle>,
     s4_rows: Vec<String>,
+    s3_stats: Option<TerrainStats>,
+    s4_stats: Option<TerrainStats>,
 }
 
 impl Default for Lab {
@@ -150,8 +153,61 @@ impl Default for Lab {
             s4_tex_accum: None,
             s4_tex_agree: None,
             s4_rows: Vec::new(),
+            s3_stats: None,
+            s4_stats: None,
         }
     }
+}
+
+/// Histogram of core slope + relief, with the REAL corpus mean for this
+/// archetype beside the generated numbers (same metric definitions).
+fn draw_stats_panel(ui: &mut egui::Ui, stats: &TerrainStats, biome_key: &str) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().min(640.0), 64.0),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 2.0, egui::Color32::from_rgb(28, 28, 32));
+    let peak = stats.hist.iter().cloned().fold(1e-9, f64::max);
+    let bw = rect.width() / stats.hist.len() as f32;
+    for (i, &v) in stats.hist.iter().enumerate() {
+        let hgt = (v / peak) as f32 * (rect.height() - 14.0);
+        let x0 = rect.left() + i as f32 * bw;
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x0 + 0.5, rect.bottom() - 12.0 - hgt),
+                egui::pos2(x0 + bw - 0.5, rect.bottom() - 12.0),
+            ),
+            0.0,
+            egui::Color32::from_rgb(110, 160, 235),
+        );
+    }
+    // reference median as a vertical line on the same 0–30 % axis
+    if let Some(&(_, ref_slope, _)) = BIOME_REF.iter().find(|(k, _, _)| *k == biome_key) {
+        let x = rect.left() + (ref_slope / 30.0).min(1.0) as f32 * rect.width();
+        painter.line_segment(
+            [egui::pos2(x, rect.top() + 2.0), egui::pos2(x, rect.bottom() - 12.0)],
+            egui::Stroke::new(1.5, egui::Color32::from_rgb(235, 170, 60)),
+        );
+    }
+    for (t, fx) in [("0%", 0.0f32), ("15%", 0.5), ("30%", 1.0)] {
+        painter.text(
+            egui::pos2(rect.left() + fx * (rect.width() - 18.0), rect.bottom() - 11.0),
+            egui::Align2::LEFT_TOP,
+            t,
+            egui::FontId::proportional(9.0),
+            egui::Color32::GRAY,
+        );
+    }
+    let reference = BIOME_REF
+        .iter()
+        .find(|(k, _, _)| *k == biome_key)
+        .map(|&(_, s, r)| format!("   ·   REAL {biome_key} mean: slope {s:.1}%, relief {r:.0} m"))
+        .unwrap_or_default();
+    ui.label(format!(
+        "core slope: median {:.1}%  p90 {:.1}%   ·   relief {:.0} m{}",
+        stats.median_pct, stats.p90_pct, stats.relief_m, reference
+    ));
 }
 
 fn load_tex(ctx: &egui::Context, name: &str, img: &image::RgbaImage) -> egui::TextureHandle {
@@ -330,6 +386,7 @@ impl Lab {
         let sk = course_skeleton::generate(&spec, &c1, &id);
         let dict = self.dictionary();
         let amp = course_amplify::generate(&spec, &sk, dict, &id);
+        self.s3_stats = Some(terrain_stats(&amp.height));
         let (base_img, amp_img) = render_s3_pair(&sk.height, &amp.height, IMG_PX);
         let delta_img = render_s3_delta(&sk.height, &amp.height, IMG_PX);
         self.s3_tex_base = Some(load_tex(ctx, "s3base", &base_img));
@@ -360,6 +417,7 @@ impl Lab {
             &id,
             &course_transforms::hydrology::DEFAULT_TRANSFORMS,
         );
+        self.s4_stats = Some(terrain_stats(&h.height));
         for (view, slot) in [
             (S4View::Water, 0),
             (S4View::Accum, 1),
@@ -693,7 +751,7 @@ impl eframe::App for Lab {
                     };
                     if let Some(tex) = face {
                         let avail = ui.available_size();
-                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        let side = avail.x.min(avail.y - 130.0).max(64.0);
                         ui.image((tex.id(), egui::vec2(side, side)));
                     }
                     if self.s3_view == S3View::Amplified {
@@ -702,6 +760,9 @@ impl eframe::App for Lab {
                         } else {
                             "showing: S3 AMPLIFIED"
                         });
+                    }
+                    if let (Some(stats), Some(spec)) = (&self.s3_stats, &self.v2_spec) {
+                        draw_stats_panel(ui, stats, spec.biome.key());
                     }
                 }
                 Tab::S4 => {
@@ -720,8 +781,11 @@ impl eframe::App for Lab {
                     };
                     if let Some(tex) = tex {
                         let avail = ui.available_size();
-                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        let side = avail.x.min(avail.y - 130.0).max(64.0);
                         ui.image((tex.id(), egui::vec2(side, side)));
+                    }
+                    if let (Some(stats), Some(spec)) = (&self.s4_stats, &self.v2_spec) {
+                        draw_stats_panel(ui, stats, spec.biome.key());
                     }
                 }
             }

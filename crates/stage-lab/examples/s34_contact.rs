@@ -7,7 +7,9 @@
 use course_contracts::biome::BiomeId;
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
-use stage_lab::render_s34::{render_s3_delta, render_s3_pair, render_s4, S4View};
+use stage_lab::render_s34::{
+    render_s3_delta, render_s3_pair, render_s4, terrain_stats, S4View, BIOME_REF,
+};
 
 fn main() {
     let out = std::path::Path::new("crates/stage-lab/out/s34_preview");
@@ -48,11 +50,20 @@ fn main() {
         render_s4(&h, &sk, S4View::Agreement, 900, true)
             .save(out.join(format!("{key}_agree.png")))
             .unwrap();
+        let st = terrain_stats(&h.height);
+        let reference = BIOME_REF
+            .iter()
+            .find(|(k, _, _)| *k == spec.biome.key())
+            .map(|&(_, s, r)| format!("real: slope {s:.1}% relief {r:.0} m"))
+            .unwrap_or_default();
         println!(
-            "{key}: agree {:.2}, {} water, {} basins",
+            "{key}: agree {:.2}, {} water, {} basins | slope med {:.1}% p90 {:.1}% relief {:.0} m | {reference}",
             h.skeleton_agreement,
             h.water.len(),
-            h.basins.len()
+            h.basins.len(),
+            st.median_pct,
+            st.p90_pct,
+            st.relief_m
         );
     }
 }
