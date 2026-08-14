@@ -48,7 +48,7 @@ CAP = 16              # patches per bucket (size budget: ~2 KB each)
 PER_TILE_CAP = 3      # no single tile floods a bucket
 NCC_MAX = 0.92
 CLEAN_MIN = 0.85
-RECT_MAX = 0.45       # axis-aligned gradient-mass fraction above this = berm
+RECT_MAX = 0.22       # axis-aligned gradient-mass fraction above this = berm
 DIVERSITY_MIN = 5     # distinct source tiles per bucket, else borrow
 EDGE_BINS = (4, 3, 3, 3)   # slope, tpi, relief_pos, logdist
 BIOMES = ["piedmont", "sandhills", "great_plains", "river_valley",
@@ -95,15 +95,20 @@ def cond_vec(cond8, y8, x8, w8):
 
 
 def rect_frac(p):
-    """Axis-aligned gradient-mass fraction — the berm detector."""
+    """Stripe detector v2: max orientation-bin share of gradient mass, ANY
+    direction. v1 checked only the 0/90 axes and the S3 first-light render
+    was full of 30-60 degree plow-row patches that had sailed through."""
     gy, gx = np.gradient(p)
     mag = np.hypot(gx, gy)
     tot = float(mag.sum())
     if tot < 1e-9:
         return 0.0
     ang = np.mod(np.degrees(np.arctan2(gy, gx)), 180.0)
-    near_axis = (ang < 10.0) | (ang > 170.0) | (np.abs(ang - 90.0) < 10.0)
-    return float(mag[near_axis].sum() / tot)
+    bins = (np.floor(ang / 15.0).astype(int) % 12).ravel()
+    conc = np.bincount(bins, weights=mag.ravel(), minlength=12) / tot
+    # stripes put mass in one bin AND its opposite-gradient twin: a single
+    # 15-degree bin holding >30% of all gradient mass is not natural ground
+    return float(conc.max())
 
 
 def radial_power(p, nbins=16):

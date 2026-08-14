@@ -717,6 +717,14 @@ name = "course-amplify"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "course-contracts",
+ "course-primitives",
+ "course-seed",
+ "course-skeleton",
+ "course-spec",
+ "course-world",
+ "image",
+ "libm",
  "serde",
  "serde_json",
 ]
