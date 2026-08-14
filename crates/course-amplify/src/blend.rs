@@ -23,8 +23,17 @@ pub fn taper(dist_m: f64) -> f64 {
 
 /// base (2 m) + taper·(mid residual upsampled from 8 m + fine residual).
 /// `dist8` is the skeleton's flow-distance plane (8 m).
+///
+/// AWAY from channels, the base's own sub-64 m content is replaced by the
+/// dictionary's: the carved surface carries D8-staircase rills below the
+/// extraction threshold (flow on an 8-direction grid is quantized to 45°
+/// steps), and the first S3 renders were full of diagonal corduroy that
+/// turned out to be the BASE, not the patches. That band belongs to the
+/// dictionary by the band-ownership rule anyway. Within the taper zone the
+/// exact carved profile is kept — channel geometry is S2's word.
 pub fn assemble(
     base2: &Grid<f64>,
+    base2_lp64: &[f64],
     mid8: &[f64],
     fine2: &[f64],
     dist8: &Grid<f64>,
@@ -36,6 +45,10 @@ pub fn assemble(
             let p = base2.spec.world_of(x as u32, y as u32);
             let d = dist8.bilinear(p);
             let w = taper(d);
+            // blend raw->smoothed base with the same ramp the texture uses
+            let s = (w - TAPER_FLOOR) / (1.0 - TAPER_FLOOR);
+            let i2 = y * nx2 + x;
+            out.data[i2] = base2.data[i2] * (1.0 - s) + base2_lp64[i2] * s;
             // mid residual lives on the 8 m grid: bilinear via world coords
             let m = {
                 let g8 = dist8.spec; // same 8 m spec as the mid plane
@@ -50,7 +63,7 @@ pub fn assemble(
                 a * (1.0 - ty) + b * ty
             };
             let f = fine2[y * nx2 + x];
-            out.data[y * nx2 + x] += w * (m + f);
+            out.data[i2] += w * (m + f);
         }
     }
     out

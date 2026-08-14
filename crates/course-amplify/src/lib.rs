@@ -34,6 +34,9 @@ use dictionary::Dictionary;
 use synth::Band;
 
 /// S3's output: the amplified 2 m surface plus what downstream verifies.
+/// Max height change allowed on channel-centreline cells.
+pub const CHANNEL_TOL_M: f64 = 0.35;
+
 pub struct Amplified {
     pub height: Grid<f64>,
     /// Residual band std (clean measure for the discriminant gates).
@@ -96,10 +99,47 @@ pub fn generate(
     let fine_std_m = std_of(&fine2);
 
     let t = std::time::Instant::now();
-    let mut height = blend::assemble(&sk.height, &mid8, &fine2, &sk.flow_distance);
+    // <64 m lowpass of the base for the away-from-channel blend
+    let base_lp64 = {
+        let sigma = conditioning::SIGMA_PER_L * 64.0 / 2.0;
+        let box_w = ((sigma * 1.153) as usize * 2 + 1).max(3);
+        let mut lp = sk.height.data.clone();
+        for _ in 0..3 {
+            lp = synth::box_filter(&lp, n2, box_w);
+        }
+        lp
+    };
+    let mut height = blend::assemble(&sk.height, &base_lp64, &mid8, &fine2, &sk.flow_distance);
     lap!("blend", t);
     let t = std::time::Instant::now();
     polish::polish(&mut height, &base8, &sk.embryos);
+    // CHANNEL RESTORE: texture can dam a shallow reach, and polish then
+    // raises the bed upstream of the dam (measured worst case 1.63 m).
+    // The channel profile is S2's word: centreline cells clamp back to
+    // within CHANNEL_TOL_M of the carved bed. Any residual ±wobble on
+    // near-flat reaches is S4's to adjudicate — it re-routes the final
+    // surface anyway.
+    let n8 = sk.flow_distance.spec.nx as usize;
+    for y8 in 0..n8 {
+        for x8 in 0..n8 {
+            if sk.flow_distance.data[y8 * n8 + x8] > 0.0 {
+                continue;
+            }
+            let p8 = sk.flow_distance.spec.world_of(x8 as u32, y8 as u32);
+            // the 2 m cells covering this 8 m channel cell
+            let cx = (p8.x / 2.0) as usize;
+            let cy = (p8.y / 2.0) as usize;
+            for dy in 0..4usize {
+                for dx in 0..4usize {
+                    let (x2, y2) = ((cx + dx).min(n2 - 1), (cy + dy).min(n2 - 1));
+                    let i2 = y2 * n2 + x2;
+                    let base = sk.height.data[i2];
+                    let dz = height.data[i2] - base;
+                    height.data[i2] = base + dz.clamp(-CHANNEL_TOL_M, CHANNEL_TOL_M);
+                }
+            }
+        }
+    }
     lap!("polish", t);
     lap!("TOTAL", t_all);
 

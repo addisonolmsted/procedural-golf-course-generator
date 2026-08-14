@@ -1,21 +1,21 @@
 # F2 dictionary build report
 
-asset: `assets/dictionary_v2.bin` — 45.2 MB, fingerprint `sha256:1e6d32de3…`
+asset: `assets/dictionary_v2.bin` — 44.4 MB, fingerprint `sha256:afcb21ee4…`
 
 | biome | level | candidates | clean-rej | rect-rej | dup-rej | kept | buckets filled | <5-tile buckets (borrowed) |
 |---|---|---|---|---|---|---|---|---|
-| piedmont | mid | 12167 | 1278 | 900 | 2 | 1658 | 108 | 0 (166 borrowed) |
-| piedmont | fine | 198927 | 23588 | 9461 | 0 | 1728 | 108 | 0 (0 borrowed) |
-| sandhills | mid | 20102 | 13924 | 153 | 0 | 1640 | 108 | 0 (135 borrowed) |
-| sandhills | fine | 328662 | 162754 | 7893 | 1 | 1728 | 108 | 0 (0 borrowed) |
-| great_plains | mid | 16399 | 11626 | 737 | 0 | 1541 | 103 | 0 (268 borrowed) |
-| great_plains | fine | 268119 | 160090 | 10397 | 0 | 1716 | 108 | 0 (8 borrowed) |
-| river_valley | mid | 14283 | 12431 | 339 | 0 | 1418 | 92 | 0 (776 borrowed) |
-| river_valley | fine | 233523 | 177062 | 4505 | 1 | 1715 | 108 | 0 (8 borrowed) |
-| hill_country | mid | 12167 | 506 | 2845 | 0 | 1601 | 104 | 0 (189 borrowed) |
-| hill_country | fine | 198927 | 14751 | 24022 | 6 | 1716 | 108 | 0 (0 borrowed) |
-| heathland | mid | 16928 | 11952 | 631 | 0 | 1600 | 108 | 0 (146 borrowed) |
-| heathland | fine | 276768 | 159298 | 3523 | 0 | 1728 | 108 | 0 (0 borrowed) |
+| piedmont | mid | 12167 | 1278 | 3620 | 1 | 1623 | 105 | 0 (197 borrowed) |
+| piedmont | fine | 198927 | 23588 | 34806 | 0 | 1728 | 108 | 0 (0 borrowed) |
+| sandhills | mid | 20102 | 13924 | 1026 | 0 | 1633 | 108 | 0 (163 borrowed) |
+| sandhills | fine | 328662 | 162754 | 40191 | 0 | 1728 | 108 | 0 (0 borrowed) |
+| great_plains | mid | 16399 | 11626 | 2108 | 0 | 1480 | 102 | 0 (342 borrowed) |
+| great_plains | fine | 268119 | 160090 | 31932 | 0 | 1717 | 108 | 0 (20 borrowed) |
+| river_valley | mid | 14283 | 12431 | 823 | 0 | 1292 | 84 | 0 (798 borrowed) |
+| river_valley | fine | 233523 | 177062 | 9861 | 0 | 1714 | 108 | 0 (13 borrowed) |
+| hill_country | mid | 12167 | 506 | 6424 | 0 | 1540 | 100 | 0 (224 borrowed) |
+| hill_country | fine | 198927 | 14751 | 62507 | 2 | 1718 | 108 | 0 (6 borrowed) |
+| heathland | mid | 16928 | 11952 | 1578 | 0 | 1536 | 107 | 0 (170 borrowed) |
+| heathland | fine | 276768 | 159298 | 12440 | 0 | 1728 | 108 | 0 (0 borrowed) |
 
 held-out tiles (never harvested — F3's QA set):
 
