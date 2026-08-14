@@ -1,6 +1,9 @@
 //! stage-lab — the per-stage pipeline viewer. One tab per built v2 stage:
 //! S0 spec table, C1 (S1 predisposition fields) + gallery, S2 (skeleton)
-//! + gallery. Regenerates in-process (S2 is the slowest at ~150 ms).
+//! + gallery, S3 (amplify: B-key base/amplified flip + delta), S4 (hydro:
+//! water/basins, derived flow, S2-vs-derived agreement). S0–S2 regenerate
+//! in ~150 ms; S3/S4 run the full chain (~1 s) and cache every view's
+//! texture, so view switching and the B flip are instant.
 //!
 //!   cargo run -p stage-lab --release
 //!
@@ -15,6 +18,9 @@ use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
 use eframe::egui;
 use stage_lab::render_s2::{render_s2, S2View, S2_VIEWS};
+use stage_lab::render_s34::{
+    render_s3_delta, render_s3_pair, render_s4, S3View, S4View, S3_VIEWS, S4_VIEWS,
+};
 use stage_lab::render_v2::{render_c1, C1View, C1_VIEWS};
 
 const IMG_PX: u32 = 900;
@@ -41,14 +47,18 @@ enum Tab {
     C1Gallery,
     S2,
     S2Gallery,
+    S3,
+    S4,
 }
 
-const TABS: [(Tab, &str); 5] = [
+const TABS: [(Tab, &str); 7] = [
     (Tab::SpecV2, "0 Spec"),
     (Tab::C1, "1 C1 (S1)"),
     (Tab::C1Gallery, "C1 gallery"),
     (Tab::S2, "2 S2 (skeleton)"),
     (Tab::S2Gallery, "S2 gallery"),
+    (Tab::S3, "3 Amplify"),
+    (Tab::S4, "4 Hydro"),
 ];
 
 fn class_label(w: ClassV2) -> &'static str {
@@ -94,6 +104,18 @@ struct Lab {
     s2_overlays: bool,
     s2_tex: Option<egui::TextureHandle>,
     s2_thumbs: Vec<S2Thumb>,
+    dict: Option<course_amplify::dictionary::Dictionary>,
+    s3_view: S3View,
+    s3_show_base: bool,
+    s3_tex_base: Option<egui::TextureHandle>,
+    s3_tex_amp: Option<egui::TextureHandle>,
+    s3_tex_delta: Option<egui::TextureHandle>,
+    s4_view: S4View,
+    s4_overlays: bool,
+    s4_tex_water: Option<egui::TextureHandle>,
+    s4_tex_accum: Option<egui::TextureHandle>,
+    s4_tex_agree: Option<egui::TextureHandle>,
+    s4_rows: Vec<String>,
 }
 
 impl Default for Lab {
@@ -116,6 +138,18 @@ impl Default for Lab {
             s2_overlays: true,
             s2_tex: None,
             s2_thumbs: Vec::new(),
+            dict: None,
+            s3_view: S3View::Amplified,
+            s3_show_base: false,
+            s3_tex_base: None,
+            s3_tex_amp: None,
+            s3_tex_delta: None,
+            s4_view: S4View::Water,
+            s4_overlays: true,
+            s4_tex_water: None,
+            s4_tex_accum: None,
+            s4_tex_agree: None,
+            s4_rows: Vec::new(),
         }
     }
 }
@@ -134,8 +168,23 @@ impl Lab {
             Tab::C1Gallery => self.regen_c1_gallery(ctx),
             Tab::S2 => self.regen_s2(ctx),
             Tab::S2Gallery => self.regen_s2_gallery(ctx),
+            Tab::S3 => self.regen_s3(ctx),
+            Tab::S4 => self.regen_s4(ctx),
         }
         self.dirty = false;
+    }
+
+    fn dictionary(&mut self) -> &course_amplify::dictionary::Dictionary {
+        if self.dict.is_none() {
+            let d = ["assets/dictionary_v2.bin", "../../assets/dictionary_v2.bin"]
+                .iter()
+                .find_map(|p| {
+                    course_amplify::dictionary::Dictionary::load(std::path::Path::new(p)).ok()
+                })
+                .expect("dictionary_v2.bin not found — run from the workspace root");
+            self.dict = Some(d);
+        }
+        self.dict.as_ref().unwrap()
     }
 
     fn v2_case(&self, seed: u64, forced_class: Option<ClassV2>) -> (SiteSpec, PrimitiveField) {
@@ -274,6 +323,90 @@ impl Lab {
         self.v2_spec = Some(spec);
     }
 
+    fn regen_s3(&mut self, ctx: &egui::Context) {
+        let t0 = std::time::Instant::now();
+        let (spec, c1) = self.v2_case(self.seed, None);
+        let id = RunIdentity::from_seed(self.seed);
+        let sk = course_skeleton::generate(&spec, &c1, &id);
+        let dict = self.dictionary();
+        let amp = course_amplify::generate(&spec, &sk, dict, &id);
+        let (base_img, amp_img) = render_s3_pair(&sk.height, &amp.height, IMG_PX);
+        let delta_img = render_s3_delta(&sk.height, &amp.height, IMG_PX);
+        self.s3_tex_base = Some(load_tex(ctx, "s3base", &base_img));
+        self.s3_tex_amp = Some(load_tex(ctx, "s3amp", &amp_img));
+        self.s3_tex_delta = Some(load_tex(ctx, "s3delta", &delta_img));
+        self.stats = format!(
+            "S3 · seed {} · {} · mid σ {:.2} m · fine σ {:.2} m · {} ms (chain)",
+            self.seed,
+            spec.biome.key(),
+            amp.mid_std_m,
+            amp.fine_std_m,
+            t0.elapsed().as_millis()
+        );
+        self.v2_spec = Some(spec);
+    }
+
+    fn regen_s4(&mut self, ctx: &egui::Context) {
+        let t0 = std::time::Instant::now();
+        let (spec, c1) = self.v2_case(self.seed, None);
+        let id = RunIdentity::from_seed(self.seed);
+        let sk = course_skeleton::generate(&spec, &c1, &id);
+        let dict = self.dictionary();
+        let amp = course_amplify::generate(&spec, &sk, dict, &id);
+        let h = course_transforms::hydrology::generate(
+            &spec,
+            &sk,
+            &amp,
+            &id,
+            &course_transforms::hydrology::DEFAULT_TRANSFORMS,
+        );
+        for (view, slot) in [
+            (S4View::Water, 0),
+            (S4View::Accum, 1),
+            (S4View::Agreement, 2),
+        ] {
+            let img = render_s4(&h, &sk, view, IMG_PX, self.s4_overlays);
+            let tex = Some(load_tex(ctx, &format!("s4-{slot}"), &img));
+            match view {
+                S4View::Water => self.s4_tex_water = tex,
+                S4View::Accum => self.s4_tex_accum = tex,
+                S4View::Agreement => self.s4_tex_agree = tex,
+            }
+        }
+        self.s4_rows.clear();
+        for w in &h.water {
+            self.s4_rows.push(format!(
+                "water  {:9.1} m  {:?}{}",
+                w.surface_m,
+                w.origin,
+                if w.permanent { "" } else { " (intermittent)" }
+            ));
+        }
+        for b in h.basins.iter().take(20) {
+            self.s4_rows.push(format!(
+                "basin  {:6.1} ha  low {:7.1} m  {}",
+                b.area_m2 / 1e4,
+                b.lowest_m,
+                if b.closed { "CLOSED" } else { "open" }
+            ));
+        }
+        if h.basins.len() > 20 {
+            self.s4_rows.push(format!("… {} more basins", h.basins.len() - 20));
+        }
+        self.stats = format!(
+            "S4 · seed {} · {} · agree {:.2} · {} water bodies · {} basins ({} closed) · {:?} · {} ms (chain)",
+            self.seed,
+            spec.biome.key(),
+            h.skeleton_agreement,
+            h.water.len(),
+            h.basins.len(),
+            h.basins.iter().filter(|b| b.closed).count(),
+            h.applied,
+            t0.elapsed().as_millis()
+        );
+        self.v2_spec = Some(spec);
+    }
+
     fn regen_s2_gallery(&mut self, ctx: &egui::Context) {
         self.s2_thumbs.clear();
         // Grouped by biome: 3 seeds per biome, biome forced so every row
@@ -375,6 +508,30 @@ impl eframe::App for Lab {
                             self.dirty = true;
                         }
                     }
+                    if self.tab == Tab::S3 {
+                        for (v, label) in S3_VIEWS {
+                            if ui.selectable_label(self.s3_view == v, label).clicked() {
+                                self.s3_view = v; // textures cached — no regen
+                            }
+                        }
+                        ui.checkbox(&mut self.s3_show_base, "show base [B]");
+                    }
+                    if self.tab == Tab::S4 {
+                        for (v, label) in S4_VIEWS {
+                            if ui.selectable_label(self.s4_view == v, label).clicked() {
+                                self.s4_view = v; // textures cached — no regen
+                            }
+                        }
+                        if ui.checkbox(&mut self.s4_overlays, "overlays").changed() {
+                            self.dirty = true;
+                        }
+                        if !self.s4_rows.is_empty() {
+                            ui.separator();
+                            for row in &self.s4_rows {
+                                ui.monospace(row.as_str());
+                            }
+                        }
+                    }
                     if matches!(self.tab, Tab::C1Gallery | Tab::S2Gallery) {
                         ui.horizontal(|ui| {
                             ui.label("base seed");
@@ -399,7 +556,7 @@ impl eframe::App for Lab {
                         self.dirty = true;
                     }
 
-                    if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::S2) {
+                    if matches!(self.tab, Tab::SpecV2 | Tab::C1 | Tab::S2 | Tab::S3 | Tab::S4) {
                         ui.separator();
                         if let Some(spec) = &self.v2_spec {
                             let json = serde_json::to_string_pretty(spec).unwrap_or_default();
@@ -515,6 +672,56 @@ impl eframe::App for Lab {
                         self.forced_biome = Some(biome);
                         self.tab = Tab::S2;
                         self.dirty = true;
+                    }
+                }
+                Tab::S3 => {
+                    if ctx.input(|i| i.key_pressed(egui::Key::B)) {
+                        self.s3_show_base = !self.s3_show_base;
+                    }
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 190, 90),
+                        "S3 is TEXTURE — flip with B: structure must hold still while \
+                         texture appears. Channel geometry moving on the flip is a bug; \
+                         see the taper rule in course-amplify::blend.",
+                    );
+                    let face = if self.s3_view == S3View::Delta {
+                        &self.s3_tex_delta
+                    } else if self.s3_show_base {
+                        &self.s3_tex_base
+                    } else {
+                        &self.s3_tex_amp
+                    };
+                    if let Some(tex) = face {
+                        let avail = ui.available_size();
+                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        ui.image((tex.id(), egui::vec2(side, side)));
+                    }
+                    if self.s3_view == S3View::Amplified {
+                        ui.label(if self.s3_show_base {
+                            "showing: S2 BASE"
+                        } else {
+                            "showing: S3 AMPLIFIED"
+                        });
+                    }
+                }
+                Tab::S4 => {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 190, 90),
+                        "S4 is WATER — judge placement (floodplain ribbons on big \
+                         channels, ponds in intended basins), not texture. In the \
+                         agreement view, magenta = S2 and derived flow coincide; \
+                         isolated red = an S2 swale buried by texture (the tracked \
+                         patch-orientation gap).",
+                    );
+                    let tex = match self.s4_view {
+                        S4View::Water => &self.s4_tex_water,
+                        S4View::Accum => &self.s4_tex_accum,
+                        S4View::Agreement => &self.s4_tex_agree,
+                    };
+                    if let Some(tex) = tex {
+                        let avail = ui.available_size();
+                        let side = avail.x.min(avail.y - 40.0).max(64.0);
+                        ui.image((tex.id(), egui::vec2(side, side)));
                     }
                 }
             }

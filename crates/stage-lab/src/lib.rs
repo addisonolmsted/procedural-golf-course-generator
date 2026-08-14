@@ -2,4 +2,5 @@
 //! examples). The interactive app lives in `main.rs`.
 
 pub mod render_s2;
+pub mod render_s34;
 pub mod render_v2;
