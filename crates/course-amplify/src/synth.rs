@@ -84,6 +84,37 @@ impl Band {
     }
 }
 
+/// Orientation-aligned pasting (G-TERRAIN tracked fix): patches carry a
+/// source grain axis (computed at dictionary load), the conditioning
+/// carries a target axis + coherence, and coherent positions pick the
+/// candidate needing the least rotation, then rotate it the rest of the
+/// way. Gated on DATA (coherence), never on biome.
+const K_CANDIDATES: u64 = 4;
+/// Below this target coherence the position takes the exact legacy path
+/// (salt 0x51 pick, θ = 0.0, original height buffer — bit-identical to
+/// the pre-orientation engine). "Must not force anisotropy where the
+/// biome has none" (stage doc) falls out of the data.
+///
+/// Coherence is measured over COH_WINDOW_MULT× the patch footprint
+/// (~1 km at mid), NOT the footprint itself: any smooth lowpass field
+/// has near-constant gradient direction over one patch (every terrain
+/// type reads 0.81–0.85 there — examples/coh_probe.rs), so footprint
+/// coherence cannot see GRAIN. Grain that justifies rotating a patch is
+/// axis consistency at the kilometre scale, where grainy terrain
+/// (valley/ridge fabric, ~0.5–0.65 median) separates from isotropic
+/// terrain (hummock fields, ~0.3). Thresholds sit in that gap — see
+/// coh_probe for the measured table.
+const COH_LO: f64 = 0.40;
+/// Full rotation strength at/above this coherence; linear ramp between.
+const COH_HI: f64 = 0.75;
+/// Coherence window = this multiple of the patch footprint, centered.
+const COH_WINDOW_MULT: usize = 4;
+/// Fine band rotates too: with per-position precompute the cost is one
+/// 32×32 resample per chosen patch (~10 ms at fine), and the micro
+/// texture following the same fabric as the mid band is what a curving
+/// valley grain reads as up close.
+const ROTATE_FINE: bool = true;
+
 /// Deterministic per-position pick: a pure function of (seed, level,
 /// patch row, patch col, salt) — the position-seeding the stage doc
 /// requires. Layout order can never matter because nothing else feeds in.
@@ -193,6 +224,17 @@ pub fn quilt(
     let chosen = choose_patches(
         dict, level, band, cond, cond_scale, cond_w, &origins, &positions, seed,
     );
+    // Rotated buffers, one optional slot per position (None = θ was
+    // exactly 0.0, gather aliases the patch's own heights — the exact
+    // fast path). Built from the choice table alone, so content is
+    // independent of processing order.
+    let rotated: Vec<Option<Vec<f32>>> = chosen
+        .iter()
+        .map(|c| match c {
+            Some(ch) if ch.theta != 0.0 => Some(rotate_patch(&ch.patch.heights, ch.theta)),
+            _ => None,
+        })
+        .collect();
 
     // per-axis coverage: which patch indices cover a given coordinate
     let coverage: Vec<Vec<u16>> = {
@@ -211,9 +253,11 @@ pub fn quilt(
             let (mut sx, mut sy, mut sw, mut sa) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
             for &pyi in &coverage[gy_c] {
                 for &pxi in &coverage[gx_c] {
-                    let Some((patch, amp)) = chosen[pyi as usize * np + pxi as usize] else {
+                    let idx = pyi as usize * np + pxi as usize;
+                    let Some(ch) = &chosen[idx] else {
                         continue;
                     };
+                    let amp = ch.amp_p50;
                     let y = gy_c - origins[pyi as usize];
                     let x = gx_c - origins[pxi as usize];
                     let i = y * PATCH + x;
@@ -221,7 +265,10 @@ pub fn quilt(
                     let xm = x.saturating_sub(1);
                     let yp = (y + 1).min(PATCH - 1);
                     let ym = y.saturating_sub(1);
-                    let ph = &patch.heights;
+                    let ph: &[f32] = match &rotated[idx] {
+                        Some(r) => r,
+                        None => &ch.patch.heights,
+                    };
                     let pgx = (ph[y * PATCH + xp] as f64 - ph[y * PATCH + xm] as f64)
                         / (xp - xm).max(1) as f64;
                     let pgy = (ph[yp * PATCH + x] as f64 - ph[ym * PATCH + x] as f64)
@@ -293,9 +340,29 @@ pub fn quilt(
     zg.data
 }
 
+/// One selected patch: which, how loud, and how far to rotate it.
+pub struct Chosen<'d> {
+    pub patch: &'d crate::dictionary::Patch,
+    pub amp_p50: f64,
+    /// Rotation applied at paste time, radians CCW in grid-index space;
+    /// exactly 0.0 on the legacy path (aliases the original buffer).
+    pub theta: f64,
+}
+
+/// Shortest signed axis difference a→b, in (−π/2, π/2].
+fn axis_delta(from: f64, to: f64) -> f64 {
+    let mut d = (to - from).rem_euclid(std::f64::consts::PI);
+    if d > std::f64::consts::FRAC_PI_2 {
+        d -= std::f64::consts::PI;
+    }
+    d
+}
+
 /// Fill the per-position choice table. Public for the permuted-order
 /// acceptance test, which passes a shuffled `positions` list and asserts
-/// the final surface is bit-identical.
+/// the final surface is bit-identical. Everything here — including the
+/// rotation angle — is a pure function of (seed, band, position,
+/// conditioning); the canvas never feeds back.
 #[allow(clippy::too_many_arguments)]
 pub fn choose_patches<'d>(
     _dict: &'d Dictionary,
@@ -307,19 +374,97 @@ pub fn choose_patches<'d>(
     origins: &[usize],
     positions: &[(usize, usize)],
     seed: u64,
-) -> Vec<Option<(&'d crate::dictionary::Patch, f64)>> {
+) -> Vec<Option<Chosen<'d>>> {
     let np = origins.len();
-    let mut chosen: Vec<Option<(&crate::dictionary::Patch, f64)>> = vec![None; np * np];
+    let mut chosen: Vec<Option<Chosen>> = Vec::with_capacity(np * np);
+    chosen.resize_with(np * np, || None);
+    let rotate_band = matches!(band, Band::Mid) || ROTATE_FINE;
     for &(pyi, pxi) in positions {
         let (y0, x0) = (origins[pyi], origins[pxi]);
         let key = cond.patch_key(y0 / cond_scale, x0 / cond_scale, cond_w.max(1));
         let want = Dictionary::bucket_of(level, &key);
         let Some(bid) = nearest_bucket(level, want) else { continue };
         let bucket = &level.buckets[&bid];
-        let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
-        chosen[pyi * np + pxi] = Some((&bucket.patches[pi], bucket.amp_p50));
+        let w = cond_w.max(1);
+        let (yc, xc) = (y0 / cond_scale, x0 / cond_scale);
+        // local axis from the footprint (follows a curving valley),
+        // coherence from the big centered window (demands real grain)
+        let (taxis, _) = cond.patch_axis(yc, xc, w);
+        // constant-size window, shifted inward at borders — a clamped
+        // (shrunken) window degenerates toward footprint scale and
+        // reads falsely coherent there
+        let big = (w * COH_WINDOW_MULT).min(cond.nx.min(cond.ny));
+        let (yb, xb) = (
+            (yc + w / 2).saturating_sub(big / 2).min(cond.ny - big),
+            (xc + w / 2).saturating_sub(big / 2).min(cond.nx - big),
+        );
+        let (_, tcoh) = cond.patch_axis(yb, xb, big);
+        let sel = if !rotate_band || tcoh < COH_LO {
+            // legacy path, bit-identical to the pre-orientation engine
+            let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
+            Chosen { patch: &bucket.patches[pi], amp_p50: bucket.amp_p50, theta: 0.0 }
+        } else {
+            // K candidates; cheapest = least rotation of a trustworthy
+            // axis. An isotropic patch's axis means nothing, so its cost
+            // is a flat 45°·(1−coh) — coherent near-aligned patches win.
+            let mut best: Option<(f64, usize)> = None;
+            for k in 0..K_CANDIDATES {
+                let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51 + k);
+                let p = &bucket.patches[pi];
+                let cost = axis_delta(p.axis_rad, taxis).abs() * p.coherence
+                    + std::f64::consts::FRAC_PI_4 * (1.0 - p.coherence);
+                // strict < keeps the EARLIEST candidate on ties — the
+                // deterministic tiebreak
+                if best.map_or(true, |(bc, _)| cost < bc) {
+                    best = Some((cost, pi));
+                }
+            }
+            let pi = best.expect("K_CANDIDATES >= 1").1;
+            let p = &bucket.patches[pi];
+            let ramp = ((tcoh - COH_LO) / (COH_HI - COH_LO)).clamp(0.0, 1.0);
+            Chosen {
+                patch: p,
+                amp_p50: bucket.amp_p50,
+                theta: ramp * axis_delta(p.axis_rad, taxis),
+            }
+        };
+        chosen[pyi * np + pxi] = Some(sel);
     }
     chosen
+}
+
+/// Resample a PATCH×PATCH buffer rotated by `theta` (CCW in grid-index
+/// space) about the patch centre: inverse-rotate each output coordinate,
+/// bilinear-read, edge-clamp. Rotating HEIGHTS once per chosen position
+/// (not gradients per cell) keeps the gather's exact finite-difference
+/// code untouched — the rotated surface's gradients are automatically
+/// consistent, which the Poisson integration requires. The Hann window
+/// stays in the OUTPUT frame (partition of unity is a property of the
+/// output tiling, not the patch content). Corner starvation from the
+/// missing source corners is masked by the window's ~0 edge weight.
+fn rotate_patch(heights: &[f32], theta: f64) -> Vec<f32> {
+    let c = libm::cos(theta);
+    let s = libm::sin(theta);
+    let ctr = (PATCH as f64 - 1.0) * 0.5;
+    let mut out = vec![0.0f32; PATCH * PATCH];
+    let hi = (PATCH - 1) as f64;
+    for y in 0..PATCH {
+        for x in 0..PATCH {
+            let dx = x as f64 - ctr;
+            let dy = y as f64 - ctr;
+            let u = (c * dx + s * dy + ctr).clamp(0.0, hi);
+            let v = (-s * dx + c * dy + ctr).clamp(0.0, hi);
+            let (x0, y0) = (u as usize, v as usize);
+            let (x1, y1) = ((x0 + 1).min(PATCH - 1), (y0 + 1).min(PATCH - 1));
+            let (tx, ty) = (u - x0 as f64, v - y0 as f64);
+            let a = heights[y0 * PATCH + x0] as f64 * (1.0 - tx)
+                + heights[y0 * PATCH + x1] as f64 * tx;
+            let b = heights[y1 * PATCH + x0] as f64 * (1.0 - tx)
+                + heights[y1 * PATCH + x1] as f64 * tx;
+            out[y * PATCH + x] = (a * (1.0 - ty) + b * ty) as f32;
+        }
+    }
+    out
 }
 
 /// Local standard deviation over a w×w window (running-sum box filters).

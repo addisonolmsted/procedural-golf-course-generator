@@ -84,6 +84,41 @@ pub struct Patch {
     /// bucket to satisfy the >=5-source-tile diversity floor — its `cond`
     /// maps to its ORIGIN bucket, not this one.
     pub borrowed: bool,
+    /// Dominant GRAIN axis of this patch's texture, [0, π). Computed at
+    /// load from the stored heights (pure function of them — nothing
+    /// baked, so borrowed patches carry correct axes too).
+    pub axis_rad: f64,
+    /// Doubled-angle resultant length in [0, 1]: 0 = isotropic texture
+    /// (axis meaningless), 1 = perfectly striped.
+    pub coherence: f64,
+}
+
+/// Dominant grain axis + coherence of a PATCH×PATCH height tile.
+///
+/// Structure tensor via doubled angles: each interior cell contributes
+/// its gradient energy at twice the gradient angle, so opposite
+/// gradients reinforce instead of cancelling (axes, not directions —
+/// every mean here is circular by construction). The GRADIENT axis is
+/// PERPENDICULAR to the grain: ridges running along x have gradients
+/// along y. The +π/2 below is that flip — it lives here and only here.
+pub fn patch_axis(heights: &[f32], patch: usize) -> (f64, f64) {
+    let (mut c2, mut s2, mut g2) = (0.0f64, 0.0f64, 0.0f64);
+    for y in 1..patch - 1 {
+        for x in 1..patch - 1 {
+            let gx = (heights[y * patch + x + 1] - heights[y * patch + x - 1]) as f64 * 0.5;
+            let gy = (heights[(y + 1) * patch + x] - heights[(y - 1) * patch + x]) as f64 * 0.5;
+            c2 += gx * gx - gy * gy;
+            s2 += 2.0 * gx * gy;
+            g2 += gx * gx + gy * gy;
+        }
+    }
+    if g2 <= 1e-12 {
+        return (0.0, 0.0);
+    }
+    let grad_axis = 0.5 * libm::atan2(s2, c2);
+    let axis = (grad_axis + std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::PI);
+    let coherence = (c2 * c2 + s2 * s2).sqrt() / g2;
+    (axis, coherence)
 }
 
 pub struct Bucket {
@@ -164,11 +199,14 @@ impl Dictionary {
                         for (i, v) in p.cond.iter().take(4).enumerate() {
                             cond[i] = *v;
                         }
+                        let (axis_rad, coherence) = patch_axis(&heights, header.patch);
                         patches.push(Patch {
                             heights,
                             src_tile: p.src.clone(),
                             cond,
                             borrowed: p.borrowed,
+                            axis_rad,
+                            coherence,
                         });
                     }
                     buckets.insert(

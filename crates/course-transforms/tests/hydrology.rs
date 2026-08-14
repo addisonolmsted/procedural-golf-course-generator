@@ -57,16 +57,16 @@ fn sandhills_identity_pass_no_special_case() {
 
 #[test]
 fn agreement_reported_and_in_expected_band() {
-    // Current honest level ~0.45 on integrated biomes: the major network
-    // agrees (the accumulation image traces the skeleton) but UNALIGNED
-    // mid-band texture buries low-order swales — the same root cause as
-    // the reviewer's river-valley grain observation, queued as the
-    // patch-orientation work in G-TERRAIN calibration. This test is a
-    // REGRESSION floor, not the ≥0.9 gate target; raise it when
-    // orientation-aligned pasting lands.
+    // Orientation-aligned pasting moved the honest level from ~0.45 to
+    // ~0.50 (aligned texture no longer dams ACROSS swales as often; the
+    // remaining gap is texture amplitude sitting ON low-order channels,
+    // an amplitude/taper question, not an orientation one). This is a
+    // REGRESSION floor under the measured level, not the ≥0.9 gate
+    // target — the gate number is settled at G-TERRAIN with the
+    // amplitude calibration.
     let h = run(11, BiomeId::Piedmont);
     assert!(
-        h.skeleton_agreement > 0.35,
+        h.skeleton_agreement > 0.42,
         "agreement {} regressed below the recorded baseline",
         h.skeleton_agreement
     );

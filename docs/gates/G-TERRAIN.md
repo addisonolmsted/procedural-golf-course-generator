@@ -35,3 +35,31 @@ tells, verbatim value:
 Overall reviewer verdict: "the seeds are very well done … the ribbed
 artifacts are priority one to remove, and the rest I believe is
 workable." Ribbed artifacts removed; re-test at the next session.
+
+## Orientation-aligned pasting LANDED 2026-08-14
+
+The tracked patch-orientation fix is in (`course-amplify`): every patch
+carries a load-time grain axis (structure tensor of its own heights),
+the conditioning carries a local target axis (TPI structure tensor —
+lp400's was blinded by the boundary drawdown ramp, and the raw rims had
+to be frame-excluded from the vote, both measured in
+`examples/coh_probe.rs`), and coherent positions pick the
+least-rotation candidate of K=4 then rotate it the rest of the way.
+Gate is kilometre-scale axis coherence (footprint coherence is ~0.83
+everywhere and cannot see grain). Both bands rotate; θ==0 positions take
+the bit-exact legacy path.
+
+Measured effects: S4 skeleton agreement 0.45 → 0.50 (piedmont seed 11;
+aligned texture dams across swales less — the REMAINING gap is texture
+amplitude sitting on low-order channels, an amplitude question, not an
+orientation one). Perf 770 ms of 900. Note for grep-hygiene: the
+"rotation was considered and rejected" line in docs/00-architecture.md
+refers to rotating the WORLD heightmap; patch-frame rotation inside the
+synthesizer is unrelated.
+
+Caveat the next session should know: the current S2 heathland base
+carries real parallel-ridge fabric (tracked ROUGH_FLOOR item), so
+heathland legitimately rotates toward it today; the isotropy gate is
+proven on controlled data in `coherence_gate_responds_to_fabric`
+instead. When the ROUGH_FLOOR fix lands, heathland's rotated share
+should drop on its own — check it then.

@@ -82,6 +82,15 @@ Per cell, the vector that selects a dictionary bucket:
 orientation. Absolute aspect would tie the dictionary to the compass and
 require a bucket per direction.
 
+> **Realized 2026-08-14 as paste-time selection + rotation, not a bucket
+> dim.** The built dictionary keys on the four scalar dims; orientation
+> is handled by matching each position's target grain axis (TPI
+> structure tensor of the base, kilometre-scale coherence gate) against
+> each patch's own measured axis — least-rotation candidate of K=4 wins,
+> then rotates the remainder. A fifth bucket dim would have multiplied
+> bucket count past the harvest's diversity floor. See
+> `course-amplify::synth` and G-TERRAIN.md for the measured behavior.
+
 These are the same conditioning fields
 `tools/dtm_metrics/dtm_metrics/surfaces.py` already computes (`lp_slope`,
 `lp_aspect`, `tpi`, `relief_pos`) — its macro provider is documented as

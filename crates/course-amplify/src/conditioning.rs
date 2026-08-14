@@ -97,6 +97,19 @@ pub struct Conditioning {
     pub relief_pos: Vec<f64>,
     /// metres to the nearest channel (from the skeleton)
     pub dist_m: Vec<f64>,
+    /// Doubled-angle structure-tensor planes of the TPI gradient
+    /// (c2 = gx²−gy², s2 = 2·gx·gy, g2 = gx²+gy²) — summed over a
+    /// footprint they give the local GRAIN axis + coherence. Doubled
+    /// angles make every mean circular by construction (opposite
+    /// gradients reinforce; axes, not directions). TPI, not lp400: a
+    /// broad ramp (the tile-boundary drawdown, a macro tilt) has a
+    /// near-perfectly coherent lp400 gradient but zero relief FABRIC —
+    /// the first build read the construction ramp as strong grain on
+    /// every terrain type. TPI keeps only the 64–400 m fabric, which is
+    /// precisely the band the mid texture must align with.
+    pub c2: Vec<f64>,
+    pub s2: Vec<f64>,
+    pub g2: Vec<f64>,
     pub nx: usize,
     pub ny: usize,
 }
@@ -133,6 +146,30 @@ impl Conditioning {
             .zip(&uni.data)
             .map(|(a, b)| a - b)
             .collect();
+        // structure-tensor planes from the TPI gradient (see struct doc).
+        // The construction frame gets no vote: the boundary rims are a
+        // few SHARP raised rows, and under energy weighting they
+        // dominated every border-touching window (near-1.0 coherence on
+        // every terrain type). Same exclusion S4 applies to its basin
+        // inventory (EDGE_FRAME_M).
+        let frame = (48.0 / cell).ceil() as usize;
+        let mut c2 = vec![0.0f64; nx * ny];
+        let mut s2 = vec![0.0f64; nx * ny];
+        let mut g2 = vec![0.0f64; nx * ny];
+        for y in frame..ny.saturating_sub(frame) {
+            for x in frame..nx.saturating_sub(frame) {
+                let xm = x.saturating_sub(1);
+                let xp = (x + 1).min(nx - 1);
+                let ym = y.saturating_sub(1);
+                let yp = (y + 1).min(ny - 1);
+                let gx = (tpi[y * nx + xp] - tpi[y * nx + xm]) / (((xp - xm) as f64) * cell);
+                let gy = (tpi[yp * nx + x] - tpi[ym * nx + x]) / (((yp - ym) as f64) * cell);
+                let i = y * nx + x;
+                c2[i] = gx * gx - gy * gy;
+                s2[i] = 2.0 * gx * gy;
+                g2[i] = gx * gx + gy * gy;
+            }
+        }
         // rank-normalized relief position (stable sort = deterministic)
         let mut order: Vec<usize> = (0..nx * ny).collect();
         order.sort_by(|&a, &b| lp400.data[a].total_cmp(&lp400.data[b]).then(a.cmp(&b)));
@@ -146,9 +183,35 @@ impl Conditioning {
             tpi,
             relief_pos,
             dist_m: dist_m.to_vec(),
+            c2,
+            s2,
+            g2,
             nx,
             ny,
         }
+    }
+
+    /// Local target GRAIN axis [0, π) + coherence [0, 1] over a patch
+    /// footprint — the doubled-angle sum of the TPI structure tensor.
+    /// The +π/2 is the gradient→grain flip (contours run along the
+    /// grain; the gradient runs across it) — same convention as
+    /// `dictionary::patch_axis`, documented there.
+    pub fn patch_axis(&self, y0: usize, x0: usize, w: usize) -> (f64, f64) {
+        let (mut c2, mut s2, mut g2) = (0.0f64, 0.0f64, 0.0f64);
+        for y in y0..(y0 + w).min(self.ny) {
+            for x in x0..(x0 + w).min(self.nx) {
+                let i = y * self.nx + x;
+                c2 += self.c2[i];
+                s2 += self.s2[i];
+                g2 += self.g2[i];
+            }
+        }
+        if g2 <= 1e-18 {
+            return (0.0, 0.0);
+        }
+        let axis = (0.5 * libm::atan2(s2, c2) + std::f64::consts::FRAC_PI_2)
+            .rem_euclid(std::f64::consts::PI);
+        (axis, (c2 * c2 + s2 * s2).sqrt() / g2)
     }
 
     /// The 4-dim bucket key averaged over a patch footprint — identical to
