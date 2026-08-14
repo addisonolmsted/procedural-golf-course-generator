@@ -44,7 +44,7 @@ fn main() {
             for &x0 in &origins {
                 let yb = (y0 + w / 2).saturating_sub(big / 2).min(n8 - big);
                 let xb = (x0 + w / 2).saturating_sub(big / 2).min(n8 - big);
-                cs.push(cond.patch_axis(yb, xb, big).1);
+                cs.push(cond.fabric_coherence(yb, xb, big).max(cond.channel_strength(y0, x0, w)));
             }
         }
         cs.sort_by(|a, b| a.total_cmp(b));

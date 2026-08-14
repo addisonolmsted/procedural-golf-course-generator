@@ -114,6 +114,11 @@ const COH_WINDOW_MULT: usize = 4;
 /// texture following the same fabric as the mid band is what a curving
 /// valley grain reads as up close.
 const ROTATE_FINE: bool = true;
+/// Rotations smaller than this snap to exactly 0.0 (the alias path). A
+/// ~5° rotation buys no visible alignment but pays the full resampling
+/// cost — and at SMALL angles the resample moiré has its LONGEST, most
+/// visible period.
+const MIN_ROTATE_RAD: f64 = 0.09;
 
 /// Deterministic per-position pick: a pure function of (seed, level,
 /// patch row, patch col, salt) — the position-seeding the stage doc
@@ -387,8 +392,12 @@ pub fn choose_patches<'d>(
         let bucket = &level.buckets[&bid];
         let w = cond_w.max(1);
         let (yc, xc) = (y0 / cond_scale, x0 / cond_scale);
-        // local axis from the footprint (follows a curving valley),
-        // coherence from the big centered window (demands real grain)
+        // Local axis from the footprint (follows a curving valley). The
+        // GATE opens on either of two data signals: coherent TPI fabric
+        // at the kilometre scale, or channel proximity with a
+        // well-defined local channel axis (bottomland grain is
+        // justified by the channel itself — a wide flat floor has no km
+        // fabric to show).
         let (taxis, _) = cond.patch_axis(yc, xc, w);
         // constant-size window, shifted inward at borders — a clamped
         // (shrunken) window degenerates toward footprint scale and
@@ -398,7 +407,9 @@ pub fn choose_patches<'d>(
             (yc + w / 2).saturating_sub(big / 2).min(cond.ny - big),
             (xc + w / 2).saturating_sub(big / 2).min(cond.nx - big),
         );
-        let (_, tcoh) = cond.patch_axis(yb, xb, big);
+        let tcoh = cond
+            .fabric_coherence(yb, xb, big)
+            .max(cond.channel_strength(yc, xc, w));
         let sel = if !rotate_band || tcoh < COH_LO {
             // legacy path, bit-identical to the pre-orientation engine
             let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
@@ -422,10 +433,14 @@ pub fn choose_patches<'d>(
             let pi = best.expect("K_CANDIDATES >= 1").1;
             let p = &bucket.patches[pi];
             let ramp = ((tcoh - COH_LO) / (COH_HI - COH_LO)).clamp(0.0, 1.0);
+            let mut theta = ramp * axis_delta(p.axis_rad, taxis);
+            if theta.abs() < MIN_ROTATE_RAD {
+                theta = 0.0;
+            }
             Chosen {
                 patch: p,
                 amp_p50: bucket.amp_p50,
-                theta: ramp * axis_delta(p.axis_rad, taxis),
+                theta,
             }
         };
         chosen[pyi * np + pxi] = Some(sel);
@@ -434,34 +449,68 @@ pub fn choose_patches<'d>(
 }
 
 /// Resample a PATCH×PATCH buffer rotated by `theta` (CCW in grid-index
-/// space) about the patch centre: inverse-rotate each output coordinate,
-/// bilinear-read, edge-clamp. Rotating HEIGHTS once per chosen position
-/// (not gradients per cell) keeps the gather's exact finite-difference
-/// code untouched — the rotated surface's gradients are automatically
-/// consistent, which the Poisson integration requires. The Hann window
-/// stays in the OUTPUT frame (partition of unity is a property of the
-/// output tiling, not the patch content). Corner starvation from the
-/// missing source corners is masked by the window's ~0 edge weight.
+/// space) about the patch centre: inverse-rotate each output coordinate
+/// and Catmull-Rom-read from the MIRROR-padded patch. Rotating HEIGHTS
+/// once per chosen position (not gradients per cell) keeps the gather's
+/// exact finite-difference code untouched — the rotated surface's
+/// gradients are automatically consistent, which the Poisson
+/// integration requires. The Hann window stays in the OUTPUT frame
+/// (partition of unity is a property of the output tiling, not the
+/// patch content).
+///
+/// Two reviewer-caught artifacts drove this sampler past bilinear:
+/// - Bilinear's blur varies with the fractional offset, and on a
+///   slightly-rotated lattice that offset sweeps periodically in BOTH
+///   axes → a sharp/soft cross-hatch moiré (worst at the small angles
+///   the least-rotation selection favors). Catmull-Rom's response is
+///   far flatter across phases; MIN_ROTATE_RAD kills the rest.
+/// - Edge-CLAMPED out-of-bounds corners smear straight lines along the
+///   rotated frame, which the Poisson solve turned into flat-floored
+///   "basins with straight edges". Mirror reflection continues the
+///   texture statistics instead.
 fn rotate_patch(heights: &[f32], theta: f64) -> Vec<f32> {
     let c = libm::cos(theta);
     let s = libm::sin(theta);
     let ctr = (PATCH as f64 - 1.0) * 0.5;
     let mut out = vec![0.0f32; PATCH * PATCH];
-    let hi = (PATCH - 1) as f64;
+    // mirror-reflect an integer coordinate into [0, PATCH)
+    let mirror = |v: i64| -> usize {
+        let period = 2 * (PATCH as i64 - 1);
+        let m = v.rem_euclid(period);
+        (if m < PATCH as i64 { m } else { period - m }) as usize
+    };
+    // Catmull-Rom weights for fractional position t over taps -1..=2
+    let cr = |t: f64| -> [f64; 4] {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        [
+            -0.5 * t3 + t2 - 0.5 * t,
+            1.5 * t3 - 2.5 * t2 + 1.0,
+            -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+            0.5 * t3 - 0.5 * t2,
+        ]
+    };
     for y in 0..PATCH {
         for x in 0..PATCH {
             let dx = x as f64 - ctr;
             let dy = y as f64 - ctr;
-            let u = (c * dx + s * dy + ctr).clamp(0.0, hi);
-            let v = (-s * dx + c * dy + ctr).clamp(0.0, hi);
-            let (x0, y0) = (u as usize, v as usize);
-            let (x1, y1) = ((x0 + 1).min(PATCH - 1), (y0 + 1).min(PATCH - 1));
-            let (tx, ty) = (u - x0 as f64, v - y0 as f64);
-            let a = heights[y0 * PATCH + x0] as f64 * (1.0 - tx)
-                + heights[y0 * PATCH + x1] as f64 * tx;
-            let b = heights[y1 * PATCH + x0] as f64 * (1.0 - tx)
-                + heights[y1 * PATCH + x1] as f64 * tx;
-            out[y * PATCH + x] = (a * (1.0 - ty) + b * ty) as f32;
+            let u = c * dx + s * dy + ctr;
+            let v = -s * dx + c * dy + ctr;
+            let (uf, vf) = (u.floor(), v.floor());
+            let wx = cr(u - uf);
+            let wy = cr(v - vf);
+            let mut acc = 0.0f64;
+            for (j, wyj) in wy.iter().enumerate() {
+                let yy = mirror(vf as i64 + j as i64 - 1);
+                let row = yy * PATCH;
+                let mut r = 0.0f64;
+                for (i, wxi) in wx.iter().enumerate() {
+                    let xx = mirror(uf as i64 + i as i64 - 1);
+                    r += heights[row + xx] as f64 * wxi;
+                }
+                acc += r * wyj;
+            }
+            out[y * PATCH + x] = acc as f32;
         }
     }
     out

@@ -57,6 +57,25 @@ orientation one). Perf 770 ms of 900. Note for grep-hygiene: the
 refers to rotating the WORLD heightmap; patch-frame rotation inside the
 synthesizer is unrelated.
 
+Reviewer round 2 on the orientation build (same day): three artifacts.
+(1) Cross-hatch "pixelated" moiré — bilinear rotation resampling: its
+blur varies with fractional offset, sweeping periodically in both axes
+on a slightly-rotated lattice, worst at the small angles least-rotation
+selection favors; plus edge-CLAMPED corners smearing straight lines.
+Fixed: Catmull-Rom sampling over mirror-padded patches +
+MIN_ROTATE_RAD snap-to-zero. (2) rv grain still not following the
+trunk — the TPI tensor has no fabric on a flat bottomland, exactly
+where the grain matters; fixed by blending a channel-proximity
+distance-field axis (level sets follow the river) into the target, and
+splitting the gate: km-scale TPI fabric OR channel proximity opens it.
+(3) "Basins with straight edges" — PROVEN NOT ROTATION by a control
+render (flat-pixel fraction 0.082 identical with rotation disabled):
+they are S2's pre-filled base lakes; their floors are legitimately
+near-flat (corpus lake-floor buckets are flat — real lidar lakes are),
+and the straight shorelines are S1 macro-wave planform leaking through.
+Tracked as its own S1/S2 shoreline-planform item; S4 water covers many
+of them in-pipeline.
+
 Caveat the next session should know: the current S2 heathland base
 carries real parallel-ridge fabric (tracked ROUGH_FLOOR item), so
 heathland legitimately rotates toward it today; the isotropy gate is
