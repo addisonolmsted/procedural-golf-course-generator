@@ -45,10 +45,19 @@ pub fn assemble(
             let p = base2.spec.world_of(x as u32, y as u32);
             let d = dist8.bilinear(p);
             let w = taper(d);
-            // blend raw->smoothed base with the same ramp the texture uses
-            let s = (w - TAPER_FLOOR) / (1.0 - TAPER_FLOOR);
+            // The SMOOTHED base is used EVERYWHERE, not just away from
+            // channels. The first blend kept the raw base inside the taper
+            // zone to preserve the carved profile — and the reviewer's
+            // blind A/B caught the consequence immediately: the raw base's
+            // D8 staircase showed as channel-following "straight ribbed
+            // cuts", the single most reliable tell at 83%. The carved
+            // PROFILE survives through two other mechanisms that don't
+            // carry the staircase: valleys are wider than the 64 m cut, and
+            // the channel-restore step re-pins centreline cells after
+            // polish. Bank micro-shape is parametric placeholder anyway
+            // until the transect fit.
             let i2 = y * nx2 + x;
-            out.data[i2] = base2.data[i2] * (1.0 - s) + base2_lp64[i2] * s;
+            out.data[i2] = base2_lp64[i2];
             // mid residual lives on the 8 m grid: bilinear via world coords
             let m = {
                 let g8 = dist8.spec; // same 8 m spec as the mid plane

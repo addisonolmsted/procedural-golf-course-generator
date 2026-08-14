@@ -133,7 +133,11 @@ pub fn generate(
                 for dx in 0..4usize {
                     let (x2, y2) = ((cx + dx).min(n2 - 1), (cy + dy).min(n2 - 1));
                     let i2 = y2 * n2 + x2;
-                    let base = sk.height.data[i2];
+                    // clamp to the SMOOTHED base: pinning to the raw base
+                    // re-drew its D8 staircase as thin stepped lines along
+                    // every channel (the reviewer's ribbed-cut tell, second
+                    // appearance)
+                    let base = base_lp64[i2];
                     let dz = height.data[i2] - base;
                     height.data[i2] = base + dz.clamp(-CHANNEL_TOL_M, CHANNEL_TOL_M);
                 }
