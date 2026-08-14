@@ -60,6 +60,13 @@ fn main() {
             amp.fine_std_m
         );
         let n2 = amp.height.spec.nx as usize;
+        if std::env::var("DUMP_F32").is_ok() {
+            let mut buf = Vec::with_capacity(n2 * n2 * 4);
+            for v in &amp.height.data {
+                buf.extend_from_slice(&(*v as f32).to_le_bytes());
+            }
+            std::fs::write(format!("{out_dir}/{}_{seed}.f32", biome.key()), &buf).unwrap();
+        }
         save(
             &format!("{out_dir}/{}_{seed}_amplified.png", biome.key()),
             n2,

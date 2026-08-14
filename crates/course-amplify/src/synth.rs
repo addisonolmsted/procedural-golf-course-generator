@@ -174,44 +174,73 @@ pub fn quilt(
     let seed = identity.stream_seed();
     let cond_w = PATCH / cond_scale.max(1);
 
-    for (pyi, &y0) in patch_grid(grid_n).iter().enumerate() {
-        for (pxi, &x0) in patch_grid(grid_n).iter().enumerate() {
-            let key = cond.patch_key(y0 / cond_scale, x0 / cond_scale, cond_w.max(1));
-            let want = Dictionary::bucket_of(level, &key);
-            let Some(bid) = nearest_bucket(level, want) else { continue };
-            let bucket = &level.buckets[&bid];
-            let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
-            let patch = &bucket.patches[pi];
-            // patch gradients (per-cell units — F3 rule 1)
-            for y in 0..PATCH {
-                for x in 0..PATCH {
+    // ---- choose every patch, in any order (pure per-position function) --
+    // The choice table is filled in whatever order `positions` arrives —
+    // the permuted-order acceptance test hands it shuffled — and the
+    // result cannot differ because each entry is a pure function of
+    // (seed, band, position). Composition below is GATHER, not scatter:
+    // every output cell sums its ≤4 covering patches in canonical
+    // row-major patch order, so float summation order is fixed regardless
+    // of processing order and the output is bit-identical.
+    let origins = patch_grid(grid_n);
+    let np = origins.len();
+    let mut positions: Vec<(usize, usize)> = Vec::with_capacity(np * np);
+    for pyi in 0..np {
+        for pxi in 0..np {
+            positions.push((pyi, pxi));
+        }
+    }
+    let chosen = choose_patches(
+        dict, level, band, cond, cond_scale, cond_w, &origins, &positions, seed,
+    );
+
+    // per-axis coverage: which patch indices cover a given coordinate
+    let coverage: Vec<Vec<u16>> = {
+        let mut cov = vec![Vec::new(); grid_n];
+        for (pi, &o) in origins.iter().enumerate() {
+            for c in o..(o + PATCH).min(grid_n) {
+                cov[c].push(pi as u16);
+            }
+        }
+        cov
+    };
+
+    for gy_c in 0..grid_n {
+        for gx_c in 0..grid_n {
+            let g = gy_c * grid_n + gx_c;
+            let (mut sx, mut sy, mut sw, mut sa) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for &pyi in &coverage[gy_c] {
+                for &pxi in &coverage[gx_c] {
+                    let Some((patch, amp)) = chosen[pyi as usize * np + pxi as usize] else {
+                        continue;
+                    };
+                    let y = gy_c - origins[pyi as usize];
+                    let x = gx_c - origins[pxi as usize];
                     let i = y * PATCH + x;
                     let xp = (x + 1).min(PATCH - 1);
                     let xm = x.saturating_sub(1);
                     let yp = (y + 1).min(PATCH - 1);
                     let ym = y.saturating_sub(1);
-                    let pgx = (patch.heights[y * PATCH + xp] as f64
-                        - patch.heights[y * PATCH + xm] as f64)
+                    let ph = &patch.heights;
+                    let pgx = (ph[y * PATCH + xp] as f64 - ph[y * PATCH + xm] as f64)
                         / (xp - xm).max(1) as f64;
-                    let pgy = (patch.heights[yp * PATCH + x] as f64
-                        - patch.heights[ym * PATCH + x] as f64)
+                    let pgy = (ph[yp * PATCH + x] as f64 - ph[ym * PATCH + x] as f64)
                         / (yp - ym).max(1) as f64;
-                    let g = (y0 + y) * grid_n + (x0 + x);
                     let w = win[i];
-                    gx[g] += pgx * w;
-                    gy[g] += pgy * w;
-                    wsum[g] += w;
-                    amp_t[g] += bucket.amp_p50 * w;
+                    sx += pgx * w;
+                    sy += pgy * w;
+                    sw += w;
+                    sa += amp * w;
                 }
             }
+            let w = sw.max(1e-9);
+            gx[g] = sx / w;
+            gy[g] = sy / w;
+            amp_t[g] = sa / w;
+            wsum[g] = sw;
         }
     }
-    for i in 0..n {
-        let w = wsum[i].max(1e-9);
-        gx[i] /= w;
-        gy[i] /= w;
-        amp_t[i] /= w;
-    }
+    let _ = &wsum;
 
     // ---- Poisson integrate (cell units, fixed multigrid cycles) --------
     let mut z = poisson_multigrid(&gx, &gy, grid_n);
@@ -262,6 +291,35 @@ pub fn quilt(
         zg.data[i] *= gain;
     }
     zg.data
+}
+
+/// Fill the per-position choice table. Public for the permuted-order
+/// acceptance test, which passes a shuffled `positions` list and asserts
+/// the final surface is bit-identical.
+#[allow(clippy::too_many_arguments)]
+pub fn choose_patches<'d>(
+    _dict: &'d Dictionary,
+    level: &'d crate::dictionary::Level,
+    band: Band,
+    cond: &Conditioning,
+    cond_scale: usize,
+    cond_w: usize,
+    origins: &[usize],
+    positions: &[(usize, usize)],
+    seed: u64,
+) -> Vec<Option<(&'d crate::dictionary::Patch, f64)>> {
+    let np = origins.len();
+    let mut chosen: Vec<Option<(&crate::dictionary::Patch, f64)>> = vec![None; np * np];
+    for &(pyi, pxi) in positions {
+        let (y0, x0) = (origins[pyi], origins[pxi]);
+        let key = cond.patch_key(y0 / cond_scale, x0 / cond_scale, cond_w.max(1));
+        let want = Dictionary::bucket_of(level, &key);
+        let Some(bid) = nearest_bucket(level, want) else { continue };
+        let bucket = &level.buckets[&bid];
+        let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
+        chosen[pyi * np + pxi] = Some((&bucket.patches[pi], bucket.amp_p50));
+    }
+    chosen
 }
 
 /// Local standard deviation over a w×w window (running-sum box filters).
