@@ -646,9 +646,24 @@ fn v_cycle(z: &mut [f64], rhs: &[f64], n: usize) {
     }
     let mut e_c = vec![0.0f64; m * m];
     v_cycle(&mut e_c, &res_c, m);
+    // BILINEAR prolongation (cell-centered 2:1 → weights 0.75/0.25 per
+    // axis). The first build injected the coarse correction as constant
+    // 2×2 blocks (nearest), and with fixed few V-cycles the block error
+    // survives every level: axis-aligned squares at dyadic scales — the
+    // reviewer's "cross-hatch pixelated" texture AND the square basins,
+    // worst on the highest-amplitude terrain. Two post-sweeps cannot
+    // smooth an 8-or-16-cell block; interpolating the correction never
+    // creates it.
     for y in 0..n {
+        let cy = y / 2;
+        let ny_ = if y % 2 == 0 { cy.saturating_sub(1) } else { (cy + 1).min(m - 1) };
         for x in 0..n {
-            z[y * n + x] += e_c[(y / 2) * m + (x / 2)];
+            let cx = x / 2;
+            let nx_ = if x % 2 == 0 { cx.saturating_sub(1) } else { (cx + 1).min(m - 1) };
+            let v = 0.5625 * e_c[cy * m + cx]
+                + 0.1875 * (e_c[cy * m + nx_] + e_c[ny_ * m + cx])
+                + 0.0625 * e_c[ny_ * m + nx_];
+            z[y * n + x] += v;
         }
     }
     for _ in 0..2 {

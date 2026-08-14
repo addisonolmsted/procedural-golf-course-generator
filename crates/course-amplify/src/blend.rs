@@ -40,6 +40,13 @@ pub fn assemble(
 ) -> Grid<f64> {
     let (nx2, ny2) = (base2.spec.nx as usize, base2.spec.ny as usize);
     let mut out = base2.clone();
+    // Mid residual upsampled 8 m → 2 m ONCE, separable Catmull-Rom.
+    // Bilinear left piecewise-linear facets: constant-gradient 8 m
+    // tiles with creases on every cell line, which a hillshade renders
+    // as a pixelated cross-hatch — and a deep negative mid cell as a
+    // square straight-edged basin. The tell scales with mid amplitude,
+    // which is why the highest-amplitude terrain gave it away first.
+    let mid2 = upsample_catmull(mid8, dist8.spec, base2.spec);
     for y in 0..ny2 {
         for x in 0..nx2 {
             let p = base2.spec.world_of(x as u32, y as u32);
@@ -58,21 +65,78 @@ pub fn assemble(
             // until the transect fit.
             let i2 = y * nx2 + x;
             out.data[i2] = base2_lp64[i2];
-            // mid residual lives on the 8 m grid: bilinear via world coords
-            let m = {
-                let g8 = dist8.spec; // same 8 m spec as the mid plane
-                let fx = ((p.x - g8.origin.x) / g8.cell_size).clamp(0.0, (g8.nx - 1) as f64);
-                let fy = ((p.y - g8.origin.y) / g8.cell_size).clamp(0.0, (g8.ny - 1) as f64);
-                let (x0, y0) = (fx as usize, fy as usize);
-                let (x1, y1) = ((x0 + 1).min(g8.nx as usize - 1), (y0 + 1).min(g8.ny as usize - 1));
-                let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
-                let n8 = g8.nx as usize;
-                let a = mid8[y0 * n8 + x0] * (1.0 - tx) + mid8[y0 * n8 + x1] * tx;
-                let b = mid8[y1 * n8 + x0] * (1.0 - tx) + mid8[y1 * n8 + x1] * tx;
-                a * (1.0 - ty) + b * ty
-            };
-            let f = fine2[y * nx2 + x];
-            out.data[i2] += w * (m + f);
+            let f = fine2[i2];
+            out.data[i2] += w * (mid2[i2] + f);
+        }
+    }
+    out
+}
+
+/// Separable Catmull-Rom upsample from the 8 m grid to the 2 m grid,
+/// sampling at the 2 m cell-centre world positions (same mapping the old
+/// bilinear used). Two O(n) passes; edge-clamped taps.
+fn upsample_catmull(
+    src: &[f64],
+    spec8: course_world::grid::GridSpec,
+    spec2: course_world::grid::GridSpec,
+) -> Vec<f64> {
+    let (n8x, n8y) = (spec8.nx as usize, spec8.ny as usize);
+    let (n2x, n2y) = (spec2.nx as usize, spec2.ny as usize);
+    let cr = |t: f64| -> [f64; 4] {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        [
+            -0.5 * t3 + t2 - 0.5 * t,
+            1.5 * t3 - 2.5 * t2 + 1.0,
+            -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+            0.5 * t3 - 0.5 * t2,
+        ]
+    };
+    // per-output-column source taps + weights (x mapping), reused per row
+    let xmap: Vec<([usize; 4], [f64; 4])> = (0..n2x)
+        .map(|x| {
+            let p = spec2.world_of(x as u32, 0);
+            let fx = ((p.x - spec8.origin.x) / spec8.cell_size).clamp(0.0, (n8x - 1) as f64);
+            let x1 = fx.floor() as usize;
+            let w = cr(fx - x1 as f64);
+            let idx = [
+                x1.saturating_sub(1),
+                x1,
+                (x1 + 1).min(n8x - 1),
+                (x1 + 2).min(n8x - 1),
+            ];
+            (idx, w)
+        })
+        .collect();
+    // pass 1: horizontal, 8 m rows → 2 m columns
+    let mut tmp = vec![0.0f64; n8y * n2x];
+    for y in 0..n8y {
+        let row = &src[y * n8x..(y + 1) * n8x];
+        let orow = &mut tmp[y * n2x..(y + 1) * n2x];
+        for (x, (idx, w)) in xmap.iter().enumerate() {
+            orow[x] = row[idx[0]] * w[0] + row[idx[1]] * w[1] + row[idx[2]] * w[2]
+                + row[idx[3]] * w[3];
+        }
+    }
+    // pass 2: vertical
+    let mut out = vec![0.0f64; n2y * n2x];
+    for y in 0..n2y {
+        let p = spec2.world_of(0, y as u32);
+        let fy = ((p.y - spec8.origin.y) / spec8.cell_size).clamp(0.0, (n8y - 1) as f64);
+        let y1 = fy.floor() as usize;
+        let w = cr(fy - y1 as f64);
+        let idx = [
+            y1.saturating_sub(1),
+            y1,
+            (y1 + 1).min(n8y - 1),
+            (y1 + 2).min(n8y - 1),
+        ];
+        let orow = &mut out[y * n2x..(y + 1) * n2x];
+        for x in 0..n2x {
+            orow[x] = tmp[idx[0] * n2x + x] * w[0]
+                + tmp[idx[1] * n2x + x] * w[1]
+                + tmp[idx[2] * n2x + x] * w[2]
+                + tmp[idx[3] * n2x + x] * w[3];
         }
     }
     out

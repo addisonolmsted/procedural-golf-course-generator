@@ -36,6 +36,10 @@ use synth::Band;
 /// S3's output: the amplified 2 m surface plus what downstream verifies.
 /// Max height change allowed on channel-centreline cells.
 pub const CHANNEL_TOL_M: f64 = 0.35;
+/// Full channel-restore clamp inside this distance of the centreline…
+pub const RESTORE_CORE_M: f64 = 5.0;
+/// …fading to no restore at this distance (kills the blocky outline).
+pub const RESTORE_FEATHER_M: f64 = 13.0;
 
 pub struct Amplified {
     pub height: Grid<f64>,
@@ -119,27 +123,46 @@ pub fn generate(
     // within CHANNEL_TOL_M of the carved bed. Any residual ±wobble on
     // near-flat reaches is S4's to adjudicate — it re-routes the final
     // surface anyway.
+    // FEATHERED by true distance, not per-8 m block: the block version
+    // drew the channel outline as a bright axis-aligned staircase
+    // polyline (clamped blocks stepping against unclamped neighbors) —
+    // one of the reviewer's staircase-edge tells. Full clamp holds
+    // within RESTORE_CORE_M of the centreline (the taper test's
+    // guarantee), fading to nothing at RESTORE_FEATHER_M.
     let n8 = sk.flow_distance.spec.nx as usize;
+    let mut visited = vec![false; n2 * n2];
     for y8 in 0..n8 {
         for x8 in 0..n8 {
-            if sk.flow_distance.data[y8 * n8 + x8] > 0.0 {
+            if sk.flow_distance.data[y8 * n8 + x8] > RESTORE_FEATHER_M + 8.0 {
                 continue;
             }
             let p8 = sk.flow_distance.spec.world_of(x8 as u32, y8 as u32);
-            // the 2 m cells covering this 8 m channel cell
             let cx = (p8.x / 2.0) as usize;
             let cy = (p8.y / 2.0) as usize;
             for dy in 0..4usize {
                 for dx in 0..4usize {
                     let (x2, y2) = ((cx + dx).min(n2 - 1), (cy + dy).min(n2 - 1));
                     let i2 = y2 * n2 + x2;
-                    // clamp to the SMOOTHED base: pinning to the raw base
-                    // re-drew its D8 staircase as thin stepped lines along
-                    // every channel (the reviewer's ribbed-cut tell, second
+                    if visited[i2] {
+                        continue;
+                    }
+                    visited[i2] = true;
+                    let p2 = height.spec.world_of(x2 as u32, y2 as u32);
+                    let d = sk.flow_distance.bilinear(p2);
+                    let t = ((RESTORE_FEATHER_M - d)
+                        / (RESTORE_FEATHER_M - RESTORE_CORE_M))
+                        .clamp(0.0, 1.0);
+                    if t <= 0.0 {
+                        continue;
+                    }
+                    // clamp toward the SMOOTHED base: pinning to the raw
+                    // base re-drew its D8 staircase as thin stepped lines
+                    // along every channel (the ribbed-cut tell, second
                     // appearance)
                     let base = base_lp64[i2];
                     let dz = height.data[i2] - base;
-                    height.data[i2] = base + dz.clamp(-CHANNEL_TOL_M, CHANNEL_TOL_M);
+                    let target = base + dz.clamp(-CHANNEL_TOL_M, CHANNEL_TOL_M);
+                    height.data[i2] += (target - height.data[i2]) * t;
                 }
             }
         }
