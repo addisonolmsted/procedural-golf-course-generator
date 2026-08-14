@@ -120,3 +120,4 @@ the following evidence and rationale:
 | 2026-08-10 s3 | davisolmsted | 11/18 | BM black hole: 0/3 recognized + 3 false positives | pocket enlarged + rim; curves decorrelated + heavy-tailed |
 | 2026-08-10 s4 | davisolmsted | 12/18 | all 6 = PS↔BM flips | wave-suppressed calm basin floor (geomorphic: depositional flats) |
 | 2026-08-10 s5 | davisolmsted | 12/18 (15/15 on five classes) | PS↔BM only, again | **GATE RE-SCOPED** to five classes: PASS. BM retained, judged at S2/S4 (see Gate scope). |
+| 2026-08-13 | davisolmsted | **15/15** | none | **PASS** — five-class gate re-certified on the post-variety-fixes synthesis (per-biome wave dials, rv grain lock, sandhills macro continuum, height-scaled terrace risers). |
