@@ -89,7 +89,7 @@ pub fn render_s4(h: &Hydrology, sk: &Skeleton, view: S4View, px: u32, overlays: 
             if overlays {
                 for w in &h.water {
                     let c = if w.permanent { WATER_PERM } else { WATER_INTERMITTENT };
-                    fill_convex(&mut img, &w.polygon, c);
+                    fill_poly(&mut img, &w.polygon, c);
                     course_viz::draw_polyline(&mut img, &w.polygon, opaque(c), 0);
                     if let Some(last) = w.polygon.last() {
                         let a = course_viz::to_px(*last, img.width(), img.height());
@@ -196,8 +196,9 @@ fn draw_ring(img: &mut RgbaImage, poly: &[Vec2], c: [u8; 4]) {
     course_viz::draw_line(img, a, b, c, 0);
 }
 
-/// Alpha-fill a convex polygon (S4 hulls are convex by construction).
-fn fill_convex(img: &mut RgbaImage, poly: &[Vec2], c: [u8; 4]) {
+/// Alpha-fill a simple polygon (even-odd rule — S4 outlines are traced
+/// component boundaries and may be concave).
+fn fill_poly(img: &mut RgbaImage, poly: &[Vec2], c: [u8; 4]) {
     if poly.len() < 3 {
         return;
     }
@@ -219,19 +220,18 @@ fn fill_convex(img: &mut RgbaImage, poly: &[Vec2], c: [u8; 4]) {
     for py in (y0.max(0.0) as i64)..=(y1.min(h as f64 - 1.0) as i64) {
         for px in (x0.max(0.0) as i64)..=(x1.min(w as f64 - 1.0) as i64) {
             let (fx, fy) = (px as f64 + 0.5, py as f64 + 0.5);
-            let mut pos = 0;
-            let mut neg = 0;
+            let mut crossings = 0;
             for i in 0..pts.len() {
                 let (ax, ay) = pts[i];
                 let (bx, by) = pts[(i + 1) % pts.len()];
-                let cross = (bx - ax) * (fy - ay) - (by - ay) * (fx - ax);
-                if cross >= 0.0 {
-                    pos += 1;
-                } else {
-                    neg += 1;
+                if (ay > fy) != (by > fy) {
+                    let x_at = ax + (fy - ay) / (by - ay) * (bx - ax);
+                    if x_at > fx {
+                        crossings += 1;
+                    }
                 }
             }
-            if pos == pts.len() || neg == pts.len() {
+            if crossings % 2 == 1 {
                 course_viz::blend_px(img, px, py, c);
             }
         }

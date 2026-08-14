@@ -20,10 +20,19 @@ pub const CHANNEL_AREA_M2: f64 = 1.2e5;
 pub const BASIN_MIN_DEPTH_M: f64 = 0.25;
 /// A BASE depression must be at least this deep to count as intended.
 pub const INTENDED_PIT_MIN_DEPTH_M: f64 = 0.45;
+/// The carve's boundary rims + drawdown ramp are CONSTRUCTION, not
+/// landform; pits and basins inside this frame are excluded (the first
+/// build ponded water slivers along the tile edge).
+pub const EDGE_FRAME_M: f64 = 48.0;
 /// Floodplain envelope half-width per sqrt(km²) of discharge.
 pub const FLOOD_W_PER_SQKM: f64 = 55.0;
 /// Height of the flood datum above the local channel bed.
 pub const FLOOD_DEPTH_M: f64 = 1.1;
+/// The floodplain FLATTENS low ground; it never excavates. Cells more
+/// than this far above the flood datum are valley wall, and the cap
+/// fades to nothing on them (at 2x this excess) instead of cutting a
+/// cliff ring around the channel.
+pub const FLOOD_MAX_CUT_M: f64 = 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -193,7 +202,12 @@ fn intended_pits(base8: &Grid<f64>, embryos: &[course_skeleton::kernel::BasinEmb
     // flow-capturing pit, and the derived network fragmented into ≤0.5 km²
     // shards — skeleton agreement read 0.07 with accumulation at S2
     // channel cells of ~3 cells median.
+    let frame = (EDGE_FRAME_M / spec8.cell_size).ceil() as usize;
     for i in 0..n8 * n8 {
+        let (y, x) = (i / n8, i % n8);
+        if x < frame || y < frame || x >= n8 - frame || y >= n8 - frame {
+            continue;
+        }
         if f.data[i] > base8.data[i] + INTENDED_PIT_MIN_DEPTH_M {
             keep[i] = true;
         }
@@ -232,59 +246,116 @@ fn floodplain_datum(height: &mut Grid<f64>, sk: &Skeleton, water: &mut Vec<Water
     if big.is_empty() {
         return;
     }
-    let n2 = height.spec.nx as usize;
-    let cell2 = height.spec.cell_size;
-    // rasterize big-channel bed elevation + envelope width to a coarse
-    // helper grid (8 m) then apply at 2 m
-    let mut nearest: Vec<(f64, f64, f64)> = vec![(f64::INFINITY, 0.0, 0.0); n2 * n2]; // (d2, bed_z, width)
+    // The whole field is built SMOOTH at 8 m and bilinear-applied at 2 m.
+    // The first version stamped (distance, bed) with stride-3 offsets on
+    // the 2 m grid — the reviewer immediately caught the consequence: 6 m
+    // Voronoi blocks with discontinuous caps ("pixelated pockets") and
+    // quantized-distance bands (stripes), with lateral steps up to 60 m
+    // where two stamps carrying different beds met.
+    let spec8 = sk.flow_distance.spec;
+    let n8 = spec8.nx as usize;
+    let cell8 = spec8.cell_size;
+    let z8 = min_pool8(height, spec8);
+    let mut dist = vec![f64::INFINITY; n8 * n8];
+    let mut bed = vec![0.0f64; n8 * n8];
+    let mut wid = vec![0.0f64; n8 * n8];
+    // seed: 8 m cells under the big-channel centrelines; bed from the
+    // min-pooled surface (the S3 restore clamp keeps it near the carved
+    // bed), width from discharge
     for c in &big {
         let w = FLOOD_W_PER_SQKM * (c.area_m2 / 1.0e6).sqrt();
         for seg in c.pts.windows(2) {
             let (a, b) = (seg[0], seg[1]);
-            let steps = ((((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()) / cell2).ceil() as usize;
+            let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+            let steps = (len / (0.5 * cell8)).ceil() as usize;
             for s in 0..=steps {
                 let t = s as f64 / steps.max(1) as f64;
-                let px = a.x + (b.x - a.x) * t;
-                let py = a.y + (b.y - a.y) * t;
-                let cx = (px / cell2) as i64;
-                let cy = (py / cell2) as i64;
-                let bed = {
-                    let xi = (cx.clamp(0, n2 as i64 - 1)) as usize;
-                    let yi = (cy.clamp(0, n2 as i64 - 1)) as usize;
-                    height.data[yi * n2 + xi]
-                };
-                let rr = (w / cell2).ceil() as i64;
-                // coarse stamping stride keeps this O(len·w) not O(len·w²)
-                for dy in (-rr..=rr).step_by(3) {
-                    for dx in (-rr..=rr).step_by(3) {
-                        let (xx, yy) = (cx + dx, cy + dy);
-                        if xx < 0 || yy < 0 || xx >= n2 as i64 || yy >= n2 as i64 {
-                            continue;
-                        }
-                        let d2 = ((dx * dx + dy * dy) as f64) * cell2 * cell2;
-                        let i = yy as usize * n2 + xx as usize;
-                        if d2 < nearest[i].0 {
-                            nearest[i] = (d2, bed, w);
-                        }
-                    }
+                let x = (((a.x + (b.x - a.x) * t) / cell8) as usize).min(n8 - 1);
+                let y = (((a.y + (b.y - a.y) * t) / cell8) as usize).min(n8 - 1);
+                let i = y * n8 + x;
+                if dist[i] > 0.0 {
+                    dist[i] = 0.0;
+                    bed[i] = z8.data[i];
+                    wid[i] = w;
+                } else {
+                    // confluence cell: the bigger envelope owns it
+                    wid[i] = wid[i].max(w);
+                    bed[i] = bed[i].min(z8.data[i]);
                 }
             }
         }
     }
-    for i in 0..n2 * n2 {
-        let (d2, bed, w) = nearest[i];
-        if !d2.is_finite() {
-            continue;
+    // two-pass chamfer, payload (bed, width) rides with the distance
+    let (orth, diag) = (cell8, cell8 * std::f64::consts::SQRT_2);
+    let relax = |i: usize, j: usize, cost: f64, dist: &mut [f64], bed: &mut [f64], wid: &mut [f64]| {
+        if dist[j] + cost < dist[i] {
+            dist[i] = dist[j] + cost;
+            bed[i] = bed[j];
+            wid[i] = wid[j];
         }
-        let d = d2.sqrt();
-        if d > w || d < 12.0 {
-            continue; // outside envelope, or the incised channel itself
+    };
+    for y in 0..n8 {
+        for x in 0..n8 {
+            let i = y * n8 + x;
+            if x > 0 {
+                relax(i, i - 1, orth, &mut dist, &mut bed, &mut wid);
+            }
+            if y > 0 {
+                relax(i, i - n8, orth, &mut dist, &mut bed, &mut wid);
+                if x > 0 {
+                    relax(i, i - n8 - 1, diag, &mut dist, &mut bed, &mut wid);
+                }
+                if x + 1 < n8 {
+                    relax(i, i - n8 + 1, diag, &mut dist, &mut bed, &mut wid);
+                }
+            }
         }
-        // cap toward the flood datum, feathered at the envelope edge
-        let edge = ((w - d) / (0.35 * w)).clamp(0.0, 1.0);
-        let cap = bed + FLOOD_DEPTH_M + (1.0 - edge) * 2.0;
-        if height.data[i] > cap {
-            height.data[i] = height.data[i] * (1.0 - edge) + cap * edge;
+    }
+    for y in (0..n8).rev() {
+        for x in (0..n8).rev() {
+            let i = y * n8 + x;
+            if x + 1 < n8 {
+                relax(i, i + 1, orth, &mut dist, &mut bed, &mut wid);
+            }
+            if y + 1 < n8 {
+                relax(i, i + n8, orth, &mut dist, &mut bed, &mut wid);
+                if x + 1 < n8 {
+                    relax(i, i + n8 + 1, diag, &mut dist, &mut bed, &mut wid);
+                }
+                if x > 0 {
+                    relax(i, i + n8 - 1, diag, &mut dist, &mut bed, &mut wid);
+                }
+            }
+        }
+    }
+    // smooth the propagated payload: kills the seams where envelopes of
+    // different reaches meet (the 60 m cliffs), leaves the field local
+    for _ in 0..2 {
+        bed = course_amplify::synth::box_filter(&bed, n8, 5);
+        wid = course_amplify::synth::box_filter(&wid, n8, 5);
+    }
+    let mk = |data: Vec<f64>| Grid { spec: spec8, data };
+    let (distg, bedg, widg) = (mk(dist), mk(bed), mk(wid));
+    let n2 = height.spec.nx as usize;
+    for y in 0..n2 {
+        for x in 0..n2 {
+            let p = height.spec.world_of(x as u32, y as u32);
+            let d = distg.bilinear(p);
+            let w = widg.bilinear(p);
+            if d > w || d < 12.0 {
+                continue; // outside envelope, or the incised channel itself
+            }
+            // cap toward the flood datum, feathered at the envelope edge
+            let edge = ((w - d) / (0.35 * w)).clamp(0.0, 1.0);
+            let cap = bedg.bilinear(p) + FLOOD_DEPTH_M + (1.0 - edge) * 2.0;
+            let i = y * n2 + x;
+            let excess = height.data[i] - cap;
+            if excess > 0.0 {
+                let fade =
+                    ((2.0 * FLOOD_MAX_CUT_M - excess) / FLOOD_MAX_CUT_M).clamp(0.0, 1.0);
+                let t = edge * fade;
+                height.data[i] = height.data[i] * (1.0 - t) + cap * t;
+            }
         }
     }
     let _ = water; // flood extent bodies arrive with S10 dressing needs
@@ -350,14 +421,9 @@ fn water_table_datum(
         table /= comp.len() as f64;
         let level = table.min(rim - 0.05);
         if level > lowest + 0.05 && comp.len() >= 4 {
-            // pond: polygon = convex hull of ponded cells (closed,
-            // non-self-intersecting, positive area by construction;
-            // marching-squares outline is a later refinement)
-            let pts: Vec<Vec2> = comp
-                .iter()
-                .map(|&c| spec8.world_of((c % n8) as u32, (c / n8) as u32))
-                .collect();
-            let hull = convex_hull(&pts);
+            // pond: polygon = traced outline of the ponded component
+            let in_comp: std::collections::HashSet<usize> = comp.iter().copied().collect();
+            let hull = component_outline(&comp, &|i| in_comp.contains(&i), n8, spec8);
             if hull.len() >= 3 {
                 water.push(WaterBody {
                     polygon: hull,
@@ -384,12 +450,19 @@ fn inventory_basins(
 ) -> Vec<Basin> {
     let n8 = spec8.nx as usize;
     let cell_area = spec8.cell_size * spec8.cell_size;
+    let frame = (EDGE_FRAME_M / spec8.cell_size).ceil() as usize;
+    let in_frame =
+        |i: usize| -> bool {
+            let (y, x) = (i / n8, i % n8);
+            x < frame || y < frame || x >= n8 - frame || y >= n8 - frame
+        };
     // basin cells: raised by fill (open, would flood) or kept pits (closed)
     let mut label = vec![0u32; n8 * n8];
     let mut basins = Vec::new();
     let mut next = 1u32;
     for start in 0..n8 * n8 {
-        let deep = zf.data[start] > z8.data[start] + BASIN_MIN_DEPTH_M || keep8[start];
+        let deep = (zf.data[start] > z8.data[start] + BASIN_MIN_DEPTH_M || keep8[start])
+            && !in_frame(start);
         if !deep || label[start] != 0 {
             continue;
         }
@@ -406,7 +479,8 @@ fn inventory_basins(
                     continue;
                 }
                 let ni = yy as usize * n8 + xx as usize;
-                let ndeep = zf.data[ni] > z8.data[ni] + BASIN_MIN_DEPTH_M || keep8[ni];
+                let ndeep = (zf.data[ni] > z8.data[ni] + BASIN_MIN_DEPTH_M || keep8[ni])
+                    && !in_frame(ni);
                 if ndeep && label[ni] == 0 {
                     label[ni] = next;
                     comp.push(ni);
@@ -421,11 +495,7 @@ fn inventory_basins(
             .iter()
             .map(|&c| z8.data[c])
             .fold(f64::INFINITY, f64::min);
-        let pts: Vec<Vec2> = comp
-            .iter()
-            .map(|&c| spec8.world_of((c % n8) as u32, (c / n8) as u32))
-            .collect();
-        let hull = convex_hull(&pts);
+        let hull = component_outline(&comp, &|i| label[i] == next, n8, spec8);
         if hull.len() >= 3 {
             basins.push(Basin {
                 polygon: hull,
@@ -485,6 +555,90 @@ fn agreement(sk: &Skeleton, flow_accum: &Grid<f64>, n8: usize) -> f64 {
         1.0
     } else {
         hits as f64 / total as f64
+    }
+}
+
+/// Trace a connected component's outer boundary (Moore neighbor tracing
+/// over the 8 m cell centres). The polygon FOLLOWS the landform: the
+/// first build published convex hulls, whose rings covered 25–40%
+/// non-basin terrain on the sprawling flats (component/hull area 0.58 to
+/// 0.76) and read as uncorrelated with the topography in review.
+///
+/// `is_in` must answer for THIS component only — tracing walks
+/// 8-neighbors while components are built 4-connected, so a whole-mask
+/// test could leak the walk onto a diagonally-adjacent component.
+fn component_outline(
+    comp: &[usize],
+    is_in: &dyn Fn(usize) -> bool,
+    n8: usize,
+    spec8: GridSpec,
+) -> Vec<Vec2> {
+    const DIRS: [(i64, i64); 8] = [
+        (-1, 0),
+        (-1, -1),
+        (0, -1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
+        (0, 1),
+        (-1, 1),
+    ];
+    let inside = |c: (i64, i64)| {
+        c.0 >= 0
+            && c.1 >= 0
+            && (c.0 as usize) < n8
+            && (c.1 as usize) < n8
+            && is_in(c.1 as usize * n8 + c.0 as usize)
+    };
+    // topmost-leftmost cell: a boundary cell whose W and N neighbors are
+    // guaranteed outside, so "entered from the west" is a valid start
+    let &start = comp
+        .iter()
+        .min_by_key(|&&c| (c / n8, c % n8))
+        .expect("outline of empty component");
+    let s = ((start % n8) as i64, (start / n8) as i64);
+    let mut p = s;
+    let mut back = (s.0 - 1, s.1); // the empty cell we "entered" from
+    let mut cells = vec![s];
+    for _ in 0..comp.len() * 8 + 16 {
+        let bi = DIRS
+            .iter()
+            .position(|&(dx, dy)| (p.0 + dx, p.1 + dy) == back)
+            .expect("backtrack is always a neighbor");
+        let mut next = None;
+        let mut last_empty = back;
+        for k in 1..=8 {
+            let (dx, dy) = DIRS[(bi + k) % 8];
+            let cand = (p.0 + dx, p.1 + dy);
+            if inside(cand) {
+                next = Some(cand);
+                break;
+            }
+            last_empty = cand;
+        }
+        let Some(c) = next else { break }; // isolated single cell
+        if c == s {
+            break;
+        }
+        cells.push(c);
+        back = last_empty;
+        p = c;
+    }
+    cells.dedup();
+    let pts: Vec<Vec2> = cells
+        .iter()
+        .map(|&(x, y)| spec8.world_of(x as u32, y as u32))
+        .collect();
+    if pts.len() >= 3 {
+        pts
+    } else {
+        // degenerate (a line of cells): fall back to the hull of the comp
+        convex_hull(
+            &comp
+                .iter()
+                .map(|&c| spec8.world_of((c % n8) as u32, (c / n8) as u32))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 

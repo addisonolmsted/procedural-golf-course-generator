@@ -75,7 +75,12 @@ fn agreement_reported_and_in_expected_band() {
 
 #[test]
 fn transform_order_changes_output() {
-    let (spec, sk, amp, id) = chain(13, BiomeId::RiverValley);
+    // Seed PINNED to one where a pond lies inside the trunk's flood
+    // envelope: the water-table transform touches no heights, so order
+    // is only observable where the floodplain altered the surface a
+    // pond level is computed from (seed 13 had no such overlap and the
+    // orders were legitimately identical).
+    let (spec, sk, amp, id) = chain(6, BiomeId::RiverValley);
     let a = hydrology::generate(
         &spec,
         &sk,
