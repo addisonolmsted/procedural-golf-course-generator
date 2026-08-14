@@ -36,6 +36,22 @@ fn taper_holds_channel_profile() {
         let c1 = course_primitives::generate(&spec, &id);
         let sk = course_skeleton::generate(&spec, &c1, &id);
         let amp = course_amplify::generate(&spec, &sk, &dict, &id);
+        // Reference = the >=64 m lowpass of the base: after the P2 dry run
+        // the raw base's sub-64 m staircase was excluded from the output
+        // everywhere (it was the reviewer's "ribbed cuts" tell), so the
+        // profile the taper defends is the smoothed one. CHANNEL_TOL_M
+        // bounds the clamp; the margin above it covers bilinear sampling
+        // across the 2 m cells at a channel edge.
+        let n2 = sk.height.spec.nx as usize;
+        let lp64 = {
+            let sigma = course_amplify::conditioning::SIGMA_PER_L * 64.0 / 2.0;
+            let box_w = ((sigma * 1.153) as usize * 2 + 1).max(3);
+            let mut lp = sk.height.data.clone();
+            for _ in 0..3 {
+                lp = course_amplify::synth::box_filter(&lp, n2, box_w);
+            }
+            lp
+        };
         let n8 = sk.flow_distance.spec.nx as usize;
         let mut worst = 0.0f64;
         for y8 in 0..n8 {
@@ -44,13 +60,15 @@ fn taper_holds_channel_profile() {
                     continue; // only channel cells
                 }
                 let p = sk.flow_distance.spec.world_of(x8 as u32, y8 as u32);
-                let dz = (amp.height.bilinear(p) - sk.height.bilinear(p)).abs();
+                let x2 = ((p.x / 2.0) as usize).min(n2 - 1);
+                let y2 = ((p.y / 2.0) as usize).min(n2 - 1);
+                let dz = (amp.height.data[y2 * n2 + x2] - lp64[y2 * n2 + x2]).abs();
                 worst = worst.max(dz);
             }
         }
         assert!(
-            worst < 1.2,
-            "{biome:?}: channel cell moved {worst:.2} m under amplification"
+            worst < course_amplify::CHANNEL_TOL_M + 0.15,
+            "{biome:?}: channel cell moved {worst:.2} m from the smoothed base"
         );
     }
 }
