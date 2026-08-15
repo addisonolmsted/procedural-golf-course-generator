@@ -142,7 +142,8 @@ fn rv_carries_one_meandering_river() {
                 hi = hi.max(p.x.max(p.y));
             }
         }
-        assert!(hi - lo > 1500.0, "rv seed {seed}: river span {:.0} m", hi - lo);
+        // edge-to-edge (reviewer): the river must span nearly the tile
+        assert!(hi - lo > 2400.0, "rv seed {seed}: river span {:.0} m", hi - lo);
     }
 }
 

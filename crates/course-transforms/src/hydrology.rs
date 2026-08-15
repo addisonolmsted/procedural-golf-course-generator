@@ -55,6 +55,9 @@ pub const RIVER_DEPTH_M: f64 = 0.9;
 pub const CREEK_DEPTH_M: f64 = 0.5;
 /// Salt for the per-course channel-water coin (course_scalar).
 pub const CHANNEL_WATER_SALT: u64 = 0xC4EE_C5;
+/// Salt for the per-course river WIDTH personality (some courses carry
+/// a notably wide river — reviewer request).
+pub const RIVER_WIDTH_SALT: u64 = 0x81D7;
 /// Salt for the heathland pond-count richness draw.
 pub const POND_RICHNESS_SALT: u64 = 0x90D5;
 
@@ -319,6 +322,8 @@ fn channel_water_v2(
         // point truncation snapping to earlier meander bends), and
         // self-crossing-free by construction — a functional forest walk
         // can never revisit a cell.
+        let area = chans[root as usize].area_m2;
+        let is_river = area >= RIVER_AREA_M2;
         let mouth = chans[root as usize]
             .pts
             .iter()
@@ -367,8 +372,24 @@ fn channel_water_v2(
                     }
                 }
             }
+            // Rivers run EDGE TO EDGE (reviewer): the skeleton's
+            // re-derived accumulation lacks the trunk INFLOW, so the
+            // natural-area floor died mid-tile at the inlet side. A
+            // river keeps following its biggest donor (the carved trunk
+            // valley leads to the far-boundary inlet) until it reaches
+            // the border; creeks keep the discharge floor.
+            let at_border = {
+                let (cy, cx) = (cur / n8, cur % n8);
+                cy <= 1 || cx <= 1 || cy >= n8 - 2 || cx >= n8 - 2
+            };
+            // the MOUTH is at the border by construction — only stop on
+            // border contact once the walk is well upstream of it
+            if at_border && cells.len() > 20 {
+                break;
+            }
+            let floor = if is_river { 3.2e3 } else { 2.0e5 };
             match best {
-                Some((a, j)) if a >= 2.0e5 => {
+                Some((a, j)) if a >= floor => {
                     cells.push(j);
                     cur = j;
                 }
@@ -382,10 +403,12 @@ fn channel_water_v2(
             .map(|&i| spec8.world_of((i % n8) as u32, (i / n8) as u32))
             .collect();
         stem.reverse();
-        let area = chans[root as usize].area_m2;
-        let is_river = area >= RIVER_AREA_M2;
         let km2 = area / 1.0e6;
-        let w_m = (5.5 * km2.sqrt()).clamp(6.0, 36.0);
+        // Width varies a LOT (reviewer): stronger discharge scaling, an
+        // 80 m ceiling, and a per-course personality scalar so some
+        // courses carry a genuinely wide river (22 km² trunk: 30-70 m).
+        let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
+        let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
         let depth = if is_river { RIVER_DEPTH_M } else { CREEK_DEPTH_M };
         let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
         // corridor flatten along THIS path only (reviewer: organic,
@@ -569,7 +592,7 @@ fn place_meandering_water(
                     + 0.30 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.47) + ph2)
                     + 0.15 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
             let hw = 0.5 * w_m
-                * (1.0 + 0.18 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
+                * (1.0 + 0.28 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
             wpath.push((Vec2::new(p.x + nx_ * off, p.y + ny_ * off), arc, hw));
         }
         if self_intersects(&wpath) {
@@ -606,7 +629,8 @@ fn place_meandering_water(
                 y1 = y1.max(p.y);
             }
             let pad = max_hw + 2.0 * cell2;
-            let fr = EDGE_FRAME_M;
+            // rivers reach the tile edge; only the outermost cells stay
+            let fr = 2.0 * cell2;
             let lim = cell2 * n2 as f64 - fr;
             let cx0 = (((x0 - pad).max(fr)) / cell2) as usize;
             let cy0 = (((y0 - pad).max(fr)) / cell2) as usize;
