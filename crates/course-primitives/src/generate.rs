@@ -78,6 +78,7 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         .copied()
         .unwrap_or(WAVE_ISO_FRAC);
     let wave_share = spec.dials.get("primitives.wave_share").copied().unwrap_or(WAVE_SHARE);
+    let wave_beta = spec.dials.get("primitives.wave_beta").copied().unwrap_or(WAVE_BETA);
     let aeolian_macro = spec
         .dials
         .get("primitives.aeolian_macro")
@@ -134,7 +135,7 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         };
         let phase = u_phi * TAU;
         // amplitude: spectral tilt × jitter; normalized below
-        let amp = libm::pow(lam / lam_hi, WAVE_BETA / 2.0) * (0.6 + 0.8 * u_amp);
+        let amp = libm::pow(lam / lam_hi, wave_beta / 2.0) * (0.6 + 0.8 * u_amp);
         waves.push((lam, dir, phase, amp));
     }
     // Normalize so the wave sum has unit std, then scale by the mode share.

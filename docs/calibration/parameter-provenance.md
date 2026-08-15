@@ -91,3 +91,28 @@ Both old bands were achievable only because the previous engine constructed
 those quantities directly; a derived network produces them as outcomes, so
 the bands had to come from the corpus measured the identical way.
 
+
+## Hill-country macro + slope-adaptive channel initiation (2026-08-16)
+
+Reviewer spec (P-round): real hill country reads as parallel ridge
+trains with wavelength ~1/3-1/2 of the tile (1-1.5 km) and few but
+distinguishing hydraulic cuts; ours was the one archetype wrong at the
+MACRO level.
+
+- New per-biome dial `primitives.wave_beta` (S1 spectral tilt over the
+  400-1600 m band; global default 1.8). hill_country: wave_beta 3.0,
+  wave_share 0.36, wave_iso_frac 0.30 — power concentrated at the long
+  end, 70% of waves on the grain axis.
+- The parallel macro elongates catchments, and the pure area-threshold
+  extraction pushed hc d2c to ~150 m against the corpus invariant
+  (102-122 m everywhere). Fix: slope-adaptive initiation in the carve —
+  per-cell threshold × (median slope / local slope) clamped
+  [0.25, 1.25], slope taken on a ~300 m lowpass of the carved surface
+  (macro flanks stay steep after the lowpass; ordinary 100 m valley
+  walls wash out — a near-raw-slope version dragged every biome down
+  together). Tile-relative, so flat biomes are untouched and no biome
+  is named. Measured: biome d2c medians 92-121 m (spread 29,
+  was 119-157).
+- The formal 150-seed battery should be re-run at G-TERRAIN: all
+  biomes' networks shifted slightly denser (closer to the corpus
+  103-118 than the previous 123-147).

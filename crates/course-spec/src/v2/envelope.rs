@@ -110,6 +110,12 @@ pub struct BiomeEnvelope {
     /// keeps the independent draw.
     #[serde(default)]
     pub grain_lock: Option<f64>,
+    /// S1 wave spectral tilt (amplitude exponent over the 400-1600 m
+    /// band). Missing = the global 1.8. Large values concentrate power
+    /// at the LONG end: hill country's signature is parallel ridge
+    /// trains spanning 1/3-1/2 of the tile.
+    #[serde(default)]
+    pub wave_beta: Option<f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except
@@ -283,6 +289,13 @@ impl EnvelopeSet {
                 if !(0.0..=1.0).contains(&f) {
                     return Err(EnvelopeError::Invalid(format!(
                         "{b}: grain_lock = {f} out of [0,1]"
+                    )));
+                }
+            }
+            if let Some(f) = env.wave_beta {
+                if !(0.5..=5.0).contains(&f) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: wave_beta = {f} out of [0.5,5]"
                     )));
                 }
             }

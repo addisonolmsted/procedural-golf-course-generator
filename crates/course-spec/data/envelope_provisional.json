@@ -435,6 +435,9 @@
      "lo": 3.0
     }
    ],
+   "wave_beta": 3.0,
+   "wave_iso_frac": 0.3,
+   "wave_share": 0.36,
    "weight": 1.0
   },
   "piedmont": {

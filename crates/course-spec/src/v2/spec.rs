@@ -286,6 +286,7 @@ fn derive_dials(
         env.wave_iso_frac.unwrap_or(0.75),
     );
     m.insert("primitives.wave_share".into(), env.wave_share.unwrap_or(0.18));
+    m.insert("primitives.wave_beta".into(), env.wave_beta.unwrap_or(1.8));
     m.insert("primitives.grain_lock".into(), env.grain_lock.unwrap_or(0.0));
     // S1 macro aeolian structure (dune trains / mound fields, ≥400 m) is
     // gated by the same per-biome intensity as S2's mid-band aeolian

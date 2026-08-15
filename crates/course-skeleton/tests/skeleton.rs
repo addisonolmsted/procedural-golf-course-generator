@@ -379,6 +379,7 @@ fn authored_network_spacing_hits_the_shared_invariant() {
     // archetype medians span 102-122 m — a 20 m spread).
     let lo = biome_medians.iter().cloned().fold(f64::INFINITY, f64::min);
     let hi = biome_medians.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    eprintln!("d2c biome medians span {lo:.0}-{hi:.0} m");
     assert!(
         hi - lo < 30.0,
         "biome-median separation on a shared invariant: {lo:.0}-{hi:.0} m"

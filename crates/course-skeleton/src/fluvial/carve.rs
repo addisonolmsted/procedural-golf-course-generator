@@ -138,6 +138,17 @@ pub const INFLOW_PER_TRUNK_DIAL_M2: f64 = 2.0e7;
 /// stay in the surface as texture for S3's dictionary. Final calibration
 /// happens against the D5 battery once the engine is integrated.
 pub const AREA_THRESHOLD_M2: f64 = 1.2e5;
+/// Slope-adaptive channel initiation, TILE-RELATIVE: the per-cell
+/// threshold scales by (median slope / local slope), clamped. Real
+/// channel heads initiate at smaller source areas on steeper ground
+/// (the A·Sⁿ initiation literature); a pure area cut met the d2c
+/// invariant only while every biome's macro was spectrally similar —
+/// parallel-ridge terrain (hill-country trains) elongates catchments
+/// and pushed d2c to ~150 m against the corpus 103–118 m, while its
+/// steep flanks are exactly where real gullies come in early. Relative
+/// to the tile median (not absolute slope) so flat biomes are
+/// untouched and no biome is ever named.
+pub const SLOPE_INIT_CLAMP: (f64, f64) = (0.25, 1.25);
 fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
@@ -505,7 +516,72 @@ pub fn carve(
     // drain small areas — the cut scales down with derangement so the
     // measured density band is met without re-opening the basins.
     let thresh = p.area_threshold_m2 * (1.0 - 0.85 * p.derangement).max(0.05);
-    let is_channel: Vec<bool> = (0..n).map(|i| area[i] >= thresh).collect();
+    // slope-adaptive initiation (see SLOPE_INIT_CLAMP doc). The slope is
+    // taken on a ~300 m lowpass of the carved surface: what should pull
+    // channel heads upslope is the MACRO flank (a kilometre ridge stays
+    // steep after the lowpass), not ordinary carved valley walls (100 m
+    // features wash out) — the first cut used near-raw slope and dragged
+    // every biome's d2c down together instead of fixing the outlier.
+    let slope = {
+        let nx = spec.nx as usize;
+        let cell = spec.cell_size;
+        let half = ((300.0 / cell) as usize / 2).max(1) as i64;
+        let mut lp = z.data.clone();
+        for _ in 0..2 {
+            // separable box, horizontal then vertical
+            let mut t = vec![0.0f64; n];
+            for y in 0..nx {
+                for x in 0..nx {
+                    let mut acc = 0.0;
+                    let mut cnt = 0.0;
+                    for dx in -half..=half {
+                        let xx = (x as i64 + dx).clamp(0, nx as i64 - 1) as usize;
+                        acc += lp[y * nx + xx];
+                        cnt += 1.0;
+                    }
+                    t[y * nx + x] = acc / cnt;
+                }
+            }
+            for x in 0..nx {
+                for y in 0..nx {
+                    let mut acc = 0.0;
+                    let mut cnt = 0.0;
+                    for dy in -half..=half {
+                        let yy = (y as i64 + dy).clamp(0, nx as i64 - 1) as usize;
+                        acc += t[yy * nx + x];
+                        cnt += 1.0;
+                    }
+                    lp[y * nx + x] = acc / cnt;
+                }
+            }
+        }
+        let mut s = vec![0.0f64; n];
+        for y in 0..nx {
+            for x in 0..nx {
+                let xm = x.saturating_sub(1);
+                let xp = (x + 1).min(nx - 1);
+                let ym = y.saturating_sub(1);
+                let yp = (y + 1).min(nx - 1);
+                let gx = (lp[y * nx + xp] - lp[y * nx + xm])
+                    / (((xp - xm).max(1)) as f64 * cell);
+                let gy = (lp[yp * nx + x] - lp[ym * nx + x])
+                    / (((yp - ym).max(1)) as f64 * cell);
+                s[y * nx + x] = (gx * gx + gy * gy).sqrt();
+            }
+        }
+        s
+    };
+    let s_med = {
+        let mut v: Vec<f64> = slope.iter().copied().filter(|x| *x > 1e-9).collect();
+        v.sort_by(|a, b| a.total_cmp(b));
+        if v.is_empty() { 1e-9 } else { v[v.len() / 2] }
+    };
+    let is_channel: Vec<bool> = (0..n)
+        .map(|i| {
+            let f = (s_med / slope[i].max(1e-9)).clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
+            area[i] >= thresh * f
+        })
+        .collect();
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
