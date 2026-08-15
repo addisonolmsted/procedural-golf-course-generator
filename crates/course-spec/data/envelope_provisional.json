@@ -253,6 +253,7 @@
     "stratigraphy": 0.0,
     "trunk_river": 0.0
    },
+   "pock_field": 1.0,
    "province2_p": 0.1,
    "strata": [],
    "transforms": [

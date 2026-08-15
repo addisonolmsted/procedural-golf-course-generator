@@ -121,6 +121,10 @@ pub struct BiomeEnvelope {
     /// per-course coin for creeks. Missing = 0 (dry channels).
     #[serde(default)]
     pub channel_water: Option<f64>,
+    /// Clustered small sinkhole fields stamped at 2 m in S3 (reviewer:
+    /// heathland pock marks, 280-740 m² each, concentrated regions).
+    #[serde(default)]
+    pub pock_field: Option<f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except

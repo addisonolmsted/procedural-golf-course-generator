@@ -118,3 +118,85 @@ pub fn polish(
 
 /// Residual pit depth allowed to remain after polish.
 pub const PIT_CAP_M: f64 = 0.35;
+
+/// Clustered sinkhole POCK fields, stamped at 2 m (reviewer spec:
+/// circular pocks of ~280-740 m² — radius 9-16 m — in CONCENTRATED
+/// regions, biased to higher ground). A Thomas-style cluster process:
+/// 1-3 parent centres, 4-12 children each within ~120 m. All positions
+/// from a position-seeded hash chain — no stream/transcript change.
+/// Runs AFTER the pit-raise so nothing refills them; skips ground near
+/// channels (the restore clamp would fight them there).
+pub fn pock_fields(
+    height2: &mut Grid<f64>,
+    dist8: &Grid<f64>,
+    dial: f64,
+    seed: u64,
+) {
+    if dial <= 0.0 {
+        return;
+    }
+    let n2 = height2.spec.nx as usize;
+    let cell = height2.spec.cell_size;
+    let extent = cell * n2 as f64;
+    let h = |k: u64| -> f64 {
+        let mut z = seed ^ 0x90CC_F1E1_Du64.rotate_left(17) ^ k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    };
+    // tile median elevation for the high-ground bias
+    let med = {
+        let mut v: Vec<f64> = height2.data.iter().copied().step_by(37).collect();
+        v.sort_by(|a, b| a.total_cmp(b));
+        v[v.len() / 2]
+    };
+    let parents = 1 + (h(0) * (2.0 * dial + 0.999)) as usize;
+    let mut k = 1u64;
+    let mut placed_parents = 0usize;
+    let mut attempts = 0;
+    while placed_parents < parents && attempts < 24 {
+        attempts += 1;
+        let px = (0.12 + 0.76 * h(k)) * extent;
+        let py = (0.12 + 0.76 * h(k + 1)) * extent;
+        k += 2;
+        let cx = ((px / cell) as usize).min(n2 - 1);
+        let cy = ((py / cell) as usize).min(n2 - 1);
+        // parent must sit on above-median ground, off channels
+        if height2.data[cy * n2 + cx] <= med
+            || dist8.bilinear(course_world::math::Vec2::new(px, py)) < 60.0
+        {
+            continue;
+        }
+        placed_parents += 1;
+        let children = 4 + (h(k) * 8.999) as usize;
+        k += 1;
+        for _ in 0..children {
+            let ang = h(k) * std::f64::consts::TAU;
+            let rad = 25.0 + 95.0 * h(k + 1);
+            let r_m = 9.0 + 7.0 * h(k + 2);
+            let depth = 0.5 + 1.0 * h(k + 3);
+            k += 4;
+            let (qx, qy) = (px + rad * libm::cos(ang), py + rad * libm::sin(ang));
+            if qx < 60.0 || qy < 60.0 || qx > extent - 60.0 || qy > extent - 60.0 {
+                continue;
+            }
+            if dist8.bilinear(course_world::math::Vec2::new(qx, qy)) < 40.0 {
+                continue;
+            }
+            let rc = (r_m * 1.7 / cell).ceil() as i64;
+            let (gx, gy) = ((qx / cell) as i64, (qy / cell) as i64);
+            for dy in -rc..=rc {
+                for dx in -rc..=rc {
+                    let (x, y) = (gx + dx, gy + dy);
+                    if x < 0 || y < 0 || x >= n2 as i64 || y >= n2 as i64 {
+                        continue;
+                    }
+                    let d2 = ((x as f64 * cell) - qx).powi(2) + ((y as f64 * cell) - qy).powi(2);
+                    let s2 = r_m * r_m * 0.5;
+                    height2.data[y as usize * n2 + x as usize] -=
+                        depth * libm::exp(-d2 / (2.0 * s2));
+                }
+            }
+        }
+    }
+}

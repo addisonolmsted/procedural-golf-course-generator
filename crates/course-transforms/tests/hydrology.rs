@@ -47,7 +47,12 @@ fn sandhills_identity_pass_no_special_case() {
     let h = run(21, BiomeId::Sandhills);
     assert_eq!(h.applied, hydrology::DEFAULT_TRANSFORMS.to_vec());
     assert!(h.flow_accum.data.iter().all(|v| v.is_finite()));
-    assert!(h.water.is_empty(), "reset S4 places no water yet");
+    // v2: sandhills channel water is a 0.15 per-course coin — this
+    // seed may be wet or dry, but never water-table ponds (identity)
+    assert!(h.water.iter().all(|w| matches!(
+        w.origin,
+        hydrology::WaterPlaneOrigin::River | hydrology::WaterPlaneOrigin::Creek
+    )));
 }
 
 #[test]
@@ -118,3 +123,38 @@ fn golden_hydrology_seed_1() {
 
 
 
+
+#[test]
+fn rv_carries_one_meandering_river() {
+    // v2 spec: ONE river (or confluence of two), continuous, organic.
+    for seed in [2u64, 9, 48] {
+        let h = run(seed, BiomeId::RiverValley);
+        let rivers: Vec<_> = h
+            .water
+            .iter()
+            .filter(|w| matches!(w.origin, hydrology::WaterPlaneOrigin::River))
+            .collect();
+        assert!(!rivers.is_empty(), "rv seed {seed}: no river");
+        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+        for w in &rivers {
+            for p in &w.polygon {
+                lo = lo.min(p.x.min(p.y));
+                hi = hi.max(p.x.max(p.y));
+            }
+        }
+        assert!(hi - lo > 1500.0, "rv seed {seed}: river span {:.0} m", hi - lo);
+    }
+}
+
+#[test]
+fn heathland_water_is_sparse() {
+    for seed in [7u64, 31, 48] {
+        let h = run(seed, BiomeId::Heathland);
+        let ponds = h
+            .water
+            .iter()
+            .filter(|w| matches!(w.origin, hydrology::WaterPlaneOrigin::WaterTable))
+            .count();
+        assert!(ponds <= 6, "heathland seed {seed}: {ponds} ponds (reviewer: sparse)");
+    }
+}

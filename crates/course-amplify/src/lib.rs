@@ -117,6 +117,12 @@ pub fn generate(
     lap!("blend", t);
     let t = std::time::Instant::now();
     polish::polish(&mut height, &base8, &sk.embryos);
+    polish::pock_fields(
+        &mut height,
+        &sk.flow_distance,
+        spec.dials.get("amplify.pock_field").copied().unwrap_or(0.0),
+        identity.stream_seed(),
+    );
     // CHANNEL RESTORE: texture can dam a shallow reach, and polish then
     // raises the bed upstream of the dam (measured worst case 1.63 m).
     // The channel profile is S2's word: centreline cells clamp back to
