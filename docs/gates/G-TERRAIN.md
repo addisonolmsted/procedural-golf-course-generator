@@ -82,3 +82,24 @@ heathland legitimately rotates toward it today; the isotropy gate is
 proven on controlled data in `coherence_gate_responds_to_fabric`
 instead. When the ROUGH_FLOOR fix lands, heathland's rotated share
 should drop on its own — check it then.
+
+## Battery round 1 — 2026-08-15
+
+Instruments + full results: crates/stage-lab/out/g_terrain/.
+
+- **Network battery (150 seeds x 6 biomes): PASS.** d2c medians 99-121 m
+  (corpus 102-122; spread 22 < 30), zero crossings, connectivity
+  1.00 / 0.04-0.06 (integrated/deranged), ~600 ms median. Required the
+  slope-adaptive initiation hardening (steep exponent, robust reference,
+  natural-accumulation extraction) committed alongside.
+- **Energy distance: pooled 2.23 vs the 2.35 v1 baseline - PASS.**
+  Per-biome, four of six at/below the real split-half floor;
+  hill_country x1.7 and sandhills x1.6 above floor = the tracked
+  amplitude items, now quantified.
+- **PSD seam at 64 m: FAIL (tracked).** Generated fine band is
+  spectrally too flat (-2.1..-3.4 vs real -4.1..-4.7); the fix lever is
+  identified - the dictionary's baked per-bucket spectral equalizer is
+  loaded and never applied.
+- **P2/P3 formal sessions: materials delivered** (watered S4 surfaces,
+  road-filtered reals - crates/stage-lab/out/p2_formal). Awaiting the
+  reviewer's scored session; gate needs P2 <= 65%, P3 >= 80%.
