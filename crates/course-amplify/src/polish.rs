@@ -174,7 +174,9 @@ pub fn pock_fields(
             let ang = h(k) * std::f64::consts::TAU;
             let rad = 25.0 + 95.0 * h(k + 1);
             let r_m = 9.0 + 7.0 * h(k + 2);
-            let depth = 0.5 + 1.0 * h(k + 3);
+            // 1-3 m (doubled from 0.5-1.5 by user review of the 20-seed
+            // gallery: the shallow pocks barely read in shaded relief)
+            let depth = 1.0 + 2.0 * h(k + 3);
             k += 4;
             let (qx, qy) = (px + rad * libm::cos(ang), py + rad * libm::sin(ang));
             if qx < 60.0 || qy < 60.0 || qx > extent - 60.0 || qy > extent - 60.0 {

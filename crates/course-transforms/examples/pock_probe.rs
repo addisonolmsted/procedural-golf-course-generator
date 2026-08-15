@@ -21,30 +21,48 @@ fn main() {
         let mut spec_off = spec.clone();
         spec_off.dials.insert("amplify.pock_field".into(), 0.0);
         let off = course_amplify::generate(&spec_off, &sk, &dict, &id);
+        let h_on = course_transforms::hydrology::generate(
+            &spec,
+            &sk,
+            &on,
+            &id,
+            &course_transforms::hydrology::DEFAULT_TRANSFORMS,
+        );
+        let h_off = course_transforms::hydrology::generate(
+            &spec_off,
+            &sk,
+            &off,
+            &id,
+            &course_transforms::hydrology::DEFAULT_TRANSFORMS,
+        );
         let n2 = on.height.spec.nx as usize;
         let cell = on.height.spec.cell_size;
-        let mut cells = 0usize;
-        let mut deepest = 0.0f64;
-        let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
-        for i in 0..n2 * n2 {
-            let d = off.height.data[i] - on.height.data[i];
-            if d > 0.05 {
-                cells += 1;
-                deepest = deepest.max(d);
-                let (x, y) = (i % n2, i / n2);
-                x0 = x0.min(x);
-                y0 = y0.min(y);
-                x1 = x1.max(x);
-                y1 = y1.max(y);
+        let stats = |a: &[f64], b: &[f64]| {
+            let mut cells = 0usize;
+            let mut deepest = 0.0f64;
+            let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+            for i in 0..n2 * n2 {
+                let d = b[i] - a[i];
+                if d > 0.05 {
+                    cells += 1;
+                    deepest = deepest.max(d);
+                    let (x, y) = (i % n2, i / n2);
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
             }
-        }
+            (cells, deepest, x0, y0, x1, y1)
+        };
+        let (c3, d3, ax0, ay0, ax1, ay1) = stats(&on.height.data, &off.height.data);
+        let (c4, d4, ..) = stats(&h_on.height.data, &h_off.height.data);
         println!(
-            "seed {seed:2}: pocked cells {cells} ({:.0} m2), deepest {deepest:.2} m, bbox ({:.0},{:.0})-({:.0},{:.0}) m",
-            cells as f64 * cell * cell,
-            x0 as f64 * cell,
-            y0 as f64 * cell,
-            x1 as f64 * cell,
-            y1 as f64 * cell
+            "seed {seed:2}: S3 pocked {c3} cells deepest {d3:.2} m bbox ({:.0},{:.0})-({:.0},{:.0}) | S4 SURVIVING {c4} cells deepest {d4:.2} m",
+            ax0 as f64 * cell,
+            ay0 as f64 * cell,
+            ax1 as f64 * cell,
+            ay1 as f64 * cell
         );
     }
 }
