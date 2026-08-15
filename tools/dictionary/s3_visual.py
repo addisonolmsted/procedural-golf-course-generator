@@ -92,7 +92,7 @@ def main():
         print(f"triptych {biome}")
 
     # ---- blind A/B pairs ------------------------------------------------
-    rng = random.Random(20260816)  # bumped per review round: fresh real tiles + crops
+    rng = random.Random(20260817)  # bumped per review round: fresh real tiles + crops
     key = {}
     pair_i = 0
     for biome in BIOMES:
