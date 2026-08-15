@@ -716,6 +716,7 @@
      "thickness_m": 5.0
     }
    ],
+   "terrace_valley": 0.75,
    "transforms": [
     {
      "hi": 260.0,

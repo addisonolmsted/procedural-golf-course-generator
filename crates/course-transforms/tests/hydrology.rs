@@ -158,3 +158,35 @@ fn heathland_water_is_sparse() {
         assert!(ponds <= 6, "heathland seed {seed}: {ponds} ponds (reviewer: sparse)");
     }
 }
+
+#[test]
+fn rv_river_is_playable_from_the_core() {
+    // Reviewer (Banff/Jasper): the river must be a course FEATURE, so
+    // its corridor has to intersect the routable core, not hug a tile
+    // edge. Valley-mode is 75% of draws; require that most seeds put a
+    // meaningful share of the river inside the core window.
+    let mut in_core_seeds = 0;
+    let seeds = [2u64, 9, 17, 48];
+    for &seed in &seeds {
+        let h = run(seed, BiomeId::RiverValley);
+        let (mut inside, mut total) = (0usize, 0usize);
+        for w in &h.water {
+            if !matches!(w.origin, hydrology::WaterPlaneOrigin::River) {
+                continue;
+            }
+            for p in &w.polygon {
+                total += 1;
+                if p.x > 750.0 && p.x < 2250.0 && p.y > 750.0 && p.y < 2250.0 {
+                    inside += 1;
+                }
+            }
+        }
+        if total > 0 && inside as f64 / total as f64 > 0.25 {
+            in_core_seeds += 1;
+        }
+    }
+    assert!(
+        in_core_seeds >= 2,
+        "only {in_core_seeds}/4 rv seeds run the river through the core"
+    );
+}

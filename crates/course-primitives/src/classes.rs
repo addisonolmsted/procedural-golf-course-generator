@@ -97,6 +97,10 @@ pub fn shape(
     cross: f64,
     amp: f64,
     curve: LineCurve,
+    // 0 = classic profiles; ±1 = TerraceFlight realizes as the CENTERED
+    // asymmetric terraced valley, sign = which side carries the treads.
+    // Data-driven (envelope dial × course coin) — no biome names here.
+    valley_mode: f64,
 ) -> (f64, f64, f64) {
     let mid = EXTENT_M / 2.0;
     // Warp: along-features (risers, rims) bow with cross²; axial features
@@ -147,6 +151,28 @@ pub fn shape(
         // Three treads stepping toward the edge, with CRISP risers
         // (~160 m) and genuinely flat treads — the blind session read the
         // old 400 m-soft staircase as a plain ramp.
+        WindowClass::TerraceFlight if valley_mode != 0.0 => {
+            // CENTERED ASYMMETRIC TERRACED VALLEY (reviewer spec): a
+            // flat axial floor at cross ≈ 0 — the trunk carves here and
+            // the river runs down the middle of the tile, inside the
+            // routable core — with 2 treads STEPPING UP on one side
+            // (risers parallel to the river, height-scaled width at the
+            // approved 1.3% scarp slope) and a smooth valley shoulder
+            // on the other. Asymmetry side = sign(valley_mode).
+            let x = cross * valley_mode.signum(); // treads at x > 0
+            let floor = bump(cross, 420.0);
+            let riser_h = 0.30 * amp;
+            let riser_w = (riser_h / 0.0128).clamp(60.0, 320.0);
+            let t1 = sstep((x - 320.0) / riser_w);
+            let t2 = sstep((x - 320.0 - 1.6 * riser_w) / riser_w);
+            let treads = riser_h * (t1 + t2);
+            let shoulder = 0.55 * amp * sstep((-x - 380.0) / 900.0);
+            (
+                -0.50 * amp * floor + treads + shoulder,
+                0.35 + 0.45 * floor + 0.15 * (t1 - t2).abs(),
+                1.0 - 0.35 * floor,
+            )
+        }
         WindowClass::TerraceFlight => {
             let s = along / EXTENT_M * 3.0;
             let tread = s.floor().clamp(0.0, 2.0);

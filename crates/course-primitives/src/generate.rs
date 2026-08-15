@@ -85,6 +85,16 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         .copied()
         .unwrap_or(0.0);
     let grain_lock = spec.dials.get("primitives.grain_lock").copied().unwrap_or(0.0);
+    // Terraced-valley coin + asymmetry side: per-course scalars (no
+    // transcript change). Salt values are arbitrary distinct constants.
+    let valley_mode = {
+        let dial = spec.dials.get("primitives.terrace_valley").copied().unwrap_or(0.0);
+        if identity.course_scalar(0x7E88_ACE5) < dial {
+            if identity.course_scalar(0x51DE) < 0.5 { 1.0 } else { -1.0 }
+        } else {
+            0.0
+        }
+    };
     let base_drop = (0.3 + 0.4 * rng.next_f64()) * relief_amp;
     // Grain lock (variety audit): rotate the drawn grain axis toward the
     // base-edge/class axis BEFORE the waves consume it. At lock=1 the
@@ -240,7 +250,14 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
 
             // Relief: class shape + grain-clustered smooth modes.
             let (class_relief, class_accom, wave_mult) =
-                classes::shape(spec.structure_class.window, along, cross, relief_amp * 0.85, line_curve);
+                classes::shape(
+                    spec.structure_class.window,
+                    along,
+                    cross,
+                    relief_amp * 0.85,
+                    line_curve,
+                    valley_mode,
+                );
             let mut r = class_relief;
             for (lam, dir, phase, amp) in &waves {
                 let u = p.x * libm::cos(*dir) + p.y * libm::sin(*dir);

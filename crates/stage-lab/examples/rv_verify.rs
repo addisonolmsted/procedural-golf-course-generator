@@ -3,7 +3,7 @@
 use course_contracts::biome::BiomeId;
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
-use stage_lab::render_s34::render_s3_pair;
+use stage_lab::render_s34::{render_s3_pair, render_s4, S4View};
 
 fn main() {
     let out = std::path::Path::new("/tmp/rv_verify_tinted");
@@ -24,6 +24,16 @@ fn main() {
         let (base, ampi) = render_s3_pair(&sk.height, &amp.height, 900);
         base.save(out.join(format!("rv_{seed}_base.png"))).unwrap();
         ampi.save(out.join(format!("rv_{seed}_amp.png"))).unwrap();
+        let h = course_transforms::hydrology::generate(
+            &spec,
+            &sk,
+            &amp,
+            &id,
+            &course_transforms::hydrology::DEFAULT_TRANSFORMS,
+        );
+        render_s4(&h, &sk, S4View::Water, 900, true)
+            .save(out.join(format!("rv_{seed}_water.png")))
+            .unwrap();
         eprintln!("seed {seed} done");
     }
 }

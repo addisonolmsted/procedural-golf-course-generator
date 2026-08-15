@@ -125,6 +125,13 @@ pub struct BiomeEnvelope {
     /// heathland pock marks, 280-740 m² each, concentrated regions).
     #[serde(default)]
     pub pock_field: Option<f64>,
+    /// Probability that a terrace_flight draw realizes as the CENTERED
+    /// ASYMMETRIC TERRACED VALLEY (river down the middle, treads
+    /// climbing one side, smooth shoulder the other — reviewer's
+    /// Banff/Jasper configuration). Remainder keeps the classic
+    /// edge-stepping flight.
+    #[serde(default)]
+    pub terrace_valley: Option<f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except
