@@ -1,4 +1,5 @@
-//! Batch water-view renders for a river-valley seed gallery.
+//! Batch water-view renders for a 20-seed gallery (biome selectable:
+//! `rv_gallery <outdir> [heathland|rv|...]`).
 use course_contracts::biome::BiomeId;
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
@@ -8,6 +9,15 @@ fn main() {
     let out = std::path::PathBuf::from(
         std::env::args().nth(1).unwrap_or_else(|| "/tmp/rv_gallery".into()),
     );
+    let biome = match std::env::args().nth(2).as_deref() {
+        None | Some("rv") | Some("river_valley") => BiomeId::RiverValley,
+        Some("heathland") => BiomeId::Heathland,
+        Some("piedmont") => BiomeId::Piedmont,
+        Some("hill_country") | Some("hc") => BiomeId::HillCountry,
+        Some("great_plains") | Some("plains") => BiomeId::GreatPlains,
+        Some("sandhills") => BiomeId::Sandhills,
+        Some(other) => panic!("unknown biome {other}"),
+    };
     std::fs::create_dir_all(&out).unwrap();
     let dict = ["assets/dictionary_v2.bin", "../../assets/dictionary_v2.bin"]
         .iter()
@@ -15,10 +25,8 @@ fn main() {
         .expect("dictionary");
     for seed in 1u64..=20 {
         let id = RunIdentity::from_seed(seed);
-        let spec = SiteSpec::generate_builtin(
-            id,
-            &SpecOverridesV2 { forced_biome: Some(BiomeId::RiverValley) },
-        );
+        let spec =
+            SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(biome) });
         let c1 = course_primitives::generate(&spec, &id);
         let sk = course_skeleton::generate(&spec, &c1, &id);
         let amp = course_amplify::generate(&spec, &sk, &dict, &id);
