@@ -149,6 +149,12 @@ pub const AREA_THRESHOLD_M2: f64 = 1.2e5;
 /// to the tile median (not absolute slope) so flat biomes are
 /// untouched and no biome is ever named.
 pub const SLOPE_INIT_CLAMP: (f64, f64) = (0.14, 1.25);
+/// Majors hierarchy: top-K systems by mouth discharge get extra
+/// deepening sweeps (reviewer: "fewer channels with larger effects").
+pub const MAJORS_CAP: usize = 2;
+pub const MAJORS_THIRD_FRAC: f64 = 0.6;
+pub const MAJORS_K_BOOST: f64 = 2.2;
+pub const MAJORS_ITERS: usize = 6;
 /// Response exponent on the STEEP side only (local > median): the
 /// 150-seed battery showed the linear response left parallel-ridge
 /// flanks 15 m short of the shared d2c invariant while the linear
@@ -615,6 +621,62 @@ pub fn carve(
         .collect();
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
+
+    // ---- MAJORS pass (reviewer hierarchy spec) -------------------------
+    // Real tiles read as a FEW channels with major effects over a field
+    // of subtle swales; uniform incision spread the depth budget across
+    // the whole network and every cut looked equally irregular. Rank the
+    // channel SYSTEMS (root trees) by mouth discharge, take the top two
+    // (a third only if it carries >= MAJORS_THIRD_FRAC of the second),
+    // and deepen ONLY their cells with extra stream-power sweeps on the
+    // FIXED receiver forest - the certified network topology, the
+    // extraction, and d2c are untouched; only their relief deepens.
+    if !channels.is_empty() && p.k > 0.0 {
+        let mut root_of = vec![0u32; channels.len()];
+        for ci in 0..channels.len() {
+            let mut r = ci as u32;
+            while let Some(par) = channels[r as usize].parent {
+                r = par;
+            }
+            root_of[ci] = r;
+        }
+        let mut roots: Vec<u32> = root_of.clone();
+        roots.sort_unstable();
+        roots.dedup();
+        let mut ranked: Vec<(f64, u32)> = roots
+            .iter()
+            .map(|&r| (channels[r as usize].area_m2, r))
+            .collect();
+        ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let mut majors: Vec<u32> = ranked.iter().take(MAJORS_CAP).map(|&(_, r)| r).collect();
+        if ranked.len() > MAJORS_CAP
+            && ranked[MAJORS_CAP].0 >= MAJORS_THIRD_FRAC * ranked[MAJORS_CAP - 1].0
+        {
+            majors.push(ranked[MAJORS_CAP].1);
+        }
+        let major_erod: Vec<f64> = (0..n)
+            .map(|i| match channel_of[i] {
+                Some(ci) if majors.contains(&root_of[ci as usize]) => {
+                    erodibility[i] * MAJORS_K_BOOST
+                }
+                _ => 0.0,
+            })
+            .collect();
+        let (_, slope_now) = flow::receivers(&z, spec.cell_size);
+        let outlet_mask: Vec<bool> = (0..n).map(|i| rec[i] < 0).collect();
+        for _ in 0..MAJORS_ITERS {
+            carve_downstream(
+                &mut z,
+                &rec,
+                &slope_now,
+                &area,
+                &major_erod,
+                &outlet_mask,
+                spec.cell_size * spec.cell_size,
+                p,
+            );
+        }
+    }
 
     Carved { z, channel_of, order_at, rec, area, channels, inlet }
 }

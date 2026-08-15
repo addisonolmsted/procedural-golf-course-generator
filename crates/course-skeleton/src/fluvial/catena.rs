@@ -139,14 +139,17 @@ pub fn banks(spec: &GridSpec, carved: &Grid<f64>, near: &[Nearest]) -> Grid<f64>
             if !n.dist_m.is_finite() {
                 return 0.0;
             }
-            let floor_hw = match n.order {
-                0 | 1 => 8.0,
-                2 => 14.0,
-                3 => 22.0,
-                _ => 30.0,
-            };
+            // Floor width keys off DISCHARGE (the kernel doc always
+            // called for this; order was the placeholder): a 20 km²
+            // trunk gets a ~34 m half-width flat floor, a threshold
+            // swale ~8 m. Major valleys also get a SHARPER groove so
+            // the cut reads clean and decisive (reviewer gap #1) —
+            // minors keep the soft profile and stay subtle.
+            let km2 = (n.area_m2 / 1.0e6).max(0.0);
+            let floor_hw = (9.5 * libm::pow(km2, 0.45)).clamp(8.0, 34.0);
+            let groove_d = if km2 >= 2.0 { 26.0 } else { 40.0 };
             let d_eff = (n.dist_m - floor_hw).max(0.0);
-            let ug = (d_eff / 40.0).min(1.0);
+            let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
             let uh = (d_eff / D_FULL_M).min(1.0);
             let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);

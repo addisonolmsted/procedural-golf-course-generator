@@ -32,6 +32,10 @@ pub struct Nearest {
     /// Implied-surface elevation at that cell.
     pub implied_channel: f64,
     pub order: u8,
+    /// Drained area of the nearest channel cell (m²); 0 for edge/divide
+    /// seeds. Rides the wavefront so the catena can key bank geometry
+    /// off DISCHARGE, not just Strahler order.
+    pub area_m2: f64,
 }
 
 #[derive(PartialEq)]
@@ -55,7 +59,7 @@ pub fn dijkstra(spec: &GridSpec, seeds: &[(usize, Nearest)]) -> Vec<Nearest> {
     let n = nx * ny;
     let cell = spec.cell_size;
     let mut out = vec![
-        Nearest { dist_m: f64::INFINITY, z_channel: 0.0, implied_channel: 0.0, order: 0 };
+        Nearest { dist_m: f64::INFINITY, z_channel: 0.0, implied_channel: 0.0, order: 0, area_m2: 0.0 };
         n
     ];
     let mut heap: BinaryHeap<Reverse<(K, u64, usize)>> = BinaryHeap::new();
@@ -145,7 +149,7 @@ pub fn edge_seeds(
             let p = Vec2::new((x as f64 + 0.5) * spec.cell_size, (y as f64 + 0.5) * spec.cell_size);
             (
                 lin,
-                Nearest { dist_m: 0.0, z_channel: elev, implied_channel: implied.bilinear(p), order: 0 },
+                Nearest { dist_m: 0.0, z_channel: elev, implied_channel: implied.bilinear(p), order: 0, area_m2: 0.0 },
             )
         })
         .collect()

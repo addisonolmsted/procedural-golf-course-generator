@@ -132,6 +132,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
                         z_channel: carved.z.data[lin],
                         implied_channel: implied.data[lin],
                         order: carved.order_at[lin].max(1),
+                        area_m2: carved.area[lin],
                     },
                 )
             })
@@ -264,6 +265,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
                     z_channel: height8.data[lin], // divide elevation rides here
                     implied_channel: 0.0,
                     order: 0,
+                    area_m2: 0.0,
                 },
             )
         })

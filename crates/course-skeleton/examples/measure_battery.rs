@@ -50,7 +50,7 @@ fn main() {
                 .filter(|&(_, &c)| c)
                 .map(|(lin, _)| {
                     (lin, course_skeleton::fluvial::flow_distance::Nearest {
-                        dist_m: 0.0, z_channel: 0.0, implied_channel: 0.0, order: 0,
+                        dist_m: 0.0, z_channel: 0.0, implied_channel: 0.0, order: 0, area_m2: 0.0,
                     })
                 })
                 .collect();
