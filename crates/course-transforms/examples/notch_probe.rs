@@ -12,7 +12,12 @@ fn main() {
         .iter()
         .find_map(|p| course_amplify::dictionary::Dictionary::load(std::path::Path::new(p)).ok())
         .expect("dictionary");
-    for seed in [3u64, 9, 17, 25, 31, 48] {
+    let seeds: Vec<u64> = if std::env::var("ALL20").is_ok() {
+        (1..=20).collect()
+    } else {
+        vec![3, 9, 17, 25, 31, 48]
+    };
+    for seed in seeds {
         let id = RunIdentity::from_seed(seed);
         let spec = SiteSpec::generate_builtin(
             id,
@@ -65,8 +70,63 @@ fn main() {
         let (sy, gy, py) = gaps(ivy);
         let (axis, worst_gap, gap_at) =
             if sx >= sy { ("x", gx, px) } else { ("y", gy, py) };
+        // ---- edge-hug attribution: S2 trunk line vs S4 water ----------
+        let trunk_area = h
+            .water
+            .iter()
+            .filter(|w| matches!(w.origin, hydrology::WaterPlaneOrigin::River))
+            .count();
+        let _ = trunk_area;
+        let max_area = sk.channels.iter().map(|c| c.area_m2).fold(0.0f64, f64::max);
+        let km2 = max_area / 1.0e6;
+        let width_pers = 0.75 + id.course_scalar(hydrology::RIVER_WIDTH_SALT);
+        let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
+        let clear = 2.0 * w_m;
+        let spec8 = sk.flow_distance.spec;
+        let n8 = spec8.nx as usize;
+        let bd = |px_: f64, py_: f64| px_.min(py_).min(tile - px_).min(tile - py_);
+        let s2_hug = sk.trunk_inlet.map(|inlet| {
+            let mut cells = vec![inlet];
+            let mut cur = inlet;
+            let mut guard = 0;
+            loop {
+                let d = sk.flow_dir_rad.data[cur];
+                if !d.is_finite() {
+                    break;
+                }
+                let dx = libm::cos(d).round() as i64;
+                let dy = libm::sin(d).round() as i64;
+                let (y_, x_) = ((cur / n8) as i64, (cur % n8) as i64);
+                let (nx2, ny2) = (x_ + dx, y_ + dy);
+                if nx2 < 0 || ny2 < 0 || nx2 >= n8 as i64 || ny2 >= n8 as i64 {
+                    break;
+                }
+                cur = ny2 as usize * n8 + nx2 as usize;
+                cells.push(cur);
+                guard += 1;
+                if guard > n8 * 4 {
+                    break;
+                }
+            }
+            let total = cells.len();
+            let term = (350.0 / spec8.cell_size) as usize;
+            let mid = &cells[term.min(total)..total.saturating_sub(term)];
+            if mid.is_empty() {
+                return 0.0;
+            }
+            let hug = mid
+                .iter()
+                .filter(|&&i| {
+                    let p = spec8.world_of((i % n8) as u32, (i / n8) as u32);
+                    bd(p.x, p.y) < clear
+                })
+                .count();
+            hug as f64 / mid.len() as f64
+        });
+        let base_edge = format!("{:?}", sk.meta.base_level.edge);
         println!(
-            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} worst mid-gap {worst_gap:5.1} m at {gap_at:6.1}"
+            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m  s2_trunk_hug<2w {:4.0}%",
+            s2_hug.unwrap_or(f64::NAN) * 100.0
         );
         // seed 31 west-end transect: terrain + plane surfaces vs x
         if seed == 31 {

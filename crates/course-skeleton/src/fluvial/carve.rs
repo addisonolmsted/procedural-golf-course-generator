@@ -116,6 +116,17 @@ pub const BASE_DROP_M: f64 = 4.0;
 /// steep resolves its own flow directions.
 pub const DITHER_SLOPE_MAX: f64 = 0.02;
 
+/// Routing-shoulder raise (m) at a rimmed border and the band it eases
+/// over. Routing-surface only — steers collector channels inboard of the
+/// frame without leaving a berm in the terrain (see `carve`).
+/// Tuning note: this pair is a SWEET SPOT, not a lower bound. 8 m (and a
+/// full-height plateau variant) both dammed interior lows into eps-flat
+/// fill-lakes that the router wall-followed even harder (seed 12
+/// re-hugged at 100%); the quadratic 5 m profile keeps a continuous
+/// inward gradient with no flat to follow.
+pub const SHOULDER_M: f64 = 5.0;
+pub const SHOULDER_W_M: f64 = 260.0;
+
 /// Length of the base-level drawdown ramp (m).
 pub const BASE_RAMP_M: f64 = 900.0;
 /// External catchment (m²) entering at the trunk inlet, per unit of the
@@ -437,6 +448,46 @@ pub fn carve(
             let g = (DEFLAT_AMP_M / 1.732) / rms;
             d.iter().map(|v| v * g).collect::<Vec<f64>>()
         };
+        // ROUTING SHOULDER — on the ROUTING SURFACE ONLY, like the dither.
+        // The rim is a single-row wall, so any cross-tilt piles flow
+        // against it and erosion carves the collector channel RIGHT ALONG
+        // the border (wall-following): rv seeds 2/4/12 ran their river
+        // pinned to a rimmed edge for up to the full tile. A smooth raise
+        // over the last ~260 m into each RIMMED border pushes the
+        // collector inboard of the frame (river rule: ≥ 2× width from the
+        // edge unless terminating), while the terrain keeps no berm. The
+        // base edge is exempt (drawdown owns it), so nothing blocks the
+        // outlet, and the inlet still enters by descending the shoulder.
+        let shoulder: Vec<f64> = {
+            let cellm = spec.cell_size;
+            let in_base = |b: Edge| -> bool {
+                use Edge::*;
+                match base_edge {
+                    S => matches!(b, S),
+                    N => matches!(b, N),
+                    W => matches!(b, W),
+                    E => matches!(b, E),
+                    CornerSw => matches!(b, S | W),
+                    CornerSe => matches!(b, S | E),
+                    CornerNw => matches!(b, N | W),
+                    CornerNe => matches!(b, N | E),
+                }
+            };
+            (0..n)
+                .map(|i| {
+                    let (y, x) = (i / nx, i % nx);
+                    let (dl, dr) = (x as f64 * cellm, (nx - 1 - x) as f64 * cellm);
+                    let (db, dt) = (y as f64 * cellm, (ny - 1 - y) as f64 * cellm);
+                    let mut d = f64::INFINITY;
+                    if !in_base(Edge::W) { d = d.min(dl); }
+                    if !in_base(Edge::E) { d = d.min(dr); }
+                    if !in_base(Edge::S) { d = d.min(db); }
+                    if !in_base(Edge::N) { d = d.min(dt); }
+                    let t = (1.0 - d / SHOULDER_W_M).clamp(0.0, 1.0);
+                    SHOULDER_M * t * t
+                })
+                .collect()
+        };
         let route_surface = |z: &Grid<f64>, keep_pit: &[bool]| -> Grid<f64> {
             // Dither FIRST, then flood once: applying it after the fill
             // needs a second flood to clear the pits it creates, and the
@@ -465,7 +516,7 @@ pub fn carve(
                     // taper in over the last decade of slope so there is no
                     // seam between dithered and undithered ground
                     let w = (1.0 - slope / DITHER_SLOPE_MAX).clamp(0.0, 1.0);
-                    zf.data[i] += deflat[i] * w * w;
+                    zf.data[i] += deflat[i] * w * w + shoulder[i];
                 }
             }
             // The flood then guarantees a depression-free routing surface,

@@ -563,37 +563,38 @@ fn corridor_flatten(
                 z8.data[y * n8 + x]
             })
             .collect();
-        let mut tpath = vec![NOTCH_SENTINEL; path.len()];
-        // inlet window: running min walking downstream, seeded from the
-        // notch bed just INSIDE the border (pbed[0] itself sits on the
-        // rim rows — seeding there left them standing: 20–26 m dry at
-        // the inlet on seeds 17/25/48)
-        if border_dist(path[0]) <= 24.0 {
-            let mut t = f64::INFINITY;
+        // FULL-PATH running-min envelope. The border windows fixed the
+        // exit notches but left every sill beyond 500 m of arc standing
+        // (seed 5's mid-tile constriction, the edge-gutter bumps on
+        // seeds 2/4/12): any bump the chained surface can't climb is a
+        // dry gap. Walking downstream, the corridor core is cut to the
+        // lowest bed seen so far, plus an allowance: 0.2 m in the
+        // terminal windows (decisive notch cut), 0.7·depth mid-path so
+        // small rises stay as PONDED water (the reviewer's
+        // pond-over-bumps) instead of a shaved trough.
+        let inlet_bordered = border_dist(path[0]) <= 24.0;
+        let outlet_bordered = border_dist(*path.last().unwrap()) <= 24.0;
+        // seed from the min bed over the first 40 m when the path STARTS
+        // at a border — the border cell itself sits on the rim rows
+        let mut t = if inlet_bordered {
+            let mut m = f64::INFINITY;
             for i in 0..path.len() {
                 if arcs[i] > 40.0 {
                     break;
                 }
-                t = t.min(pbed[i]);
+                m = m.min(pbed[i]);
             }
-            for i in 0..path.len() {
-                if arcs[i] > NOTCH_WINDOW_M {
-                    break;
-                }
-                t = t.min(pbed[i]);
-                tpath[i] = tpath[i].min(t);
-            }
-        }
-        // outlet window: seed at the window's inland edge, min toward border
-        if border_dist(*path.last().unwrap()) <= 24.0 {
-            let mut t = f64::INFINITY;
-            for i in 0..path.len() {
-                if total - arcs[i] > NOTCH_WINDOW_M {
-                    continue;
-                }
-                t = t.min(pbed[i]);
-                tpath[i] = tpath[i].min(t);
-            }
+            m
+        } else {
+            f64::INFINITY
+        };
+        let mut tpath = vec![NOTCH_SENTINEL; path.len()];
+        for i in 0..path.len() {
+            t = t.min(pbed[i]);
+            let near_end = (inlet_bordered && arcs[i] <= NOTCH_WINDOW_M)
+                || (outlet_bordered && total - arcs[i] <= NOTCH_WINDOW_M);
+            let allow = if near_end { 0.2 } else { 0.2 + 0.7 * depth };
+            tpath[i] = t + allow;
         }
         for (i, p) in path.iter().enumerate() {
             if tpath[i] >= NOTCH_SENTINEL {
@@ -655,7 +656,7 @@ fn corridor_flatten(
             let tv = tg.bilinear(p);
             if dt <= notch_hw && tv < 1.0e8 {
                 let l = ((notch_hw - dt) / 12.0).clamp(0.0, 1.0);
-                let target = tv + 0.2;
+                let target = tv;
                 let i = y * n2 + x;
                 if height.data[i] > target {
                     height.data[i] += (target - height.data[i]) * l;
@@ -792,19 +793,29 @@ fn place_meandering_water(
                 sj += 1;
             }
             let seg = &wpath[si..=sj];
-            let mut bed_min = f64::INFINITY;
-            for (p, _, _) in seg.iter() {
-                let x = ((p.x / cell2) as usize).min(n2 - 1);
-                let y = ((p.y / cell2) as usize).min(n2 - 1);
-                bed_min = bed_min.min(height.data[y * n2 + x]);
-            }
+            // ROBUST bed reference (q40), not the min: one deep pocket
+            // in the corridor dragged the whole chain down, and with
+            // the +0.15/segment rise cap the river then ran DRY for
+            // hundreds of metres climbing back out (seeds 5/11/13/15
+            // mid-tile gaps). A percentile submerges pockets instead of
+            // steering by them.
+            let mut beds: Vec<f64> = seg
+                .iter()
+                .map(|(p, _, _)| {
+                    let x = ((p.x / cell2) as usize).min(n2 - 1);
+                    let y = ((p.y / cell2) as usize).min(n2 - 1);
+                    height.data[y * n2 + x]
+                })
+                .collect();
+            beds.sort_by(|a, b| a.total_cmp(b));
+            let bed_ref = beds[beds.len() * 2 / 5];
             // never dive under the bed: where the amplified bed rises
             // downstream (wobble), real water PONDS — hold the level
             // instead of skipping the segment (the skipped segments
             // were the reviewer's discontinuous river)
-            let mut surface = (bed_min + depth).min(prev_surface + 0.15);
-            if surface < bed_min + 0.15 * depth {
-                surface = (bed_min + 0.15 * depth).min(prev_surface.max(bed_min + 0.1));
+            let mut surface = (bed_ref + depth).min(prev_surface + 0.15);
+            if surface < bed_ref + 0.15 * depth {
+                surface = (bed_ref + 0.15 * depth).min(prev_surface.max(bed_ref + 0.1));
             }
             prev_surface = surface;
             let max_hw = seg.iter().map(|s| s.2).fold(0.0f64, f64::max);
