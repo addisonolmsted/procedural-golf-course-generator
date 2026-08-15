@@ -5,6 +5,7 @@
     "material_contact": 0.2,
     "scarp": 0.8
    },
+   "channel_water": 0.35,
    "class_weights": {
     "basin_margin": 0.4,
     "interfluve": 0.4,
@@ -152,6 +153,7 @@
    "boundary_kind_weights": {
     "material_contact": 1.0
    },
+   "channel_water": 0.2,
    "class_weights": {
     "basin_margin": 0.6,
     "interfluve": 0.4
@@ -289,6 +291,7 @@
     "scarp": 0.7,
     "valley_wall": 0.3
    },
+   "channel_water": 0.45,
    "class_weights": {
     "escarpment_face": 0.35,
     "interfluve": 0.25,
@@ -445,6 +448,7 @@
     "material_contact": 0.6,
     "valley_wall": 0.4
    },
+   "channel_water": 0.5,
    "class_weights": {
     "escarpment_face": 0.1,
     "interfluve": 0.45,
@@ -592,19 +596,20 @@
     "material_contact": 0.3,
     "valley_wall": 0.7
    },
+   "channel_water": 1.0,
    "class_relief_mult": {
     "basin_margin": 1.0,
     "escarpment_face": 1.35,
     "interfluve": 0.35,
-    "terrace_flight": 0.35,
+    "terrace_flight": 0.55,
     "valley_floor": 0.176
    },
    "class_weights": {
     "basin_margin": 0.08,
     "escarpment_face": 0.1,
     "interfluve": 0.12,
-    "terrace_flight": 0.28,
-    "valley_floor": 0.42
+    "terrace_flight": 0.42,
+    "valley_floor": 0.28
    },
    "components": [
     {
@@ -636,7 +641,7 @@
       ]
      ],
      "mean": [
-      3.6469608086079006,
+      4.007333185232471,
       2.7,
       0.0,
       1.5,
@@ -673,7 +678,7 @@
       ]
      ],
      "mean": [
-      3.996960808607901,
+      4.31748811353631,
       3.1,
       0.1,
       1.5,
@@ -744,6 +749,7 @@
    "boundary_kind_weights": {
     "material_contact": 1.0
    },
+   "channel_water": 0.15,
    "class_weights": {
     "basin_margin": 0.25,
     "interfluve": 0.75

@@ -31,9 +31,51 @@ pub fn apply(
     if intensity <= 0.0 {
         return Vec::new();
     }
-    let want = ((intensity * 26.0).round() as usize).min(MAX_EMBRYOS);
+    let want = ((intensity * 32.0).round() as usize).min(MAX_EMBRYOS);
     let cell = z.spec.cell_size;
     let nx = z.spec.nx as usize;
+    let ny = z.spec.ny as usize;
+    // Local TPI of the CURRENT surface (~400 m box), for the high-ground
+    // pock candidates: the reviewer's real-tile observation is circular
+    // pock marks "taken out of higher points or right at the edge of a
+    // ridge line", which uniform placement almost never produces. TPI
+    // above the tile's q60 = the upper shoulder/ridge zone.
+    let tpi = {
+        let w = ((400.0 / cell) as usize | 1).max(3);
+        let h = (w / 2) as i64;
+        let mut mean = vec![0.0f64; nx * ny];
+        let mut tmp = vec![0.0f64; nx * ny];
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut acc = 0.0;
+                for dx in -h..=h {
+                    let xx = (x as i64 + dx).clamp(0, nx as i64 - 1) as usize;
+                    acc += z.data[y * nx + xx];
+                }
+                tmp[y * nx + x] = acc / (2 * h + 1) as f64;
+            }
+        }
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut acc = 0.0;
+                for dy in -h..=h {
+                    let yy = (y as i64 + dy).clamp(0, ny as i64 - 1) as usize;
+                    acc += tmp[yy * nx + x];
+                }
+                mean[y * nx + x] = acc / (2 * h + 1) as f64;
+            }
+        }
+        let mut t = vec![0.0f64; nx * ny];
+        for i in 0..nx * ny {
+            t[i] = z.data[i] - mean[i];
+        }
+        t
+    };
+    let tpi_q60 = {
+        let mut v = tpi.clone();
+        v.sort_by(|a, b| a.total_cmp(b));
+        v[(v.len() - 1) * 6 / 10]
+    };
     let mut out: Vec<BasinEmbryo> = Vec::new();
     for k in 0..MAX_EMBRYOS {
         if out.len() >= want {
@@ -54,7 +96,15 @@ pub fn apply(
         if near.get(lin).is_some_and(|n| n.dist_m < 90.0) {
             continue;
         }
-        let radius = 70.0 + 130.0 * us;
+        // Index split, transcript-safe (accept/skip on pre-drawn
+        // candidates, never conditional draws): even candidates are the
+        // classic uniform kettles (lows pond via S4's water table); odd
+        // candidates are POCKS accepted only on high ground.
+        let is_pock = k % 2 == 1;
+        if is_pock && tpi.get(lin).is_none_or(|t| *t <= tpi_q60) {
+            continue;
+        }
+        let radius = if is_pock { 40.0 + 70.0 * us } else { 70.0 + 130.0 * us };
         // Separation: overlapping stamped Gaussians double-deepen and the
         // drawn circles overlapped constantly (review). Real compound
         // kettles exist but as the exception; candidates too close to an
@@ -68,7 +118,11 @@ pub fn apply(
         if too_close {
             continue;
         }
-        let depth = (1.6 + 2.6 * us) * (relief_budget_m / 30.0).clamp(0.4, 1.6);
+        let depth = if is_pock {
+            (1.0 + 1.6 * us) * (relief_budget_m / 30.0).clamp(0.4, 1.6)
+        } else {
+            (1.6 + 2.6 * us) * (relief_budget_m / 30.0).clamp(0.4, 1.6)
+        };
         stamp_pit(z, c, radius, depth);
         out.push(BasinEmbryo { center: c, radius_m: radius, depth_m: depth });
     }

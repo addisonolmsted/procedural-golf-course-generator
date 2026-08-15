@@ -116,6 +116,11 @@ pub struct BiomeEnvelope {
     /// trains spanning 1/3-1/2 of the tile.
     #[serde(default)]
     pub wave_beta: Option<f64>,
+    /// Probability/extent of visible water IN channels (S4): 1.0 = a
+    /// river valley always carries its river; fractional values are a
+    /// per-course coin for creeks. Missing = 0 (dry channels).
+    #[serde(default)]
+    pub channel_water: Option<f64>,
 }
 
 /// The five S2 structural modules, as data. All in `[0,1]` except
@@ -289,6 +294,13 @@ impl EnvelopeSet {
                 if !(0.0..=1.0).contains(&f) {
                     return Err(EnvelopeError::Invalid(format!(
                         "{b}: grain_lock = {f} out of [0,1]"
+                    )));
+                }
+            }
+            if let Some(f) = env.channel_water {
+                if !(0.0..=1.0).contains(&f) {
+                    return Err(EnvelopeError::Invalid(format!(
+                        "{b}: channel_water = {f} out of [0,1]"
                     )));
                 }
             }

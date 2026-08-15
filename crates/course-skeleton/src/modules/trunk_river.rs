@@ -44,7 +44,7 @@ pub fn apply(z: &mut Grid<f64>, near: &[Nearest], intensity: f64, max_order: u8)
                 let t = ((d - edge) / band).clamp(-1.0, 1.0);
                 // smoothstep riser centred on the tread edge
                 let s = 0.5 + 0.25 * t * (3.0 - t * t);
-                z.data[i] += riser_m * (s - 0.5) * 0.4;
+                z.data[i] += riser_m * (s - 0.5) * 0.7;
             }
         }
     }

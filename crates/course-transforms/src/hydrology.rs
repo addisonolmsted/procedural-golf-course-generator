@@ -33,20 +33,45 @@ pub const FLOOD_DEPTH_M: f64 = 1.1;
 /// fades to nothing on them (at 2x this excess) instead of cutting a
 /// cliff ring around the channel.
 pub const FLOOD_MAX_CUT_M: f64 = 3.0;
+/// Channels at/above this drained area are RIVERS: watered whenever the
+/// biome carries channel water at all.
+pub const RIVER_AREA_M2: f64 = 2.0e6;
+/// Channels at/above this drained area are CREEKS: watered when the
+/// per-course coin passes.
+pub const CREEK_AREA_M2: f64 = 6.0e5;
+/// Water depth above the segment's lowest bed, lerped by discharge
+/// between creek and river scale.
+pub const CREEK_DEPTH_M: f64 = 0.5;
+pub const RIVER_DEPTH_M: f64 = 0.9;
+/// A channel-water body is built per ~this much centreline arc; each
+/// segment is one flat plane (WaterBody carries a single surface), and
+/// the sequence steps down monotonically like a real river profile.
+pub const CHANNEL_SEG_M: f64 = 120.0;
+/// Soft-monotone allowance between consecutive segments: a strict
+/// downstream clamp let one deep pocket drag the whole chain below the
+/// amplified bed (dashed creeks); a riffle-sized rise per segment lets
+/// the surface recover while staying visually monotone.
+pub const CHANNEL_RISE_TOL_M: f64 = 0.4;
+/// Salt for the per-course channel-water coin (course_scalar).
+pub const CHANNEL_WATER_SALT: u64 = 0xC4EE_C5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransformId {
     WaterTable,
     Floodplain,
+    /// Water IN the channels (rivers/creeks) — reviewer-driven gameplay
+    /// feature: rv always carries its river; other biomes get creeks on
+    /// a per-course coin (`hydrology.channel_water` dial).
+    ChannelWater,
 }
 
 /// The default ordered modifier list. Order is data: it is recorded in
 /// `applied` and reordering it demonstrably changes the output (a
 /// floodplain flattened before the water-table intersection ponds
 /// differently than after).
-pub const DEFAULT_TRANSFORMS: [TransformId; 2] =
-    [TransformId::Floodplain, TransformId::WaterTable];
+pub const DEFAULT_TRANSFORMS: [TransformId; 3] =
+    [TransformId::Floodplain, TransformId::WaterTable, TransformId::ChannelWater];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +79,10 @@ pub enum WaterPlaneOrigin {
     WaterTable,
     Floodplain,
     ClosedBasin,
+    /// A big channel carrying permanent water (area ≥ RIVER_AREA_M2).
+    River,
+    /// A smaller watered channel (CREEK_AREA_M2 ≤ area < RIVER_AREA_M2).
+    Creek,
 }
 
 pub struct WaterBody {
@@ -89,7 +118,7 @@ pub fn generate(
     spec: &SiteSpec,
     sk: &Skeleton,
     amp: &Amplified,
-    _identity: &RunIdentity,
+    identity: &RunIdentity,
     transforms: &[TransformId],
 ) -> Hydrology {
     let mut height = amp.height.clone();
@@ -111,6 +140,9 @@ pub fn generate(
             }
             TransformId::WaterTable => {
                 water_table_datum(&mut height, spec, &keep8, spec8, &mut water);
+            }
+            TransformId::ChannelWater => {
+                channel_water(&height, spec, sk, identity, spec8, &mut water);
             }
         }
         applied.push(*t);
@@ -437,6 +469,154 @@ fn water_table_datum(
                 });
             }
         }
+    }
+}
+
+/// Water IN the channels. Reviewer-driven identity feature: a river
+/// valley without a river is not a river valley from a golfing
+/// perspective. Rivers (area ≥ RIVER_AREA_M2) are watered whenever the
+/// biome carries channel water at all; creeks additionally need the
+/// per-course coin, so "occasional creeks" is a property of the COURSE,
+/// not of individual reaches. Bodies are flat planes per ~120 m arc
+/// segment, stepped monotonically downstream — heights are NOT touched
+/// (the bed stays incised; water is a separate surface).
+fn channel_water(
+    height: &Grid<f64>,
+    spec: &SiteSpec,
+    sk: &Skeleton,
+    identity: &RunIdentity,
+    spec8: GridSpec,
+    water: &mut Vec<WaterBody>,
+) {
+    let dial = spec
+        .dials
+        .get("hydrology.channel_water")
+        .copied()
+        .unwrap_or(0.0);
+    if dial <= 0.0 {
+        return;
+    }
+    let coin = identity.course_scalar(CHANNEL_WATER_SALT) < dial;
+    let n8 = spec8.nx as usize;
+    let cell8 = spec8.cell_size;
+    let z8 = min_pool8(height, spec8);
+    // BED comes from the CARVED surface: it is monotone along every
+    // channel by construction. The amplified bed wobbles (restore
+    // tolerance + smoothed base), and chaining monotone surfaces off it
+    // dropped the water below later beds — the first render showed the
+    // river as scattered fragments. The MASK still tests the amplified
+    // terrain, so banks follow the real surface.
+    let bed8 = min_pool8(&sk.height, spec8);
+    let frame = (EDGE_FRAME_M / cell8).ceil() as usize;
+    for c in &sk.channels {
+        let is_river = c.area_m2 >= RIVER_AREA_M2;
+        let is_creek = c.area_m2 >= CREEK_AREA_M2 && !is_river;
+        // rivers flow whenever the biome has channel water at all —
+        // a dial of 1.0 (river valley) means every seed, always
+        if !(is_river && (coin || dial >= 1.0)) && !(is_creek && coin) {
+            continue;
+        }
+        let km2 = c.area_m2 / 1.0e6;
+        let w_m = (5.5 * km2.sqrt()).clamp(8.0, 36.0);
+        let t = ((c.area_m2 - CREEK_AREA_M2) / (RIVER_AREA_M2 - CREEK_AREA_M2)).clamp(0.0, 1.0);
+        let depth = CREEK_DEPTH_M + (RIVER_DEPTH_M - CREEK_DEPTH_M) * t;
+        // walk the polyline into ~CHANNEL_SEG_M arc segments
+        let mut seg_pts: Vec<Vec2> = Vec::new();
+        let mut seg_arc = 0.0;
+        let mut prev_surface = f64::INFINITY;
+        let mut flush = |pts: &mut Vec<Vec2>, prev_surface: &mut f64| {
+            if pts.len() < 2 {
+                pts.clear();
+                return;
+            }
+            // mask: 8 m cells within w_m of the segment, bed below surface
+            // bed from the AMPLIFIED surface (the water must sit on the
+            // terrain that exists); direction + soft monotonicity keep
+            // the chain sane
+            let mut bed_min = f64::INFINITY;
+            for p in pts.iter() {
+                let x = ((p.x / cell8) as usize).min(n8 - 1);
+                let y = ((p.y / cell8) as usize).min(n8 - 1);
+                bed_min = bed_min.min(z8.data[y * n8 + x]);
+            }
+            let surface = (bed_min + depth).min(*prev_surface + CHANNEL_RISE_TOL_M);
+            *prev_surface = surface;
+            let r8 = (w_m / cell8).ceil() as i64 + 1;
+            let mut mask = std::collections::HashSet::new();
+            let mut cells = Vec::new();
+            for p in pts.iter() {
+                let cx = (p.x / cell8) as i64;
+                let cy = (p.y / cell8) as i64;
+                for dy in -r8..=r8 {
+                    for dx in -r8..=r8 {
+                        let (xx, yy) = (cx + dx, cy + dy);
+                        if xx < frame as i64
+                            || yy < frame as i64
+                            || xx >= (n8 - frame) as i64
+                            || yy >= (n8 - frame) as i64
+                        {
+                            continue;
+                        }
+                        let d2 = ((dx * dx + dy * dy) as f64) * cell8 * cell8;
+                        if d2 > w_m * w_m {
+                            continue;
+                        }
+                        let i = yy as usize * n8 + xx as usize;
+                        if z8.data[i] < surface && mask.insert(i) {
+                            cells.push(i);
+                        }
+                    }
+                }
+            }
+            if cells.len() >= 3 {
+                let poly = component_outline(&cells, &|i| mask.contains(&i), n8, spec8);
+                if poly.len() >= 3 {
+                    water.push(WaterBody {
+                        polygon: poly,
+                        surface_m: surface,
+                        origin: if is_river {
+                            WaterPlaneOrigin::River
+                        } else {
+                            WaterPlaneOrigin::Creek
+                        },
+                        // rivers are permanent; creeks read intermittent
+                        // in drier regimes
+                        permanent: is_river || dial >= 0.4,
+                    });
+                }
+            }
+            let last = *pts.last().unwrap();
+            pts.clear();
+            pts.push(last);
+        };
+        // Walk from the UPSTREAM end: the traced polylines run
+        // mouth-to-head (probe-verified: pts[0] sits at the tile-edge
+        // outlet, the lowest bed), and chaining the monotone surface
+        // from the mouth clamps every upstream segment dry — the first
+        // render showed the river as fragments near the outlets only.
+        // Direction is detected from the carved bed, not assumed.
+        let bed_at = |p: &Vec2| {
+            let x = ((p.x / cell8) as usize).min(n8 - 1);
+            let y = ((p.y / cell8) as usize).min(n8 - 1);
+            bed8.data[y * n8 + x]
+        };
+        let pts: Vec<Vec2> = if bed_at(c.pts.first().unwrap()) < bed_at(c.pts.last().unwrap()) {
+            c.pts.iter().rev().copied().collect()
+        } else {
+            c.pts.clone()
+        };
+        for w2 in pts.windows(2) {
+            if seg_pts.is_empty() {
+                seg_pts.push(w2[0]);
+            }
+            seg_pts.push(w2[1]);
+            seg_arc += ((w2[1].x - w2[0].x).powi(2) + (w2[1].y - w2[0].y).powi(2)).sqrt();
+            if seg_arc >= CHANNEL_SEG_M {
+                flush(&mut seg_pts, &mut prev_surface);
+                seg_arc = 0.0;
+            }
+        }
+        flush(&mut seg_pts, &mut prev_surface);
     }
 }
 

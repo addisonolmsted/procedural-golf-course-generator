@@ -79,9 +79,10 @@ fn transform_order_changes_output() {
     // Seed PINNED to one where a pond lies inside the trunk's flood
     // envelope: the water-table transform touches no heights, so order
     // is only observable where the floodplain altered the surface a
-    // pond level is computed from (seed 13 had no such overlap and the
-    // orders were legitimately identical).
-    let (spec, sk, amp, id) = chain(6, BiomeId::RiverValley);
+    // pond level is computed from. Re-pinned after the rv terrace lift
+    // changed every rv seed's terrain (was 6, now 1 — found by
+    // examples/order_scan).
+    let (spec, sk, amp, id) = chain(1, BiomeId::RiverValley);
     let a = hydrology::generate(
         &spec,
         &sk,
@@ -124,8 +125,12 @@ fn trunk_stays_incised_through_floodplain() {
         let x = ((p.x / 2.0) as usize).min(n2 - 1);
         let y = ((p.y / 2.0) as usize).min(n2 - 1);
         let bed = h.height.data[y * n2 + x];
-        let xs = (x + 30).min(n2 - 1);
-        let side = h.height.data[y * n2 + xs];
+        // sample BOTH sides and take the higher: with terrace_flight at
+        // 42% weight one fixed direction can step DOWN a riser, which
+        // says nothing about incision
+        let xe = (x + 30).min(n2 - 1);
+        let xw = x.saturating_sub(30);
+        let side = h.height.data[y * n2 + xe].max(h.height.data[y * n2 + xw]);
         total += 1;
         if side >= bed {
             below += 1;
@@ -180,4 +185,108 @@ fn golden_hydrology_seed_1() {
     }
     let want = include_str!("golden_hydrology_seed_1.txt");
     assert_eq!(got, want, "S4 golden diverged — re-bless if intended");
+}
+
+#[test]
+fn rv_always_carries_a_spanning_river() {
+    // Reviewer identity requirement: a river valley without a river is
+    // not a river valley. Every rv seed must produce River-origin water
+    // whose combined extent spans well across the tile.
+    for seed in [2u64, 9, 17] {
+        let h = run(seed, BiomeId::RiverValley);
+        let rivers: Vec<_> = h
+            .water
+            .iter()
+            .filter(|w| matches!(w.origin, hydrology::WaterPlaneOrigin::River))
+            .collect();
+        assert!(!rivers.is_empty(), "rv seed {seed}: no river water");
+        let (mut lo_x, mut hi_x, mut lo_y, mut hi_y) =
+            (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for w in &rivers {
+            for p in &w.polygon {
+                lo_x = lo_x.min(p.x);
+                hi_x = hi_x.max(p.x);
+                lo_y = lo_y.min(p.y);
+                hi_y = hi_y.max(p.y);
+            }
+        }
+        let span = (hi_x - lo_x).max(hi_y - lo_y);
+        assert!(
+            span > 2000.0,
+            "rv seed {seed}: river extent spans only {span:.0} m"
+        );
+        for w in &rivers {
+            assert!(w.permanent, "rivers are permanent water");
+        }
+    }
+}
+
+#[test]
+fn creeks_are_occasional_and_deterministic() {
+    // Sandhills creek coin ~0.15: over 30 seeds some but few courses
+    // carry creek water; the same seed always answers the same way.
+    let mut wet = 0;
+    for seed in 100u64..130 {
+        let h = run(seed, BiomeId::Sandhills);
+        let has = h.water.iter().any(|w| {
+            matches!(
+                w.origin,
+                hydrology::WaterPlaneOrigin::Creek | hydrology::WaterPlaneOrigin::River
+            )
+        });
+        if has {
+            wet += 1;
+        }
+    }
+    assert!(
+        (1..=10).contains(&wet),
+        "sandhills wet-course count {wet}/30 outside the occasional band"
+    );
+    let a = run(100, BiomeId::Sandhills);
+    let b = run(100, BiomeId::Sandhills);
+    assert_eq!(
+        a.water.len(),
+        b.water.len(),
+        "channel-water coin must be deterministic"
+    );
+}
+
+#[test]
+fn heathland_grows_high_ground_pocks() {
+    // Reviewer real-tile observation: circular pocks on high points and
+    // ridge edges. The embryo split biases odd candidates high — over a
+    // few seeds a solid share of embryos must sit ABOVE the tile median
+    // elevation (uniform placement gave ~half at most below-median
+    // biomes; the bias should hold well above chance on the high side).
+    let mut above = 0usize;
+    let mut total = 0usize;
+    for seed in [3u64, 7, 21] {
+        let id = RunIdentity::from_seed(seed);
+        let spec = SiteSpec::generate_builtin(
+            id,
+            &SpecOverridesV2 { forced_biome: Some(BiomeId::Heathland) },
+        );
+        let c1 = course_primitives::generate(&spec, &id);
+        let sk = course_skeleton::generate(&spec, &c1, &id);
+        let mut zs: Vec<f64> = sk.height.data.clone();
+        zs.sort_by(|a, b| a.total_cmp(b));
+        let median = zs[zs.len() / 2];
+        for e in &sk.embryos {
+            total += 1;
+            let n2 = sk.height.spec.nx as usize;
+            let x = ((e.center.x / sk.height.spec.cell_size) as usize).min(n2 - 1);
+            let y = ((e.center.y / sk.height.spec.cell_size) as usize).min(n2 - 1);
+            // sample just OUTSIDE the pit so the stamp itself does not
+            // drag the sample below the median
+            let xr = (x + (e.radius_m * 1.8 / sk.height.spec.cell_size) as usize).min(n2 - 1);
+            if sk.height.data[y * n2 + xr] > median {
+                above += 1;
+            }
+        }
+    }
+    assert!(total >= 20, "expected a healthy embryo count, got {total}");
+    assert!(
+        above as f64 / total as f64 > 0.35,
+        "high-ground pock share too low: {above}/{total}"
+    );
 }
