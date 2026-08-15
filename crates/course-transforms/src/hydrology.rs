@@ -477,9 +477,17 @@ fn water_table_datum(
 /// perspective. Rivers (area ≥ RIVER_AREA_M2) are watered whenever the
 /// biome carries channel water at all; creeks additionally need the
 /// per-course coin, so "occasional creeks" is a property of the COURSE,
-/// not of individual reaches. Bodies are flat planes per ~120 m arc
-/// segment, stepped monotonically downstream — heights are NOT touched
-/// (the bed stays incised; water is a separate surface).
+/// not of individual reaches.
+///
+/// Geometry is built at 2 m, not inherited from the 8 m network raster
+/// (the first build read as "low-res" blocky ribbons): the carved
+/// polyline is densified and smoothed, a deterministic low-flow MEANDER
+/// offset wanders it within its floodplain (real channels wander inside
+/// their valley floor; the offset is a small sine sum in arc length,
+/// position-seeded per channel, amplitude capped well inside the
+/// discharge-scaled floodplain), width breathes gently along the arc,
+/// and the flat surface planes step every ~50 m instead of 120 m.
+/// Heights are NOT touched — the bed stays incised; water is a plane.
 fn channel_water(
     height: &Grid<f64>,
     spec: &SiteSpec,
@@ -499,77 +507,166 @@ fn channel_water(
     let coin = identity.course_scalar(CHANNEL_WATER_SALT) < dial;
     let n8 = spec8.nx as usize;
     let cell8 = spec8.cell_size;
-    let z8 = min_pool8(height, spec8);
-    // BED comes from the CARVED surface: it is monotone along every
-    // channel by construction. The amplified bed wobbles (restore
-    // tolerance + smoothed base), and chaining monotone surfaces off it
-    // dropped the water below later beds — the first render showed the
-    // river as scattered fragments. The MASK still tests the amplified
-    // terrain, so banks follow the real surface.
+    let n2 = height.spec.nx as usize;
+    let cell2 = height.spec.cell_size;
     let bed8 = min_pool8(&sk.height, spec8);
-    let frame = (EDGE_FRAME_M / cell8).ceil() as usize;
-    for c in &sk.channels {
+    let frame_m = EDGE_FRAME_M;
+    let seed = identity.stream_seed();
+    for (ci, c) in sk.channels.iter().enumerate() {
         let is_river = c.area_m2 >= RIVER_AREA_M2;
         let is_creek = c.area_m2 >= CREEK_AREA_M2 && !is_river;
-        // rivers flow whenever the biome has channel water at all —
-        // a dial of 1.0 (river valley) means every seed, always
         if !(is_river && (coin || dial >= 1.0)) && !(is_creek && coin) {
             continue;
         }
         let km2 = c.area_m2 / 1.0e6;
-        let w_m = (5.5 * km2.sqrt()).clamp(8.0, 36.0);
+        let w_m = (5.5 * km2.sqrt()).clamp(6.0, 36.0);
         let t = ((c.area_m2 - CREEK_AREA_M2) / (RIVER_AREA_M2 - CREEK_AREA_M2)).clamp(0.0, 1.0);
         let depth = CREEK_DEPTH_M + (RIVER_DEPTH_M - CREEK_DEPTH_M) * t;
-        // walk the polyline into ~CHANNEL_SEG_M arc segments
-        let mut seg_pts: Vec<Vec2> = Vec::new();
-        let mut seg_arc = 0.0;
+        // upstream-first (traced polylines run mouth→head; detect from bed)
+        let bed_at = |p: &Vec2| {
+            let x = ((p.x / cell8) as usize).min(n8 - 1);
+            let y = ((p.y / cell8) as usize).min(n8 - 1);
+            bed8.data[y * n8 + x]
+        };
+        let raw: Vec<Vec2> = if bed_at(c.pts.first().unwrap()) < bed_at(c.pts.last().unwrap()) {
+            c.pts.iter().rev().copied().collect()
+        } else {
+            c.pts.clone()
+        };
+        if raw.len() < 2 {
+            continue;
+        }
+        // densify to ~6 m spacing, then two Chaikin rounds — the water
+        // path must be smooth at its own width scale
+        let mut path: Vec<Vec2> = Vec::new();
+        for w2 in raw.windows(2) {
+            let (a, b) = (w2[0], w2[1]);
+            let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+            let steps = (len / 6.0).ceil().max(1.0) as usize;
+            for k in 0..steps {
+                let tt = k as f64 / steps as f64;
+                path.push(Vec2::new(a.x + (b.x - a.x) * tt, a.y + (b.y - a.y) * tt));
+            }
+        }
+        path.push(*raw.last().unwrap());
+        for _ in 0..2 {
+            let mut sm = Vec::with_capacity(path.len() * 2);
+            sm.push(path[0]);
+            for w2 in path.windows(2) {
+                let (a, b) = (w2[0], w2[1]);
+                sm.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+                sm.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+            }
+            sm.push(*path.last().unwrap());
+            path = sm;
+        }
+        // deterministic low-flow meander: sine sum in arc length along
+        // the local normal, phases position-seeded per channel
+        let hash = |k: u64| -> f64 {
+            let mut z = seed ^ (ci as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ k.rotate_left(31);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            (z >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let flood_hw = FLOOD_W_PER_SQKM * km2.sqrt();
+        // rivers wander up to ~35% of their floodplain half-width;
+        // creeks a couple of channel widths
+        let amp = if is_river {
+            (0.35 * flood_hw).min(3.5 * w_m)
+        } else {
+            1.5 * w_m
+        };
+        let lam = (12.0 * w_m).clamp(140.0, 900.0);
+        let (ph1, ph2, ph3) = (hash(1) * std::f64::consts::TAU, hash(2) * std::f64::consts::TAU, hash(3) * std::f64::consts::TAU);
+        let mut arc = 0.0f64;
+        let mut wpath: Vec<(Vec2, f64, f64)> = Vec::with_capacity(path.len()); // (pos, arc, halfw)
+        for (i, p) in path.iter().enumerate() {
+            if i > 0 {
+                let q = path[i - 1];
+                arc += ((p.x - q.x).powi(2) + (p.y - q.y).powi(2)).sqrt();
+            }
+            // local tangent → normal
+            let (a, b) = (
+                path[i.saturating_sub(2)],
+                path[(i + 2).min(path.len() - 1)],
+            );
+            let (tx, ty) = (b.x - a.x, b.y - a.y);
+            let tl = (tx * tx + ty * ty).sqrt().max(1e-9);
+            let (nx_, ny_) = (-ty / tl, tx / tl);
+            let off = amp
+                * (0.55 * libm::sin(std::f64::consts::TAU * arc / lam + ph1)
+                    + 0.30 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.47) + ph2)
+                    + 0.15 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
+            // width breathes ±18% at the middle harmonic
+            let hw = 0.5
+                * w_m
+                * (1.0 + 0.18 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
+            wpath.push((Vec2::new(p.x + nx_ * off, p.y + ny_ * off), arc, hw));
+        }
+        // segment every ~50 m of arc; per segment: flat plane at local
+        // amplified-bed min + depth, soft-monotone downstream
+        const SEG_M: f64 = 50.0;
+        let z2_at = |p: &Vec2| {
+            let x = ((p.x / cell2) as usize).min(n2 - 1);
+            let y = ((p.y / cell2) as usize).min(n2 - 1);
+            height.data[y * n2 + x]
+        };
         let mut prev_surface = f64::INFINITY;
-        let mut flush = |pts: &mut Vec<Vec2>, prev_surface: &mut f64| {
-            if pts.len() < 2 {
-                pts.clear();
-                return;
+        let mut si = 0usize;
+        while si < wpath.len() {
+            let arc0 = wpath[si].1;
+            let mut sj = si;
+            while sj + 1 < wpath.len() && wpath[sj].1 - arc0 < SEG_M {
+                sj += 1;
             }
-            // mask: 8 m cells within w_m of the segment, bed below surface
-            // bed from the AMPLIFIED surface (the water must sit on the
-            // terrain that exists); direction + soft monotonicity keep
-            // the chain sane
+            let seg = &wpath[si..=sj];
             let mut bed_min = f64::INFINITY;
-            for p in pts.iter() {
-                let x = ((p.x / cell8) as usize).min(n8 - 1);
-                let y = ((p.y / cell8) as usize).min(n8 - 1);
-                bed_min = bed_min.min(z8.data[y * n8 + x]);
+            for (p, _, _) in seg.iter() {
+                bed_min = bed_min.min(z2_at(p));
             }
-            let surface = (bed_min + depth).min(*prev_surface + CHANNEL_RISE_TOL_M);
-            *prev_surface = surface;
-            let r8 = (w_m / cell8).ceil() as i64 + 1;
+            let surface =
+                (bed_min + depth).min(prev_surface + CHANNEL_RISE_TOL_M * SEG_M / 120.0);
+            prev_surface = surface;
+            // 2 m mask: distance to the segment's sub-path under the
+            // local half-width, amplified ground below the surface
+            let max_hw = seg.iter().map(|s| s.2).fold(0.0f64, f64::max);
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for (p, _, _) in seg.iter() {
+                x0 = x0.min(p.x);
+                y0 = y0.min(p.y);
+                x1 = x1.max(p.x);
+                y1 = y1.max(p.y);
+            }
+            let pad = max_hw + 2.0 * cell2;
+            let cx0 = (((x0 - pad).max(frame_m)) / cell2) as usize;
+            let cy0 = (((y0 - pad).max(frame_m)) / cell2) as usize;
+            let cx1 = ((((x1 + pad).min(cell2 * n2 as f64 - frame_m)) / cell2) as usize).min(n2 - 1);
+            let cy1 = ((((y1 + pad).min(cell2 * n2 as f64 - frame_m)) / cell2) as usize).min(n2 - 1);
             let mut mask = std::collections::HashSet::new();
             let mut cells = Vec::new();
-            for p in pts.iter() {
-                let cx = (p.x / cell8) as i64;
-                let cy = (p.y / cell8) as i64;
-                for dy in -r8..=r8 {
-                    for dx in -r8..=r8 {
-                        let (xx, yy) = (cx + dx, cy + dy);
-                        if xx < frame as i64
-                            || yy < frame as i64
-                            || xx >= (n8 - frame) as i64
-                            || yy >= (n8 - frame) as i64
-                        {
-                            continue;
+            for cy in cy0..=cy1 {
+                for cx in cx0..=cx1 {
+                    let px = cx as f64 * cell2;
+                    let py = cy as f64 * cell2;
+                    let mut inside = false;
+                    for (p, _, hw) in seg.iter() {
+                        let d2 = (px - p.x) * (px - p.x) + (py - p.y) * (py - p.y);
+                        if d2 <= hw * hw {
+                            inside = true;
+                            break;
                         }
-                        let d2 = ((dx * dx + dy * dy) as f64) * cell8 * cell8;
-                        if d2 > w_m * w_m {
-                            continue;
-                        }
-                        let i = yy as usize * n8 + xx as usize;
-                        if z8.data[i] < surface && mask.insert(i) {
-                            cells.push(i);
-                        }
+                    }
+                    if !inside {
+                        continue;
+                    }
+                    let i2 = cy * n2 + cx;
+                    if height.data[i2] < surface && mask.insert(i2) {
+                        cells.push(i2);
                     }
                 }
             }
-            if cells.len() >= 3 {
-                let poly = component_outline(&cells, &|i| mask.contains(&i), n8, spec8);
+            if cells.len() >= 8 {
+                let poly = component_outline(&cells, &|i| mask.contains(&i), n2, height.spec);
                 if poly.len() >= 3 {
                     water.push(WaterBody {
                         polygon: poly,
@@ -579,44 +676,12 @@ fn channel_water(
                         } else {
                             WaterPlaneOrigin::Creek
                         },
-                        // rivers are permanent; creeks read intermittent
-                        // in drier regimes
                         permanent: is_river || dial >= 0.4,
                     });
                 }
             }
-            let last = *pts.last().unwrap();
-            pts.clear();
-            pts.push(last);
-        };
-        // Walk from the UPSTREAM end: the traced polylines run
-        // mouth-to-head (probe-verified: pts[0] sits at the tile-edge
-        // outlet, the lowest bed), and chaining the monotone surface
-        // from the mouth clamps every upstream segment dry — the first
-        // render showed the river as fragments near the outlets only.
-        // Direction is detected from the carved bed, not assumed.
-        let bed_at = |p: &Vec2| {
-            let x = ((p.x / cell8) as usize).min(n8 - 1);
-            let y = ((p.y / cell8) as usize).min(n8 - 1);
-            bed8.data[y * n8 + x]
-        };
-        let pts: Vec<Vec2> = if bed_at(c.pts.first().unwrap()) < bed_at(c.pts.last().unwrap()) {
-            c.pts.iter().rev().copied().collect()
-        } else {
-            c.pts.clone()
-        };
-        for w2 in pts.windows(2) {
-            if seg_pts.is_empty() {
-                seg_pts.push(w2[0]);
-            }
-            seg_pts.push(w2[1]);
-            seg_arc += ((w2[1].x - w2[0].x).powi(2) + (w2[1].y - w2[0].y).powi(2)).sqrt();
-            if seg_arc >= CHANNEL_SEG_M {
-                flush(&mut seg_pts, &mut prev_surface);
-                seg_arc = 0.0;
-            }
+            si = sj + 1;
         }
-        flush(&mut seg_pts, &mut prev_surface);
     }
 }
 
