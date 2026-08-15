@@ -618,24 +618,33 @@ fn place_meandering_water(
         hash(2) * std::f64::consts::TAU,
         hash(3) * std::f64::consts::TAU,
     );
+    // cumulative arc + total, for the end tapers
+    let mut arcs = vec![0.0f64; path.len()];
+    for i in 1..path.len() {
+        let (a, b) = (path[i - 1], path[i]);
+        arcs[i] = arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    }
+    let arc_total = *arcs.last().unwrap();
     for try_i in 0..4 {
         if try_i == 3 {
             // final fallback: zero offset — the traced flow path never
             // crosses itself, so water ALWAYS places
             amp = 0.0;
         }
-        let mut arc = 0.0f64;
         let mut wpath: Vec<(Vec2, f64, f64)> = Vec::with_capacity(path.len());
         for (i, p) in path.iter().enumerate() {
-            if i > 0 {
-                let q = path[i - 1];
-                arc += ((p.x - q.x).powi(2) + (p.y - q.y).powi(2)).sqrt();
-            }
+            let arc = arcs[i];
+            // taper the wander to ZERO near both ends: end offsets
+            // pushed the path onto the boundary drawdown walls and
+            // broke the ribbon near the high edge (reviewer, seed 31)
+            let t0 = (arc / 300.0).clamp(0.0, 1.0);
+            let t1 = ((arc_total - arc) / 300.0).clamp(0.0, 1.0);
+            let end_taper = t0 * t0 * (3.0 - 2.0 * t0) * t1 * t1 * (3.0 - 2.0 * t1);
             let (a, b) = (path[i.saturating_sub(2)], path[(i + 2).min(path.len() - 1)]);
             let (tx, ty) = (b.x - a.x, b.y - a.y);
             let tl = (tx * tx + ty * ty).sqrt().max(1e-9);
             let (nx_, ny_) = (-ty / tl, tx / tl);
-            let off = amp
+            let off = amp * end_taper
                 * (0.55 * libm::sin(std::f64::consts::TAU * arc / lam + ph1)
                     + 0.30 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.47) + ph2)
                     + 0.15 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
