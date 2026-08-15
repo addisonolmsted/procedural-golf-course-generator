@@ -12,7 +12,17 @@ fn main() {
         .iter()
         .find_map(|p| course_amplify::dictionary::Dictionary::load(std::path::Path::new(p)).ok())
         .expect("dictionary");
-    let seeds: Vec<u64> = if std::env::var("ALL20").is_ok() {
+    let biome = match std::env::var("BIOME").as_deref() {
+        Ok("piedmont") => BiomeId::Piedmont,
+        Ok("heathland") => BiomeId::Heathland,
+        Ok("hill_country") | Ok("hc") => BiomeId::HillCountry,
+        Ok("great_plains") | Ok("plains") => BiomeId::GreatPlains,
+        Ok("sandhills") => BiomeId::Sandhills,
+        _ => BiomeId::RiverValley,
+    };
+    let seeds: Vec<u64> = if let Ok(s) = std::env::var("SEEDS") {
+        s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
+    } else if std::env::var("ALL20").is_ok() {
         (1..=20).collect()
     } else {
         vec![3, 9, 17, 25, 31, 48]
@@ -21,7 +31,7 @@ fn main() {
         let id = RunIdentity::from_seed(seed);
         let spec = SiteSpec::generate_builtin(
             id,
-            &SpecOverridesV2 { forced_biome: Some(BiomeId::RiverValley) },
+            &SpecOverridesV2 { forced_biome: Some(biome) },
         );
         let c1 = course_primitives::generate(&spec, &id);
         let sk = course_skeleton::generate(&spec, &c1, &id);
@@ -128,6 +138,36 @@ fn main() {
             "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m  s2_trunk_hug<2w {:4.0}%",
             s2_hug.unwrap_or(f64::NAN) * 100.0
         );
+        // creeks: same continuity check (dashed creeks on the piedmont
+        // gallery). Caveat: two separate creek systems read as one big
+        // "gap" between them — interpret jumps > ~200 m with a render.
+        let mut civx: Vec<(f64, f64)> = Vec::new();
+        let mut civy: Vec<(f64, f64)> = Vec::new();
+        let mut cplanes = 0;
+        for wb in &h.water {
+            if !matches!(wb.origin, hydrology::WaterPlaneOrigin::Creek) {
+                continue;
+            }
+            cplanes += 1;
+            let (mut x0, mut x1, mut y0, mut y1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+            for p in &wb.polygon {
+                x0 = x0.min(p.x);
+                x1 = x1.max(p.x);
+                y0 = y0.min(p.y);
+                y1 = y1.max(p.y);
+            }
+            civx.push((x0, x1));
+            civy.push((y0, y1));
+        }
+        if cplanes > 0 {
+            let (csx, cgx, cpx) = gaps(civx);
+            let (csy, cgy, cpy) = gaps(civy);
+            let (caxis, cgap, cat, cspan) =
+                if csx >= csy { ("x", cgx, cpx, csx) } else { ("y", cgy, cpy, csy) };
+            println!(
+                "         creeks: {cplanes:3} planes span {cspan:6.0} m | axis {caxis} worst gap {cgap:5.1} m at {cat:6.1}"
+            );
+        }
         // seed 31 west-end transect: terrain + plane surfaces vs x
         if seed == 31 {
             let mut ry = f64::NAN;

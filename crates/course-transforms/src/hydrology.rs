@@ -462,7 +462,19 @@ fn channel_water_v2(
         // corridor flatten along THIS path only (reviewer: organic,
         // decisive river corridor; not every big channel)
         if std::env::var("HYDRO_TRACE").is_ok() {
-            eprintln!("root {root}: stem {} pts, w {:.1} m", stem.len(), w_m);
+            let tile = spec8.cell_size * n8 as f64;
+            let bd = |p: &Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
+            eprintln!(
+                "root {root}: stem {} pts, w {:.1} m, head bd {:.0} m at ({:.0},{:.0}), mouth bd {:.0} m at ({:.0},{:.0})",
+                stem.len(),
+                w_m,
+                bd(&stem[0]),
+                stem[0].x,
+                stem[0].y,
+                bd(stem.last().unwrap()),
+                stem.last().unwrap().x,
+                stem.last().unwrap().y
+            );
         }
         corridor_flatten(height, spec8, &stem, flood_hw, w_m, depth);
         place_meandering_water(
@@ -593,7 +605,18 @@ fn corridor_flatten(
             t = t.min(pbed[i]);
             let near_end = (inlet_bordered && arcs[i] <= NOTCH_WINDOW_M)
                 || (outlet_bordered && total - arcs[i] <= NOTCH_WINDOW_M);
-            let allow = if near_end { 0.2 } else { 0.2 + 0.7 * depth };
+            // mid-path allowance sets the wetting margin: the chained
+            // surface can sit as low as slot-bed + depth while the cut
+            // floor sits at run-min + allow, so the floor only wets by
+            // ~(depth − allow). 0.7·depth left creeks 0.15 m of margin
+            // and 0.5·depth still only 0.05 (depth 0.5) — the DASHED
+            // piedmont creeks. Cap at depth − 0.15 so every class keeps
+            // a real margin; rivers (depth 0.9) are unaffected.
+            let allow = if near_end {
+                0.2
+            } else {
+                (0.2 + 0.5 * depth).min(depth - 0.15)
+            };
             tpath[i] = t + allow;
         }
         for (i, p) in path.iter().enumerate() {
@@ -735,7 +758,14 @@ fn place_meandering_water(
     // floodplain.
     let mut amp = (0.35 * flood_hw).min(0.08 * lam);
     if !is_river {
-        amp = amp.min(1.8 * w_m);
+        // keep the ribbon INSIDE the corridor cut core (0.5·w+14 m from
+        // the stem): a 1.8·w wander pushed narrow creeks onto uncut
+        // rough ground and dashed the ribbon (piedmont seed 11). Rivers
+        // don't need this — their valleys are broadly carved.
+        amp = amp
+            .min(1.8 * w_m)
+            .min((0.5 * w_m + 14.0) - 0.66 * w_m - 2.0)
+            .max(0.0);
     }
     let (ph1, ph2, ph3) = (
         hash(1) * std::f64::consts::TAU,
@@ -783,13 +813,37 @@ fn place_meandering_water(
             amp *= 0.5;
             continue;
         }
-        // segment into ~50 m planes, soft-monotone
+        // segment into planes, soft-monotone. Length is SLOPE-ADAPTIVE:
+        // a fixed 50 m plane on a steadily-falling creek only wets its
+        // downstream portion (the bed drops a full creek depth per
+        // segment) — the periodic dashed creeks on the piedmont
+        // gallery. End a segment once the bed has fallen 0.35·depth so
+        // steep reaches get short, tightly-tiling steps.
+        let pbed2: Vec<f64> = wpath
+            .iter()
+            .map(|(p, _, _)| {
+                let x = ((p.x / cell2) as usize).min(n2 - 1);
+                let y = ((p.y / cell2) as usize).min(n2 - 1);
+                height.data[y * n2 + x]
+            })
+            .collect();
         let mut prev_surface = f64::INFINITY;
         let mut si = 0usize;
+        let mut seg_ord = 0usize;
+        let mut seg_planes: Vec<(usize, WaterBody)> = Vec::new();
         while si < wpath.len() {
             let arc0 = wpath[si].1;
+            let (mut bmin, mut bmax) = (pbed2[si], pbed2[si]);
             let mut sj = si;
             while sj + 1 < wpath.len() && wpath[sj].1 - arc0 < 50.0 {
+                let nb = pbed2[sj + 1];
+                if wpath[sj].1 - arc0 >= 8.0
+                    && (bmax.max(nb) - bmin.min(nb)) > 0.35 * depth
+                {
+                    break;
+                }
+                bmin = bmin.min(nb);
+                bmax = bmax.max(nb);
                 sj += 1;
             }
             let seg = &wpath[si..=sj];
@@ -855,23 +909,51 @@ fn place_meandering_water(
             if std::env::var("HYDRO_TRACE").is_ok() && cells.len() < 8 {
                 eprintln!("  seg at arc {:.0}: only {} cells (surface {:.2})", arc0, cells.len(), surface);
             }
-            if cells.len() >= 8 {
+            // creeks are 3-6 px wide at 2 m — an 8-cell floor dropped
+            // legitimate narrow segments and dashed the ribbon
+            let min_cells = if is_river { 8 } else { 5 };
+            if cells.len() >= min_cells {
                 let poly = component_outline(&cells, &|i| mask.contains(&i), n2, height.spec);
                 if poly.len() >= 3 {
-                    water.push(WaterBody {
-                        polygon: poly,
-                        surface_m: surface,
-                        origin: if is_river {
-                            WaterPlaneOrigin::River
-                        } else {
-                            WaterPlaneOrigin::Creek
+                    seg_planes.push((
+                        seg_ord,
+                        WaterBody {
+                            polygon: poly,
+                            surface_m: surface,
+                            origin: if is_river {
+                                WaterPlaneOrigin::River
+                            } else {
+                                WaterPlaneOrigin::Creek
+                            },
+                            permanent: is_river,
                         },
-                        permanent: is_river,
-                    });
+                    ));
                 }
             }
+            seg_ord += 1;
             si = sj + 1;
         }
+        // CREEK HEAD TRIM: the upstream tail is where discharge and
+        // carve depth taper to nothing, so its segments flicker in and
+        // out — the dashed creeks on the piedmont gallery. A headwater
+        // legitimately starts where it can hold water: drop leading
+        // planes until three consecutive segments placed. Rivers are
+        // exempt (border-to-border by contract).
+        let start_ord = if is_river {
+            0
+        } else {
+            let placed: std::collections::HashSet<usize> =
+                seg_planes.iter().map(|(o, _)| *o).collect();
+            (0..seg_ord)
+                .find(|&o| placed.contains(&o) && placed.contains(&(o + 1)) && placed.contains(&(o + 2)))
+                .unwrap_or(0)
+        };
+        water.extend(
+            seg_planes
+                .into_iter()
+                .filter(|(o, _)| *o >= start_ord)
+                .map(|(_, w)| w),
+        );
         return;
     }
 }
