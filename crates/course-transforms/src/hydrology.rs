@@ -364,7 +364,7 @@ fn channel_water_v2(
                 let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
                 let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
-                corridor_flatten(height, spec8, &stem, flood_hw, RIVER_DEPTH_M);
+                corridor_flatten(height, spec8, &stem, flood_hw, w_m, RIVER_DEPTH_M);
                 place_meandering_water(
                     height, identity, root as u64, &stem, w_m, RIVER_DEPTH_M, flood_hw,
                     true, water,
@@ -464,7 +464,7 @@ fn channel_water_v2(
         if std::env::var("HYDRO_TRACE").is_ok() {
             eprintln!("root {root}: stem {} pts, w {:.1} m", stem.len(), w_m);
         }
-        corridor_flatten(height, spec8, &stem, flood_hw, depth);
+        corridor_flatten(height, spec8, &stem, flood_hw, w_m, depth);
         place_meandering_water(
             height, identity, root as u64, &stem, w_m, depth, flood_hw, is_river, water,
         );
@@ -478,6 +478,7 @@ fn corridor_flatten(
     spec8: GridSpec,
     path: &[Vec2],
     half_w: f64,
+    chan_w: f64,
     depth: f64,
 ) {
     let n8 = spec8.nx as usize;
@@ -532,13 +533,135 @@ fn corridor_flatten(
     for _ in 0..2 {
         bed = course_amplify::synth::box_filter(&bed, n8, 5);
     }
+    // Rim-notch through-cut (seed 31 west edge): where the path ENDS at
+    // a tile border, the carve's boundary machinery leaves a SILL just
+    // inside the edge (rim rows + the drawdown-ramp shoulder — ~2.5 m
+    // high for ~250 m on seed 31) standing above the chained water
+    // surface: a dry gap right at the exit notch. Within 350 m of such
+    // an end, the corridor CORE is cut down to the RUNNING MIN of the
+    // path bed in the downstream direction — a monotone run-out that
+    // meets the natural bed exactly at the window edge (no step to
+    // chase) and carves through any sill down to the notch bed.
+    const NOTCH_SENTINEL: f64 = 1.0e9;
+    const NOTCH_WINDOW_M: f64 = 500.0;
+    let tile = cell8 * n8 as f64;
+    let border_dist = |p: Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
+    let notch_hw = 0.5 * chan_w + 14.0;
+    let mut tgt = vec![NOTCH_SENTINEL; n8 * n8];
+    if path.len() >= 2 {
+        let mut arcs = vec![0.0f64; path.len()];
+        for i in 1..path.len() {
+            let (a, b) = (path[i - 1], path[i]);
+            arcs[i] = arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+        }
+        let total = *arcs.last().unwrap();
+        let pbed: Vec<f64> = path
+            .iter()
+            .map(|p| {
+                let x = ((p.x / cell8) as usize).min(n8 - 1);
+                let y = ((p.y / cell8) as usize).min(n8 - 1);
+                z8.data[y * n8 + x]
+            })
+            .collect();
+        let mut tpath = vec![NOTCH_SENTINEL; path.len()];
+        // inlet window: running min walking downstream, seeded from the
+        // notch bed just INSIDE the border (pbed[0] itself sits on the
+        // rim rows — seeding there left them standing: 20–26 m dry at
+        // the inlet on seeds 17/25/48)
+        if border_dist(path[0]) <= 24.0 {
+            let mut t = f64::INFINITY;
+            for i in 0..path.len() {
+                if arcs[i] > 40.0 {
+                    break;
+                }
+                t = t.min(pbed[i]);
+            }
+            for i in 0..path.len() {
+                if arcs[i] > NOTCH_WINDOW_M {
+                    break;
+                }
+                t = t.min(pbed[i]);
+                tpath[i] = tpath[i].min(t);
+            }
+        }
+        // outlet window: seed at the window's inland edge, min toward border
+        if border_dist(*path.last().unwrap()) <= 24.0 {
+            let mut t = f64::INFINITY;
+            for i in 0..path.len() {
+                if total - arcs[i] > NOTCH_WINDOW_M {
+                    continue;
+                }
+                t = t.min(pbed[i]);
+                tpath[i] = tpath[i].min(t);
+            }
+        }
+        for (i, p) in path.iter().enumerate() {
+            if tpath[i] >= NOTCH_SENTINEL {
+                continue;
+            }
+            let x = ((p.x / cell8) as usize).min(n8 - 1);
+            let y = ((p.y / cell8) as usize).min(n8 - 1);
+            let j = y * n8 + x;
+            tgt[j] = tgt[j].min(tpath[i]);
+        }
+    }
+    // propagate the notch target with the same chamfer (nearest-seed);
+    // dist_t gates the cut to cells NEAR a window path cell — the
+    // target must not leak to mid-tile stretches of the same path
+    let mut dist_t = vec![f64::INFINITY; n8 * n8];
+    {
+        for i in 0..n8 * n8 {
+            if tgt[i] < NOTCH_SENTINEL {
+                dist_t[i] = 0.0;
+            }
+        }
+        let relax = |i: usize, j: usize, c: f64, d: &mut [f64], b: &mut [f64]| {
+            if d[j] + c < d[i] {
+                d[i] = d[j] + c;
+                b[i] = b[j];
+            }
+        };
+        for y in 0..n8 {
+            for x in 0..n8 {
+                let i = y * n8 + x;
+                if x > 0 { relax(i, i - 1, orth, &mut dist_t, &mut tgt); }
+                if y > 0 {
+                    relax(i, i - n8, orth, &mut dist_t, &mut tgt);
+                    if x > 0 { relax(i, i - n8 - 1, diag, &mut dist_t, &mut tgt); }
+                    if x + 1 < n8 { relax(i, i - n8 + 1, diag, &mut dist_t, &mut tgt); }
+                }
+            }
+        }
+        for y in (0..n8).rev() {
+            for x in (0..n8).rev() {
+                let i = y * n8 + x;
+                if x + 1 < n8 { relax(i, i + 1, orth, &mut dist_t, &mut tgt); }
+                if y + 1 < n8 {
+                    relax(i, i + n8, orth, &mut dist_t, &mut tgt);
+                    if x + 1 < n8 { relax(i, i + n8 + 1, diag, &mut dist_t, &mut tgt); }
+                    if x > 0 { relax(i, i + n8 - 1, diag, &mut dist_t, &mut tgt); }
+                }
+            }
+        }
+    }
     let mk = |d: Vec<f64>| Grid { spec: spec8, data: d };
-    let (dg, bg) = (mk(dist), mk(bed));
+    let (dg, bg, tg, dtg) = (mk(dist), mk(bed), mk(tgt), mk(dist_t));
     let n2 = height.spec.nx as usize;
     for y in 0..n2 {
         for x in 0..n2 {
             let p = height.spec.world_of(x as u32, y as u32);
             let d = dg.bilinear(p);
+            let dt = dtg.bilinear(p);
+            let tv = tg.bilinear(p);
+            if dt <= notch_hw && tv < 1.0e8 {
+                let l = ((notch_hw - dt) / 12.0).clamp(0.0, 1.0);
+                let target = tv + 0.2;
+                let i = y * n2 + x;
+                if height.data[i] > target {
+                    height.data[i] += (target - height.data[i]) * l;
+                }
+                continue;
+            }
             if d > half_w || d < 10.0 {
                 continue;
             }
