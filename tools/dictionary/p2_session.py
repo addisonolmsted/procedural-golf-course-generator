@@ -103,7 +103,7 @@ def main():
     out = pathlib.Path(sys.argv[2])
     (out / "p2_pairs").mkdir(parents=True, exist_ok=True)
     (out / "p3_tiles").mkdir(parents=True, exist_ok=True)
-    rng = random.Random(20260819)
+    rng = random.Random(20260820)
     report = ["road scores of the 6 lowest tiles per biome (lower = cleaner):"]
     pool = real_pool(report)
     (out / "real_pool_report.txt").write_text("\n".join(report) + "\n")
