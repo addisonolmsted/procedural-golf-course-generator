@@ -1,2 +1,2 @@
-Piedmont ec250ae6ef092d70 water=18 basins=385 agree=0.414
-Heathland d553c9e7f9b31c3c water=26 basins=282 agree=0.134
+Piedmont b638fa6520b1ce41 water=18 basins=391 agree=0.389
+Heathland ef33e05294f50f2e water=26 basins=284 agree=0.134

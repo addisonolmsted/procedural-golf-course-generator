@@ -67,9 +67,10 @@ def main():
             rows_gen[biome].append(vector(zc, 2.0, cfg, axes))
             # PSD seam on the full tile (detrended inside radial_psd)
             from metrics import core as mcore
+            # 256 k-bins: the default 48 leaves ~3 bins inside 32-60 m
+            # and the seam fit degenerates to NaN
             wl, psd, kc = mcore.radial_psd(z, 2.0, np.isfinite(z),
-                                           cfg["detrend"]["method"],
-                                           cfg["spectrum"]["psd_n_axis"])
+                                           cfg["detrend"]["method"], 256)
             lam = 1.0 / np.maximum(kc, 1e-12)
             def slope(lo, hi):
                 m = (lam >= lo) & (lam <= hi) & (psd > 0)
@@ -100,7 +101,7 @@ def main():
               f"{len(keys)} shared scalar features; generated n = "
               f"{sum(len(rows_gen[b]) for b in BIOMES)}, held-out real n = "
               f"{sum(len(rows_real[b]) for b in BIOMES)}", "",
-              "| biome | ED gen-vs-real | ED real split-half (floor) | verdict vs v1 2.35 |",
+              "| biome | ED gen-vs-real | ED real split-half (floor) | verdict |",
               "|---|---|---|---|"]
     peds = []
     for biome in BIOMES:
@@ -109,7 +110,11 @@ def main():
         ed = scoring.energy_distance(g, r)
         half = max(1, len(r) // 2)
         ed_floor = scoring.energy_distance(r[:half], r[half:]) if len(r) >= 2 else np.nan
-        verdict = "PASS" if ed < V1_BASELINE else "fail"
+        # With 4-6 held-out reals the split-half floor is the honest
+        # per-biome comparator (the 2.35 gate is a POOLED number):
+        # generated-at-or-below-floor means generated is as close to
+        # real as real is to itself at this sample size.
+        verdict = "PASS (<= floor)" if ed <= ed_floor else f"gap x{ed/ed_floor:.1f}"
         peds.append(ed)
         report.append(f"| {biome} | {ed:.2f} | {ed_floor:.2f} | {verdict} |")
     g_all = (mat([r for b in BIOMES for r in rows_gen[b]]) - mu) / sd

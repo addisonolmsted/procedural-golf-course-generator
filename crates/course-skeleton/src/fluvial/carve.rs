@@ -148,7 +148,12 @@ pub const AREA_THRESHOLD_M2: f64 = 1.2e5;
 /// steep flanks are exactly where real gullies come in early. Relative
 /// to the tile median (not absolute slope) so flat biomes are
 /// untouched and no biome is ever named.
-pub const SLOPE_INIT_CLAMP: (f64, f64) = (0.25, 1.25);
+pub const SLOPE_INIT_CLAMP: (f64, f64) = (0.14, 1.25);
+/// Response exponent on the STEEP side only (local > median): the
+/// 150-seed battery showed the linear response left parallel-ridge
+/// flanks 15 m short of the shared d2c invariant while the linear
+/// gentle side kept flat biomes in band.
+pub const SLOPE_INIT_STEEP_EXP: f64 = 1.8;
 fn base_ramp_m() -> f64 { std::env::var("RAMP").ok().and_then(|v| v.parse().ok()).unwrap_or(BASE_RAMP_M) }
 pub const DEFLAT_BAND_M: (f64, f64) = (48.0, 160.0);
 
@@ -324,6 +329,7 @@ pub fn carve(
     // ---- erosion loop (fixed iterations) -------------------------------
     let mut rec;
     let mut area = vec![cell_area; n];
+    let mut area_natural: Option<Vec<f64>> = None;
     {
         // Start from a depression-free surface: the roughness sum and C1's
         // own wave interference both create closed lows, and a pooled cell
@@ -498,6 +504,13 @@ pub fn carve(
         for i in 0..n {
             area[i] = acc[i] as f64 * cell_area;
         }
+        // NATURAL accumulation snapshot before the trunk inflow: the
+        // imported discharge exists for the trunk's own realism (meander
+        // wavelength, width, incision), not to mint tributaries — with
+        // inflow included in the extraction test the corridor crossed
+        // the cut wholesale and rv's d2c sat 15 m below the corpus band
+        // at every initiation setting.
+        area_natural = Some(area.clone());
         add_inflow(&mut area, &rec, inlet, p.inflow_area_m2);
     }
 
@@ -515,6 +528,7 @@ pub fn carve(
     // 0.42 km/km² against a corpus 2.36. Its swales are real, they simply
     // drain small areas — the cut scales down with derangement so the
     // measured density band is met without re-opening the basins.
+    let a_ext: &[f64] = area_natural.as_deref().unwrap_or(&area);
     let thresh = p.area_threshold_m2 * (1.0 - 0.85 * p.derangement).max(0.05);
     // slope-adaptive initiation (see SLOPE_INIT_CLAMP doc). The slope is
     // taken on a ~300 m lowpass of the carved surface: what should pull
@@ -571,15 +585,32 @@ pub fn carve(
         }
         s
     };
+    // Reference = median floored at 0.6×mean. The median alone is
+    // degenerate on a bimodal tile (flat floodplain + steep bluffs):
+    // near-zero reference handed the bluffs maximum boost at any
+    // exponent and pushed that biome's d2c ~15 m below the corpus band.
+    // On such tiles the mean sits far above the median and lifts the
+    // reference; on unimodal hillslope terrain the two agree and
+    // nothing changes. (A p70 reference was tried and rejected: it
+    // raised thresholds for 70% of cells and moved EVERY biome up
+    // ~20 m.)
     let s_med = {
         let mut v: Vec<f64> = slope.iter().copied().filter(|x| *x > 1e-9).collect();
         v.sort_by(|a, b| a.total_cmp(b));
-        if v.is_empty() { 1e-9 } else { v[v.len() / 2] }
+        if v.is_empty() {
+            1e-9
+        } else {
+            let med = v[v.len() / 2];
+            let mean = v.iter().sum::<f64>() / v.len() as f64;
+            med.max(0.6 * mean)
+        }
     };
     let is_channel: Vec<bool> = (0..n)
         .map(|i| {
-            let f = (s_med / slope[i].max(1e-9)).clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
-            area[i] >= thresh * f
+            let r = s_med / slope[i].max(1e-9);
+            let f = if r < 1.0 { libm::pow(r, SLOPE_INIT_STEEP_EXP) } else { r }
+                .clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
+            a_ext[i] >= thresh * f
         })
         .collect();
     let order_at = strahler(&rec, &is_channel, n);

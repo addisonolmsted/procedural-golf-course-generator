@@ -57,16 +57,17 @@ fn sandhills_identity_pass_no_special_case() {
 
 #[test]
 fn agreement_reported_and_in_expected_band() {
-    // Orientation-aligned pasting moved the honest level from ~0.45 to
-    // ~0.50 (aligned texture no longer dams ACROSS swales as often; the
-    // remaining gap is texture amplitude sitting ON low-order channels,
-    // an amplitude/taper question, not an orientation one). This is a
-    // REGRESSION floor under the measured level, not the ≥0.9 gate
-    // target — the gate number is settled at G-TERRAIN with the
-    // amplitude calibration.
+    // The slope-adaptive extraction (G-TERRAIN network work) made every
+    // biome's S2 network denser — the corpus-band d2c — which adds
+    // marginal order-1 heads to this metric's denominator: measured
+    // honest level ~0.40 on this seed (was ~0.50 on the sparser
+    // network; the level is a property of the network definition, not a
+    // texture regression). Floor sits under the measured level as a
+    // regression tripwire; the ≥0.9 gate target is settled at G-TERRAIN
+    // with the amplitude calibration.
     let h = run(11, BiomeId::Piedmont);
     assert!(
-        h.skeleton_agreement > 0.42,
+        h.skeleton_agreement > 0.35,
         "agreement {} regressed below the recorded baseline",
         h.skeleton_agreement
     );
