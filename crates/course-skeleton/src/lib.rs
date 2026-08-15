@@ -324,6 +324,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         connectivity,
     };
 
+    let trunk_inlet = if m_trunk_river > 0.0 { Some(carved.inlet) } else { None };
     Skeleton {
         skeleton_version: SKELETON_VERSION,
         kernel: KernelId::Fluvial,
@@ -336,6 +337,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         channels,
         embryos,
         divides: divide_lines,
+        trunk_inlet,
         meta: c1.meta.clone(),
         diagnostics,
     }

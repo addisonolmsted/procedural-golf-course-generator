@@ -324,6 +324,54 @@ fn channel_water_v2(
         // can never revisit a cell.
         let area = chans[root as usize].area_m2;
         let is_river = area >= RIVER_AREA_M2;
+        // The primary river follows the INFLOW TRUNK when the tile has
+        // one: walk the receiver chain from the inlet border cell to
+        // the outlet — continuous and edge-to-edge by construction
+        // (greedy donor walks got captured by natural tributaries and
+        // died mid-tile: reviewer seeds 9/31/48).
+        if is_river {
+            if let Some(inlet) = sk.trunk_inlet {
+                let dir_to = |i: usize| -> Option<usize> {
+                    let d = sk.flow_dir_rad.data[i];
+                    if !d.is_finite() {
+                        return None;
+                    }
+                    let dx = libm::cos(d).round() as i64;
+                    let dy = libm::sin(d).round() as i64;
+                    let (y, x) = ((i / n8) as i64, (i % n8) as i64);
+                    let (nx_, ny_) = (x + dx, y + dy);
+                    if nx_ < 0 || ny_ < 0 || nx_ >= n8 as i64 || ny_ >= n8 as i64 {
+                        return None;
+                    }
+                    Some(ny_ as usize * n8 + nx_ as usize)
+                };
+                let mut cells = vec![inlet];
+                let mut cur = inlet;
+                let mut guard = 0;
+                while let Some(j) = dir_to(cur) {
+                    guard += 1;
+                    if guard > n8 * 4 {
+                        break;
+                    }
+                    cells.push(j);
+                    cur = j;
+                }
+                let stem: Vec<Vec2> = cells
+                    .iter()
+                    .map(|&i| spec8.world_of((i % n8) as u32, (i / n8) as u32))
+                    .collect();
+                let km2 = area / 1.0e6;
+                let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
+                let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
+                let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
+                corridor_flatten(height, spec8, &stem, flood_hw, RIVER_DEPTH_M);
+                place_meandering_water(
+                    height, identity, root as u64, &stem, w_m, RIVER_DEPTH_M, flood_hw,
+                    true, water,
+                );
+                continue;
+            }
+        }
         let mouth = chans[root as usize]
             .pts
             .iter()
@@ -618,7 +666,14 @@ fn place_meandering_water(
                 let y = ((p.y / cell2) as usize).min(n2 - 1);
                 bed_min = bed_min.min(height.data[y * n2 + x]);
             }
-            let surface = (bed_min + depth).min(prev_surface + 0.15);
+            // never dive under the bed: where the amplified bed rises
+            // downstream (wobble), real water PONDS — hold the level
+            // instead of skipping the segment (the skipped segments
+            // were the reviewer's discontinuous river)
+            let mut surface = (bed_min + depth).min(prev_surface + 0.15);
+            if surface < bed_min + 0.15 * depth {
+                surface = (bed_min + 0.15 * depth).min(prev_surface.max(bed_min + 0.1));
+            }
             prev_surface = surface;
             let max_hw = seg.iter().map(|s| s.2).fold(0.0f64, f64::max);
             let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);

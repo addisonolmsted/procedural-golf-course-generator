@@ -89,6 +89,10 @@ pub struct Skeleton {
     /// Derived from the flow field — never authored.
     pub divides: Vec<Vec<Vec2>>,
     /// Bit-identical to C1's meta (asserted by tests).
+    /// 8 m linear index of the trunk INLET border cell (None when the
+    /// trunk dial is 0). S4's river walks the receiver chain from here
+    /// to the outlet — edge-to-edge by construction.
+    pub trunk_inlet: Option<usize>,
     pub meta: StructureMeta,
     pub diagnostics: SkeletonDiagnostics,
 }
