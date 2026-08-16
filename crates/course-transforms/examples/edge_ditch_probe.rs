@@ -31,20 +31,82 @@ fn profile(g: &Grid<f64>, edge: &str) -> Vec<f64> {
 }
 
 fn dip(p: &[f64]) -> (f64, f64) {
-    // reference = mean of the 300-400 m band; dip = min in 0..300 m
-    let cell = 2.0;
-    let refl = p[150..].iter().sum::<f64>() / (p.len() - 150) as f64;
+    // DETRENDED dip: fit a line over the 100-400 m band and measure
+    // the deviation below it within 4-100 m (wall rows 0-1 excluded).
+    // A raw band-reference read regional slope as a "ditch" — hc tiles
+    // tilt +-20 m over 400 m and confounded the first sweep.
+    let n = p.len();
+    let (mut sx, mut sy, mut sxx, mut sxy, mut cnt) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    for (i, &v) in p.iter().enumerate().skip(50) {
+        let x = i as f64;
+        sx += x;
+        sy += v;
+        sxx += x * x;
+        sxy += x * v;
+        cnt += 1.0;
+    }
+    let denom = cnt * sxx - sx * sx;
+    let b = (cnt * sxy - sx * sy) / denom;
+    let a = (sy - b * sx) / cnt;
     let (mut dmin, mut at) = (f64::MAX, 0.0);
-    for (i, &v) in p.iter().enumerate().take(150) {
-        if v - refl < dmin {
-            dmin = v - refl;
-            at = i as f64 * cell;
+    for (i, &v) in p.iter().enumerate().take(50).skip(2) {
+        let dev = v - (a + b * i as f64);
+        if dev < dmin {
+            dmin = dev;
+            at = i as f64 * 2.0;
         }
     }
+    let _ = n;
     (dmin, at)
 }
 
+fn batch() {
+    // 100 seeds x 6 biomes, S2-only: per-seed worst RIMMED-edge dip
+    // (base edge excluded — its drawdown dips by design)
+    for biome in [
+        BiomeId::RiverValley,
+        BiomeId::HillCountry,
+        BiomeId::Piedmont,
+        BiomeId::GreatPlains,
+        BiomeId::Heathland,
+        BiomeId::Sandhills,
+    ] {
+        let mut worst: Vec<f64> = Vec::new();
+        for seed in 1u64..=100 {
+            let id = RunIdentity::from_seed(seed);
+            let spec =
+                SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(biome) });
+            let c1 = course_primitives::generate(&spec, &id);
+            let sk = course_skeleton::generate(&spec, &c1, &id);
+            let base = format!("{:?}", sk.meta.base_level.edge);
+            let mut w = 0.0f64;
+            for edge in ["W", "E", "S", "N"] {
+                if base.contains(edge) {
+                    continue; // drawdown edge dips by design
+                }
+                let (d, _) = dip(&profile(&sk.height, edge));
+                w = w.min(d);
+            }
+            worst.push(w);
+        }
+        worst.sort_by(|a, b| a.total_cmp(b));
+        let q = |p: f64| worst[((worst.len() - 1) as f64 * p) as usize];
+        let deep3 = worst.iter().filter(|&&v| v < -3.0).count();
+        let deep6 = worst.iter().filter(|&&v| v < -6.0).count();
+        println!(
+            "{biome:?}: worst rimmed-edge dip over 100 seeds: median {:.2} p10 {:.2} min {:.2} | seeds < -3 m: {deep3}, < -6 m: {deep6}",
+            q(0.5),
+            q(0.1),
+            worst[0]
+        );
+    }
+}
+
 fn main() {
+    if std::env::var("BATCH").is_ok() {
+        batch();
+        return;
+    }
     let dict = ["assets/dictionary_v2.bin", "../../assets/dictionary_v2.bin"]
         .iter()
         .find_map(|p| course_amplify::dictionary::Dictionary::load(std::path::Path::new(p)).ok())

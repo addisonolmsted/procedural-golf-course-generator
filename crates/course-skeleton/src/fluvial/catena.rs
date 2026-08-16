@@ -159,6 +159,18 @@ pub fn banks(spec: &GridSpec, carved: &Grid<f64>, near: &[Nearest]) -> Grid<f64>
         })
         .collect();
     let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    // Border rows carry the closed-border RIM (construction, up to
+    // ~200 m above grade): their (z − z_channel) is monstrous, and the
+    // seam blur below SMEARED it into the adjacent rows — a 5–30 m
+    // moat ("ditch") along every rimmed edge, worst where channels
+    // approach the border. Construction rows carry no catena cut.
+    for y in 0..ny {
+        for x in 0..nx {
+            if x == 0 || y == 0 || x == nx - 1 || y == ny - 1 {
+                cut[y * nx + x] = 0.0;
+            }
+        }
+    }
     // same 4-pass smoothing the incision field used: removes the crease
     // where two valleys' fields meet, and stays under the 64 m band edge
     for _ in 0..4 {
