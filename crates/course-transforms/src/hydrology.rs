@@ -69,6 +69,16 @@ pub const SWITCHBACK_P: f64 = 0.10;
 /// keep). Conditional on switchback, so net rarity is ~1/100 tiles.
 pub const BRAID_SALT: u64 = 0xB4A1D;
 pub const BRAID_P: f64 = 0.10;
+/// Braided tiles read as a STREAM complex, not a mega-river: the main
+/// strand is capped here (user request), the second strand at 0.62x.
+pub const BRAID_CAP_W_M: f64 = 42.0;
+/// Converging TRIBUTARY (the "two that converge to one" pattern): half
+/// of watered tiles add one tributary that joins the main stem at a
+/// real junction. Replaces the dead second-root watering, which never
+/// converged (separate root systems) and left floating stubs.
+pub const TRIB_SALT: u64 = 0x7B1B;
+pub const TRIB_P: f64 = 0.5;
+pub const TRIB_MIN_AREA_M2: f64 = 1.0e6;
 /// Width personality: lo + span·u^gamma of the course scalar — a long
 /// upper tail so p10–p90 tile widths span ~3× (user spec: rv 30–90 yd,
 /// hc 25–65, pied/plains 10–35; rare ~100 yd rivers, 5–7 yd creeks).
@@ -318,14 +328,14 @@ fn channel_water_v2(
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
     let trunk_area = ranked[0].0;
     let min_area = if always { RIVER_AREA_M2.min(trunk_area) } else { CREEK_MIN_AREA_M2 };
+    // ONE stream per tile (user spec: a single, or two that CONVERGE).
+    // Separate root systems never converge in-tile, so the old second
+    // slot produced independent parallel streams (piedmont/hc) and
+    // floating partner stubs (rv seeds 10/15). Convergence is now a
+    // TRIBUTARY of the main stem (water_tributary), not a second root.
     let mut systems: Vec<u32> = Vec::new();
-    for (k, &(a, r)) in ranked.iter().enumerate() {
-        let ok = match k {
-            0 => a >= min_area,
-            1 => a >= min_area && (always && a >= CONFLUENCE_FRAC * trunk_area || !always),
-            _ => false, // one river or the confluence of two — never more
-        };
-        if ok {
+    if let Some(&(a, r)) = ranked.first() {
+        if a >= min_area {
             systems.push(r);
         }
     }
@@ -390,7 +400,16 @@ fn channel_water_v2(
                     .collect();
                 let km2 = area / 1.0e6;
                 let width_pers = width_personality(identity.course_scalar(RIVER_WIDTH_SALT));
-                let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
+                let mut w_m =
+                    (8.5 * km2.sqrt() * width_pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
+                // braided tiles read as a stream complex: cap the main
+                // strand BEFORE the serpentine build so the neck rule
+                // and wavelength follow the capped width
+                let braid_coin = identity.course_scalar(SWITCHBACK_SALT) < SWITCHBACK_P
+                    && identity.course_scalar(BRAID_SALT) < BRAID_P;
+                if braid_coin {
+                    w_m = w_m.min(BRAID_CAP_W_M);
+                }
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
                 let line = wound_or_stem(&stem, identity, root, w_m, cell8 * n8 as f64);
                 let (line_ref, wound) = match &line {
@@ -398,14 +417,18 @@ fn channel_water_v2(
                     None => (&stem[..], false),
                 };
                 corridor_flatten(height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M);
+                // keep-largest applies here too: healthy trunks are one
+                // component anyway (rv 20/20), but edge-hug residual
+                // trunks (hc/pied) pinch inside the border mask frame
+                // and would strand fragments otherwise
                 place_meandering_water(
                     height, identity, root as u64, line_ref, w_m, RIVER_DEPTH_M, flood_hw,
-                    true, wound, water,
+                    true, wound, true, water,
                 );
                 // DELIBERATE braid (~1/100 tiles): a second, narrower
                 // wound strand over the same trunk with its own phase —
                 // the accidental double-watering braid, kept on purpose.
-                if wound && identity.course_scalar(BRAID_SALT) < BRAID_P {
+                if wound && braid_coin {
                     let phase2 = identity.course_scalar(
                         BRAID_SALT ^ (root as u64).wrapping_mul(0x5DEE_CE2D),
                     ) * std::f64::consts::TAU;
@@ -425,9 +448,15 @@ fn channel_water_v2(
                             flood_hw,
                             true,
                             true,
+                            true,
                             water,
                         );
                     }
+                }
+                if !wound {
+                    water_tributary(
+                        height, spec, sk, identity, spec8, &cells, root, w_m, water,
+                    );
                 }
                 continue;
             }
@@ -548,9 +577,157 @@ fn channel_water_v2(
         corridor_flatten(height, spec8, line_ref, flood_hw, w_m, depth);
         place_meandering_water(
             height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
-            water,
+            true, water,
+        );
+        if !wound {
+            water_tributary(height, spec, sk, identity, spec8, &cells, root, w_m, water);
+        }
+    }
+}
+
+/// ONE converging tributary (the "two that converge" pattern): find the
+/// biggest off-stem donor joining the main stem at a real junction,
+/// walk it upstream creek-style, and water it down INTO the junction.
+/// Coin-gated so singles stay common; skipped for wound (serpentine)
+/// mains, whose water leaves the stem line.
+#[allow(clippy::too_many_arguments)]
+fn water_tributary(
+    height: &mut Grid<f64>,
+    spec: &SiteSpec,
+    sk: &Skeleton,
+    identity: &RunIdentity,
+    spec8: GridSpec,
+    main_cells: &[usize],
+    root: u32,
+    main_w_m: f64,
+    water: &mut Vec<WaterBody>,
+) {
+    if identity.course_scalar(TRIB_SALT) >= TRIB_P {
+        return;
+    }
+    let n8 = spec8.nx as usize;
+    let cell8 = spec8.cell_size;
+    let wscale = spec.dials.get("hydrology.channel_width_scale").copied().unwrap_or(1.0);
+    let dir_to = |i: usize| -> Option<usize> {
+        let d = sk.flow_dir_rad.data[i];
+        if !d.is_finite() {
+            return None;
+        }
+        let dx = libm::cos(d).round() as i64;
+        let dy = libm::sin(d).round() as i64;
+        let (y, x) = ((i / n8) as i64, (i % n8) as i64);
+        let (nx_, ny_) = (x + dx, y + dy);
+        if nx_ < 0 || ny_ < 0 || nx_ >= n8 as i64 || ny_ >= n8 as i64 {
+            return None;
+        }
+        Some(ny_ as usize * n8 + nx_ as usize)
+    };
+    let in_main: std::collections::HashSet<usize> = main_cells.iter().copied().collect();
+    // best junction: biggest off-stem donor, at least 350 m of stem
+    // away from both terminals (those are border exits)
+    let margin = (350.0 / cell8) as usize;
+    let mut best: Option<(f64, usize, usize)> = None; // (accum, donor, junction)
+    for (si, &c) in main_cells.iter().enumerate() {
+        if si < margin || si + margin >= main_cells.len() {
+            continue;
+        }
+        let (cy, cx) = ((c / n8) as i64, (c % n8) as i64);
+        for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let (yy, xx) = (cy + dy, cx + dx);
+                if yy < 0 || xx < 0 || yy >= n8 as i64 || xx >= n8 as i64 {
+                    continue;
+                }
+                let j = yy as usize * n8 + xx as usize;
+                if in_main.contains(&j) || dir_to(j) != Some(c) {
+                    continue;
+                }
+                let a = sk.flow_accum.data[j];
+                if a >= TRIB_MIN_AREA_M2 && best.map_or(true, |(ba, _, _)| a > ba) {
+                    best = Some((a, j, c));
+                }
+            }
+        }
+    }
+    let Some((area, start, junction)) = best else {
+        return;
+    };
+    // upstream walk along biggest donors, creek discharge floor
+    let mut cells = vec![start];
+    let mut cur = start;
+    loop {
+        let (cy, cx) = ((cur / n8) as i64, (cur % n8) as i64);
+        let mut donor: Option<(f64, usize)> = None;
+        for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let (yy, xx) = (cy + dy, cx + dx);
+                if yy < 0 || xx < 0 || yy >= n8 as i64 || xx >= n8 as i64 {
+                    continue;
+                }
+                let j = yy as usize * n8 + xx as usize;
+                if dir_to(j) == Some(cur) && !in_main.contains(&j) {
+                    let a = sk.flow_accum.data[j];
+                    if donor.map_or(true, |(ba, _)| a > ba) {
+                        donor = Some((a, j));
+                    }
+                }
+            }
+        }
+        match donor {
+            Some((a, j)) if a >= 2.0e5 && cells.len() < n8 * 4 => {
+                cells.push(j);
+                cur = j;
+            }
+            _ => break,
+        }
+    }
+    if (cells.len() as f64) * cell8 < 400.0 {
+        return; // stubs read as floating fragments, not streams
+    }
+    // head -> junction, ending ON the main stem so the ribbons merge
+    let mut stem: Vec<Vec2> = cells
+        .iter()
+        .rev()
+        .map(|&i| spec8.world_of((i % n8) as u32, (i / n8) as u32))
+        .collect();
+    stem.push(spec8.world_of((junction % n8) as u32, (junction / n8) as u32));
+    let km2 = area / 1.0e6;
+    let pers = width_personality(identity.course_scalar(RIVER_WIDTH_SALT));
+    let w_m = (8.5 * km2.sqrt() * pers * wscale)
+        .clamp(WIDTH_MIN_M, WIDTH_MAX_M)
+        .min(0.8 * main_w_m);
+    let is_river = area >= RIVER_AREA_M2;
+    let depth = if is_river { RIVER_DEPTH_M } else { CREEK_DEPTH_M };
+    let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
+    if std::env::var("HYDRO_TRACE").is_ok() {
+        eprintln!(
+            "  tributary: {} pts, {:.1} km2, w {:.1} m into stem cell {}",
+            stem.len(),
+            km2,
+            w_m,
+            junction
         );
     }
+    corridor_flatten(height, spec8, &stem, flood_hw, w_m, depth);
+    place_meandering_water(
+        height,
+        identity,
+        root as u64 | 0x4000_0000,
+        &stem,
+        w_m,
+        depth,
+        flood_hw,
+        is_river,
+        false,
+        true,
+        water,
+    );
 }
 
 /// Smooth chamfer flatten along a path (the 776977e floodplain
@@ -1003,6 +1180,7 @@ fn place_meandering_water(
     flood_hw: f64,
     is_river: bool,
     pre_wound: bool,
+    keep_longest: bool,
     water: &mut Vec<WaterBody>,
 ) {
     if stem.len() < 2 {
@@ -1226,27 +1404,81 @@ fn place_meandering_water(
             seg_ord += 1;
             si = sj + 1;
         }
-        // CREEK HEAD TRIM: the upstream tail is where discharge and
-        // carve depth taper to nothing, so its segments flicker in and
-        // out — the dashed creeks on the piedmont gallery. A headwater
-        // legitimately starts where it can hold water: drop leading
-        // planes until three consecutive segments placed. Rivers are
-        // exempt (border-to-border by contract).
-        let start_ord = if is_river {
-            0
+        // LONGEST-RUN selection (generalizes the creek head trim): any
+        // stream that is not the border-to-border trunk keeps only its
+        // longest consecutive run of placed planes. Headwater flicker,
+        // border-frame stubs and mid-run breaks all read as FLOATING
+        // FRAGMENTS otherwise (user report: pieces disconnected from
+        // the trunk near edges) — a shorter clean stream beats a chain
+        // of satellites.
+        if keep_longest && !seg_planes.is_empty() {
+            // SPATIAL largest component, not ord-runs: a border-clipped
+            // pinch can break the ribbon while every segment still
+            // places (consecutive ords), so only actual polygon
+            // adjacency (40 m dilated bboxes, union-find) tells truth.
+            let n = seg_planes.len();
+            let boxes: Vec<(f64, f64, f64, f64)> = seg_planes
+                .iter()
+                .map(|(_, w)| {
+                    let (mut x0, mut x1, mut y0, mut y1) =
+                        (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+                    for p in &w.polygon {
+                        x0 = x0.min(p.x);
+                        x1 = x1.max(p.x);
+                        y0 = y0.min(p.y);
+                        y1 = y1.max(p.y);
+                    }
+                    (x0, x1, y0, y1)
+                })
+                .collect();
+            let mut parent: Vec<usize> = (0..n).collect();
+            fn find(parent: &mut [usize], i: usize) -> usize {
+                let mut r = i;
+                while parent[r] != r {
+                    r = parent[r];
+                }
+                let mut c = i;
+                while parent[c] != r {
+                    let nx = parent[c];
+                    parent[c] = r;
+                    c = nx;
+                }
+                r
+            }
+            let dil = 40.0;
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let (a, b) = (boxes[i], boxes[j]);
+                    if a.0 - dil <= b.1 && b.0 - dil <= a.1 && a.2 - dil <= b.3 && b.2 - dil <= a.3
+                    {
+                        let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                        parent[ri] = rj;
+                    }
+                }
+            }
+            let mut count: std::collections::HashMap<usize, usize> =
+                std::collections::HashMap::new();
+            for i in 0..n {
+                *count.entry(find(&mut parent, i)).or_insert(0) += 1;
+            }
+            // deterministic winner: max count, ties by smallest root idx
+            let best_root = count
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+                .map(|(r, _)| *r)
+                .unwrap();
+            let mut keep = vec![false; n];
+            for i in 0..n {
+                keep[i] = find(&mut parent, i) == best_root;
+            }
+            for (i, (_, w)) in seg_planes.into_iter().enumerate() {
+                if keep[i] {
+                    water.push(w);
+                }
+            }
         } else {
-            let placed: std::collections::HashSet<usize> =
-                seg_planes.iter().map(|(o, _)| *o).collect();
-            (0..seg_ord)
-                .find(|&o| placed.contains(&o) && placed.contains(&(o + 1)) && placed.contains(&(o + 2)))
-                .unwrap_or(0)
-        };
-        water.extend(
-            seg_planes
-                .into_iter()
-                .filter(|(o, _)| *o >= start_ord)
-                .map(|(_, w)| w),
-        );
+            water.extend(seg_planes.into_iter().map(|(_, w)| w));
+        }
         return;
     }
 }

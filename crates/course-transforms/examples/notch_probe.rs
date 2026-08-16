@@ -141,6 +141,66 @@ fn main() {
             "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m sb {sb:5} s2_trunk_hug<2w {:4.0}%",
             s2_hug.unwrap_or(f64::NAN) * 100.0
         );
+        // CONNECTED COMPONENTS of all channel water (40 m dilation):
+        // floating fragments near edges = extra components
+        {
+            let mut boxes: Vec<(f64, f64, f64, f64)> = Vec::new();
+            for wb in &h.water {
+                if !matches!(
+                    wb.origin,
+                    hydrology::WaterPlaneOrigin::River | hydrology::WaterPlaneOrigin::Creek
+                ) {
+                    continue;
+                }
+                let (mut x0, mut x1, mut y0, mut y1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+                for p in &wb.polygon {
+                    x0 = x0.min(p.x);
+                    x1 = x1.max(p.x);
+                    y0 = y0.min(p.y);
+                    y1 = y1.max(p.y);
+                }
+                boxes.push((x0, x1, y0, y1));
+            }
+            let n = boxes.len();
+            let mut parent: Vec<usize> = (0..n).collect();
+            fn find(parent: &mut Vec<usize>, i: usize) -> usize {
+                if parent[i] != i {
+                    let r = find(parent, parent[i]);
+                    parent[i] = r;
+                }
+                parent[i]
+            }
+            let d = 40.0;
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let (a, b) = (boxes[i], boxes[j]);
+                    if a.0 - d <= b.1 && b.0 - d <= a.1 && a.2 - d <= b.3 && b.2 - d <= a.3 {
+                        let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                        parent[ri] = rj;
+                    }
+                }
+            }
+            use std::collections::HashMap;
+            let mut comps: HashMap<usize, (usize, f64, f64)> = HashMap::new();
+            for i in 0..n {
+                let r = find(&mut parent, i);
+                let e = comps.entry(r).or_insert((0, f64::MAX, f64::MAX));
+                e.0 += 1;
+                e.1 = e.1.min(boxes[i].0);
+                e.2 = e.2.min(boxes[i].2);
+            }
+            if comps.len() > 1 {
+                let mut sizes: Vec<(usize, f64, f64)> = comps.values().copied().collect();
+                sizes.sort_by(|a, b| a.0.cmp(&b.0));
+                println!(
+                    "         !! {} water components; smallest {} planes near ({:.0},{:.0})",
+                    comps.len(),
+                    sizes[0].0,
+                    sizes[0].1,
+                    sizes[0].2
+                );
+            }
+        }
         // creeks: same continuity check (dashed creeks on the piedmont
         // gallery). Caveat: two separate creek systems read as one big
         // "gap" between them — interpret jumps > ~200 m with a render.
