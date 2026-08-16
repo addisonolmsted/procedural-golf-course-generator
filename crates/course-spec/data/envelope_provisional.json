@@ -148,7 +148,7 @@
    ],
    "wave_iso_frac": 0.55,
    "weight": 1.0,
-   "channel_width_scale": 0.85
+   "channel_width_scale": 0.74
   },
   "heathland": {
    "boundary_kind_weights": {
@@ -444,7 +444,7 @@
    "wave_iso_frac": 0.3,
    "wave_share": 0.36,
    "weight": 1.0,
-   "channel_width_scale": 1.25
+   "channel_width_scale": 1.3
   },
   "piedmont": {
    "boundary_kind_weights": {
@@ -593,7 +593,7 @@
     }
    ],
    "weight": 1.0,
-   "channel_width_scale": 0.9
+   "channel_width_scale": 0.67
   },
   "river_valley": {
    "boundary_kind_weights": {
@@ -748,7 +748,8 @@
     }
    ],
    "wave_iso_frac": 0.12,
-   "weight": 1.0
+   "weight": 1.0,
+   "channel_width_scale": 1.05
   },
   "sandhills": {
    "boundary_kind_weights": {

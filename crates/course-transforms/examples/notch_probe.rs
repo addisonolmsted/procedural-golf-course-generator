@@ -89,8 +89,11 @@ fn main() {
         let _ = trunk_area;
         let max_area = sk.channels.iter().map(|c| c.area_m2).fold(0.0f64, f64::max);
         let km2 = max_area / 1.0e6;
-        let width_pers = 0.75 + id.course_scalar(hydrology::RIVER_WIDTH_SALT);
-        let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
+        let width_pers = hydrology::width_personality(id.course_scalar(hydrology::RIVER_WIDTH_SALT));
+        let wscale = spec.dials.get("hydrology.channel_width_scale").copied().unwrap_or(1.0);
+        let w_m = (8.5 * km2.sqrt() * width_pers * wscale)
+            .clamp(hydrology::WIDTH_MIN_M, hydrology::WIDTH_MAX_M);
+        let sb = id.course_scalar(hydrology::SWITCHBACK_SALT) < hydrology::SWITCHBACK_P;
         let clear = 2.0 * w_m;
         let spec8 = sk.flow_distance.spec;
         let n8 = spec8.nx as usize;
@@ -135,7 +138,7 @@ fn main() {
         });
         let base_edge = format!("{:?}", sk.meta.base_level.edge);
         println!(
-            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m  s2_trunk_hug<2w {:4.0}%",
+            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m sb {sb:5} s2_trunk_hug<2w {:4.0}%",
             s2_hug.unwrap_or(f64::NAN) * 100.0
         );
         // creeks: same continuity check (dashed creeks on the piedmont

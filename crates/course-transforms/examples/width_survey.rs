@@ -6,7 +6,8 @@ use course_contracts::biome::BiomeId;
 use course_seed::RunIdentity;
 use course_spec::v2::{SiteSpec, SpecOverridesV2};
 use course_transforms::hydrology::{
-    CHANNEL_WATER_SALT, CONFLUENCE_FRAC, CREEK_MIN_AREA_M2, RIVER_AREA_M2, RIVER_WIDTH_SALT,
+    width_personality, CHANNEL_WATER_SALT, CONFLUENCE_FRAC, CREEK_MIN_AREA_M2, RIVER_AREA_M2,
+    RIVER_WIDTH_SALT, WIDTH_MAX_M, WIDTH_MIN_M,
 };
 
 const WIDE_M: f64 = 54.9; // 60 yards
@@ -63,7 +64,7 @@ fn main() {
             let trunk = ranked[0];
             let min_area = if always { RIVER_AREA_M2.min(trunk) } else { CREEK_MIN_AREA_M2 };
             let mut widths: Vec<(f64, bool)> = Vec::new();
-            let pers = 0.75 + id.course_scalar(RIVER_WIDTH_SALT);
+            let pers = width_personality(id.course_scalar(RIVER_WIDTH_SALT));
             let wscale = spec.dials.get("hydrology.channel_width_scale").copied().unwrap_or(1.0);
             for (k, &a) in ranked.iter().enumerate() {
                 let ok = match k {
@@ -72,7 +73,7 @@ fn main() {
                     _ => false,
                 };
                 if ok {
-                    let w = (8.5 * (a / 1.0e6).sqrt() * pers * wscale).clamp(6.0, 80.0);
+                    let w = (8.5 * (a / 1.0e6).sqrt() * pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
                     widths.push((w, a >= RIVER_AREA_M2));
                 }
             }

@@ -58,6 +58,21 @@ pub const CHANNEL_WATER_SALT: u64 = 0xC4EE_C5;
 /// Salt for the per-course river WIDTH personality (some courses carry
 /// a notably wide river — reviewer request).
 pub const RIVER_WIDTH_SALT: u64 = 0x81D7;
+/// Salt for the rare SWITCHBACK meander personality (rivers only).
+pub const SWITCHBACK_SALT: u64 = 0x5B1C;
+/// Fraction of rivers that draw the switchback personality: tight
+/// hairpin-adjacent bends (Houston CC-style), past the analytic fold
+/// bound — the true segment-crossing check guards them.
+pub const SWITCHBACK_P: f64 = 0.10;
+/// Width personality: lo + span·u^gamma of the course scalar — a long
+/// upper tail so p10–p90 tile widths span ~3× (user spec: rv 30–90 yd,
+/// hc 25–65, pied/plains 10–35; rare ~100 yd rivers, 5–7 yd creeks).
+pub fn width_personality(u: f64) -> f64 {
+    0.55 + 1.7 * u.powf(1.6)
+}
+/// Width clamp (m): floor ~5 yd thread, cap just past 100 yd.
+pub const WIDTH_MIN_M: f64 = 4.5;
+pub const WIDTH_MAX_M: f64 = 95.0;
 /// Salt for the heathland pond-count richness draw.
 pub const POND_RICHNESS_SALT: u64 = 0x90D5;
 
@@ -362,8 +377,8 @@ fn channel_water_v2(
                     .map(|&i| spec8.world_of((i % n8) as u32, (i / n8) as u32))
                     .collect();
                 let km2 = area / 1.0e6;
-                let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
-                let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(6.0, 80.0);
+                let width_pers = width_personality(identity.course_scalar(RIVER_WIDTH_SALT));
+                let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
                 corridor_flatten(height, spec8, &stem, flood_hw, w_m, RIVER_DEPTH_M);
                 place_meandering_water(
@@ -456,8 +471,8 @@ fn channel_water_v2(
         // Width varies a LOT (reviewer): stronger discharge scaling, an
         // 80 m ceiling, and a per-course personality scalar so some
         // courses carry a genuinely wide river (22 km² trunk: 30-70 m).
-        let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
-        let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(6.0, 80.0);
+        let width_pers = width_personality(identity.course_scalar(RIVER_WIDTH_SALT));
+        let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
         let depth = if is_river { RIVER_DEPTH_M } else { CREEK_DEPTH_M };
         let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
         // corridor flatten along THIS path only (reviewer: organic,
@@ -752,12 +767,23 @@ fn place_meandering_water(
         sm.push(*path.last().unwrap());
         path = sm;
     }
-    let lam = (12.0 * w_m).clamp(140.0, 900.0);
+    // wavelength rides WIDTH across the whole range (user spec): a 5 yd
+    // creek wiggles at ~80 m while an 80 yd river sweeps ~1 km bends.
+    // The old [140, 900] clamp flattened exactly those extremes.
+    let mut lam = (12.0 * w_m).clamp(80.0, 1400.0);
+    let switchback = is_river && identity.course_scalar(SWITCHBACK_SALT) < SWITCHBACK_P;
     // fold bound: |d(off)/ds| < 0.5 needs amp·2π/λ·Σweights < 0.5 —
     // with harmonic weights 0.55+0.30/0.47+0.15/2.3 ≈ 1.26 effective at
     // the shortest λ·0.47 ⇒ amp ≤ 0.08·λ. Also stay inside the
     // floodplain.
     let mut amp = (0.35 * flood_hw).min(0.08 * lam);
+    if switchback {
+        // tight switchbacks: shorten the wave and push amplitude past
+        // the fold bound — hairpin-adjacent bends; the segment-crossing
+        // check (and its deterministic amp-halving fallback) guards.
+        lam *= 0.55;
+        amp = (0.16 * lam).min(0.35 * flood_hw);
+    }
     if !is_river {
         // keep the ribbon INSIDE the corridor cut core (0.5·w+14 m from
         // the stem): a 1.8·w wander pushed narrow creeks onto uncut
