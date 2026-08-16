@@ -100,6 +100,14 @@ pub struct Carved {
     pub channels: Vec<Channel>,
     /// Where external inflow enters (usize::MAX if none) — diagnostic.
     pub inlet: usize,
+    /// Pre-rim heights of the rimmed border rows. The rim is ROUTING
+    /// CONSTRUCTION — every flow decision is made against the walls —
+    /// but it must never reach S3: amplify smears the ~200 m single-row
+    /// spike into a 40 m-wide 50-78 deg skirt that hillshades as a
+    /// trench/berm band on every rimmed edge (user report, twice). The
+    /// kernel strips the walls from the PRESENTED height only, after
+    /// all routing/divide/connectivity derivations.
+    pub pre_rim: Vec<(usize, f64)>,
 }
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
@@ -283,13 +291,16 @@ pub fn carve(
     // — raised out of reach — and every drop of water has to find the base
     // edge. This is the standard landscape-evolution boundary condition:
     // one open boundary, the rest no-flux.
+    let mut pre_rim: Vec<(usize, f64)> = Vec::new();
     if p.close_borders {
         let rim = 40.0 + 4.0 * relief_amp_m;
         for y in 0..ny {
             for x in 0..nx {
                 let on_border = y == 0 || y == ny - 1 || x == 0 || x == nx - 1;
                 if on_border && !outlet_side(base_edge, spec, x, y) {
-                    z.data[y * nx + x] += rim;
+                    let lin = y * nx + x;
+                    pre_rim.push((lin, z.data[lin]));
+                    z.data[lin] += rim;
                 }
             }
         }
@@ -729,7 +740,7 @@ pub fn carve(
         }
     }
 
-    Carved { z, channel_of, order_at, rec, area, channels, inlet }
+    Carved { z, channel_of, order_at, rec, area, channels, inlet, pre_rim }
 }
 
 /// One carving pass in downstream-to-upstream order: a cell is cut only

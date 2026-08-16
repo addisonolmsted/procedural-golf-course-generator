@@ -102,7 +102,50 @@ fn batch() {
     }
 }
 
+fn slopes() {
+    // Per-border, 2 m resolution: mean height (rel to 60 m) and mean
+    // toward-edge slope for the last 30 pixels, on the FINAL surface.
+    let dict = ["assets/dictionary_v2.bin", "../../assets/dictionary_v2.bin"]
+        .iter()
+        .find_map(|p| course_amplify::dictionary::Dictionary::load(std::path::Path::new(p)).ok())
+        .expect("dictionary");
+    for (biome, seed) in [
+        (BiomeId::RiverValley, 1u64),
+        (BiomeId::Piedmont, 3),
+        (BiomeId::HillCountry, 5),
+    ] {
+        let id = RunIdentity::from_seed(seed);
+        let spec =
+            SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(biome) });
+        let c1 = course_primitives::generate(&spec, &id);
+        let sk = course_skeleton::generate(&spec, &c1, &id);
+        let amp = course_amplify::generate(&spec, &sk, &dict, &id);
+        let h = course_transforms::hydrology::generate(
+            &spec,
+            &sk,
+            &amp,
+            &id,
+            &course_transforms::hydrology::DEFAULT_TRANSFORMS,
+        );
+        println!("{biome:?} seed {seed} (base {:?}):", sk.meta.base_level.edge);
+        for edge in ["W", "E", "S", "N"] {
+            let pr = profile(&h.height, edge);
+            let rel: Vec<String> =
+                (0..30).map(|i| format!("{:+.1}", pr[i] - pr[30])).collect();
+            println!("  {edge} h(d)-h(60m), d=0,2,..58 m: {}", rel.join(" "));
+            let sl: Vec<String> = (0..15)
+                .map(|i| format!("{:+.2}", (pr[i + 1] - pr[i]) / 2.0))
+                .collect();
+            println!("  {edge} slope away-from-edge (m/m), d=0..30 m: {}", sl.join(" "));
+        }
+    }
+}
+
 fn main() {
+    if std::env::var("SLOPES").is_ok() {
+        slopes();
+        return;
+    }
     if std::env::var("BATCH").is_ok() {
         batch();
         return;

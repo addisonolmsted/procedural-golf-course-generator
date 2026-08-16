@@ -298,6 +298,16 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         }
     }
 
+    // ---- strip the rim from the PRESENTED height -----------------------
+    // The walls stayed on for every routing/divide/connectivity
+    // derivation above (stripping them before flow::route opened all
+    // borders and the trunk walk died at the nearest edge — rv "no
+    // river"); only the surface handed to S3 loses them. See
+    // Carved::pre_rim.
+    for &(lin, zv) in &carved.pre_rim {
+        height8.data[lin] = zv;
+    }
+
     // ---- 2 m presentation ---------------------------------------------
     let spec2 = world_spec(RES_FULL_M);
     let mut height2 = Grid::filled(spec2, 0.0f64);

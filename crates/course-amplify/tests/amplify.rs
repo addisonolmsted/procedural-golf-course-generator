@@ -289,8 +289,14 @@ fn rv_texture_follows_the_grain() {
     let np = origins.len();
     let n = chosen.iter().flatten().count();
     let rot = chosen.iter().flatten().filter(|c| c.theta != 0.0).count();
+    // Floor sits under the measured honest level (~0.27) as a
+    // regression tripwire. It was 0.3 while the border rim walls were
+    // still in the PRESENTED height: the ~200 m construction walls
+    // manufactured artificial gradient grain along every border that
+    // patches dutifully rotated to. Stripping the walls (Carved::
+    // pre_rim) removed that fake alignment demand.
     assert!(
-        rot as f64 / n.max(1) as f64 > 0.3,
+        rot as f64 / n.max(1) as f64 > 0.22,
         "river valley must rotate a meaningful share, got {}/{n}",
         rot
     );
