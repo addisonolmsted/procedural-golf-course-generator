@@ -832,7 +832,6 @@ fn serpentine_line(
         let i = arcs.partition_point(|&v| v < a).min(base.len() - 1);
         base[i]
     };
-    let d2 = |p: Vec2, q: Vec2| (p.x - q.x).powi(2) + (p.y - q.y).powi(2);
     let bd = |p: Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
     let step = 6.0;
     // 2-D backoff: soften the wind a little AND open the wavelength a
@@ -847,7 +846,6 @@ fn serpentine_line(
         }
         let mut p = base[0];
         let mut out = vec![p];
-        let mut s = 0.0f64;
         // Valley progress rate = J0(omega_eff), the Langbein–Leopold
         // coupling: path speed and valley speed must be CONSISTENT or
         // the surplus path length ends in crossings (a fixed rate
@@ -901,7 +899,6 @@ fn serpentine_line(
             let swing = omega_eff * libm::sin(std::f64::consts::TAU * proj / lam + phase);
             let th = th_tan + swing + corr;
             p = Vec2::new(p.x + step * libm::cos(th), p.y + step * libm::sin(th));
-            s += step;
             out.push(p);
         }
         // stitch the tapered tail onto the base line out to the border
