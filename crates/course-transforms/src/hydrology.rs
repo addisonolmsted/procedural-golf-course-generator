@@ -380,10 +380,15 @@ fn channel_water_v2(
                 let width_pers = width_personality(identity.course_scalar(RIVER_WIDTH_SALT));
                 let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(WIDTH_MIN_M, WIDTH_MAX_M);
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
-                corridor_flatten(height, spec8, &stem, flood_hw, w_m, RIVER_DEPTH_M);
+                let line = wound_or_stem(&stem, identity, root, w_m, cell8 * n8 as f64);
+                let (line_ref, wound) = match &line {
+                    Some(l) => (&l[..], true),
+                    None => (&stem[..], false),
+                };
+                corridor_flatten(height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M);
                 place_meandering_water(
-                    height, identity, root as u64, &stem, w_m, RIVER_DEPTH_M, flood_hw,
-                    true, water,
+                    height, identity, root as u64, line_ref, w_m, RIVER_DEPTH_M, flood_hw,
+                    true, wound, water,
                 );
                 continue;
             }
@@ -492,9 +497,19 @@ fn channel_water_v2(
                 stem.last().unwrap().y
             );
         }
-        corridor_flatten(height, spec8, &stem, flood_hw, w_m, depth);
+        let line = if is_river {
+            wound_or_stem(&stem, identity, root, w_m, cell8 * n8 as f64)
+        } else {
+            None
+        };
+        let (line_ref, wound) = match &line {
+            Some(l) => (&l[..], true),
+            None => (&stem[..], false),
+        };
+        corridor_flatten(height, spec8, line_ref, flood_hw, w_m, depth);
         place_meandering_water(
-            height, identity, root as u64, &stem, w_m, depth, flood_hw, is_river, water,
+            height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
+            water,
         );
     }
 }
@@ -718,8 +733,193 @@ fn corridor_flatten(
     }
 }
 
+/// SWITCHBACK rivers: serpentine centerline via a sine-generated curve
+/// (Langbein–Leopold). The user's reference (Houston CC / Buffalo
+/// Bayou) has meander AMPLITUDE comparable to WAVELENGTH over long
+/// runs — unreachable by a lateral-offset model, whose offset curve
+/// folds long before amp ≈ λ. Here the HEADING oscillates instead:
+/// θ = homing(toward a stem lookahead) + ω·sin(2π s/λ), integrated at
+/// 6 m steps, ω ≈ 109°. Tapers kill the wind near path ends and tile
+/// borders; a lateral governor bounds the belt; the true segment-
+/// crossing check guards, backing ω off ×0.82 per failed attempt.
+fn serpentine_line(
+    stem: &[Vec2],
+    lam: f64,
+    omega0: f64,
+    phase: f64,
+    tile: f64,
+) -> Option<Vec<Vec2>> {
+    if stem.len() < 2 {
+        return None;
+    }
+    // dense smoothed base with arc positions
+    let mut base: Vec<Vec2> = Vec::new();
+    for w2 in stem.windows(2) {
+        let (a, b) = (w2[0], w2[1]);
+        let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+        let steps = (len / 6.0).ceil().max(1.0) as usize;
+        for k in 0..steps {
+            let t = k as f64 / steps as f64;
+            base.push(Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+        }
+    }
+    base.push(*stem.last().unwrap());
+    for _ in 0..2 {
+        let mut sm = Vec::with_capacity(base.len() * 2);
+        sm.push(base[0]);
+        for w2 in base.windows(2) {
+            let (a, b) = (w2[0], w2[1]);
+            sm.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            sm.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        sm.push(*base.last().unwrap());
+        base = sm;
+    }
+    let mut arcs = vec![0.0f64; base.len()];
+    for i in 1..base.len() {
+        let (a, b) = (base[i - 1], base[i]);
+        arcs[i] = arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    }
+    let total = *arcs.last().unwrap();
+    if total < 3.0 * lam {
+        if std::env::var("HYDRO_TRACE").is_ok() {
+            eprintln!("  serpentine: too short ({total:.0} m < 3x{lam:.0})");
+        }
+        return None; // too short to wind
+    }
+    let at = |a: f64| -> Vec2 {
+        let a = a.clamp(0.0, total);
+        let i = arcs.partition_point(|&v| v < a).min(base.len() - 1);
+        base[i]
+    };
+    let d2 = |p: Vec2, q: Vec2| (p.x - q.x).powi(2) + (p.y - q.y).powi(2);
+    let bd = |p: Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
+    let step = 6.0;
+    for attempt in 0..4 {
+        let omega = omega0 * 0.82f64.powi(attempt);
+        let mut p = base[0];
+        let mut out = vec![p];
+        let mut s = 0.0f64;
+        // Valley progress rate = J0(omega_eff), the Langbein–Leopold
+        // coupling: path speed and valley speed must be CONSISTENT or
+        // the surplus path length ends in crossings (a fixed rate
+        // pinned sinuosity at 2.18 for every omega and every attempt
+        // crossed). Where the tapers suppress the wind, the rate rises
+        // back toward 1 so the path tracks the base line straight.
+        let j0 = |x: f64| {
+            let x2 = x * x;
+            1.0 - x2 / 4.0 + x2 * x2 / 64.0 - x2 * x2 * x2 / 2304.0
+                + x2 * x2 * x2 * x2 / 147_456.0
+        };
+        let mut proj = 0.0f64;
+        let max_iter = (total / step * 8.0) as usize + 400;
+        for _ in 0..max_iter {
+            if proj >= total - 0.55 * lam {
+                break;
+            }
+            // heading is referenced to the valley DIRECTION (base
+            // tangent), never a lookahead POINT: point-homing at a
+            // ±109° swing makes the path ORBIT the slowly-advancing
+            // target — the plotted lines were chains of little curls.
+            // A weak cross-track term keeps the belt centered instead.
+            let t_a = at((proj - 15.0).max(0.0));
+            let t_b = at((proj + 15.0).min(total));
+            let th_tan = libm::atan2(t_b.y - t_a.y, t_b.x - t_a.x);
+            let anchor = at(proj);
+            let e = Vec2::new(p.x - anchor.x, p.y - anchor.y);
+            let e_lat = -e.x * libm::sin(th_tan) + e.y * libm::cos(th_tan);
+            let corr = (-0.9 * e_lat / lam).clamp(-0.5, 0.5);
+            let t0 = (proj / (0.9 * lam)).clamp(0.0, 1.0);
+            let t1 = ((total - proj) / (1.4 * lam)).clamp(0.0, 1.0);
+            let tb = ((bd(p) - 140.0) / 220.0).clamp(0.0, 1.0);
+            let g = (1.0 - (e_lat.abs() / (1.1 * lam)).powi(4)).clamp(0.0, 1.0);
+            // damp the wind where the VALLEY itself turns fast — loops
+            // pile into a kinked base line and collide (the tangles all
+            // sat on one sharp base turn)
+            let t_c = at((proj + 0.35 * lam).min(total));
+            let th_ahead = libm::atan2(t_c.y - t_b.y, t_c.x - t_b.x);
+            let mut turn = th_ahead - th_tan;
+            while turn > std::f64::consts::PI {
+                turn -= std::f64::consts::TAU;
+            }
+            while turn < -std::f64::consts::PI {
+                turn += std::f64::consts::TAU;
+            }
+            let tk = (1.0 - turn.abs() / 1.2).clamp(0.0, 1.0);
+            let omega_eff = omega * t0 * t1 * tb * g * tk;
+            proj += step * j0(omega_eff);
+            // phase rides the VALLEY arc (proj): a path-arc phase
+            // stalls inside loops and bunches them into collision
+            let swing = omega_eff * libm::sin(std::f64::consts::TAU * proj / lam + phase);
+            let th = th_tan + swing + corr;
+            p = Vec2::new(p.x + step * libm::cos(th), p.y + step * libm::sin(th));
+            s += step;
+            out.push(p);
+        }
+        // stitch the tapered tail onto the base line out to the border
+        let mut a = proj;
+        while a < total {
+            a += step;
+            out.push(at(a));
+        }
+        // true segment-crossing check on the wound line
+        let mut wt: Vec<(Vec2, f64, f64)> = Vec::with_capacity(out.len());
+        let mut acc = 0.0;
+        for (i, q) in out.iter().enumerate() {
+            if i > 0 {
+                acc += ((q.x - out[i - 1].x).powi(2) + (q.y - out[i - 1].y).powi(2)).sqrt();
+            }
+            wt.push((*q, acc, 0.0));
+        }
+        if std::env::var("HYDRO_TRACE").is_ok() {
+            eprintln!(
+                "  serpentine try {attempt}: omega {omega:.2}, {} pts, sinuosity {:.2}, crosses {}",
+                out.len(),
+                acc / total,
+                self_intersects(&wt)
+            );
+            if let Ok(dir) = std::env::var("SERP_DUMP") {
+                let csv: String = out
+                    .iter()
+                    .map(|q| format!("{:.1},{:.1}\n", q.x, q.y))
+                    .collect();
+                let _ = std::fs::write(format!("{dir}/serp_try{attempt}.csv"), csv);
+            }
+        }
+        if !self_intersects(&wt) {
+            if std::env::var("HYDRO_TRACE").is_ok() {
+                eprintln!(
+                    "  serpentine: attempt {attempt}, omega {omega:.2}, sinuosity {:.2}",
+                    acc / total
+                );
+            }
+            return Some(out);
+        }
+    }
+    None
+}
+
+/// The switchback coin + serpentine build (None = keep the plain stem).
+fn wound_or_stem(
+    stem: &[Vec2],
+    identity: &RunIdentity,
+    root: u32,
+    w_m: f64,
+    tile: f64,
+) -> Option<Vec<Vec2>> {
+    if identity.course_scalar(SWITCHBACK_SALT) >= SWITCHBACK_P {
+        return None;
+    }
+    let phase = identity
+        .course_scalar(SWITCHBACK_SALT ^ (root as u64).wrapping_mul(0xA5A5_9E37))
+        * std::f64::consts::TAU;
+    let lam = (5.5 * w_m).clamp(180.0, 600.0);
+    serpentine_line(stem, lam, 1.9, phase, tile)
+}
+
 /// Meandering water along a downstream path; amplitude fold-bounded and
 /// self-intersection-checked (reviewer gap #6).
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn place_meandering_water(
     height: &Grid<f64>,
@@ -730,6 +930,7 @@ fn place_meandering_water(
     depth: f64,
     flood_hw: f64,
     is_river: bool,
+    pre_wound: bool,
     water: &mut Vec<WaterBody>,
 ) {
     if stem.len() < 2 {
@@ -770,20 +971,13 @@ fn place_meandering_water(
     // wavelength rides WIDTH across the whole range (user spec): a 5 yd
     // creek wiggles at ~80 m while an 80 yd river sweeps ~1 km bends.
     // The old [140, 900] clamp flattened exactly those extremes.
-    let mut lam = (12.0 * w_m).clamp(80.0, 1400.0);
-    let switchback = is_river && identity.course_scalar(SWITCHBACK_SALT) < SWITCHBACK_P;
+    let lam = (12.0 * w_m).clamp(80.0, 1400.0);
     // fold bound: |d(off)/ds| < 0.5 needs amp·2π/λ·Σweights < 0.5 —
     // with harmonic weights 0.55+0.30/0.47+0.15/2.3 ≈ 1.26 effective at
     // the shortest λ·0.47 ⇒ amp ≤ 0.08·λ. Also stay inside the
-    // floodplain.
-    let mut amp = (0.35 * flood_hw).min(0.08 * lam);
-    if switchback {
-        // tight switchbacks: shorten the wave and push amplitude past
-        // the fold bound — hairpin-adjacent bends; the segment-crossing
-        // check (and its deterministic amp-halving fallback) guards.
-        lam *= 0.55;
-        amp = (0.16 * lam).min(0.35 * flood_hw);
-    }
+    // floodplain. Pre-wound (serpentine) paths carry their meander in
+    // the LINE itself — no offset on top.
+    let mut amp = if pre_wound { 0.0 } else { (0.35 * flood_hw).min(0.08 * lam) };
     if !is_river {
         // keep the ribbon INSIDE the corridor cut core (0.5·w+14 m from
         // the stem): a 1.8·w wander pushed narrow creeks onto uncut
