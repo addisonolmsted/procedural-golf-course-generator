@@ -147,7 +147,8 @@
     }
    ],
    "wave_iso_frac": 0.55,
-   "weight": 1.0
+   "weight": 1.0,
+   "channel_width_scale": 0.85
   },
   "heathland": {
    "boundary_kind_weights": {
@@ -442,7 +443,8 @@
    "wave_beta": 3.0,
    "wave_iso_frac": 0.3,
    "wave_share": 0.36,
-   "weight": 1.0
+   "weight": 1.0,
+   "channel_width_scale": 1.25
   },
   "piedmont": {
    "boundary_kind_weights": {
@@ -590,7 +592,8 @@
      "lo": -1.0
     }
    ],
-   "weight": 1.0
+   "weight": 1.0,
+   "channel_width_scale": 0.9
   },
   "river_valley": {
    "boundary_kind_weights": {

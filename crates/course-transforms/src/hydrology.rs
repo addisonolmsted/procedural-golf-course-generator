@@ -271,6 +271,7 @@ fn channel_water_v2(
     water: &mut Vec<WaterBody>,
 ) {
     let dial = spec.dials.get("hydrology.channel_water").copied().unwrap_or(0.0);
+    let wscale = spec.dials.get("hydrology.channel_width_scale").copied().unwrap_or(1.0);
     if dial <= 0.0 || sk.channels.is_empty() {
         return;
     }
@@ -362,7 +363,7 @@ fn channel_water_v2(
                     .collect();
                 let km2 = area / 1.0e6;
                 let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
-                let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
+                let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(6.0, 80.0);
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
                 corridor_flatten(height, spec8, &stem, flood_hw, w_m, RIVER_DEPTH_M);
                 place_meandering_water(
@@ -456,7 +457,7 @@ fn channel_water_v2(
         // 80 m ceiling, and a per-course personality scalar so some
         // courses carry a genuinely wide river (22 km² trunk: 30-70 m).
         let width_pers = 0.75 + identity.course_scalar(RIVER_WIDTH_SALT);
-        let w_m = (8.5 * km2.sqrt() * width_pers).clamp(6.0, 80.0);
+        let w_m = (8.5 * km2.sqrt() * width_pers * wscale).clamp(6.0, 80.0);
         let depth = if is_river { RIVER_DEPTH_M } else { CREEK_DEPTH_M };
         let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
         // corridor flatten along THIS path only (reviewer: organic,

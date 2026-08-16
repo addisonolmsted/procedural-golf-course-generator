@@ -125,6 +125,11 @@ pub struct BiomeEnvelope {
     /// heathland pock marks, 280-740 m² each, concentrated regions).
     #[serde(default)]
     pub pock_field: Option<f64>,
+    /// Multiplier on the channel-water width law (None = 1.0). Sets the
+    /// biome ORDERING of river/creek widths (user spec: river valley
+    /// widest on average, hill country second, the rest behind).
+    #[serde(default)]
+    pub channel_width_scale: Option<f64>,
     /// Probability that a terrace_flight draw realizes as the CENTERED
     /// ASYMMETRIC TERRACED VALLEY (river down the middle, treads
     /// climbing one side, smooth shoulder the other — reviewer's

@@ -293,6 +293,10 @@ fn derive_dials(
     );
     m.insert("amplify.pock_field".into(), env.pock_field.unwrap_or(0.0));
     m.insert(
+        "hydrology.channel_width_scale".into(),
+        env.channel_width_scale.unwrap_or(1.0),
+    );
+    m.insert(
         "primitives.terrace_valley".into(),
         env.terrace_valley.unwrap_or(0.0),
     );
