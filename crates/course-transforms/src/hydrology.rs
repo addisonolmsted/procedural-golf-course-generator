@@ -748,6 +748,7 @@ fn serpentine_line(
     omega0: f64,
     phase: f64,
     tile: f64,
+    w_m: f64,
 ) -> Option<Vec<Vec2>> {
     if stem.len() < 2 {
         return None;
@@ -795,8 +796,16 @@ fn serpentine_line(
     let d2 = |p: Vec2, q: Vec2| (p.x - q.x).powi(2) + (p.y - q.y).powi(2);
     let bd = |p: Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
     let step = 6.0;
-    for attempt in 0..4 {
-        let omega = omega0 * 0.82f64.powi(attempt);
+    // 2-D backoff: soften the wind a little AND open the wavelength a
+    // lot — pure omega backoff flattened wide rivers to sinuosity ~1.1
+    // while still failing the neck rule; larger loops keep the wind and
+    // buy their clearance geometrically.
+    for attempt in 0..6 {
+        let omega = omega0 * 0.90f64.powi(attempt);
+        let lam = lam * (1.0 + 0.35 * attempt as f64);
+        if total < 3.0 * lam {
+            continue;
+        }
         let mut p = base[0];
         let mut out = vec![p];
         let mut s = 0.0f64;
@@ -871,9 +880,36 @@ fn serpentine_line(
             }
             wt.push((*q, acc, 0.0));
         }
+        // NECK CLEARANCE: the centerline never crossing is not enough —
+        // two loop limbs passing closer than the RIBBON is wide merge
+        // into a pool (user report, seed 2 at 92 m). Any two points far
+        // apart along the river must keep >= 1.55 w of open space; failing
+        // attempts back omega off, so wide rivers wind gently and
+        // narrow ones keep tight loops — meander varies with thickness.
+        let clearance = 1.55 * w_m;
+        let neck_ok = {
+            let pts: Vec<&(Vec2, f64, f64)> = wt.iter().step_by(4).collect();
+            let c2 = clearance * clearance;
+            let arc_far = (3.0 * clearance).max(0.6 * lam);
+            let mut ok = true;
+            'outer: for i in 0..pts.len() {
+                for j in (i + 1)..pts.len() {
+                    let (a, aa, _) = pts[i];
+                    let (b, ba, _) = pts[j];
+                    if ba - aa < arc_far {
+                        continue;
+                    }
+                    if (a.x - b.x).powi(2) + (a.y - b.y).powi(2) < c2 {
+                        ok = false;
+                        break 'outer;
+                    }
+                }
+            }
+            ok
+        };
         if std::env::var("HYDRO_TRACE").is_ok() {
             eprintln!(
-                "  serpentine try {attempt}: omega {omega:.2}, {} pts, sinuosity {:.2}, crosses {}",
+                "  serpentine try {attempt}: omega {omega:.2}, {} pts, sinuosity {:.2}, crosses {}, neck_ok {neck_ok}",
                 out.len(),
                 acc / total,
                 self_intersects(&wt)
@@ -886,7 +922,7 @@ fn serpentine_line(
                 let _ = std::fs::write(format!("{dir}/serp_try{attempt}.csv"), csv);
             }
         }
-        if !self_intersects(&wt) {
+        if neck_ok && !self_intersects(&wt) {
             if std::env::var("HYDRO_TRACE").is_ok() {
                 eprintln!(
                     "  serpentine: attempt {attempt}, omega {omega:.2}, sinuosity {:.2}",
@@ -914,7 +950,7 @@ fn wound_or_stem(
         .course_scalar(SWITCHBACK_SALT ^ (root as u64).wrapping_mul(0xA5A5_9E37))
         * std::f64::consts::TAU;
     let lam = (5.5 * w_m).clamp(180.0, 600.0);
-    serpentine_line(stem, lam, 1.9, phase, tile)
+    serpentine_line(stem, lam, 1.9, phase, tile, w_m)
 }
 
 /// Meandering water along a downstream path; amplitude fold-bounded and
