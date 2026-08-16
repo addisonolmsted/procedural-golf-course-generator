@@ -411,11 +411,16 @@ fn channel_water_v2(
                     w_m = w_m.min(BRAID_CAP_W_M);
                 }
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
-                let line = wound_or_stem(&stem, identity, root, w_m, cell8 * n8 as f64);
-                let (line_ref, wound) = match &line {
-                    Some(l) => (&l[..], true),
-                    None => (&stem[..], false),
+                let tile = cell8 * n8 as f64;
+                let line = wound_or_stem(&stem, identity, root, w_m, tile);
+                let (mut owned, wound) = match line {
+                    Some(l) => (l, true),
+                    None => (stem.clone(), false),
                 };
+                if let Some(t) = edge_terminate(&owned, w_m, tile) {
+                    owned = t;
+                }
+                let line_ref = &owned[..];
                 corridor_flatten(height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M);
                 // keep-largest applies here too: healthy trunks are one
                 // component anyway (rv 20/20), but edge-hug residual
@@ -434,9 +439,12 @@ fn channel_water_v2(
                     ) * std::f64::consts::TAU;
                     let w2 = (0.62 * w_m).max(WIDTH_MIN_M);
                     let lam2 = (5.5 * w_m).clamp(180.0, 600.0);
-                    if let Some(strand) =
-                        serpentine_line(&stem, lam2, 1.9, phase2, cell8 * n8 as f64, w2)
+                    if let Some(mut strand) =
+                        serpentine_line(&stem, lam2, 1.9, phase2, tile, w2)
                     {
+                        if let Some(t) = edge_terminate(&strand, w2, tile) {
+                            strand = t;
+                        }
                         corridor_flatten(height, spec8, &strand, flood_hw, w2, RIVER_DEPTH_M);
                         place_meandering_water(
                             height,
@@ -565,15 +573,20 @@ fn channel_water_v2(
                 stem.last().unwrap().y
             );
         }
+        let tile = cell8 * n8 as f64;
         let line = if is_river {
-            wound_or_stem(&stem, identity, root, w_m, cell8 * n8 as f64)
+            wound_or_stem(&stem, identity, root, w_m, tile)
         } else {
             None
         };
-        let (line_ref, wound) = match &line {
-            Some(l) => (&l[..], true),
-            None => (&stem[..], false),
+        let (mut owned, wound) = match line {
+            Some(l) => (l, true),
+            None => (stem.clone(), false),
         };
+        if let Some(t) = edge_terminate(&owned, w_m, tile) {
+            owned = t;
+        }
+        let line_ref = &owned[..];
         corridor_flatten(height, spec8, line_ref, flood_hw, w_m, depth);
         place_meandering_water(
             height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
@@ -583,6 +596,54 @@ fn channel_water_v2(
             water_tributary(height, spec, sk, identity, spec8, &cells, root, w_m, water);
         }
     }
+}
+
+/// EDGE TERMINATION (user rule): a stream that comes within
+/// (width + 10 m) of a tile border mid-run rides the edge — terminate
+/// it there instead: truncate and run straight out to the nearest
+/// border. The legitimate entry (a path that STARTS in the border
+/// zone) is skipped; a hit in the last few points is already the
+/// natural terminal. The perpendicular exit lands ON the border, so
+/// the notch/run-out machinery cuts the exit like any other terminal.
+fn edge_terminate(line: &[Vec2], w_m: f64, tile: f64) -> Option<Vec<Vec2>> {
+    if line.len() < 6 {
+        return None;
+    }
+    let clear = w_m + 10.0;
+    let bd = |p: &Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
+    let mut i0 = 0;
+    while i0 < line.len() && bd(&line[i0]) < clear + 30.0 {
+        i0 += 1;
+    }
+    if i0 == line.len() {
+        return None; // never leaves the border zone; nothing sane to do
+    }
+    let hit = (i0..line.len()).find(|&i| bd(&line[i]) < clear)?;
+    if line.len() - hit < 4 {
+        return None; // that's the natural terminal approach
+    }
+    let p = line[hit];
+    let mut out: Vec<Vec2> = line[..=hit].to_vec();
+    let (d_w, d_e, d_s, d_n) = (p.x, tile - p.x, p.y, tile - p.y);
+    let m = d_w.min(d_e).min(d_s).min(d_n);
+    let (dx, dy) = if m == d_w {
+        (-1.0, 0.0)
+    } else if m == d_e {
+        (1.0, 0.0)
+    } else if m == d_s {
+        (0.0, -1.0)
+    } else {
+        (0.0, 1.0)
+    };
+    let steps = (m / 8.0).ceil() as usize + 1;
+    for k in 1..=steps {
+        let t = k as f64 * 8.0;
+        out.push(Vec2::new(
+            (p.x + dx * t).clamp(0.0, tile),
+            (p.y + dy * t).clamp(0.0, tile),
+        ));
+    }
+    Some(out)
 }
 
 /// ONE converging tributary (the "two that converge" pattern): find the
@@ -702,6 +763,16 @@ fn water_tributary(
     let w_m = (8.5 * km2.sqrt() * pers * wscale)
         .clamp(WIDTH_MIN_M, WIDTH_MAX_M)
         .min(0.8 * main_w_m);
+    // a tributary must end at its JUNCTION, not a border: if it grazes
+    // the edge zone mid-run, drop it rather than re-terminate it
+    let tile = cell8 * n8 as f64;
+    let clear = w_m + 10.0;
+    if stem
+        .iter()
+        .any(|p| p.x.min(p.y).min(tile - p.x).min(tile - p.y) < clear)
+    {
+        return;
+    }
     let is_river = area >= RIVER_AREA_M2;
     let depth = if is_river { RIVER_DEPTH_M } else { CREEK_DEPTH_M };
     let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
