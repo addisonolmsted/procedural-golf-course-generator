@@ -64,6 +64,11 @@ pub const SWITCHBACK_SALT: u64 = 0x5B1C;
 /// hairpin-adjacent bends (Houston CC-style), past the analytic fold
 /// bound — the true segment-crossing check guards them.
 pub const SWITCHBACK_P: f64 = 0.10;
+/// Salt/odds for the BRAIDED strand: a second wound line over the same
+/// trunk (a happy accident from a double-watering bug the user asked to
+/// keep). Conditional on switchback, so net rarity is ~1/100 tiles.
+pub const BRAID_SALT: u64 = 0xB4A1D;
+pub const BRAID_P: f64 = 0.10;
 /// Width personality: lo + span·u^gamma of the course scalar — a long
 /// upper tail so p10–p90 tile widths span ~3× (user spec: rv 30–90 yd,
 /// hc 25–65, pied/plains 10–35; rare ~100 yd rivers, 5–7 yd creeks).
@@ -330,6 +335,7 @@ fn channel_water_v2(
         eprintln!("systems: {} of {} roots (trunk {:.1} km2, min_area {:.2e})",
             systems.len(), ranked.len(), trunk_area / 1.0e6, min_area);
     }
+    let mut inlet_used = false;
     for root in systems {
         // Main stem by walking the RECEIVER FOREST upstream from the
         // mouth cell, taking the biggest donor at every step. Immune to
@@ -345,8 +351,14 @@ fn channel_water_v2(
         // the outlet — continuous and edge-to-edge by construction
         // (greedy donor walks got captured by natural tributaries and
         // died mid-tile: reviewer seeds 9/31/48).
-        if is_river {
+        // Only the LARGEST system may claim the trunk inlet: both
+        // rivers taking this branch watered the SAME line twice, and
+        // with serpentine phases the two copies crossed as an
+        // accidental braid (user report). The confluence partner now
+        // walks its own mouth like any other system.
+        if is_river && !inlet_used {
             if let Some(inlet) = sk.trunk_inlet {
+                inlet_used = true;
                 let dir_to = |i: usize| -> Option<usize> {
                     let d = sk.flow_dir_rad.data[i];
                     if !d.is_finite() {
@@ -390,6 +402,33 @@ fn channel_water_v2(
                     height, identity, root as u64, line_ref, w_m, RIVER_DEPTH_M, flood_hw,
                     true, wound, water,
                 );
+                // DELIBERATE braid (~1/100 tiles): a second, narrower
+                // wound strand over the same trunk with its own phase —
+                // the accidental double-watering braid, kept on purpose.
+                if wound && identity.course_scalar(BRAID_SALT) < BRAID_P {
+                    let phase2 = identity.course_scalar(
+                        BRAID_SALT ^ (root as u64).wrapping_mul(0x5DEE_CE2D),
+                    ) * std::f64::consts::TAU;
+                    let w2 = (0.62 * w_m).max(WIDTH_MIN_M);
+                    let lam2 = (5.5 * w_m).clamp(180.0, 600.0);
+                    if let Some(strand) =
+                        serpentine_line(&stem, lam2, 1.9, phase2, cell8 * n8 as f64, w2)
+                    {
+                        corridor_flatten(height, spec8, &strand, flood_hw, w2, RIVER_DEPTH_M);
+                        place_meandering_water(
+                            height,
+                            identity,
+                            root as u64 | 0x8000_0000,
+                            &strand,
+                            w2,
+                            RIVER_DEPTH_M,
+                            flood_hw,
+                            true,
+                            true,
+                            water,
+                        );
+                    }
+                }
                 continue;
             }
         }
