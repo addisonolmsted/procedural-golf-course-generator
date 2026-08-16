@@ -136,9 +136,14 @@ fn main() {
                 .count();
             hug as f64 / mid.len() as f64
         });
+        let lakes = h
+            .water
+            .iter()
+            .filter(|w| matches!(w.origin, hydrology::WaterPlaneOrigin::ClosedBasin))
+            .count();
         let base_edge = format!("{:?}", sk.meta.base_level.edge);
         println!(
-            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m sb {sb:5} s2_trunk_hug<2w {:4.0}%",
+            "seed {seed:2}: {planes:3} planes, shortfall W {w:6.1} E {e:6.1} S {s:6.1} N {n:6.1} | axis {axis} gap {worst_gap:5.1} m at {gap_at:6.1} | base {base_edge:2} w {w_m:4.1} m sb {sb:5} lakes {lakes} s2_trunk_hug<2w {:4.0}%",
             s2_hug.unwrap_or(f64::NAN) * 100.0
         );
         // CONNECTED COMPONENTS of all channel water (40 m dilation):

@@ -90,6 +90,12 @@ pub const WIDTH_MIN_M: f64 = 4.5;
 pub const WIDTH_MAX_M: f64 = 95.0;
 /// Salt for the heathland pond-count richness draw.
 pub const POND_RICHNESS_SALT: u64 = 0x90D5;
+/// Salt/params for BASIN LAKES (user request: a few lakes in the
+/// non-heathland biomes). Sourced from the basin inventory's open
+/// (fill-raised) depressions: deepest few pond on a per-course draw.
+pub const LAKE_SALT: u64 = 0x1A4E;
+pub const LAKE_MIN_DEPTH_M: f64 = 0.8;
+pub const LAKE_MIN_AREA_M2: f64 = 2500.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -192,7 +198,7 @@ pub fn generate(
     let skeleton_agreement = agreement(sk, &flow_accum, n8);
 
     // ---- basin inventory -----------------------------------------------
-    let basins = inventory_basins(&z8, &zf, &keep8, spec8, &mut water);
+    let basins = inventory_basins(&z8, &zf, &keep8, spec8, spec, identity, &mut water);
 
     let _ = n2;
     Hydrology {
@@ -1678,12 +1684,15 @@ fn kettle_ponds(
 }
 
 /// Basin inventory from the routed surface.
+#[allow(clippy::too_many_arguments)]
 fn inventory_basins(
     z8: &Grid<f64>,
     zf: &Grid<f64>,
     keep8: &[bool],
     spec8: GridSpec,
-    _water: &mut Vec<WaterBody>,
+    spec: &SiteSpec,
+    identity: &RunIdentity,
+    water: &mut Vec<WaterBody>,
 ) -> Vec<Basin> {
     let n8 = spec8.nx as usize;
     let cell_area = spec8.cell_size * spec8.cell_size;
@@ -1696,6 +1705,7 @@ fn inventory_basins(
     // basin cells: raised by fill (open, would flood) or kept pits (closed)
     let mut label = vec![0u32; n8 * n8];
     let mut basins = Vec::new();
+    let mut lake_cands: Vec<(f64, Vec<usize>, f64, f64)> = Vec::new();
     let mut next = 1u32;
     for start in 0..n8 * n8 {
         let deep = (zf.data[start] > z8.data[start] + BASIN_MIN_DEPTH_M || keep8[start])
@@ -1741,7 +1751,98 @@ fn inventory_basins(
                 area_m2: comp.len() as f64 * cell_area,
             });
         }
+        // lake candidate: OPEN basins carry a well-defined spill (the
+        // fill level); kept pits are embryo machinery (kettles own them)
+        if !closed {
+            let spill = comp
+                .iter()
+                .map(|&c| zf.data[c])
+                .fold(f64::NEG_INFINITY, f64::max);
+            let depth = spill - lowest;
+            if depth >= LAKE_MIN_DEPTH_M && comp.len() as f64 * cell_area >= LAKE_MIN_AREA_M2 {
+                lake_cands.push((depth, comp.clone(), lowest, spill));
+            }
+        }
         next += 1;
+    }
+    // ---- BASIN LAKES (user request: a few, not a ton) ------------------
+    // Per-course draw, scaled by the water table: shallow-table biomes
+    // (rv/piedmont) see 0 lakes on ~45% of tiles, 1 on 35%, 2 on 15%,
+    // 3 on 5%; a deep table thins that toward ~85% dry (hill-country
+    // tanks and playa lakes PERCH on impermeable floors, so a hard
+    // table cut-off was wrong — it zeroed hc and plains entirely).
+    // Deepest qualifying basins pond at 55% of their depth; anything
+    // overlapping existing water (rivers, creeks, kettles) is skipped
+    // so floodplains don't double-fill.
+    {
+        let g = ((spec.descriptors.water_table_m - 2.0) / 8.0).clamp(0.0, 1.0);
+        let u = identity.course_scalar(LAKE_SALT);
+        let want = if u < 0.45 + 0.40 * g {
+            0
+        } else if u < 0.85 + 0.12 * g {
+            1
+        } else if u < 0.96 + 0.03 * g {
+            2
+        } else {
+            3
+        };
+        if want > 0 {
+            let wet_boxes: Vec<(f64, f64, f64, f64)> = water
+                .iter()
+                .map(|w| {
+                    let (mut x0, mut x1, mut y0, mut y1) =
+                        (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+                    for p in &w.polygon {
+                        x0 = x0.min(p.x);
+                        x1 = x1.max(p.x);
+                        y0 = y0.min(p.y);
+                        y1 = y1.max(p.y);
+                    }
+                    (x0, x1, y0, y1)
+                })
+                .collect();
+            lake_cands.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1[0].cmp(&b.1[0])));
+            let mut made = 0usize;
+            for (_, comp, lowest, spill) in &lake_cands {
+                if made >= want {
+                    break;
+                }
+                let surface = lowest + 0.55 * (spill - lowest);
+                let cells: Vec<usize> = comp
+                    .iter()
+                    .copied()
+                    .filter(|&c| z8.data[c] < surface)
+                    .collect();
+                if (cells.len() as f64) * cell_area < LAKE_MIN_AREA_M2 {
+                    continue;
+                }
+                let (mut x0, mut x1, mut y0, mut y1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+                for &c in &cells {
+                    let p = spec8.world_of((c % n8) as u32, (c / n8) as u32);
+                    x0 = x0.min(p.x);
+                    x1 = x1.max(p.x);
+                    y0 = y0.min(p.y);
+                    y1 = y1.max(p.y);
+                }
+                let m = 30.0;
+                if wet_boxes.iter().any(|b| {
+                    x0 - m <= b.1 && b.0 - m <= x1 && y0 - m <= b.3 && b.2 - m <= y1
+                }) {
+                    continue;
+                }
+                let in_cells: std::collections::HashSet<usize> = cells.iter().copied().collect();
+                let poly = component_outline(&cells, &|i| in_cells.contains(&i), n8, spec8);
+                if poly.len() >= 3 {
+                    water.push(WaterBody {
+                        polygon: poly,
+                        surface_m: surface,
+                        origin: WaterPlaneOrigin::ClosedBasin,
+                        permanent: true,
+                    });
+                    made += 1;
+                }
+            }
+        }
     }
     basins
 }
