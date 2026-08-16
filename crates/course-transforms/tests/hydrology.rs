@@ -48,10 +48,15 @@ fn sandhills_identity_pass_no_special_case() {
     assert_eq!(h.applied, hydrology::DEFAULT_TRANSFORMS.to_vec());
     assert!(h.flow_accum.data.iter().all(|v| v.is_finite()));
     // v2: sandhills channel water is a 0.15 per-course coin — this
-    // seed may be wet or dry, but never water-table ponds (identity)
+    // seed may be wet or dry, but never water-table KETTLE ponds (the
+    // 25 m table keeps embryo kettles dry: identity). Rare interdune
+    // BASIN lakes are deliberate (user round, 2026-08-16 — true to the
+    // Nebraska Sandhills), so ClosedBasin planes are allowed.
     assert!(h.water.iter().all(|w| matches!(
         w.origin,
-        hydrology::WaterPlaneOrigin::River | hydrology::WaterPlaneOrigin::Creek
+        hydrology::WaterPlaneOrigin::River
+            | hydrology::WaterPlaneOrigin::Creek
+            | hydrology::WaterPlaneOrigin::ClosedBasin
     )));
 }
 
