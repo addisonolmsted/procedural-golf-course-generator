@@ -20,6 +20,7 @@
 pub mod blend;
 pub mod conditioning;
 pub mod dictionary;
+pub mod gully;
 pub mod polish;
 pub mod synth;
 
@@ -177,6 +178,18 @@ pub fn generate(
         }
     }
     lap!("polish", t);
+    let t = std::time::Instant::now();
+    // Dendritic gullies LAST — after the restore clamp, whose ±0.35 m
+    // band toward the smoothed base would clip the carved depth.
+    gully::carve_gullies(
+        &mut height,
+        &base_lp64,
+        &sk.flow_distance,
+        &sk.flow_dir_rad,
+        &spec.dials,
+        identity.stream_seed(),
+    );
+    lap!("gullies", t);
     lap!("TOTAL", t_all);
 
     Amplified { height, mid_std_m, fine_std_m }

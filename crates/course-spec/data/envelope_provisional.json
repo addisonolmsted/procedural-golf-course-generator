@@ -450,6 +450,11 @@
    "weight": 1.0,
    "channel_width_scale": 1.3,
    "incision_boost": 1.6,
+   "gully_density": 1.0,
+   "gully_depth_p50_m": 0.9,
+   "gully_reach_m": 210.0,
+   "gully_max_len_m": 160.0,
+   "gully_branch_prob": 0.7,
    "amp_trim_fine": 0.8,
    "amp_trim_mid": 1.44
   },
@@ -602,6 +607,11 @@
    "weight": 1.0,
    "channel_width_scale": 0.67,
    "incision_boost": 1.35,
+   "gully_density": 1.0,
+   "gully_depth_p50_m": 0.7,
+   "gully_reach_m": 200.0,
+   "gully_max_len_m": 150.0,
+   "gully_branch_prob": 0.65,
    "amp_trim_fine": 0.84,
    "amp_trim_mid": 1.45
   },
