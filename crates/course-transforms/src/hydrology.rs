@@ -232,9 +232,12 @@ pub fn generate(
                 }
             }
         }
+        // two-sided: a relaxed cell that sank to (or under) ground is
+        // DRY — the old lift-to-ground+0.01 painted water films onto
+        // banks wherever diffusion leaked upslope
         for (i, v) in river_surface.iter_mut().enumerate() {
-            if v.is_finite() && *v < height.data[i] {
-                *v = height.data[i] + 0.01;
+            if v.is_finite() && *v < height.data[i] + 0.01 {
+                *v = f64::NAN;
             }
         }
     }
@@ -490,16 +493,38 @@ fn channel_water_v2(
                 let flood_hw = (55.0 * km2.sqrt()).clamp(40.0, 380.0);
                 let tile = cell8 * n8 as f64;
                 let line = wound_or_stem(&stem, identity, root, w_m, tile);
+                // EVERY river now rides a pre-wound line: switchbacks
+                // keep the serpentine, the rest get the lateral-offset
+                // meander built up-front (clearance ladder, amp x0.8 per
+                // reject, straight as the final fallback) so the
+                // corridor is cut along the actual water line. The stem
+                // is edge-TERMINATED before winding — terminating the
+                // wound line instead drew a straight border exit across
+                // the meander loops (self-crossing -> dry river, rv 19).
+                let mut pre_terminated = false;
+                let line = line.or_else(|| {
+                    let mut base = stem.clone();
+                    if let Some(t) = edge_terminate(&base, w_m, tile) {
+                        base = t;
+                    }
+                    pre_terminated = true;
+                    (0..=8).find_map(|a| {
+                        meander_offset_line(&base, w_m, identity, root as u64, a)
+                    })
+                });
                 let (mut owned, wound) = match line {
                     Some(l) => (l, true),
                     None => (stem.clone(), false),
                 };
-                if let Some(t) = edge_terminate(&owned, w_m, tile) {
-                    owned = t;
+                if !pre_terminated || !wound {
+                    if let Some(t) = edge_terminate(&owned, w_m, tile) {
+                        owned = t;
+                    }
                 }
                 let line_ref = &owned[..];
                 corridor_flatten(
                     height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M,
+                    if wound { 4.0 } else { 14.0 },
                     identity.stream_seed(),
                 );
                 // keep-largest applies here too: healthy trunks are one
@@ -532,6 +557,7 @@ fn channel_water_v2(
                             flood_hw,
                             w2,
                             RIVER_DEPTH_M,
+                            4.0,
                             identity.stream_seed() ^ 0xB4A1D,
                         );
                         place_meandering_water(
@@ -664,8 +690,16 @@ fn channel_water_v2(
             );
         }
         let tile = cell8 * n8 as f64;
+        let mut pre_terminated = false;
         let line = if is_river {
-            wound_or_stem(&stem, identity, root, w_m, tile)
+            wound_or_stem(&stem, identity, root, w_m, tile).or_else(|| {
+                let mut base = stem.clone();
+                if let Some(t) = edge_terminate(&base, w_m, tile) {
+                    base = t;
+                }
+                pre_terminated = true;
+                (0..=8).find_map(|a| meander_offset_line(&base, w_m, identity, root as u64, a))
+            })
         } else {
             None
         };
@@ -673,12 +707,21 @@ fn channel_water_v2(
             Some(l) => (l, true),
             None => (stem.clone(), false),
         };
-        if let Some(t) = edge_terminate(&owned, w_m, tile) {
-            owned = t;
+        if !pre_terminated || !wound {
+            if let Some(t) = edge_terminate(&owned, w_m, tile) {
+                owned = t;
+            }
         }
         let line_ref = &owned[..];
         corridor_flatten(
-            height, spec8, line_ref, flood_hw, w_m, depth, identity.stream_seed(),
+            height,
+            spec8,
+            line_ref,
+            flood_hw,
+            w_m,
+            depth,
+            if wound { 4.0 } else { 14.0 },
+            identity.stream_seed(),
         );
         place_meandering_water(
             height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
@@ -894,7 +937,7 @@ fn water_tributary(
         );
     }
     corridor_flatten(
-        height, spec8, &stem, flood_hw, w_m, depth, identity.stream_seed() ^ 0x7B1B,
+        height, spec8, &stem, flood_hw, w_m, depth, 14.0, identity.stream_seed() ^ 0x7B1B,
     );
     place_meandering_water(
         height,
@@ -921,6 +964,7 @@ fn corridor_flatten(
     half_w: f64,
     chan_w: f64,
     depth: f64,
+    floor_margin_m: f64,
     salt: u64,
 ) {
     let n8 = spec8.nx as usize;
@@ -988,7 +1032,12 @@ fn corridor_flatten(
     const NOTCH_WINDOW_M: f64 = 500.0;
     let tile = cell8 * n8 as f64;
     let border_dist = |p: Vec2| p.x.min(p.y).min(tile - p.x).min(tile - p.y);
-    let notch_hw = 0.5 * chan_w + 14.0;
+    // Floor margin: wound-corridor rivers pass ~4 m (the corridor
+    // follows the water line, so no wander allowance is needed and the
+    // old 14 m margin printed a dry apron AT BED LEVEL beside the
+    // ribbon — the "water standing above its floor" tell); creeks keep
+    // 14 m for their in-corridor meander offset.
+    let notch_hw = 0.5 * chan_w + floor_margin_m;
     let mut tgt = vec![NOTCH_SENTINEL; n8 * n8];
     if path.len() >= 2 {
         let mut arcs = vec![0.0f64; path.len()];
@@ -1140,9 +1189,18 @@ fn corridor_flatten(
                     let bot = h(x0, y0 + 1) * (1.0 - sx) + h(x0 + 1, y0 + 1) * sx;
                     top * (1.0 - sy) + bot * sy
                 };
-                let n = 0.6 * vn(p.x, p.y, 95.0) + 0.4 * vn(p.x, p.y, 31.0);
-                let grade = BANK_GRADE * (1.0 - 0.55 * n);
-                let target = tv + grade * (dt - notch_hw).max(0.0);
+                // larger-scale, weaker wobble: the 31/95 m field moved
+                // the bank target by metres ACROSS the ramp (world-space
+                // sampling), reading as random bank bulges
+                let n = 0.6 * vn(p.x, p.y, 160.0) + 0.4 * vn(p.x, p.y, 60.0);
+                let grade = BANK_GRADE * (1.0 - 0.35 * n);
+                // parabolic toe: C1 blend from flat floor into the bank
+                // grade (the hard toe break read as a machined slot edge)
+                let over = (dt - notch_hw).max(0.0);
+                let toe = (0.35 * notch_hw).max(4.0);
+                let ramp =
+                    if over < toe { over * over / (2.0 * toe) } else { over - 0.5 * toe };
+                let target = tv + grade * ramp;
                 let i = y * n2 + x;
                 if height.data[i] > target {
                     height.data[i] = target;
@@ -1166,6 +1224,167 @@ fn corridor_flatten(
             }
         }
     }
+}
+
+/// Lateral-offset meander line for ordinary (non-switchback) rivers.
+/// Built OUTSIDE place_meandering_water so the corridor can be cut along
+/// the wound line exactly as serpentine rivers already do — the offset
+/// living inside the watering pass let the centreline leave the cut
+/// floor once w > 30 m (bed sampled on banks -> perched water, the
+/// "river above its surroundings" tell). Spectrum (user: keep some
+/// drama): primary wavelength 9 w, harmonics .70/.10/.20 at
+/// lam/0.37lam/2.3lam (0.47lam beat against the primary and read as a
+/// repeating pattern), amp ~1.05 w. Acceptance requires BOTH no
+/// crossing AND a hard neck clearance (1.55 w between arc-distant
+/// samples — near-touching limbs merged into pools); amp backs off
+/// x0.8 per attempt, straight line as the final fallback.
+fn meander_offset_line(
+    stem: &[Vec2],
+    w_m: f64,
+    identity: &RunIdentity,
+    path_id: u64,
+    attempt: u32,
+) -> Option<Vec<Vec2>> {
+    if stem.len() < 2 {
+        return None;
+    }
+    const MEANDER_LAM_W: f64 = 9.0;
+    const MEANDER_AMP_W: f64 = 1.05;
+    let seed = identity.stream_seed();
+    let hash = |k: u64| -> f64 {
+        let mut z = seed ^ path_id.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ k.rotate_left(31);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    };
+    // densify + smooth (same shaping as the watering pass)
+    let mut path: Vec<Vec2> = Vec::new();
+    for w2 in stem.windows(2) {
+        let (a, b) = (w2[0], w2[1]);
+        let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+        let steps = (len / 6.0).ceil().max(1.0) as usize;
+        for k in 0..steps {
+            let t = k as f64 / steps as f64;
+            path.push(Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+        }
+    }
+    path.push(*stem.last().unwrap());
+    for _ in 0..2 {
+        let mut sm = Vec::with_capacity(path.len() * 2);
+        sm.push(path[0]);
+        for w2 in path.windows(2) {
+            let (a, b) = (w2[0], w2[1]);
+            sm.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            sm.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        sm.push(*path.last().unwrap());
+        path = sm;
+    }
+    let lam = (MEANDER_LAM_W * w_m).clamp(80.0, 1400.0);
+    let amp = if attempt >= 8 {
+        0.0
+    } else {
+        (MEANDER_AMP_W * w_m).min(0.12 * lam) * libm::pow(0.8, attempt as f64)
+    };
+    let (ph1, ph2, ph3) = (
+        hash(1) * std::f64::consts::TAU,
+        hash(2) * std::f64::consts::TAU,
+        hash(3) * std::f64::consts::TAU,
+    );
+    let mut base_arcs = vec![0.0f64; path.len()];
+    for i in 1..path.len() {
+        let (a, b) = (path[i - 1], path[i]);
+        base_arcs[i] = base_arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    }
+    let arc_total = *base_arcs.last().unwrap();
+    let mut line: Vec<Vec2> = Vec::with_capacity(path.len());
+    for (i, p) in path.iter().enumerate() {
+        let arc = base_arcs[i];
+        let t0 = (arc / 300.0).clamp(0.0, 1.0);
+        let t1 = ((arc_total - arc) / 300.0).clamp(0.0, 1.0);
+        let end_taper = t0 * t0 * (3.0 - 2.0 * t0) * t1 * t1 * (3.0 - 2.0 * t1);
+        let (a, b) = (path[i.saturating_sub(2)], path[(i + 2).min(path.len() - 1)]);
+        let (tx, ty) = (b.x - a.x, b.y - a.y);
+        let tl = (tx * tx + ty * ty).sqrt().max(1e-9);
+        let (nx_, ny_) = (-ty / tl, tx / tl);
+        let off = amp * end_taper
+            * (0.70 * libm::sin(std::f64::consts::TAU * arc / lam + ph1)
+                + 0.10 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.37) + ph2)
+                + 0.20 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
+        line.push(Vec2::new(p.x + nx_ * off, p.y + ny_ * off));
+    }
+    // Smooth the OFFSET line with the same subdivision passes the
+    // watering pass will apply, and run acceptance on that final
+    // geometry: a near-fold that clears the raw checks can be
+    // chord-cut into a true crossing by downstream smoothing (rv 19).
+    for _ in 0..2 {
+        let mut sm = Vec::with_capacity(line.len() * 2);
+        sm.push(line[0]);
+        for w2 in line.windows(2) {
+            let (a, b) = (w2[0], w2[1]);
+            sm.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            sm.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        sm.push(*line.last().unwrap());
+        line = sm;
+    }
+    // acceptance runs on a copy given the watering pass's TWO further
+    // smoothing passes (four total): checking anything less lets
+    // kissing hairpins flip into crossings downstream (rv 6/19)
+    let mut probe = line.clone();
+    for _ in 0..2 {
+        let mut sm = Vec::with_capacity(probe.len() * 2);
+        sm.push(probe[0]);
+        for w2 in probe.windows(2) {
+            let (a, b) = (w2[0], w2[1]);
+            sm.push(Vec2::new(0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y));
+            sm.push(Vec2::new(0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y));
+        }
+        sm.push(*probe.last().unwrap());
+        probe = sm;
+    }
+    let mut arcs = vec![0.0f64; probe.len()];
+    for i in 1..probe.len() {
+        let (a, b) = (probe[i - 1], probe[i]);
+        arcs[i] = arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    }
+    // crossing check (reuse the wpath form: hw slot unused there)
+    let wtest: Vec<(Vec2, f64, f64)> =
+        probe.iter().zip(arcs.iter()).map(|(p, &a)| (*p, a, 0.0)).collect();
+    if self_intersects(&wtest) {
+        if std::env::var("HYDRO_TRACE").is_ok() {
+            eprintln!("  meander attempt {attempt}: crossing at amp {amp:.1}");
+        }
+        return None;
+    }
+    // hard neck clearance between arc-distant samples
+    let clearance = 1.55 * w_m;
+    let arc_far = (3.0 * w_m).max(0.55 * lam);
+    let step = 4;
+    let pts: Vec<(Vec2, f64)> =
+        probe.iter().zip(arcs.iter()).step_by(step).map(|(p, &a)| (*p, a)).collect();
+    let step_arc = if pts.len() > 1 { (pts[1].1 - pts[0].1).abs() } else { 0.0 };
+    for i in 0..pts.len() {
+        for j in (i + 1)..pts.len() {
+            if (pts[j].1 - pts[i].1).abs() < arc_far {
+                continue;
+            }
+            let dx = pts[j].0.x - pts[i].0.x;
+            let dy = pts[j].0.y - pts[i].0.y;
+            if (dx * dx + dy * dy).sqrt() < clearance + step_arc {
+                if std::env::var("HYDRO_TRACE").is_ok() {
+                    eprintln!(
+                        "  meander attempt {attempt}: neck {:.0} m at arcs {:.0}/{:.0} (amp {amp:.1})",
+                        (dx * dx + dy * dy).sqrt(),
+                        pts[i].1,
+                        pts[j].1
+                    );
+                }
+                return None;
+            }
+        }
+    }
+    Some(line)
 }
 
 /// SWITCHBACK rivers: serpentine centerline via a sine-generated curve
@@ -1493,11 +1712,12 @@ fn place_meandering_water(
                 * (0.55 * libm::sin(std::f64::consts::TAU * arc / lam + ph1)
                     + 0.30 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.47) + ph2)
                     + 0.15 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
-            // breathing scales DOWN with width: +-28% reads organic on a
-            // creek but bulge-and-waist on a 90 m river (a P2 tell)
-            let breath = 0.28 * (35.0 / w_m).clamp(0.4, 1.0);
+            // breathing: slow and subtle — +-28% at 3.7 widths pulsed
+            // like bulge-and-waist (a P2 tell); +-15% at 6 widths reads
+            // as natural width variation
+            let breath = 0.15 * (35.0 / w_m).clamp(0.5, 1.0);
             let hw = 0.5 * w_m
-                * (1.0 + breath * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
+                * (1.0 + breath * libm::sin(std::f64::consts::TAU * arc / (6.0 * w_m) + ph2));
             wpath.push((Vec2::new(p.x + nx_ * off, p.y + ny_ * off), arc, hw));
         }
         if self_intersects(&wpath) {
@@ -1526,9 +1746,9 @@ fn place_meandering_water(
                 height.data[y * n2 + x]
             })
             .collect();
-        // ---- knots -------------------------------------------------
-        let mut knots: Vec<(f64, f64)> = Vec::new();
-        let mut prev_surface = f64::INFINITY;
+        // ---- knots (arc, surface, bed_ref) --------------------------
+        let mut knots: Vec<(f64, f64, f64)> = Vec::new();
+        let mut prev_surface = f64::NEG_INFINITY;
         let mut si = 0usize;
         while si < wpath.len() {
             let arc0 = wpath[si].1;
@@ -1544,19 +1764,21 @@ fn place_meandering_water(
                 sj += 1;
             }
             // ROBUST bed reference (q40), not the min: one deep pocket
-            // dragged the whole chain down and the +0.15 rise cap kept
-            // the river dry for hundreds of metres climbing back out.
+            // dragged the whole chain down (pre-rework lesson).
             let mut beds: Vec<f64> = pbed2[si..=sj].to_vec();
             beds.sort_by(|a, b| a.total_cmp(b));
             let bed_ref = beds[beds.len() * 2 / 5];
-            // never dive under the bed: where the bed rises downstream,
-            // real water PONDS — hold the level instead of going dry
-            let mut surface = (bed_ref + depth).min(prev_surface + 0.15);
-            if surface < bed_ref + 0.15 * depth {
-                surface = (bed_ref + 0.15 * depth).min(prev_surface.max(bed_ref + 0.1));
-            }
+            // PHYSICAL profile: arc runs mouth -> head, and a water
+            // surface is monotone NON-DECREASING upstream — free surface
+            // bed+depth on flowing reaches, held LEVEL through pools
+            // behind downstream sills. The old rise/dive caps simulated
+            // this badly and their interaction with bank-sampled beds
+            // built the perched ribbons; with the corridor cut along the
+            // wound line the bed is honest and the monotone rule is all
+            // that's needed.
+            let surface = (bed_ref + depth).max(prev_surface);
             prev_surface = surface;
-            knots.push((0.5 * (wpath[si].1 + wpath[sj].1), surface));
+            knots.push((0.5 * (wpath[si].1 + wpath[sj].1), surface, bed_ref));
             si = sj + 1;
         }
         if knots.is_empty() {
@@ -1576,8 +1798,12 @@ fn place_meandering_water(
                 knots[j].1 = 0.25 * vals[j - 1] + 0.5 * vals[j] + 0.25 * vals[j + 1];
             }
         }
+        // re-enforce upstream monotonicity after smoothing (the 1-2-1
+        // passes can dip a knot below its downstream neighbor)
         for j in 1..knots.len() {
-            knots[j].1 = knots[j].1.min(knots[j - 1].1 + 0.15);
+            if knots[j].1 < knots[j - 1].1 {
+                knots[j].1 = knots[j - 1].1;
+            }
         }
         let s_at = |arc: f64| -> f64 {
             if arc <= knots[0].0 {
@@ -1587,26 +1813,32 @@ fn place_meandering_water(
                 return knots[knots.len() - 1].1;
             }
             let j = knots.partition_point(|k| k.0 < arc).max(1);
-            let (a0, s0) = knots[j - 1];
-            let (a1, s1) = knots[j];
+            let (a0, s0, _) = knots[j - 1];
+            let (a1, s1, _) = knots[j];
             let t = ((arc - a0) / (a1 - a0).max(1e-9)).clamp(0.0, 1.0);
             s0 + (s1 - s0) * t
         };
         // ---- global wet mask (nearest-point arc per cell) -----------
         let fr = 2.0 * cell2;
         let lim = cell2 * n2 as f64 - fr;
+        // candidate radius reaches past hw to the corridor floor edge +
+        // bank toe: the hw cylinder clipped the water short of the level
+        // line and left a dry apron AT BED LEVEL beside a standing
+        // ribbon (vertical water walls, a P2 tell). Wetness itself is
+        // decided by the level test below.
         let mut nearest: std::collections::HashMap<usize, (f64, u32)> =
             std::collections::HashMap::new();
         for (pi, (p, _, hw)) in wpath.iter().enumerate() {
-            let cx0 = (((p.x - hw).max(fr)) / cell2) as usize;
-            let cy0 = (((p.y - hw).max(fr)) / cell2) as usize;
-            let cx1 = ((((p.x + hw).min(lim)) / cell2) as usize).min(n2 - 1);
-            let cy1 = ((((p.y + hw).min(lim)) / cell2) as usize).min(n2 - 1);
+            let r = hw + 8.0;
+            let cx0 = (((p.x - r).max(fr)) / cell2) as usize;
+            let cy0 = (((p.y - r).max(fr)) / cell2) as usize;
+            let cx1 = ((((p.x + r).min(lim)) / cell2) as usize).min(n2 - 1);
+            let cy1 = ((((p.y + r).min(lim)) / cell2) as usize).min(n2 - 1);
             for cy in cy0..=cy1 {
                 for cx in cx0..=cx1 {
                     let (px, py) = (cx as f64 * cell2, cy as f64 * cell2);
                     let d2 = (px - p.x) * (px - p.x) + (py - p.y) * (py - p.y);
-                    if d2 > hw * hw {
+                    if d2 > r * r {
                         continue;
                     }
                     let i2 = cy * n2 + cx;
@@ -1620,7 +1852,7 @@ fn place_meandering_water(
         let mut wet: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
         for (&i2, &(_, pi)) in &nearest {
             let arc = wpath[pi as usize].1;
-            if height.data[i2] < s_at(arc) {
+            if height.data[i2] < s_at(arc) - 0.05 {
                 wet.insert(i2, arc);
             }
         }
