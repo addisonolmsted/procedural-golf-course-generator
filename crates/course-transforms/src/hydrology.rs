@@ -427,7 +427,10 @@ fn channel_water_v2(
                     owned = t;
                 }
                 let line_ref = &owned[..];
-                corridor_flatten(height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M);
+                corridor_flatten(
+                    height, spec8, line_ref, flood_hw, w_m, RIVER_DEPTH_M,
+                    identity.stream_seed(),
+                );
                 // keep-largest applies here too: healthy trunks are one
                 // component anyway (rv 20/20), but edge-hug residual
                 // trunks (hc/pied) pinch inside the border mask frame
@@ -451,7 +454,15 @@ fn channel_water_v2(
                         if let Some(t) = edge_terminate(&strand, w2, tile) {
                             strand = t;
                         }
-                        corridor_flatten(height, spec8, &strand, flood_hw, w2, RIVER_DEPTH_M);
+                        corridor_flatten(
+                            height,
+                            spec8,
+                            &strand,
+                            flood_hw,
+                            w2,
+                            RIVER_DEPTH_M,
+                            identity.stream_seed() ^ 0xB4A1D,
+                        );
                         place_meandering_water(
                             height,
                             identity,
@@ -593,7 +604,9 @@ fn channel_water_v2(
             owned = t;
         }
         let line_ref = &owned[..];
-        corridor_flatten(height, spec8, line_ref, flood_hw, w_m, depth);
+        corridor_flatten(
+            height, spec8, line_ref, flood_hw, w_m, depth, identity.stream_seed(),
+        );
         place_meandering_water(
             height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
             true, water,
@@ -804,7 +817,9 @@ fn water_tributary(
             junction
         );
     }
-    corridor_flatten(height, spec8, &stem, flood_hw, w_m, depth);
+    corridor_flatten(
+        height, spec8, &stem, flood_hw, w_m, depth, identity.stream_seed() ^ 0x7B1B,
+    );
     place_meandering_water(
         height,
         identity,
@@ -829,6 +844,7 @@ fn corridor_flatten(
     half_w: f64,
     chan_w: f64,
     depth: f64,
+    salt: u64,
 ) {
     let n8 = spec8.nx as usize;
     let cell8 = spec8.cell_size;
@@ -1019,14 +1035,37 @@ fn corridor_flatten(
             // slivers on ridge-spur crossings). The old fixed 12 m
             // ease made bank steepness grow with cut depth; now the
             // floor is FLAT across the corridor core and banks rise at
-            // BANK_GRADE beyond it, daylighting into natural terrain
-            // wherever the ground is already below the bank plane —
-            // continuous by construction, and a 20 m cut gets ~45 m of
-            // graded bank instead of a cliff.
+            // a NOISY grade beyond it, daylighting into natural ground
+            // wherever it is already below the bank plane — continuous
+            // by construction. BANK_GRADE is the MAX slope; correlated
+            // value-noise (two octaves, ~30/95 m) only FLATTENS it
+            // (user spec: constant-grade banks read as a machined
+            // cutout; noise must never steepen past the validated cap).
             const BANK_GRADE: f64 = 0.45;
             const MAX_BANK_M: f64 = 95.0;
             if dt <= notch_hw + MAX_BANK_M && tv < 1.0e8 {
-                let target = tv + BANK_GRADE * (dt - notch_hw).max(0.0);
+                let vn = |px: f64, py: f64, scale: f64| -> f64 {
+                    let h = |ix: i64, iy: i64| -> f64 {
+                        let mut z = salt
+                            ^ (ix as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ (iy as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+                        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                        (z >> 11) as f64 / (1u64 << 53) as f64
+                    };
+                    let (gx, gy) = (px / scale, py / scale);
+                    let (x0, y0) = (gx.floor(), gy.floor());
+                    let (fx, fy) = (gx - x0, gy - y0);
+                    let sm = |t: f64| t * t * (3.0 - 2.0 * t);
+                    let (sx, sy) = (sm(fx), sm(fy));
+                    let (x0, y0) = (x0 as i64, y0 as i64);
+                    let top = h(x0, y0) * (1.0 - sx) + h(x0 + 1, y0) * sx;
+                    let bot = h(x0, y0 + 1) * (1.0 - sx) + h(x0 + 1, y0 + 1) * sx;
+                    top * (1.0 - sy) + bot * sy
+                };
+                let n = 0.6 * vn(p.x, p.y, 95.0) + 0.4 * vn(p.x, p.y, 31.0);
+                let grade = BANK_GRADE * (1.0 - 0.55 * n);
+                let target = tv + grade * (dt - notch_hw).max(0.0);
                 let i = y * n2 + x;
                 if height.data[i] > target {
                     height.data[i] = target;

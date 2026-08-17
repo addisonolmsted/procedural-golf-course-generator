@@ -104,7 +104,10 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         close_borders: true,
         derangement: ((0.5 - m_integration) * 1.6).clamp(0.0, 0.9),
         iters: carve::ITERS,
-        step_clamp_m: carve::STEP_CLAMP_M,
+        // the per-iteration clamp caps total incision at 6.75 m and big
+        // channels saturate it — without scaling, incision_boost only
+        // WIDENS (the ladder metric showed p90 depth flat-to-falling)
+        step_clamp_m: carve::STEP_CLAMP_M * dial("skeleton.incision_boost", 1.0).sqrt(),
     };
     let carved = carve::carve(
         &spec8,
@@ -171,6 +174,33 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     for lin in 0..n8 {
         if carved.channel_of[lin].is_some() {
             height8.data[lin] = carved.z.data[lin].min(height8.data[lin]);
+        }
+    }
+
+    // BOOSTED CHANNEL TRENCH. Absolute carve depth saturates against
+    // base level (downstream-first carving converges on the outlet
+    // profile — boosting k just reaches the same asymptote faster; the
+    // incision ladder measured p90 depth FLAT across boost 1.0→2.5),
+    // so incision_boost's DEPTH half comes from a local trench cut
+    // below the graded catena surface: the incised-draw / arroyo form.
+    // Discharge-keyed width and depth; identically zero at boost 1.0.
+    {
+        let boost = dial("skeleton.incision_boost", 1.0);
+        if boost > 1.0 {
+            for lin in 0..n8 {
+                let nr = &near[lin];
+                if !nr.dist_m.is_finite() {
+                    continue;
+                }
+                let km2 = (nr.area_m2 / 1.0e6).max(0.0);
+                let hw = (11.0 * libm::pow(km2.max(1e-6), 0.4)).clamp(9.0, 42.0);
+                if nr.dist_m > hw {
+                    continue;
+                }
+                let t = 2.2 * (boost - 1.0) * libm::pow(km2.max(0.05), 0.3).clamp(0.5, 2.0);
+                let u = nr.dist_m / hw;
+                height8.data[lin] -= t * (1.0 - u * u).max(0.0);
+            }
         }
     }
 
