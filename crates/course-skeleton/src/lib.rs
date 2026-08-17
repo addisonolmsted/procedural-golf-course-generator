@@ -97,7 +97,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         roughness_frac: carve::ROUGHNESS_FRAC,
         k: if density >= 0.5 { carve::K_STREAM_POWER } else { 0.0 },
         area_threshold_m2: carve::AREA_THRESHOLD_M2,
-        incision_scale: integration::incision_scale(m_integration),
+        incision_scale: integration::incision_scale(m_integration)
+            * dial("skeleton.incision_boost", 1.0),
         base_drop_m: carve::BASE_DROP_M,
         inflow_area_m2: carve::INFLOW_PER_TRUNK_DIAL_M2 * m_trunk_river,
         close_borders: true,
@@ -151,7 +152,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     // order-scaled floors and the groove/hillslope blend, applied to the
     // carved surface rather than cutting a second set of valleys into the
     // implied one.
-    let mut height8 = catena::banks(&spec8, &carved.z, &near);
+    let mut height8 =
+        catena::banks(&spec8, &carved.z, &near, dial("skeleton.incision_boost", 1.0));
     let max_order = channels.iter().map(|c| c.order).max().unwrap_or(0);
     trunk_river::apply(&mut height8, &near, m_trunk_river, max_order);
     stratigraphy::apply(&mut height8, &c1.hardness, &near, &spec.descriptors.strata, m_strat);

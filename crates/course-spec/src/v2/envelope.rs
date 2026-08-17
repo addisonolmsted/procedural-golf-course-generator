@@ -130,6 +130,11 @@ pub struct BiomeEnvelope {
     /// widest on average, hill country second, the rest behind).
     #[serde(default)]
     pub channel_width_scale: Option<f64>,
+    /// Multiplier on dry-channel incision depth and valley-floor width
+    /// (None = 1.0). Piedmont ravines and hill-country draws cut wider
+    /// and deeper than the shared carve default (user round 2026-08-16).
+    #[serde(default)]
+    pub incision_boost: Option<f64>,
     /// Probability that a terrace_flight draw realizes as the CENTERED
     /// ASYMMETRIC TERRACED VALLEY (river down the middle, treads
     /// climbing one side, smooth shoulder the other — reviewer's

@@ -130,7 +130,12 @@ fn box3(a: &[f64], nx: usize, ny: usize) -> Vec<f64> {
 /// over the first `D_FULL_M`. It only ever LOWERS ground toward the
 /// nearest channel's elevation, never raises it, so the carve's drainage
 /// monotonicity survives untouched.
-pub fn banks(spec: &GridSpec, carved: &Grid<f64>, near: &[Nearest]) -> Grid<f64> {
+pub fn banks(
+    spec: &GridSpec,
+    carved: &Grid<f64>,
+    near: &[Nearest],
+    incision_boost: f64,
+) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
     let mut cut: Vec<f64> = near
         .iter()
@@ -146,8 +151,13 @@ pub fn banks(spec: &GridSpec, carved: &Grid<f64>, near: &[Nearest]) -> Grid<f64>
             // the cut reads clean and decisive (reviewer gap #1) —
             // minors keep the soft profile and stay subtle.
             let km2 = (n.area_m2 / 1.0e6).max(0.0);
-            let floor_hw = (9.5 * libm::pow(km2, 0.45)).clamp(8.0, 34.0);
-            let groove_d = if km2 >= 2.0 { 26.0 } else { 40.0 };
+            // incision_boost (envelope, hc 1.6 / pied 1.35): ravines
+            // and draws cut WIDER as well as deeper — the deeper cut
+            // itself comes from the carve's boosted incision_scale
+            let floor_hw =
+                (9.5 * libm::pow(km2, 0.45) * incision_boost).clamp(8.0, 34.0 * incision_boost);
+            let groove_d =
+                (if km2 >= 2.0 { 26.0 } else { 40.0 }) * libm::sqrt(incision_boost);
             let d_eff = (n.dist_m - floor_hw).max(0.0);
             let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);

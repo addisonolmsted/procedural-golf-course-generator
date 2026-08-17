@@ -444,7 +444,8 @@
    "wave_iso_frac": 0.3,
    "wave_share": 0.36,
    "weight": 1.0,
-   "channel_width_scale": 1.3
+   "channel_width_scale": 1.3,
+   "incision_boost": 1.6
   },
   "piedmont": {
    "boundary_kind_weights": {
@@ -593,7 +594,8 @@
     }
    ],
    "weight": 1.0,
-   "channel_width_scale": 0.67
+   "channel_width_scale": 0.67,
+   "incision_boost": 1.35
   },
   "river_valley": {
    "boundary_kind_weights": {

@@ -722,6 +722,19 @@ fn water_tributary(
     let Some((area, start, junction)) = best else {
         return;
     };
+    // the junction must sit on the main's actually-WATERED extent: on
+    // gp seed 7 the main's kept water was a stub 1.1 km east of the
+    // junction and the tributary floated with both ends unconnected
+    // (user report). 80 m reach covers the widest main + its banks.
+    let jp = spec8.world_of((junction % n8) as u32, (junction / n8) as u32);
+    let near_water = water.iter().any(|w| {
+        w.polygon
+            .iter()
+            .any(|q| (q.x - jp.x).powi(2) + (q.y - jp.y).powi(2) < 80.0 * 80.0)
+    });
+    if !near_water {
+        return;
+    }
     // upstream walk along biggest donors, creek discharge floor
     let mut cells = vec![start];
     let mut cur = start;
@@ -1001,14 +1014,27 @@ fn corridor_flatten(
             let d = dg.bilinear(p);
             let dt = dtg.bilinear(p);
             let tv = tg.bilinear(p);
-            if dt <= notch_hw && tv < 1.0e8 {
-                let l = ((notch_hw - dt) / 12.0).clamp(0.0, 1.0);
-                let target = tv;
+            // DEPTH-SCALED BANKS (user round: hc gorges read as raw
+            // slots, and their narrow floors pinched the water to
+            // slivers on ridge-spur crossings). The old fixed 12 m
+            // ease made bank steepness grow with cut depth; now the
+            // floor is FLAT across the corridor core and banks rise at
+            // BANK_GRADE beyond it, daylighting into natural terrain
+            // wherever the ground is already below the bank plane —
+            // continuous by construction, and a 20 m cut gets ~45 m of
+            // graded bank instead of a cliff.
+            const BANK_GRADE: f64 = 0.45;
+            const MAX_BANK_M: f64 = 95.0;
+            if dt <= notch_hw + MAX_BANK_M && tv < 1.0e8 {
+                let target = tv + BANK_GRADE * (dt - notch_hw).max(0.0);
                 let i = y * n2 + x;
                 if height.data[i] > target {
-                    height.data[i] += (target - height.data[i]) * l;
+                    height.data[i] = target;
+                    continue;
                 }
-                continue;
+                if dt <= notch_hw {
+                    continue;
+                }
             }
             if d > half_w || d < 10.0 {
                 continue;

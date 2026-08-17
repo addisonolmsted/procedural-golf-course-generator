@@ -297,6 +297,10 @@ fn derive_dials(
         env.channel_width_scale.unwrap_or(1.0),
     );
     m.insert(
+        "skeleton.incision_boost".into(),
+        env.incision_boost.unwrap_or(1.0),
+    );
+    m.insert(
         "primitives.terrace_valley".into(),
         env.terrace_valley.unwrap_or(0.0),
     );
