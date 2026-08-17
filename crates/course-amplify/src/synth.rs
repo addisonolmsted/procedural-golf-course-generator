@@ -20,7 +20,7 @@
 use course_seed::RunIdentity;
 use course_world::grid::Grid;
 
-use crate::conditioning::{gaussian_blur, Conditioning, SIGMA_PER_L};
+use crate::conditioning::{Conditioning, SIGMA_PER_L};
 use crate::dictionary::{Dictionary, Level};
 
 pub const PATCH: usize = 32;
@@ -41,11 +41,6 @@ pub const GAIN_CLAMP: (f64, f64) = (0.5, 2.5);
 /// across all six biomes at fine, ~×1.05 at mid.
 pub const CLOSER_GAIN_MID: f64 = 1.05;
 pub const CLOSER_GAIN_FINE: f64 = 1.28;
-/// Per-level spectral shelf gains (low, mid, high sub-band within the
-/// level's own band), applied once, conservative. Calibrated against the
-/// held-out reconstruction targets; the identity default is safe.
-pub const SHELF_GAINS_MID: [f64; 3] = [1.0, 1.0, 1.0];
-pub const SHELF_GAINS_FINE: [f64; 3] = [1.0, 1.0, 1.0];
 
 /// Which dictionary level this pass runs.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,12 +69,6 @@ impl Band {
         match self {
             Band::Mid => CLOSER_GAIN_MID,
             Band::Fine => CLOSER_GAIN_FINE,
-        }
-    }
-    fn shelf_gains(self) -> [f64; 3] {
-        match self {
-            Band::Mid => SHELF_GAINS_MID,
-            Band::Fine => SHELF_GAINS_FINE,
         }
     }
 }
@@ -293,6 +282,18 @@ pub fn quilt(
         }
     }
     let _ = &wsum;
+    // equalizer target = mean of contributing buckets (QA convention)
+    let mut eq_t = [0.0f64; 16];
+    let mut eq_n = 0.0f64;
+    for c in chosen.iter().flatten() {
+        for (k, v) in c.eq.iter().take(16).enumerate() {
+            eq_t[k] += v;
+        }
+        eq_n += 1.0;
+    }
+    for v in &mut eq_t {
+        *v /= eq_n.max(1.0);
+    }
 
     // ---- Poisson integrate (cell units, fixed multigrid cycles) --------
     let mut z = poisson_multigrid(&gx, &gy, grid_n);
@@ -320,18 +321,37 @@ pub fn quilt(
         zg.data[i] -= lp[i];
     }
 
-    // ---- conservative spectral shelves (F3 rule 3) ----------------------
-    let gains = band.shelf_gains();
-    if gains != [1.0, 1.0, 1.0] {
-        let cut_a = band.lam_cut_m() / 2.5;
-        let cut_b = band.lam_cut_m() / 6.5;
-        let la = gaussian_blur(&zg, SIGMA_PER_L * cut_a / cell_m);
-        let lb = gaussian_blur(&zg, SIGMA_PER_L * cut_b / cell_m);
-        for i in 0..n {
-            let low = la.data[i];
-            let mid = lb.data[i] - la.data[i];
-            let high = zg.data[i] - lb.data[i];
-            zg.data[i] = low * gains[0] + mid * gains[1] + high * gains[2];
+    // ---- RADIAL SPECTRAL EQUALIZER (F2's baked targets, applied) --------
+    // The dictionary bakes per-bucket 16-bin radial-PSD targets that were
+    // never consumed here — the G-TERRAIN PSD seam (fine band 1.2-3.0
+    // slope-steps too flat at the 64 m handoff) is that omission showing.
+    // The QA-validated algorithm (tools/dictionary/qa.py): measure the
+    // mosaic's own 32-cell-window PSD in the identical 16-bin convention,
+    // per-bin gain = sqrt(target/actual), bins 0-1 excluded (a
+    // mean-removed 32-cell window cannot measure them; the band-limit
+    // owns that end), TOTAL gain clamped to [0.4, 5], two measured
+    // passes (the naive iterated version compounded x6/pass into a
+    // 60-250x blowup). Application here is a Gaussian band-bank rather
+    // than a tile FFT (no FFT for arbitrary n); the measurement stays
+    // convention-exact and the second measured pass absorbs the
+    // band-bank's smooth-edge imprecision.
+    {
+        let mut g_tot = [1.0f64; 16];
+        for _pass in 0..2 {
+            let act = measure_radial16(&zg.data, grid_n);
+            let mut allowed = [1.0f64; 16];
+            let mut max_log = 0.0f64;
+            for k in 2..16 {
+                let gain = (eq_t[k].max(1e-20) / act[k].max(1e-20)).sqrt();
+                let a = (g_tot[k] * gain).clamp(0.4, 5.0) / g_tot[k];
+                g_tot[k] *= a;
+                allowed[k] = a;
+                max_log = max_log.max(a.ln().abs());
+            }
+            apply_radial16(&mut zg.data, grid_n, cell_m, &allowed);
+            if max_log < 0.1 {
+                break;
+            }
         }
     }
 
@@ -349,6 +369,8 @@ pub fn quilt(
 pub struct Chosen<'d> {
     pub patch: &'d crate::dictionary::Patch,
     pub amp_p50: f64,
+    /// The bucket's baked 16-bin radial-PSD equalizer target.
+    pub eq: &'d [f64],
     /// Rotation applied at paste time, radians CCW in grid-index space;
     /// exactly 0.0 on the legacy path (aliases the original buffer).
     pub theta: f64,
@@ -413,7 +435,12 @@ pub fn choose_patches<'d>(
         let sel = if !rotate_band || tcoh < COH_LO {
             // legacy path, bit-identical to the pre-orientation engine
             let pi = pick(seed, band, pyi, pxi, bucket.patches.len(), 0x51);
-            Chosen { patch: &bucket.patches[pi], amp_p50: bucket.amp_p50, theta: 0.0 }
+            Chosen {
+                patch: &bucket.patches[pi],
+                amp_p50: bucket.amp_p50,
+                eq: &bucket.equalizer,
+                theta: 0.0,
+            }
         } else {
             // K candidates; cheapest = least rotation of a trustworthy
             // axis. An isotropic patch's axis means nothing, so its cost
@@ -440,6 +467,7 @@ pub fn choose_patches<'d>(
             Chosen {
                 patch: p,
                 amp_p50: bucket.amp_p50,
+                eq: &bucket.equalizer,
                 theta,
             }
         };
@@ -696,4 +724,171 @@ fn gauss_seidel(z: &mut [f64], rhs: &[f64], n: usize) {
             z[i] = (lap - rhs[i]) / deg.max(1.0);
         }
     }
+}
+
+/// 16-bin radial power of a mean-removed 32x32 window — bit-convention
+/// identical to the builder's `radial_power` / QA's `_radial16`:
+/// fftshifted |FFT|^2, radius bins linspace(0, 16, 17), mean per bin.
+fn radial16_window(w: &[f64]) -> [f64; 16] {
+    const N: usize = PATCH; // 32
+    let mean = w.iter().sum::<f64>() / (N * N) as f64;
+    // rows then cols, radix-2 complex FFT
+    let mut re = vec![0.0f64; N * N];
+    let mut im = vec![0.0f64; N * N];
+    for i in 0..N * N {
+        re[i] = w[i] - mean;
+    }
+    let fft32 = |re: &mut [f64], im: &mut [f64]| {
+        // in-place radix-2 on 32 points
+        let n = 32usize;
+        let mut j = 0usize;
+        for i in 0..n {
+            if i < j {
+                re.swap(i, j);
+                im.swap(i, j);
+            }
+            let mut m = n >> 1;
+            while m >= 1 && j & m != 0 {
+                j ^= m;
+                m >>= 1;
+            }
+            j |= m;
+        }
+        let mut len = 2usize;
+        while len <= n {
+            let ang = -std::f64::consts::TAU / len as f64;
+            let (wr, wi) = (libm::cos(ang), libm::sin(ang));
+            let mut i = 0usize;
+            while i < n {
+                let (mut cr, mut ci) = (1.0f64, 0.0f64);
+                for k in 0..len / 2 {
+                    let a = i + k;
+                    let b = i + k + len / 2;
+                    let tr = re[b] * cr - im[b] * ci;
+                    let ti = re[b] * ci + im[b] * cr;
+                    re[b] = re[a] - tr;
+                    im[b] = im[a] - ti;
+                    re[a] += tr;
+                    im[a] += ti;
+                    let ncr = cr * wr - ci * wi;
+                    ci = cr * wi + ci * wr;
+                    cr = ncr;
+                }
+                i += len;
+            }
+            len <<= 1;
+        }
+    };
+    let mut row_r = [0.0f64; 32];
+    let mut row_i = [0.0f64; 32];
+    for y in 0..N {
+        row_r.copy_from_slice(&re[y * N..(y + 1) * N]);
+        row_i.copy_from_slice(&im[y * N..(y + 1) * N]);
+        fft32(&mut row_r, &mut row_i);
+        re[y * N..(y + 1) * N].copy_from_slice(&row_r);
+        im[y * N..(y + 1) * N].copy_from_slice(&row_i);
+    }
+    for x in 0..N {
+        for y in 0..N {
+            row_r[y] = re[y * N + x];
+            row_i[y] = im[y * N + x];
+        }
+        fft32(&mut row_r, &mut row_i);
+        for y in 0..N {
+            re[y * N + x] = row_r[y];
+            im[y * N + x] = row_i[y];
+        }
+    }
+    let mut acc = [0.0f64; 16];
+    let mut cnt = [0u32; 16];
+    for y in 0..N {
+        for x in 0..N {
+            // fftshift: shifted coords are (y+16)%32, (x+16)%32 relative
+            // to a centre at 16 — equivalently radius from the DC bin in
+            // wrapped distance
+            let sy = ((y + N / 2) % N) as f64 - (N / 2) as f64;
+            let sx = ((x + N / 2) % N) as f64 - (N / 2) as f64;
+            let r = (sy * sy + sx * sx).sqrt();
+            let bin = (r.floor() as usize).min(15);
+            if r < 16.0 {
+                let p = re[y * N + x] * re[y * N + x] + im[y * N + x] * im[y * N + x];
+                acc[bin] += p;
+                cnt[bin] += 1;
+            } else {
+                // radius >= 16 falls outside the 16 bins (numpy's
+                // linspace(0,16,17) upper bins) — excluded, as in QA
+            }
+        }
+    }
+    let mut out = [0.0f64; 16];
+    for k in 0..16 {
+        out[k] = if cnt[k] > 0 { acc[k] / cnt[k] as f64 } else { 0.0 };
+    }
+    out
+}
+
+/// Mosaic-wide 16-bin PSD: mean of mean-removed 32-cell windows on a
+/// 64-cell step grid (QA convention).
+fn measure_radial16(z: &[f64], grid_n: usize) -> [f64; 16] {
+    let mut acc = [0.0f64; 16];
+    let mut cnt = 0.0f64;
+    let mut win = vec![0.0f64; PATCH * PATCH];
+    let mut yy = 0usize;
+    while yy + PATCH < grid_n {
+        let mut xx = 0usize;
+        while xx + PATCH < grid_n {
+            for y in 0..PATCH {
+                for x in 0..PATCH {
+                    win[y * PATCH + x] = z[(yy + y) * grid_n + (xx + x)];
+                }
+            }
+            let r = radial16_window(&win);
+            for k in 0..16 {
+                acc[k] += r[k];
+            }
+            cnt += 1.0;
+            xx += 64;
+        }
+        yy += 64;
+    }
+    for v in &mut acc {
+        *v /= cnt.max(1.0);
+    }
+    acc
+}
+
+/// Apply per-bin gains through a Gaussian band-bank: bin k of the
+/// 32-sample window convention covers wavelengths (32/(k+1), 32/k]
+/// cells; lowpass boundaries use the same half-amplitude Gaussian
+/// convention as the re-band-limit. Bins 0-1 (the >= 16-cell end) pass
+/// through unchanged.
+fn apply_radial16(z: &mut [f64], grid_n: usize, _cell_m: f64, gains: &[f64; 16]) {
+    let lp_at = |src: &[f64], lam_cells: f64| -> Vec<f64> {
+        let sigma = SIGMA_PER_L * lam_cells;
+        let box_w = ((sigma * 1.153) as usize * 2 + 1).max(3);
+        let mut lp = src.to_vec();
+        for _ in 0..3 {
+            lp = box_filter(&lp, grid_n, box_w);
+        }
+        lp
+    };
+    // Telescoping band-bank: with L(c) = lowpass keeping wavelengths
+    // >= c cells, bin k's content is L(32/(k+1)) - L(32/k); the top bin
+    // closes with z itself, so at unit gains the sum reconstructs z
+    // exactly: L(16) + sum(L(next) - L(this)) telescopes to z.
+    let low = lp_at(z, 32.0 / 2.0);
+    let mut out: Vec<f64> = low.clone(); // bins 0-1 content, gain 1
+    let mut prev = low;
+    for k in 2..16 {
+        let cur = if k < 15 {
+            lp_at(z, 32.0 / (k + 1) as f64)
+        } else {
+            z.to_vec()
+        };
+        for i in 0..z.len() {
+            out[i] += (cur[i] - prev[i]) * gains[k];
+        }
+        prev = cur;
+    }
+    z.copy_from_slice(&out);
 }
