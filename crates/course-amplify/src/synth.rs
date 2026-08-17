@@ -396,16 +396,9 @@ pub fn quilt(
     // fine-band lows beyond K_TAIL local target amplitudes. One-sided —
     // highs untouched — and faded out near channels where real gullies
     // are allowed to dig.
-    {
-        // Fine band carries the 2 m fragment slots; the MID band (8 m
-        // patches, energy down to its 16 m Nyquist) carries the ~half of
-        // detected groove fragments that survive 4 m smoothing — the
-        // fine-only governor left those untouched (groove audit round 7).
-        let (tail_k, tail_slope) = match band {
-            Band::Fine => (1.3, 0.25),
-            Band::Mid => (1.6, 0.35),
-        };
-        let (tail_k, tail_slope): (f64, f64) = (tail_k, tail_slope);
+    if matches!(band, Band::Fine) {
+        const TAIL_K: f64 = 2.0;
+        const TAIL_SLOPE: f64 = 0.35;
         const TAIL_NEAR_M: f64 = 48.0;
         const TAIL_FAR_M: f64 = 96.0;
         for gy_c in 0..grid_n {
@@ -418,10 +411,10 @@ pub fn quilt(
                     continue;
                 }
                 let i = gy_c * grid_n + gx_c;
-                let t = tail_k * (amp_t[i] * band.closer_gain() * amp_trim).max(1e-6);
+                let t = TAIL_K * (amp_t[i] * band.closer_gain() * amp_trim).max(1e-6);
                 let z = zg.data[i];
                 if z < -t {
-                    let squashed = -t + (z + t) * tail_slope;
+                    let squashed = -t + (z + t) * TAIL_SLOPE;
                     zg.data[i] = z + (squashed - z) * offw;
                 }
             }

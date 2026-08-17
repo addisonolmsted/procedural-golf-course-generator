@@ -300,20 +300,6 @@ fn derive_dials(
         "skeleton.incision_boost".into(),
         env.incision_boost.unwrap_or(1.0),
     );
-    m.insert("amplify.gully_density".into(), env.gully_density.unwrap_or(0.0));
-    m.insert(
-        "amplify.gully_depth_p50_m".into(),
-        env.gully_depth_p50_m.unwrap_or(0.45),
-    );
-    m.insert("amplify.gully_reach_m".into(), env.gully_reach_m.unwrap_or(180.0));
-    m.insert(
-        "amplify.gully_max_len_m".into(),
-        env.gully_max_len_m.unwrap_or(110.0),
-    );
-    m.insert(
-        "amplify.gully_branch_prob".into(),
-        env.gully_branch_prob.unwrap_or(0.6),
-    );
     m.insert(
         "amplify.amp_trim_fine".into(),
         env.amp_trim_fine.unwrap_or(1.0),

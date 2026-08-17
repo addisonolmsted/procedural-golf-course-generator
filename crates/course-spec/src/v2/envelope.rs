@@ -135,28 +135,6 @@ pub struct BiomeEnvelope {
     /// and deeper than the shared carve default (user round 2026-08-16).
     #[serde(default)]
     pub incision_boost: Option<f64>,
-    /// Dendritic micro-gully synthesis (S3, 2 m): density multiplier on
-    /// tree seeding along the channel network (None = 0 = off). Real
-    /// piedmont/hill-country lidar shows connected 10-100 m gully trees
-    /// draining into channels (groove audit 2026-08: real connectivity
-    /// 62-88% vs generated 15-50%); the 8 m carve cannot represent them
-    /// and the assemble lowpass erases sub-64 m base content, so they
-    /// are synthesized at 2 m.
-    #[serde(default)]
-    pub gully_density: Option<f64>,
-    /// Median mouth depth of synthesized gullies, metres (None = 0.45,
-    /// the real-holdout groove-depth p50).
-    #[serde(default)]
-    pub gully_depth_p50_m: Option<f64>,
-    /// Max distance from the channel network gully trees may reach, m.
-    #[serde(default)]
-    pub gully_reach_m: Option<f64>,
-    /// Max trunk length of a gully tree, m.
-    #[serde(default)]
-    pub gully_max_len_m: Option<f64>,
-    /// Per-node branching probability of a gully tree.
-    #[serde(default)]
-    pub gully_branch_prob: Option<f64>,
     /// Per-biome amplitude trims on the S3 closer targets (None = 1.0):
     /// measured generated-vs-held-out band-std ratios showed the global
     /// closer leaves plains/sandhills fine texture x1.3-1.6 hot and
