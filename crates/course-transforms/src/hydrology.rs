@@ -1415,8 +1415,11 @@ fn place_meandering_water(
                 * (0.55 * libm::sin(std::f64::consts::TAU * arc / lam + ph1)
                     + 0.30 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.47) + ph2)
                     + 0.15 * libm::sin(std::f64::consts::TAU * arc / (lam * 2.3) + ph3));
+            // breathing scales DOWN with width: +-28% reads organic on a
+            // creek but bulge-and-waist on a 90 m river (a P2 tell)
+            let breath = 0.28 * (35.0 / w_m).clamp(0.4, 1.0);
             let hw = 0.5 * w_m
-                * (1.0 + 0.28 * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
+                * (1.0 + breath * libm::sin(std::f64::consts::TAU * arc / (lam * 0.31) + ph2));
             wpath.push((Vec2::new(p.x + nx_ * off, p.y + ny_ * off), arc, hw));
         }
         if self_intersects(&wpath) {
@@ -1448,7 +1451,10 @@ fn place_meandering_water(
             let arc0 = wpath[si].1;
             let (mut bmin, mut bmax) = (pbed2[si], pbed2[si]);
             let mut sj = si;
-            while sj + 1 < wpath.len() && wpath[sj].1 - arc0 < 50.0 {
+            // 14 m planes (was 50): the constant-height steps printed
+            // visible terrace arcs inside wide ribbons (a P2 tell) —
+            // at 14 m a 1% grade steps 14 cm instead of half a metre
+            while sj + 1 < wpath.len() && wpath[sj].1 - arc0 < 14.0 {
                 let nb = pbed2[sj + 1];
                 if wpath[sj].1 - arc0 >= 8.0
                     && (bmax.max(nb) - bmin.min(nb)) > 0.35 * depth
@@ -1524,7 +1530,7 @@ fn place_meandering_water(
             }
             // creeks are 3-6 px wide at 2 m — an 8-cell floor dropped
             // legitimate narrow segments and dashed the ribbon
-            let min_cells = if is_river { 8 } else { 5 };
+            let min_cells = if is_river { 4 } else { 3 };
             if cells.len() >= min_cells {
                 let poly = component_outline(&cells, &|i| mask.contains(&i), n2, height.spec);
                 if poly.len() >= 3 {

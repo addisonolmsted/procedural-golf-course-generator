@@ -197,7 +197,16 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
                 if nr.dist_m > hw {
                     continue;
                 }
-                let t = 2.2 * (boost - 1.0) * libm::pow(km2.max(0.05), 0.3).clamp(0.5, 2.0);
+                // discharge TAPER, not a floor: the 0.5 factor floor
+                // stamped every order-1 swale head with a ~20 m slot —
+                // "cracked" piedmont tiles (a P2 tell). Zero at the
+                // extraction threshold, full by ~0.5 km2.
+                let u = ((nr.area_m2 - 1.5e5) / 3.5e5).clamp(0.0, 1.0);
+                let taper = u * u * (3.0 - 2.0 * u);
+                let t = 2.2
+                    * (boost - 1.0)
+                    * libm::pow(km2.max(0.05), 0.3).clamp(0.5, 2.0)
+                    * taper;
                 let u = nr.dist_m / hw;
                 height8.data[lin] -= t * (1.0 - u * u).max(0.0);
             }
