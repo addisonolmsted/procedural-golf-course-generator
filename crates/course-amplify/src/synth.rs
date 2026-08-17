@@ -92,6 +92,7 @@ impl Band {
 /// candidate needing the least rotation, then rotate it the rest of the
 /// way. Gated on DATA (coherence), never on biome.
 const K_CANDIDATES: u64 = 4;
+
 /// Below this target coherence the position takes the exact legacy path
 /// (salt 0x51 pick, θ = 0.0, original height buffer — bit-identical to
 /// the pre-orientation engine). "Must not force anisotropy where the
@@ -384,6 +385,40 @@ pub fn quilt(
         let gain = (amp_t[i] * band.closer_gain() * amp_trim / local[i].max(1e-6))
             .clamp(GAIN_CLAMP.0, GAIN_CLAMP.1);
         zg.data[i] *= gain;
+    }
+
+    // ---- negative-tail governor (fine band, off-channel) ----------------
+    // Slot audit vs held-out reals: off-channel micro-pit COUNTS, depth
+    // MEDIANS and terrain conditioning all match the reals, but the deep
+    // tail runs hot (max-depth p90 x1.2, p99 x1.3) — the visible
+    // "crack" tell. Selection can't fix it (the material is native to
+    // the far-distance buckets), so govern the CONTENT: soft-compress
+    // fine-band lows beyond K_TAIL local target amplitudes. One-sided —
+    // highs untouched — and faded out near channels where real gullies
+    // are allowed to dig.
+    if matches!(band, Band::Fine) {
+        const TAIL_K: f64 = 2.0;
+        const TAIL_SLOPE: f64 = 0.35;
+        const TAIL_NEAR_M: f64 = 48.0;
+        const TAIL_FAR_M: f64 = 96.0;
+        for gy_c in 0..grid_n {
+            let cy = (gy_c / cond_scale.max(1)).min(cond.ny - 1);
+            for gx_c in 0..grid_n {
+                let cx = (gx_c / cond_scale.max(1)).min(cond.nx - 1);
+                let d = cond.dist_m[cy * cond.nx + cx];
+                let offw = ((d - TAIL_NEAR_M) / (TAIL_FAR_M - TAIL_NEAR_M)).clamp(0.0, 1.0);
+                if offw <= 0.0 {
+                    continue;
+                }
+                let i = gy_c * grid_n + gx_c;
+                let t = TAIL_K * (amp_t[i] * band.closer_gain() * amp_trim).max(1e-6);
+                let z = zg.data[i];
+                if z < -t {
+                    let squashed = -t + (z + t) * TAIL_SLOPE;
+                    zg.data[i] = z + (squashed - z) * offw;
+                }
+            }
+        }
     }
     zg.data
 }

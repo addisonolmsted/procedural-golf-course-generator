@@ -1,6 +1,7 @@
 //! G-TERRAIN dumper: run the full S0→S4 chain and write the WATERED
-//! surface — S4 heights with every water body composited as a flat plane
-//! at its surface level, the way real lidar DTMs read water. This is the
+//! surface — S4 heights with every water body composited as a plane at
+//! its surface (rivers/creeks are TILTED planes falling along the run;
+//! lakes flat), the way real lidar DTMs read water. This is the
 //! honest comparison surface for the energy-distance gate and the P2
 //! blind materials (the raw S3 dumps showed carved beds where real
 //! rivers show flat water — a reviewer-confirmed tell).
@@ -19,7 +20,8 @@ use course_world::math::Vec2;
 /// the polygon clipped the plane at the 8 m traced outline and drew rim
 /// lines mid-basin; the real shoreline is the level line where ground
 /// rises above the surface, which is exactly where the flood stops.
-fn stamp_water(h: &mut [f64], n2: usize, cell: f64, poly: &[Vec2], surface: f64) {
+fn stamp_water(h: &mut [f64], n2: usize, cell: f64, wb: &course_transforms::hydrology::WaterBody) {
+    let poly = &wb.polygon;
     if poly.len() < 3 {
         return;
     }
@@ -50,7 +52,7 @@ fn stamp_water(h: &mut [f64], n2: usize, cell: f64, poly: &[Vec2], surface: f64)
                 }
             }
             let i2 = cy * n2 + cx;
-            if crossings % 2 == 1 && h[i2] < surface {
+            if crossings % 2 == 1 && h[i2] < wb.surface_at(Vec2::new(px, py)) {
                 seeds.push(i2);
             }
         }
@@ -77,7 +79,8 @@ fn stamp_water(h: &mut [f64], n2: usize, cell: f64, poly: &[Vec2], surface: f64)
                 continue;
             }
             let j = yy as usize * n2 + xx as usize;
-            if !seen.contains(&j) && h[j] < surface {
+            let sp = wb.surface_at(Vec2::new(xx as f64 * cell, yy as f64 * cell));
+            if !seen.contains(&j) && h[j] < sp {
                 seen.insert(j);
                 level.push(j);
             }
@@ -86,7 +89,8 @@ fn stamp_water(h: &mut [f64], n2: usize, cell: f64, poly: &[Vec2], surface: f64)
     let stamp: Box<dyn Iterator<Item = &usize>> =
         if runaway { Box::new(seeds.iter()) } else { Box::new(seen.iter()) };
     for &i in stamp {
-        h[i] = surface;
+        let (y, x) = (i / n2, i % n2);
+        h[i] = wb.surface_at(Vec2::new(x as f64 * cell, y as f64 * cell));
     }
 }
 
@@ -110,9 +114,31 @@ fn main() {
             let n2 = h.height.spec.nx as usize;
             let cell = h.height.spec.cell_size;
             let mut z = h.height.data.clone();
-            for w in &h.water {
-                stamp_water(&mut z, n2, cell, &w.polygon, w.surface_m);
+            // Rivers/creeks: the rasterized per-cell profile (the chunk
+            // planes facet at boundaries — a rendered-seam tell). Lakes
+            // and ponds stay flat plane-stamped.
+            let mut wmask = vec![0u8; z.len()];
+            for (i, &sv) in h.river_surface.data.iter().enumerate() {
+                if sv.is_finite() {
+                    wmask[i] = 1;
+                    if z[i] < sv {
+                        z[i] = sv;
+                    }
+                }
             }
+            let before = z.clone();
+            for w in &h.water {
+                if w.grad.is_none() {
+                    stamp_water(&mut z, n2, cell, w);
+                }
+            }
+            for i in 0..z.len() {
+                if z[i] != before[i] {
+                    wmask[i] = 1;
+                }
+            }
+            std::fs::write(format!("{out}/{}_{seed}.water.u8", spec.biome.key()), &wmask)
+                .unwrap();
             let mut buf = Vec::with_capacity(z.len() * 4);
             for v in &z {
                 buf.extend_from_slice(&(*v as f32).to_le_bytes());

@@ -33,12 +33,28 @@ BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland
 
 
 def hillshade(z, cell, ex=1.6):
-    gy, gx = np.gradient(z * ex, cell)
-    az, alt = np.radians(315), np.radians(45)
-    sl = np.arctan(np.hypot(gx, gy))
-    asp = np.arctan2(-gx, gy)
-    hs = np.sin(alt) * np.cos(sl) + np.cos(alt) * np.sin(sl) * np.cos(az - asp)
-    return np.clip((hs + 0.15) / 1.15 * 255, 0, 255).astype(np.uint8)
+    """TINTED hillshade (user request): the stage-lab gallery look —
+    course-viz hypsometric ramp x lambertian shade — applied IDENTICALLY
+    to real and generated tiles. Returns HxWx3 uint8."""
+    # shade (course-viz convention: exaggerated normal, fixed light)
+    gy, gx = np.gradient(z, cell)
+    nx, ny, nz = -gx * 8.0, -gy * 8.0, np.full_like(z, 2.0 * cell)
+    nl = np.sqrt(nx * nx + ny * ny + nz * nz)
+    lx, ly, lz = -0.5, 0.6, 1.0
+    ll = (lx * lx + ly * ly + lz * lz) ** 0.5
+    dot = (nx * lx + ny * ly + nz * lz) / (nl * ll)
+    shade = 0.30 + 0.70 * np.maximum(dot, 0.0)
+    # hypsometric ramp (course-viz stops)
+    t = (z - z.min()) / max(z.max() - z.min(), 1e-9)
+    stops = [(0.00, (64, 104, 62)), (0.40, (112, 138, 78)),
+             (0.70, (158, 152, 106)), (1.00, (192, 182, 158))]
+    rgb = np.zeros(z.shape + (3,))
+    for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+        m = (t >= t0) & (t <= t1)
+        f = np.where(m, (t - t0) / max(t1 - t0, 1e-9), 0.0)
+        for k in range(3):
+            rgb[..., k] = np.where(m, c0[k] + (c1[k] - c0[k]) * f, rgb[..., k])
+    return np.clip(rgb * shade[..., None], 0, 255).astype(np.uint8)
 
 
 def road_score(z, cell):

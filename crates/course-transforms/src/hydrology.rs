@@ -111,9 +111,26 @@ pub enum WaterPlaneOrigin {
 
 pub struct WaterBody {
     pub polygon: Vec<Vec2>,
+    /// Surface elevation at `anchor`.
     pub surface_m: f64,
+    /// Reference point for the (optional) surface gradient.
+    pub anchor: Vec2,
+    /// dz/dx, dz/dy of a TILTED plane (rivers/creeks fall continuously
+    /// along their run — flat constant-height planes printed staircase
+    /// terraces, a P2 tell). None = flat (lakes, ponds, basins).
+    pub grad: Option<Vec2>,
     pub origin: WaterPlaneOrigin,
     pub permanent: bool,
+}
+
+impl WaterBody {
+    /// Water surface elevation at a world point.
+    pub fn surface_at(&self, p: Vec2) -> f64 {
+        match self.grad {
+            Some(g) => self.surface_m + g.x * (p.x - self.anchor.x) + g.y * (p.y - self.anchor.y),
+            None => self.surface_m,
+        }
+    }
 }
 
 pub struct Basin {
@@ -132,6 +149,12 @@ pub struct Hydrology {
     /// Drained area, m², 8 m.
     pub flow_accum: Grid<f64>,
     pub water: Vec<WaterBody>,
+    /// Rasterized RIVER/CREEK water surface at 2 m (NaN = dry). The
+    /// exact per-cell s(arc) profile — the chunked tilted planes in
+    /// `water` are a lossy polygon view of this (they facet at chunk
+    /// boundaries); height compositors must prefer this grid. Lakes and
+    /// ponds are flat planes and stay polygon-stamped.
+    pub river_surface: Grid<f64>,
     pub basins: Vec<Basin>,
     pub applied: Vec<TransformId>,
     pub skeleton_agreement: f64,
@@ -147,6 +170,7 @@ pub fn generate(
 ) -> Hydrology {
     let mut height = amp.height.clone();
     let n2 = height.spec.nx as usize;
+    let mut river_surface = vec![f64::NAN; n2 * n2];
     let spec8 = sk.flow_distance.spec;
     let n8 = spec8.nx as usize;
 
@@ -160,7 +184,9 @@ pub fn generate(
     for t in transforms {
         match t {
             TransformId::ChannelWater => {
-                channel_water_v2(&mut height, spec, sk, identity, spec8, &mut water);
+                channel_water_v2(
+                    &mut height, spec, sk, identity, spec8, &mut water, &mut river_surface,
+                );
             }
             TransformId::WaterTable => {
                 kettle_ponds(&height, spec, sk, identity, &mut water);
@@ -168,6 +194,49 @@ pub fn generate(
             TransformId::Floodplain => {} // folded into ChannelWater's corridor
         }
         applied.push(*t);
+    }
+
+    // ---- relax the river surface across the wet mask -------------------
+    // Nearest-point arc assignment steps wherever a cell's nearest path
+    // point jumps between meander limbs (bend interiors) — a crease
+    // across the ribbon. A few Jacobi passes over the wet cells turn the
+    // profile into a smooth membrane; cells the smoothing would sink
+    // below ground stay a hair above it so the mask never speckles dry.
+    {
+        for _ in 0..4 {
+            let prev = river_surface.clone();
+            for y in 0..n2 {
+                for x in 0..n2 {
+                    let i = y * n2 + x;
+                    if !prev[i].is_finite() {
+                        continue;
+                    }
+                    let (mut acc, mut cnt) = (prev[i], 1.0f64);
+                    for dy in -1i64..=1 {
+                        for dx in -1i64..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let (yy, xx) = (y as i64 + dy, x as i64 + dx);
+                            if yy < 0 || xx < 0 || yy >= n2 as i64 || xx >= n2 as i64 {
+                                continue;
+                            }
+                            let v = prev[yy as usize * n2 + xx as usize];
+                            if v.is_finite() {
+                                acc += v;
+                                cnt += 1.0;
+                            }
+                        }
+                    }
+                    river_surface[i] = acc / cnt;
+                }
+            }
+        }
+        for (i, v) in river_surface.iter_mut().enumerate() {
+            if v.is_finite() && *v < height.data[i] {
+                *v = height.data[i] + 0.01;
+            }
+        }
     }
 
     // ---- re-derive flow from the surface that now exists ---------------
@@ -200,13 +269,14 @@ pub fn generate(
     // ---- basin inventory -----------------------------------------------
     let basins = inventory_basins(&z8, &zf, &keep8, spec8, spec, identity, &mut water);
 
-    let _ = n2;
+    let river_surface = Grid { spec: height.spec, data: river_surface };
     Hydrology {
         hydro_version: HYDRO_VERSION,
         height,
         flow_dir_rad: flow_dir,
         flow_accum,
         water,
+        river_surface,
         basins,
         applied,
         skeleton_agreement,
@@ -305,6 +375,7 @@ fn channel_water_v2(
     identity: &RunIdentity,
     spec8: GridSpec,
     water: &mut Vec<WaterBody>,
+    river_surface: &mut [f64],
 ) {
     let dial = spec.dials.get("hydrology.channel_water").copied().unwrap_or(0.0);
     let wscale = spec.dials.get("hydrology.channel_width_scale").copied().unwrap_or(1.0);
@@ -437,7 +508,7 @@ fn channel_water_v2(
                 // and would strand fragments otherwise
                 place_meandering_water(
                     height, identity, root as u64, line_ref, w_m, RIVER_DEPTH_M, flood_hw,
-                    true, wound, true, water,
+                    true, wound, true, water, river_surface,
                 );
                 // DELIBERATE braid (~1/100 tiles): a second, narrower
                 // wound strand over the same trunk with its own phase —
@@ -475,12 +546,14 @@ fn channel_water_v2(
                             true,
                             true,
                             water,
+                            river_surface,
                         );
                     }
                 }
                 if !wound {
                     water_tributary(
                         height, spec, sk, identity, spec8, &cells, root, w_m, water,
+                        river_surface,
                     );
                 }
                 continue;
@@ -609,10 +682,12 @@ fn channel_water_v2(
         );
         place_meandering_water(
             height, identity, root as u64, line_ref, w_m, depth, flood_hw, is_river, wound,
-            true, water,
+            true, water, river_surface,
         );
         if !wound {
-            water_tributary(height, spec, sk, identity, spec8, &cells, root, w_m, water);
+            water_tributary(
+                height, spec, sk, identity, spec8, &cells, root, w_m, water, river_surface,
+            );
         }
     }
 }
@@ -681,6 +756,7 @@ fn water_tributary(
     root: u32,
     main_w_m: f64,
     water: &mut Vec<WaterBody>,
+    river_surface: &mut [f64],
 ) {
     if identity.course_scalar(TRIB_SALT) >= TRIB_P {
         return;
@@ -832,6 +908,7 @@ fn water_tributary(
         false,
         true,
         water,
+        river_surface,
     );
 }
 
@@ -1324,6 +1401,7 @@ fn place_meandering_water(
     pre_wound: bool,
     keep_longest: bool,
     water: &mut Vec<WaterBody>,
+    river_surface: &mut [f64],
 ) {
     if stem.len() < 2 {
         return;
@@ -1429,12 +1507,17 @@ fn place_meandering_water(
             amp *= 0.5;
             continue;
         }
-        // segment into planes, soft-monotone. Length is SLOPE-ADAPTIVE:
-        // a fixed 50 m plane on a steadily-falling creek only wets its
-        // downstream portion (the bed drops a full creek depth per
-        // segment) — the periodic dashed creeks on the piedmont
-        // gallery. End a segment once the bed has fallen 0.35·depth so
-        // steep reaches get short, tightly-tiling steps.
+        // CONTINUOUS RIBBON (P2-tells rework):
+        // 1) surface KNOTS every ~14 m of arc (slope-adaptive), chained
+        //    soft-monotone exactly as before — but now knots of a
+        //    piecewise-linear profile s(arc), not flat plane levels;
+        // 2) ONE GLOBAL wet mask over the whole path (per-cell nearest
+        //    path point -> arc + hw) — per-segment circle unions
+        //    scalloped the outline at every segment boundary, whatever
+        //    the segment length (the "blobby edges" tell);
+        // 3) planes emitted per ~60 m arc chunk as TILTED planes
+        //    (anchor + grad), so the water surface falls continuously
+        //    and the staircase is gone at any grade.
         let pbed2: Vec<f64> = wpath
             .iter()
             .map(|(p, _, _)| {
@@ -1443,195 +1526,232 @@ fn place_meandering_water(
                 height.data[y * n2 + x]
             })
             .collect();
+        // ---- knots -------------------------------------------------
+        let mut knots: Vec<(f64, f64)> = Vec::new();
         let mut prev_surface = f64::INFINITY;
         let mut si = 0usize;
-        let mut seg_ord = 0usize;
-        let mut seg_planes: Vec<(usize, WaterBody)> = Vec::new();
         while si < wpath.len() {
             let arc0 = wpath[si].1;
             let (mut bmin, mut bmax) = (pbed2[si], pbed2[si]);
             let mut sj = si;
-            // 14 m planes (was 50): the constant-height steps printed
-            // visible terrace arcs inside wide ribbons (a P2 tell) —
-            // at 14 m a 1% grade steps 14 cm instead of half a metre
             while sj + 1 < wpath.len() && wpath[sj].1 - arc0 < 14.0 {
                 let nb = pbed2[sj + 1];
-                if wpath[sj].1 - arc0 >= 8.0
-                    && (bmax.max(nb) - bmin.min(nb)) > 0.35 * depth
-                {
+                if wpath[sj].1 - arc0 >= 8.0 && (bmax.max(nb) - bmin.min(nb)) > 0.35 * depth {
                     break;
                 }
                 bmin = bmin.min(nb);
                 bmax = bmax.max(nb);
                 sj += 1;
             }
-            let seg = &wpath[si..=sj];
             // ROBUST bed reference (q40), not the min: one deep pocket
-            // in the corridor dragged the whole chain down, and with
-            // the +0.15/segment rise cap the river then ran DRY for
-            // hundreds of metres climbing back out (seeds 5/11/13/15
-            // mid-tile gaps). A percentile submerges pockets instead of
-            // steering by them.
-            let mut beds: Vec<f64> = seg
-                .iter()
-                .map(|(p, _, _)| {
-                    let x = ((p.x / cell2) as usize).min(n2 - 1);
-                    let y = ((p.y / cell2) as usize).min(n2 - 1);
-                    height.data[y * n2 + x]
-                })
-                .collect();
+            // dragged the whole chain down and the +0.15 rise cap kept
+            // the river dry for hundreds of metres climbing back out.
+            let mut beds: Vec<f64> = pbed2[si..=sj].to_vec();
             beds.sort_by(|a, b| a.total_cmp(b));
             let bed_ref = beds[beds.len() * 2 / 5];
-            // never dive under the bed: where the amplified bed rises
-            // downstream (wobble), real water PONDS — hold the level
-            // instead of skipping the segment (the skipped segments
-            // were the reviewer's discontinuous river)
+            // never dive under the bed: where the bed rises downstream,
+            // real water PONDS — hold the level instead of going dry
             let mut surface = (bed_ref + depth).min(prev_surface + 0.15);
             if surface < bed_ref + 0.15 * depth {
                 surface = (bed_ref + 0.15 * depth).min(prev_surface.max(bed_ref + 0.1));
             }
             prev_surface = surface;
-            let max_hw = seg.iter().map(|s| s.2).fold(0.0f64, f64::max);
-            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-            for (p, _, _) in seg.iter() {
-                x0 = x0.min(p.x);
-                y0 = y0.min(p.y);
-                x1 = x1.max(p.x);
-                y1 = y1.max(p.y);
+            knots.push((0.5 * (wpath[si].1 + wpath[sj].1), surface));
+            si = sj + 1;
+        }
+        if knots.is_empty() {
+            if std::env::var("HYDRO_TRACE").is_ok() {
+                eprintln!("  try {try_i}: no knots");
             }
-            let pad = max_hw + 2.0 * cell2;
-            // rivers reach the tile edge; only the outermost cells stay
-            let fr = 2.0 * cell2;
-            let lim = cell2 * n2 as f64 - fr;
-            let cx0 = (((x0 - pad).max(fr)) / cell2) as usize;
-            let cy0 = (((y0 - pad).max(fr)) / cell2) as usize;
-            let cx1 = ((((x1 + pad).min(lim)) / cell2) as usize).min(n2 - 1);
-            let cy1 = ((((y1 + pad).min(lim)) / cell2) as usize).min(n2 - 1);
-            let mut mask = std::collections::HashSet::new();
-            let mut cells = Vec::new();
+            return;
+        }
+        // Smooth the knot profile: the raw chain is hold-then-drop (the
+        // +0.15 rise cap), which prints weir-like shade bands across the
+        // ribbon every few knots. Two 1-2-1 passes round those steps
+        // into a continuous fall; the rise cap is re-enforced after so
+        // water still never runs uphill more than the pond tolerance.
+        for _ in 0..2 {
+            let vals: Vec<f64> = knots.iter().map(|k| k.1).collect();
+            for j in 1..knots.len().saturating_sub(1) {
+                knots[j].1 = 0.25 * vals[j - 1] + 0.5 * vals[j] + 0.25 * vals[j + 1];
+            }
+        }
+        for j in 1..knots.len() {
+            knots[j].1 = knots[j].1.min(knots[j - 1].1 + 0.15);
+        }
+        let s_at = |arc: f64| -> f64 {
+            if arc <= knots[0].0 {
+                return knots[0].1;
+            }
+            if arc >= knots[knots.len() - 1].0 {
+                return knots[knots.len() - 1].1;
+            }
+            let j = knots.partition_point(|k| k.0 < arc).max(1);
+            let (a0, s0) = knots[j - 1];
+            let (a1, s1) = knots[j];
+            let t = ((arc - a0) / (a1 - a0).max(1e-9)).clamp(0.0, 1.0);
+            s0 + (s1 - s0) * t
+        };
+        // ---- global wet mask (nearest-point arc per cell) -----------
+        let fr = 2.0 * cell2;
+        let lim = cell2 * n2 as f64 - fr;
+        let mut nearest: std::collections::HashMap<usize, (f64, u32)> =
+            std::collections::HashMap::new();
+        for (pi, (p, _, hw)) in wpath.iter().enumerate() {
+            let cx0 = (((p.x - hw).max(fr)) / cell2) as usize;
+            let cy0 = (((p.y - hw).max(fr)) / cell2) as usize;
+            let cx1 = ((((p.x + hw).min(lim)) / cell2) as usize).min(n2 - 1);
+            let cy1 = ((((p.y + hw).min(lim)) / cell2) as usize).min(n2 - 1);
             for cy in cy0..=cy1 {
                 for cx in cx0..=cx1 {
-                    let px = cx as f64 * cell2;
-                    let py = cy as f64 * cell2;
-                    let inside = seg.iter().any(|(p, _, hw)| {
-                        (px - p.x) * (px - p.x) + (py - p.y) * (py - p.y) <= hw * hw
-                    });
-                    if !inside {
+                    let (px, py) = (cx as f64 * cell2, cy as f64 * cell2);
+                    let d2 = (px - p.x) * (px - p.x) + (py - p.y) * (py - p.y);
+                    if d2 > hw * hw {
                         continue;
                     }
                     let i2 = cy * n2 + cx;
-                    if height.data[i2] < surface && mask.insert(i2) {
-                        cells.push(i2);
+                    let e = nearest.entry(i2).or_insert((f64::INFINITY, 0));
+                    if d2 < e.0 {
+                        *e = (d2, pi as u32);
                     }
                 }
             }
-            if std::env::var("HYDRO_TRACE").is_ok() && cells.len() < 8 {
-                eprintln!("  seg at arc {:.0}: only {} cells (surface {:.2})", arc0, cells.len(), surface);
-            }
-            // creeks are 3-6 px wide at 2 m — an 8-cell floor dropped
-            // legitimate narrow segments and dashed the ribbon
-            let min_cells = if is_river { 4 } else { 3 };
-            if cells.len() >= min_cells {
-                let poly = component_outline(&cells, &|i| mask.contains(&i), n2, height.spec);
-                if poly.len() >= 3 {
-                    seg_planes.push((
-                        seg_ord,
-                        WaterBody {
-                            polygon: poly,
-                            surface_m: surface,
-                            origin: if is_river {
-                                WaterPlaneOrigin::River
-                            } else {
-                                WaterPlaneOrigin::Creek
-                            },
-                            permanent: is_river,
-                        },
-                    ));
-                }
-            }
-            seg_ord += 1;
-            si = sj + 1;
         }
-        // LONGEST-RUN selection (generalizes the creek head trim): any
-        // stream that is not the border-to-border trunk keeps only its
-        // longest consecutive run of placed planes. Headwater flicker,
-        // border-frame stubs and mid-run breaks all read as FLOATING
-        // FRAGMENTS otherwise (user report: pieces disconnected from
-        // the trunk near edges) — a shorter clean stream beats a chain
-        // of satellites.
-        if keep_longest && !seg_planes.is_empty() {
-            // SPATIAL largest component, not ord-runs: a border-clipped
-            // pinch can break the ribbon while every segment still
-            // places (consecutive ords), so only actual polygon
-            // adjacency (40 m dilated bboxes, union-find) tells truth.
-            let n = seg_planes.len();
-            let boxes: Vec<(f64, f64, f64, f64)> = seg_planes
-                .iter()
-                .map(|(_, w)| {
-                    let (mut x0, mut x1, mut y0, mut y1) =
-                        (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-                    for p in &w.polygon {
-                        x0 = x0.min(p.x);
-                        x1 = x1.max(p.x);
-                        y0 = y0.min(p.y);
-                        y1 = y1.max(p.y);
-                    }
-                    (x0, x1, y0, y1)
-                })
-                .collect();
-            let mut parent: Vec<usize> = (0..n).collect();
-            fn find(parent: &mut [usize], i: usize) -> usize {
-                let mut r = i;
-                while parent[r] != r {
-                    r = parent[r];
-                }
-                let mut c = i;
-                while parent[c] != r {
-                    let nx = parent[c];
-                    parent[c] = r;
-                    c = nx;
-                }
-                r
+        let mut wet: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+        for (&i2, &(_, pi)) in &nearest {
+            let arc = wpath[pi as usize].1;
+            if height.data[i2] < s_at(arc) {
+                wet.insert(i2, arc);
             }
-            let dil = 40.0;
-            for i in 0..n {
-                for j in (i + 1)..n {
-                    let (a, b) = (boxes[i], boxes[j]);
-                    if a.0 - dil <= b.1 && b.0 - dil <= a.1 && a.2 - dil <= b.3 && b.2 - dil <= a.3
-                    {
-                        let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                        parent[ri] = rj;
-                    }
-                }
+        }
+        if wet.len() < 8 {
+            if std::env::var("HYDRO_TRACE").is_ok() {
+                eprintln!(
+                    "  try {try_i}: wet {} < 8 (path {} pts, knots {})",
+                    wet.len(),
+                    wpath.len(),
+                    knots.len()
+                );
             }
-            let mut count: std::collections::HashMap<usize, usize> =
+            return;
+        }
+        // ---- largest connected component (floating-fragment guard) --
+        if keep_longest {
+            let mut label: std::collections::HashMap<usize, u32> =
                 std::collections::HashMap::new();
-            for i in 0..n {
-                *count.entry(find(&mut parent, i)).or_insert(0) += 1;
+            let mut sizes: Vec<usize> = Vec::new();
+            let mut order: Vec<usize> = wet.keys().copied().collect();
+            order.sort_unstable();
+            for &start in &order {
+                if label.contains_key(&start) {
+                    continue;
+                }
+                let id = sizes.len() as u32;
+                let mut stack = vec![start];
+                label.insert(start, id);
+                let mut size = 0usize;
+                while let Some(cur) = stack.pop() {
+                    size += 1;
+                    let (cy, cx) = (cur / n2, cur % n2);
+                    for dy in -1i64..=1 {
+                        for dx in -1i64..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let (yy, xx) = (cy as i64 + dy, cx as i64 + dx);
+                            if yy < 0 || xx < 0 || yy >= n2 as i64 || xx >= n2 as i64 {
+                                continue;
+                            }
+                            let j = yy as usize * n2 + xx as usize;
+                            if wet.contains_key(&j) && !label.contains_key(&j) {
+                                label.insert(j, id);
+                                stack.push(j);
+                            }
+                        }
+                    }
+                }
+                sizes.push(size);
             }
-            // deterministic winner: max count, ties by smallest root idx
-            let best_root = count
+            let best = sizes
                 .iter()
-                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
-                .map(|(r, _)| *r)
+                .enumerate()
+                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(&a.0)))
+                .map(|(i, _)| i as u32)
                 .unwrap();
-            let mut keep = vec![false; n];
-            for i in 0..n {
-                keep[i] = find(&mut parent, i) == best_root;
+            wet.retain(|k, _| label.get(k) == Some(&best));
+        }
+        // ---- rasterized surface: the EXACT per-cell profile ---------
+        // (the chunk planes below facet at boundaries; compositors use
+        // this grid instead)
+        for (&i2, &arc) in &wet {
+            let sv = s_at(arc);
+            if !river_surface[i2].is_finite() || river_surface[i2] < sv {
+                river_surface[i2] = sv;
             }
-            for (i, (_, w)) in seg_planes.into_iter().enumerate() {
-                if keep[i] {
-                    water.push(w);
+        }
+        // ---- emit tilted planes per ~60 m arc chunk -----------------
+        let mut chunks: std::collections::BTreeMap<i64, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (&i2, &arc) in &wet {
+            chunks.entry((arc / 60.0).floor() as i64).or_default().push(i2);
+        }
+        // arc -> path point index (for tangent/anchor), binary search
+        let point_at = |arc: f64| -> usize {
+            let mut lo = 0usize;
+            let mut hi = wpath.len() - 1;
+            while lo < hi {
+                let mid = (lo + hi) / 2;
+                if wpath[mid].1 < arc {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
                 }
             }
-        } else {
-            water.extend(seg_planes.into_iter().map(|(_, w)| w));
+            lo
+        };
+        for (ck, mut cells) in chunks {
+            if cells.len() < 6 {
+                continue;
+            }
+            cells.sort_unstable();
+            let cset: std::collections::HashSet<usize> = cells.iter().copied().collect();
+            let poly = component_outline(&cells, &|i| cset.contains(&i), n2, height.spec);
+            if poly.len() < 3 {
+                continue;
+            }
+            let mid_arc = (ck as f64 + 0.5) * 60.0;
+            let pi = point_at(mid_arc);
+            let anchor = wpath[pi].0;
+            // local downstream tangent + profile slope -> plane gradient
+            let (pa, pb) = (
+                wpath[pi.saturating_sub(3)].0,
+                wpath[(pi + 3).min(wpath.len() - 1)].0,
+            );
+            let (tx, ty) = (pb.x - pa.x, pb.y - pa.y);
+            let tl = (tx * tx + ty * ty).sqrt().max(1e-9);
+            let ds = (s_at(wpath[pi].1 + 10.0) - s_at(wpath[pi].1 - 10.0)) / 20.0;
+            let grad = Vec2::new(tx / tl * ds, ty / tl * ds);
+            water.push(WaterBody {
+                polygon: poly,
+                surface_m: s_at(wpath[pi].1),
+                anchor,
+                grad: Some(grad),
+                origin: if is_river {
+                    WaterPlaneOrigin::River
+                } else {
+                    WaterPlaneOrigin::Creek
+                },
+                permanent: is_river,
+            });
+        }
+        if std::env::var("HYDRO_TRACE").is_ok() {
+            eprintln!("  try {try_i}: wet {} cells, watered ok", wet.len());
         }
         return;
     }
 }
 
-/// TRUE self-intersection test: segment-crossing sweep on a decimated
+/// TRUE self-intersection test/// TRUE self-intersection test: segment-crossing sweep on a decimated
 /// polyline. Proximity was the wrong test — the S2 trunk already
 /// meanders, and opposite banks of a legitimate bend are close in
 /// space while far in arc; only an actual CROSSING is a defect
@@ -1745,8 +1865,10 @@ fn kettle_ponds(
         let poly = component_outline(&cells, &|i| seen.contains(&i), n2, height.spec);
         if poly.len() >= 3 {
             water.push(WaterBody {
+                anchor: poly[0],
                 polygon: poly,
                 surface_m: level,
+                grad: None,
                 origin: WaterPlaneOrigin::WaterTable,
                 permanent: true,
             });
@@ -1905,8 +2027,10 @@ fn inventory_basins(
                 let poly = component_outline(&cells, &|i| in_cells.contains(&i), n8, spec8);
                 if poly.len() >= 3 {
                     water.push(WaterBody {
+                        anchor: poly[0],
                         polygon: poly,
                         surface_m: surface,
+                        grad: None,
                         origin: WaterPlaneOrigin::ClosedBasin,
                         permanent: true,
                     });
