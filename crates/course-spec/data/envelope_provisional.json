@@ -148,7 +148,9 @@
    ],
    "wave_iso_frac": 0.55,
    "weight": 1.0,
-   "channel_width_scale": 0.74
+   "channel_width_scale": 0.74,
+   "amp_trim_fine": 0.62,
+   "amp_trim_mid": 0.79
   },
   "heathland": {
    "boundary_kind_weights": {
@@ -286,7 +288,9 @@
    ],
    "wave_iso_frac": 0.45,
    "wave_share": 0.46,
-   "weight": 1.0
+   "weight": 1.0,
+   "amp_trim_fine": 1.0,
+   "amp_trim_mid": 1.45
   },
   "hill_country": {
    "boundary_kind_weights": {
@@ -445,7 +449,9 @@
    "wave_share": 0.36,
    "weight": 1.0,
    "channel_width_scale": 1.3,
-   "incision_boost": 1.6
+   "incision_boost": 1.6,
+   "amp_trim_fine": 0.8,
+   "amp_trim_mid": 1.44
   },
   "piedmont": {
    "boundary_kind_weights": {
@@ -595,7 +601,9 @@
    ],
    "weight": 1.0,
    "channel_width_scale": 0.67,
-   "incision_boost": 1.35
+   "incision_boost": 1.35,
+   "amp_trim_fine": 0.84,
+   "amp_trim_mid": 1.45
   },
   "river_valley": {
    "boundary_kind_weights": {
@@ -751,7 +759,9 @@
    ],
    "wave_iso_frac": 0.12,
    "weight": 1.0,
-   "channel_width_scale": 1.05
+   "channel_width_scale": 1.05,
+   "amp_trim_fine": 1.16,
+   "amp_trim_mid": 1.45
   },
   "sandhills": {
    "boundary_kind_weights": {
@@ -894,7 +904,9 @@
      "lo": 15.0
     }
    ],
-   "weight": 1.0
+   "weight": 1.0,
+   "amp_trim_fine": 0.8,
+   "amp_trim_mid": 0.6
   }
  },
  "envelope_version": 1,

@@ -71,6 +71,19 @@ impl Band {
             Band::Fine => CLOSER_GAIN_FINE,
         }
     }
+    /// Equalizer bins INSIDE this level's own band (32-sample window:
+    /// bin r covers wavelengths (32/(r+1), 32/r] cells). Mid at 8 m:
+    /// 64-400 m = bins 2-4; fine at 2 m: 8-64 m = bins 2-8. Adjusting
+    /// bins OUTSIDE the band amplified sub-band noise floor by up to
+    /// the x5 clamp — the mid level then injected spurious sub-64 m
+    /// power that upsampled straight into the final fine band (the
+    /// calibration leak: a fine band moving +27% from a MID trim).
+    fn eq_bins(self) -> std::ops::Range<usize> {
+        match self {
+            Band::Mid => 2..5,
+            Band::Fine => 2..9,
+        }
+    }
 }
 
 /// Orientation-aligned pasting (G-TERRAIN tracked fix): patches carry a
@@ -177,6 +190,7 @@ pub fn quilt(
     cond: &Conditioning,
     cond_scale: usize,
     identity: &RunIdentity,
+    amp_trim: f64,
 ) -> Vec<f64> {
     let level = &dict.biomes[biome_key][band.name()];
     let n = grid_n * grid_n;
@@ -292,7 +306,13 @@ pub fn quilt(
         eq_n += 1.0;
     }
     for v in &mut eq_t {
-        *v /= eq_n.max(1.0);
+        // amp_trim scales the equalizer TARGET as well as the closer
+        // target (power goes as trim^2): with hot bucket targets the
+        // equalizer otherwise bakes in the excess and pins the closer
+        // at its 0.5 gain floor — measured: fine trims 0.84 -> 0.57 on
+        // pied/hc moved the output NOWHERE (saturated), then the trim
+        // and equalizer fought.
+        *v *= amp_trim * amp_trim / eq_n.max(1.0);
     }
 
     // ---- Poisson integrate (cell units, fixed multigrid cycles) --------
@@ -341,7 +361,7 @@ pub fn quilt(
             let act = measure_radial16(&zg.data, grid_n);
             let mut allowed = [1.0f64; 16];
             let mut max_log = 0.0f64;
-            for k in 2..16 {
+            for k in band.eq_bins() {
                 let gain = (eq_t[k].max(1e-20) / act[k].max(1e-20)).sqrt();
                 let a = (g_tot[k] * gain).clamp(0.4, 5.0) / g_tot[k];
                 g_tot[k] *= a;
@@ -358,7 +378,10 @@ pub fn quilt(
     // ---- amplitude closer LAST (F3 rule 4) ------------------------------
     let local = local_std(&zg.data, grid_n, PATCH * 2);
     for i in 0..n {
-        let gain = (amp_t[i] * band.closer_gain() / local[i].max(1e-6))
+        // amp_trim: measured per-envelope correction of the closer
+        // target (amp_trim_fine/mid dials) — some dictionaries' bucket
+        // amp medians run hot or cold against the held-out reals
+        let gain = (amp_t[i] * band.closer_gain() * amp_trim / local[i].max(1e-6))
             .clamp(GAIN_CLAMP.0, GAIN_CLAMP.1);
         zg.data[i] *= gain;
     }

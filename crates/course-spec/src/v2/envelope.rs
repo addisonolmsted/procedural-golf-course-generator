@@ -135,6 +135,14 @@ pub struct BiomeEnvelope {
     /// and deeper than the shared carve default (user round 2026-08-16).
     #[serde(default)]
     pub incision_boost: Option<f64>,
+    /// Per-biome amplitude trims on the S3 closer targets (None = 1.0):
+    /// measured generated-vs-held-out band-std ratios showed the global
+    /// closer leaves plains/sandhills fine texture x1.3-1.6 hot and
+    /// rv/heathland mid texture cold (G-TERRAIN round 3).
+    #[serde(default)]
+    pub amp_trim_fine: Option<f64>,
+    #[serde(default)]
+    pub amp_trim_mid: Option<f64>,
     /// Probability that a terrace_flight draw realizes as the CENTERED
     /// ASYMMETRIC TERRACED VALLEY (river down the middle, treads
     /// climbing one side, smooth shoulder the other — reviewer's

@@ -301,6 +301,11 @@ fn derive_dials(
         env.incision_boost.unwrap_or(1.0),
     );
     m.insert(
+        "amplify.amp_trim_fine".into(),
+        env.amp_trim_fine.unwrap_or(1.0),
+    );
+    m.insert("amplify.amp_trim_mid".into(), env.amp_trim_mid.unwrap_or(1.0));
+    m.insert(
         "primitives.terrace_valley".into(),
         env.terrace_valley.unwrap_or(0.0),
     );

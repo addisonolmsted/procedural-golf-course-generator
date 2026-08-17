@@ -92,11 +92,14 @@ pub fn generate(
     // conditioning planes, footprint-scaled (this mirrors the builder,
     // whose fine patches averaged an 8×8 window of the 8 m cond planes).
     let t = std::time::Instant::now();
-    let mid8 = synth::quilt(dict, biome_key, Band::Mid, n8, 8.0, &cond, 1, identity);
+    let trim_mid = spec.dials.get("amplify.amp_trim_mid").copied().unwrap_or(1.0);
+    let trim_fine = spec.dials.get("amplify.amp_trim_fine").copied().unwrap_or(1.0);
+    let mid8 = synth::quilt(dict, biome_key, Band::Mid, n8, 8.0, &cond, 1, identity, trim_mid);
     lap!("quilt_mid", t);
     let n2 = sk.height.spec.nx as usize;
     let t = std::time::Instant::now();
-    let fine2 = synth::quilt(dict, biome_key, Band::Fine, n2, 2.0, &cond, 4, identity);
+    let fine2 =
+        synth::quilt(dict, biome_key, Band::Fine, n2, 2.0, &cond, 4, identity, trim_fine);
     lap!("quilt_fine", t);
 
     let mid_std_m = std_of(&mid8);
