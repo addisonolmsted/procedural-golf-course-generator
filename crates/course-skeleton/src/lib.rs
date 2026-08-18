@@ -140,14 +140,61 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     let channels = carved.channels.clone();
 
     // ---- flow-distance transform ---------------------------------------
-    // The carved surface already holds the valleys, so the channel cells
-    // seed the wavefront directly; no polyline rasterization step.
+    // Seeded from the SMOOTHED channel polylines, not from the raw D8
+    // chain. This field is the coordinate every cut in S2 is expressed in,
+    // so the plan-view boundary of every cut is one of its iso-contours —
+    // and the offset curve of a staircase is a staircase. A right-angle
+    // turn in the chain came out as a rounded rectangle in the terrain,
+    // which is the "square cut outs on the surface" the review kept
+    // finding (confirmed by ablation: switching the trunk-river and
+    // stratigraphy modules off left the blocks exactly where they were).
+    // The traced polylines are already Chaikin-smoothed for the vector
+    // export; walking them at half-cell steps costs one pass and gives
+    // the whole stage a curved axis.
     let base_elev = c1.meta.base_level.elev_m;
     let seeds: Vec<(usize, Nearest)> = {
-        let v: Vec<(usize, Nearest)> = (0..n8)
-            .filter(|&lin| carved.channel_of[lin].is_some())
-            .map(|lin| {
-                (
+        let cell = spec8.cell_size;
+        let mut v: Vec<(usize, Nearest)> = Vec::new();
+        let mut seen = vec![false; n8];
+        for ch in &channels {
+            for seg in ch.pts.windows(2) {
+                let (a, b) = (seg[0], seg[1]);
+                let len = (b.x - a.x).hypot(b.y - a.y).max(1e-9);
+                let steps = ((len / (cell * 0.5)).ceil() as usize).max(1);
+                for s in 0..=steps {
+                    let t = s as f64 / steps as f64;
+                    let px = a.x + (b.x - a.x) * t;
+                    let py = a.y + (b.y - a.y) * t;
+                    let cx = (px / cell).round();
+                    let cy = (py / cell).round();
+                    if cx < 0.0 || cy < 0.0 || cx >= nx as f64 || cy >= ny as f64 {
+                        continue;
+                    }
+                    let lin = cy as usize * nx + cx as usize;
+                    if seen[lin] {
+                        continue;
+                    }
+                    seen[lin] = true;
+                    v.push((
+                        lin,
+                        Nearest {
+                            dist_m: 0.0,
+                            z_channel: carved.z.data[lin],
+                            implied_channel: implied.data[lin],
+                            order: ch.order.max(1),
+                            area_m2: carved.area[lin],
+                        },
+                    ));
+                }
+            }
+        }
+        // A traced reach can miss a carved channel cell at a junction; the
+        // extraction's own cells backfill so nothing that IS a channel is
+        // left without a zero-distance seed.
+        for lin in 0..n8 {
+            if carved.channel_of[lin].is_some() && !seen[lin] {
+                seen[lin] = true;
+                v.push((
                     lin,
                     Nearest {
                         dist_m: 0.0,
@@ -156,16 +203,16 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
                         order: carved.order_at[lin].max(1),
                         area_m2: carved.area[lin],
                     },
-                )
-            })
-            .collect();
+                ));
+            }
+        }
         if v.is_empty() {
             flow_distance::edge_seeds(&spec8, c1.meta.base_level.edge, base_elev, &implied)
         } else {
             v
         }
     };
-    let near = flow_distance::dijkstra(&spec8, &seeds);
+    let near = flow_distance::euclidean(&spec8, &seeds);
     let has_channels = carved.channel_of.iter().any(|c| c.is_some());
 
     // ---- bank profile + modules ----------------------------------------

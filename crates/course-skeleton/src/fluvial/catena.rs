@@ -55,9 +55,7 @@ fn jitter_field(spec: &GridSpec, salt: u64, passes: usize) -> Vec<f64> {
             (h >> 11) as f64 / (1u64 << 53) as f64 - 0.5
         })
         .collect();
-    for _ in 0..passes {
-        d = box3(&d, nx, ny);
-    }
+    d = gauss(&d, nx, ny, sigma_for_box_passes(passes));
     let rms = (d.iter().map(|v| v * v).sum::<f64>() / (nx * ny) as f64).sqrt().max(1e-12);
     d.iter().map(|v| v / rms).collect()
 }
@@ -122,9 +120,7 @@ pub fn assemble(
     // valleys' incision fields meet at a divide (the review's "ridges much
     // too thin"). Removing sub-64 m creases is band-legal; adding sub-64 m
     // detail would not be.
-    for _ in 0..4 {
-        incision = box3(&incision, nx, ny);
-    }
+    incision = gauss(&incision, nx, ny, sigma_for_box_passes(4));
     let mut out = implied.clone();
     for (i, inc) in incision.iter().enumerate() {
         out.data[i] = implied.data[i] - inc;
@@ -132,28 +128,57 @@ pub fn assemble(
     out
 }
 
-/// One 3×3 box-blur pass (edge-clamped).
-fn box3(a: &[f64], nx: usize, ny: usize) -> Vec<f64> {
-    let mut out = vec![0.0; a.len()];
+/// Separable GAUSSIAN blur, σ in cells, edge-clamped.
+///
+/// The box passes below are separable but not isotropic — a box kernel's
+/// support is a square, so smearing a cut that lives on a D8 chain paints
+/// rectangles with axis-aligned edges. Four passes taper the weights but
+/// keep the square support. Every cut-smoothing call here now goes through
+/// the Gaussian at the equivalent σ (a 3×3 box carries 2/3 cell² of
+/// variance per axis per pass, so N passes ≈ σ = sqrt(2N/3) cells).
+pub fn gauss(a: &[f64], nx: usize, ny: usize, sigma_cells: f64) -> Vec<f64> {
+    if sigma_cells <= 1e-6 {
+        return a.to_vec();
+    }
+    let r = (sigma_cells * 3.0).ceil().max(1.0) as i64;
+    let k: Vec<f64> = (-r..=r)
+        .map(|d| {
+            let t = d as f64 / sigma_cells;
+            libm::exp(-0.5 * t * t)
+        })
+        .collect();
+    let norm: f64 = k.iter().sum();
+    let k: Vec<f64> = k.iter().map(|v| v / norm).collect();
+    let mut tmp = vec![0.0f64; nx * ny];
     for y in 0..ny {
         for x in 0..nx {
-            let mut sum = 0.0;
-            let mut n = 0.0;
-            for dy in -1i64..=1 {
-                for dx in -1i64..=1 {
-                    let (yy, xx) = (y as i64 + dy, x as i64 + dx);
-                    if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
-                        continue;
-                    }
-                    sum += a[yy as usize * nx + xx as usize];
-                    n += 1.0;
-                }
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let xx = (x as i64 + i as i64 - r).clamp(0, nx as i64 - 1) as usize;
+                acc += a[y * nx + xx] * w;
             }
-            out[y * nx + x] = sum / n;
+            tmp[y * nx + x] = acc;
+        }
+    }
+    let mut out = vec![0.0f64; nx * ny];
+    for x in 0..nx {
+        for y in 0..ny {
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let yy = (y as i64 + i as i64 - r).clamp(0, ny as i64 - 1) as usize;
+                acc += tmp[yy * nx + x] * w;
+            }
+            out[y * nx + x] = acc;
         }
     }
     out
 }
+
+/// σ (cells) equivalent to N passes of the 3×3 box this replaced.
+pub fn sigma_for_box_passes(passes: usize) -> f64 {
+    (2.0 * passes as f64 / 3.0).sqrt()
+}
+
 
 /// Bank profile for an ALREADY-CARVED surface.
 ///
@@ -250,11 +275,10 @@ pub fn banks(
             }
         }
     }
-    // same 4-pass smoothing the incision field used: removes the crease
-    // where two valleys' fields meet, and stays under the 64 m band edge
-    for _ in 0..4 {
-        cut = box3(&cut, nx, ny);
-    }
+    // same smoothing the incision field used: removes the crease where two
+    // valleys' fields meet, and stays under the 64 m band edge — isotropic
+    // now, so it no longer prints the square footprint of a box kernel
+    cut = gauss(&cut, nx, ny, sigma_for_box_passes(4));
     let mut out = carved.clone();
     for (i, c) in cut.iter().enumerate() {
         out.data[i] = carved.data[i] - c;
@@ -313,10 +337,7 @@ pub fn banks_small_cut(spec: &GridSpec, surface: &Grid<f64>, near2: &[Nearest]) 
 /// Smooth an assembled tier-2 cut field. Three box3 passes (~48 m) is
 /// what turns the staircase into a valley without erasing it; the caller
 /// subtracts the result.
-pub fn smooth_cut(spec: &GridSpec, mut cut: Vec<f64>, passes: usize) -> Vec<f64> {
+pub fn smooth_cut(spec: &GridSpec, cut: Vec<f64>, passes: usize) -> Vec<f64> {
     let (nx, ny) = (spec.nx as usize, spec.ny as usize);
-    for _ in 0..passes {
-        cut = box3(&cut, nx, ny);
-    }
-    cut
+    gauss(&cut, nx, ny, sigma_for_box_passes(passes))
 }

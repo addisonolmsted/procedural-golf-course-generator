@@ -102,6 +102,120 @@ pub fn dijkstra(spec: &GridSpec, seeds: &[(usize, Nearest)]) -> Vec<Nearest> {
     out
 }
 
+/// EXACT Euclidean distance to the nearest seed, with the seed's payload.
+///
+/// This replaced the Dijkstra above, and the reason is geometric rather
+/// than numerical. Every cut in S2 is a function of this distance, so the
+/// PLAN-VIEW BOUNDARY of every cut is one of its iso-contours. An
+/// 8-connected Dijkstra's iso-contours are octagons — flat sides on the
+/// grid axes and the diagonals — so a valley of roughly constant width
+/// came out as a ribbon with straight, grid-aligned edges and square
+/// corners: "square/rectangular cut outs on the surface" (review, three
+/// rounds running). The true Euclidean field has circular iso-contours and
+/// carries no grid signature at all.
+///
+/// Felzenszwalb–Huttenlocher: two separable passes of the 1-D lower
+/// envelope of parabolas, O(n) total, tracking the arg-min so the payload
+/// still rides along. Cheaper than the binary heap it replaces.
+pub fn euclidean(spec: &GridSpec, seeds: &[(usize, Nearest)]) -> Vec<Nearest> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let n = nx * ny;
+    let cell = spec.cell_size;
+    let none = Nearest {
+        dist_m: f64::INFINITY,
+        z_channel: 0.0,
+        implied_channel: 0.0,
+        order: 0,
+        area_m2: 0.0,
+    };
+    if seeds.is_empty() {
+        return vec![none; n];
+    }
+    // A seed cell may be claimed twice (two polyline samples landing in
+    // one cell); first writer wins, which is deterministic given the seed
+    // order the caller builds.
+    let mut payload: Vec<Option<Nearest>> = vec![None; n];
+    for (lin, near) in seeds {
+        if payload[*lin].is_none() {
+            payload[*lin] = Some(*near);
+        }
+    }
+    const FAR: f64 = 1.0e15;
+    // ---- pass 1: down each column, in cell units ----------------------
+    let mut d1 = vec![0.0f64; n];
+    let mut y_of = vec![0usize; n];
+    {
+        let mut f = vec![0.0f64; ny];
+        let mut v = vec![0usize; ny];
+        let mut zb = vec![0.0f64; ny + 1];
+        for x in 0..nx {
+            for y in 0..ny {
+                f[y] = if payload[y * nx + x].is_some() { 0.0 } else { FAR };
+            }
+            envelope(&f, &mut v, &mut zb, ny, |y, q| {
+                d1[y * nx + x] = f[q] + ((y as f64 - q as f64) * (y as f64 - q as f64));
+                y_of[y * nx + x] = q;
+            });
+        }
+    }
+    // ---- pass 2: along each row ---------------------------------------
+    let mut out = vec![none; n];
+    {
+        let mut f = vec![0.0f64; nx];
+        let mut v = vec![0usize; nx];
+        let mut zb = vec![0.0f64; nx + 1];
+        for y in 0..ny {
+            f[..nx].copy_from_slice(&d1[y * nx..y * nx + nx]);
+            envelope(&f, &mut v, &mut zb, nx, |x, q| {
+                let d2 = f[q] + ((x as f64 - q as f64) * (x as f64 - q as f64));
+                let lin = y * nx + x;
+                if d2 >= FAR {
+                    return;
+                }
+                let sy = y_of[y * nx + q];
+                out[lin] = match payload[sy * nx + q] {
+                    Some(p) => Nearest { dist_m: d2.max(0.0).sqrt() * cell, ..p },
+                    None => none,
+                };
+            });
+        }
+    }
+    out
+}
+
+/// One 1-D squared-distance transform: the lower envelope of the parabolas
+/// `f(q) + (p − q)²`. Calls `emit(p, argmin_q)` for every p.
+fn envelope(f: &[f64], v: &mut [usize], z: &mut [f64], n: usize, mut emit: impl FnMut(usize, usize)) {
+    let mut k = 0usize;
+    v[0] = 0;
+    z[0] = f64::NEG_INFINITY;
+    z[1] = f64::INFINITY;
+    for q in 1..n {
+        let mut s;
+        loop {
+            let p = v[k];
+            s = ((f[q] + (q * q) as f64) - (f[p] + (p * p) as f64))
+                / (2.0 * q as f64 - 2.0 * p as f64);
+            if s <= z[k] && k > 0 {
+                k -= 1;
+            } else {
+                break;
+            }
+        }
+        k += 1;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = f64::INFINITY;
+    }
+    let mut k = 0usize;
+    for p in 0..n {
+        while z[k + 1] < p as f64 {
+            k += 1;
+        }
+        emit(p, v[k]);
+    }
+}
+
 /// Seed list for the no-channel degenerate case: the base-level edge cells
 /// at the base elevation — the only drainage datum that exists.
 pub fn edge_seeds(

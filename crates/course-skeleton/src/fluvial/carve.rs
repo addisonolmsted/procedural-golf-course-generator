@@ -1104,8 +1104,9 @@ fn carve_downstream(
         .collect();
     if p.cut_spread_m > 0.0 {
         let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
-        let r = (p.cut_spread_m / z.spec.cell_size / 1.6).round().max(1.0) as usize;
-        let spread = box_blur_sep(&want, nx, ny, r, 2);
+        // σ IS the spread: the old form solved for a box radius and then
+        // applied it twice, which landed at σ ≈ 9 m for a requested 16.
+        let spread = gauss_blur_sep(&want, nx, ny, p.cut_spread_m / z.spec.cell_size);
         let thresh = p.area_threshold_m2.max(1.0);
         for i in 0..n {
             let u = ((area[i] - 0.5 * thresh) / thresh).clamp(0.0, 1.0);
@@ -1143,33 +1144,53 @@ fn carve_downstream(
     }
 }
 
-/// Separable box blur, `passes` × (2r+1) taps, edge-clamped.
-fn box_blur_sep(src: &[f64], nx: usize, ny: usize, r: usize, passes: usize) -> Vec<f64> {
-    let mut cur = src.to_vec();
+/// Separable GAUSSIAN blur, σ in cells, edge-clamped.
+///
+/// It replaced a separable box blur, and the distinction is the whole
+/// point: separable box is not isotropic. A box kernel's support is a
+/// SQUARE, so smearing a sparse D8 chain with it paints rectangles —
+/// straight, axis-aligned edges with rounded corners, scaling with the
+/// blur width. That is the "square/rectangular cut outs on the surface"
+/// the review reported for three rounds; switching this one kernel off
+/// (`cut_spread_m = 0`) made the blocks vanish and the raw comb reappear,
+/// and widening it made the blocks bigger. A Gaussian is separable AND
+/// isotropic, so the same smear leaves no orientation behind.
+fn gauss_blur_sep(src: &[f64], nx: usize, ny: usize, sigma_cells: f64) -> Vec<f64> {
+    if sigma_cells <= 1e-6 {
+        return src.to_vec();
+    }
+    let r = (sigma_cells * 3.0).ceil().max(1.0) as i64;
+    let k: Vec<f64> = (-r..=r)
+        .map(|d| {
+            let t = d as f64 / sigma_cells;
+            libm::exp(-0.5 * t * t)
+        })
+        .collect();
+    let norm: f64 = k.iter().sum();
+    let k: Vec<f64> = k.iter().map(|v| v / norm).collect();
     let mut tmp = vec![0.0f64; nx * ny];
-    for _ in 0..passes {
-        for y in 0..ny {
-            for x in 0..nx {
-                let mut acc = 0.0;
-                for dx in -(r as i64)..=(r as i64) {
-                    let xx = (x as i64 + dx).clamp(0, nx as i64 - 1) as usize;
-                    acc += cur[y * nx + xx];
-                }
-                tmp[y * nx + x] = acc / (2 * r + 1) as f64;
-            }
-        }
+    for y in 0..ny {
         for x in 0..nx {
-            for y in 0..ny {
-                let mut acc = 0.0;
-                for dy in -(r as i64)..=(r as i64) {
-                    let yy = (y as i64 + dy).clamp(0, ny as i64 - 1) as usize;
-                    acc += tmp[yy * nx + x];
-                }
-                cur[y * nx + x] = acc / (2 * r + 1) as f64;
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let xx = (x as i64 + i as i64 - r).clamp(0, nx as i64 - 1) as usize;
+                acc += src[y * nx + xx] * w;
             }
+            tmp[y * nx + x] = acc;
         }
     }
-    cur
+    let mut out = vec![0.0f64; nx * ny];
+    for x in 0..nx {
+        for y in 0..ny {
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let yy = (y as i64 + i as i64 - r).clamp(0, ny as i64 - 1) as usize;
+                acc += tmp[yy * nx + x] * w;
+            }
+            out[y * nx + x] = acc;
+        }
+    }
+    out
 }
 
 /// Hillslope creep — the diffusive half of the erosion law.

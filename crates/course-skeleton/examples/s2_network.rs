@@ -54,6 +54,8 @@ fn main() {
         ("BANK_ANGLE", "skeleton.bank_angle_deg"),
         ("CH_SPREAD", "skeleton.channel_spread"),
         ("TRUNK_ANGLE", "skeleton.trunk_bank_angle_deg"),
+        ("TRUNK_RIVER", "skeleton.trunk_river"),
+        ("STRAT", "skeleton.stratigraphy"),
         ("GROOVE", "skeleton.groove_scale"),
         ("WAVE_ISO", "primitives.wave_iso_frac"),
         ("WAVE_BETA", "primitives.wave_beta"),
