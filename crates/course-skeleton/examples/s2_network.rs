@@ -102,6 +102,20 @@ fn main() {
     }
     std::fs::write(format!("{out}/{key}_{seed}_acc8.f32"), &ab).unwrap();
 
+    // C1's implied macro surface (tilt + relief) — the ground S2 starts from,
+    // so `s2 - s1` at 8 m IS the carve plus the modules and nothing else. A
+    // cut that reads as a block in plan view shows as a rectangle here.
+    let mut sb = Vec::with_capacity(c1.tilt.data.len() * 4);
+    for (i, v) in c1.tilt.data.iter().enumerate() {
+        sb.extend_from_slice(&((*v + c1.relief.data[i]) as f32).to_le_bytes());
+    }
+    std::fs::write(format!("{out}/{key}_{seed}_s1.f32"), &sb).unwrap();
+    let mut db = Vec::with_capacity(sk.flow_distance.data.len() * 4);
+    for v in &sk.flow_distance.data {
+        db.extend_from_slice(&(*v as f32).to_le_bytes());
+    }
+    std::fs::write(format!("{out}/{key}_{seed}_d2c8.f32"), &db).unwrap();
+
     let mut net = String::new();
     for ch in &sk.channels {
         net.push_str(&format!("{} {:.0}", ch.order, ch.area_m2));
