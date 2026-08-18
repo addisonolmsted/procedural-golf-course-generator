@@ -197,6 +197,11 @@ pub struct BiomeEnvelope {
     /// catchment for (None = 0 = inject from the first iteration).
     #[serde(default)]
     pub inflow_start: Option<f64>,
+    /// Maximum bank angle, degrees (None = off). Stream power puts its
+    /// whole cut in one cell, which leaves faces far steeper than any
+    /// real slope holds; this is the repose angle that caps them.
+    #[serde(default)]
+    pub bank_angle_deg: Option<f64>,
     /// Amplitude of the sub-macro convergence seed, as a fraction of the
     /// S1 relief amplitude (None = the crate default). Too weak against a
     /// macro tilt and flow runs in parallel sheets instead of competing.

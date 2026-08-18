@@ -51,6 +51,9 @@ fn main() {
         ("MEXP", "skeleton.area_exp"),
         ("INFLOW_START", "skeleton.inflow_start"),
         ("ROUGH", "skeleton.roughness_frac"),
+        ("BANK_ANGLE", "skeleton.bank_angle_deg"),
+        ("CH_SPREAD", "skeleton.channel_spread"),
+        ("GROOVE", "skeleton.groove_scale"),
         ("WAVE_ISO", "primitives.wave_iso_frac"),
         ("WAVE_BETA", "primitives.wave_beta"),
     ] {

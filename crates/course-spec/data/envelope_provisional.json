@@ -4,6 +4,7 @@
    "amp_trim_fine": 0.62,
    "amp_trim_mid": 0.79,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "material_contact": 0.2,
     "scarp": 0.8
@@ -161,6 +162,7 @@
    "amp_trim_fine": 1.0,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "material_contact": 1.0
    },
@@ -306,6 +308,7 @@
    "amp_trim_fine": 0.8,
    "amp_trim_mid": 1.44,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "scarp": 0.7,
     "valley_wall": 0.3
@@ -472,6 +475,7 @@
    "amp_trim_fine": 0.84,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "material_contact": 0.6,
     "valley_wall": 0.4
@@ -629,6 +633,7 @@
    "amp_trim_fine": 1.16,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "material_contact": 0.3,
     "valley_wall": 0.7
@@ -792,6 +797,7 @@
    "amp_trim_fine": 0.8,
    "amp_trim_mid": 0.6,
    "area_exp": 0.9,
+   "bank_angle_deg": 36.0,
    "boundary_kind_weights": {
     "material_contact": 1.0
    },

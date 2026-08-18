@@ -337,6 +337,10 @@ fn derive_dials(
     m.insert("skeleton.area_exp".into(), env.area_exp.unwrap_or(0.5));
     m.insert("skeleton.inflow_start".into(), env.inflow_start.unwrap_or(0.0));
     m.insert(
+        "skeleton.bank_angle_deg".into(),
+        env.bank_angle_deg.unwrap_or(0.0),
+    );
+    m.insert(
         "skeleton.roughness_frac".into(),
         env.roughness_frac.unwrap_or(0.05),
     );

@@ -169,6 +169,7 @@ pub fn banks(
     near: &[Nearest],
     incision_boost: f64,
     d_full_floor_m: f64,
+    groove_scale: f64,
 ) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
     // Along-channel variation of the floor width. The bank break used to
@@ -201,8 +202,13 @@ pub fn banks(
             let floor_hw = (9.5 * libm::pow(km2, 0.45) * incision_boost)
                 .clamp(8.0, 34.0 * incision_boost)
                 * (1.0 + FLOOR_JITTER * jitter[i]);
-            let groove_d =
-                (if km2 >= 2.0 { 26.0 } else { 40.0 }) * libm::sqrt(incision_boost);
+            // The 26 m groove for big valleys was chosen to read "clean
+            // and decisive" when the carve was shallow. With the carve
+            // cutting its own depth, the same width over a deeper cut is
+            // a wall — `groove_scale` widens it back out.
+            let groove_d = (if km2 >= 2.0 { 26.0 } else { 40.0 })
+                * libm::sqrt(incision_boost)
+                * groove_scale;
             // SOFT knee. `max(0)` is a slope discontinuity — the profile is
             // flat inside the floor and rises immediately outside it, so
             // the second derivative is a delta function at the floor edge

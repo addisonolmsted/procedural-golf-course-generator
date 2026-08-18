@@ -121,6 +121,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         creep: dial("skeleton.creep", 0.0),
         route_wander: dial("skeleton.route_wander", 0.0),
         cut_spread_m: dial("skeleton.cut_spread_m", 0.0),
+        channel_spread: dial("skeleton.channel_spread", carve::SPREAD_CHANNEL_FLOOR),
+        bank_angle_deg: dial("skeleton.bank_angle_deg", 0.0),
         inflow_start_frac: dial("skeleton.inflow_start", 0.0),
         area_exp: dial("skeleton.area_exp", 0.5),
         uplift_m: dial("skeleton.uplift_m", 0.0),
@@ -191,6 +193,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
             &near,
             dial("skeleton.incision_boost", 1.0),
             dial("skeleton.valley_reach_m", catena::D_FULL_FLOOR_M),
+            dial("skeleton.groove_scale", 1.0),
         );
     stage_dump("banks", &height8.data);
     // Tier-2 dendritic side-valleys (purely morphological — the tier is
@@ -338,6 +341,14 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     // `skeleton.area_exp` the carve reaches that depth itself (hill
     // country valley p90 3.7 → 4.7 m, crest/valley 1.33 → 1.05 at the
     // shipped setting), so the stamp has nothing left to fake.
+    // REPOSE ANGLE, last. Applied inside the carve loop it measured almost
+    // nothing (p99 50.0 -> 47.1 deg): the carve is not the only thing that
+    // steepens a bank — the catena's cut, the floodplain margin and the
+    // channel pin all re-cut afterwards. Run on the finished surface it
+    // caps whatever any of them left. Only lowers, so the descent enforced
+    // just above still holds.
+    carve::talus(&mut height8, dial("skeleton.bank_angle_deg", 0.0));
+
     stage_dump("final", &height8.data);
 
     // ---- flow fields on the built surface ------------------------------

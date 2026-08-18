@@ -62,6 +62,8 @@ pub const WANDER_BLUR_PASSES: usize = 9;
 /// Length scale that turns the unit wander field into metres of relief
 /// per unit slope: deflection angle ≈ atan(wander · 2π · WANDER_LEN_M / λ).
 pub const WANDER_LEN_M: f64 = 24.0;
+/// Relaxation sweeps per erosion iteration for the repose-angle rule.
+pub const TALUS_PASSES: usize = 2;
 /// Minimum share of `cut_spread_m` applied even in full channels.
 pub const SPREAD_CHANNEL_FLOOR: f64 = 0.30;
 /// Wander amplitude floor (m of relief per unit dial) on ground too flat
@@ -121,6 +123,12 @@ pub struct CarveParams {
     /// its incision smeared across the fall line, which is what turns a
     /// one-cell D8 rill into diffuse wash.
     pub cut_spread_m: f64,
+    /// Share of `cut_spread_m` applied in FULL channels. Low values keep
+    /// the whole cut in one 8 m cell, which draws the channel as a knife
+    /// line with a one-cell wall; high values give it a cross-section.
+    pub channel_spread: f64,
+    /// Maximum bank angle in degrees (0 or >=89 disables). See `talus`.
+    pub bank_angle_deg: f64,
     /// Fraction of the erosion run to withhold the external inflow for
     /// (0 = inject from iteration 1, the historic behaviour). See the
     /// loop: injecting early locks the trunk onto its straightest path.
@@ -1107,7 +1115,7 @@ fn carve_downstream(
             // shapes banks, it does not smooth a notch). The floor gives
             // the cut a three-cell cross-section — still a channel, no
             // longer a knife line.
-            let hill = (1.0 - u * u * (3.0 - 2.0 * u)).max(SPREAD_CHANNEL_FLOOR);
+            let hill = (1.0 - u * u * (3.0 - 2.0 * u)).max(p.channel_spread);
             want[i] += hill * (spread[i] - want[i]);
         }
     }
@@ -1207,6 +1215,52 @@ fn hillslope_creep(z: &mut Grid<f64>, area: &[f64], p: &CarveParams) {
             let mean4 =
                 0.25 * (nb(x - 1, y) + nb(x + 1, y) + nb(x, y - 1) + nb(x, y + 1));
             z.data[i] += alpha * w * (mean4 - src[i]);
+        }
+    }
+}
+
+/// Angle-of-repose relaxation on the banks: no ground may stand higher
+/// above its neighbour than `max_deg` allows over the cell spacing.
+///
+/// Stream power puts its whole cut in the channel cell, so a reach that
+/// incises several metres leaves an 8 m step to the cell beside it — a
+/// 50-60 degree face. Measured at the carve stage: p99 bank slope 56 deg
+/// on hill country and 42 on piedmont, against a corpus p99 of 28-40. Real
+/// slopes stop at their material's repose angle because anything steeper
+/// fails; this is that rule, and it is why real tiles have a ceiling at
+/// all. Only ever lowers (the shaving comes off the bank top, never fills
+/// the channel), so drainage monotonicity is untouched.
+pub fn talus(z: &mut Grid<f64>, max_deg: f64) {
+    if max_deg <= 0.0 || max_deg >= 89.0 {
+        return;
+    }
+    let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
+    let cell = z.spec.cell_size;
+    let step = libm::tan(max_deg * core::f64::consts::PI / 180.0) * cell;
+    let diag = step * core::f64::consts::SQRT_2;
+    for _ in 0..TALUS_PASSES {
+        let src = z.data.clone();
+        for y in 1..ny - 1 {
+            for x in 1..nx - 1 {
+                let i = y * nx + x;
+                let mut cap = f64::INFINITY;
+                for (dx, dy, s) in [
+                    (-1i64, 0i64, step),
+                    (1, 0, step),
+                    (0, -1, step),
+                    (0, 1, step),
+                    (-1, -1, diag),
+                    (1, -1, diag),
+                    (-1, 1, diag),
+                    (1, 1, diag),
+                ] {
+                    let j = (y as i64 + dy) as usize * nx + (x as i64 + dx) as usize;
+                    cap = cap.min(src[j] + s);
+                }
+                if src[i] > cap {
+                    z.data[i] = cap;
+                }
+            }
         }
     }
 }
