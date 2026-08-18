@@ -1,7 +1,7 @@
 {
  "biomes": {
   "great_plains": {
-   "amp_trim_fine": 0.62,
+   "amp_trim_fine": 0.558,
    "amp_trim_mid": 0.79,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,
@@ -163,7 +163,7 @@
    "weight": 1.0
   },
   "heathland": {
-   "amp_trim_fine": 1.0,
+   "amp_trim_fine": 0.9,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,
@@ -313,7 +313,7 @@
    "weight": 1.0
   },
   "hill_country": {
-   "amp_trim_fine": 0.8,
+   "amp_trim_fine": 0.72,
    "amp_trim_mid": 1.44,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,
@@ -484,7 +484,7 @@
    "weight": 1.0
   },
   "piedmont": {
-   "amp_trim_fine": 0.84,
+   "amp_trim_fine": 0.756,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,
@@ -646,7 +646,7 @@
    "weight": 1.0
   },
   "river_valley": {
-   "amp_trim_fine": 1.16,
+   "amp_trim_fine": 1.044,
    "amp_trim_mid": 1.45,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,
@@ -814,7 +814,7 @@
    "weight": 1.0
   },
   "sandhills": {
-   "amp_trim_fine": 0.8,
+   "amp_trim_fine": 0.72,
    "amp_trim_mid": 0.6,
    "area_exp": 0.9,
    "bank_angle_deg": 36.0,

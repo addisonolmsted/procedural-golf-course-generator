@@ -20,7 +20,7 @@ use course_world::grid::Grid;
 /// that reads as a flat-bottomed trench. At 0.50 the measured profile lands
 /// on the corpus one almost exactly (2.3/4.6/5.1/4.8/4.6 against
 /// 4.4/3.3/3.1/3.5/3.8).
-pub const TAPER_FLOOR: f64 = 0.50;
+pub const TAPER_FLOOR: f64 = 0.32;
 /// Distance (m) over which texture reaches full strength.
 pub const TAPER_FULL_M: f64 = 80.0;
 
