@@ -60,6 +60,8 @@ fn main() {
         ("FLOOR_MIN", "skeleton.floor_hw_min_m"),
         ("GROOVE_SMALL", "skeleton.groove_small_m"),
         ("GROOVE_SHARE", "skeleton.groove_share"),
+        ("FLOOR_SCALE", "skeleton.floor_width_scale"),
+        ("FLOODPLAIN_KM2", "skeleton.floodplain_km2"),
         ("WAVE_ISO", "primitives.wave_iso_frac"),
         ("WAVE_BETA", "primitives.wave_beta"),
     ] {

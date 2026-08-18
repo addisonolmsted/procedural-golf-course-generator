@@ -207,6 +207,8 @@ pub fn banks(
     floor_hw_min_m: f64,
     groove_small_m: f64,
     groove_share: f64,
+    floor_width_scale: f64,
+    floodplain_km2: f64,
 ) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
     // Along-channel variation of the floor width. The bank break used to
@@ -247,8 +249,8 @@ pub fn banks(
             // incise: V, or a rounded concave swale where relief is low.
             // Dropping the floor lets `floor_hw` follow discharge, so only
             // the channels that earn a floodplain get one.
-            let floor_hw = (9.5 * libm::pow(km2, 0.45) * incision_boost)
-                .clamp(floor_hw_min_m, 34.0 * incision_boost)
+            let floor_hw = (9.5 * floor_width_scale * libm::pow(km2, 0.45) * incision_boost)
+                .clamp(floor_hw_min_m, 34.0 * floor_width_scale * incision_boost)
                 * (1.0 + FLOOR_JITTER * jitter[i]);
             // GROOVE WIDTH, and it decides the section's shape. The old
             // law gave SMALL channels the WIDEST groove (40 m against 26
@@ -263,7 +265,7 @@ pub fn banks(
             // stands back. So the width now RISES with discharge, from
             // `groove_small_m` at the extraction threshold to the old
             // wide value by ~2 km².
-            let gu = (km2 / GROOVE_FULL_KM2).clamp(0.0, 1.0);
+            let gu = (km2 / floodplain_km2).clamp(0.0, 1.0);
             let groove_d = (groove_small_m + (40.0 - groove_small_m) * libm::sqrt(gu))
                 * libm::sqrt(incision_boost)
                 * groove_scale;
@@ -274,6 +276,12 @@ pub fn banks(
             // curve with the corner rounded over ~FLOOR_KNEE_M.
             let u = n.dist_m - floor_hw;
             let d_eff = 0.5 * (u + (u * u + FLOOR_KNEE_M * FLOOR_KNEE_M).sqrt()) - FLOOR_KNEE_M * 0.5;
+            // Groove curve. A concave power `u^e` (e < 1) was tried as a
+            // V control and is not one: it has infinite slope at the axis
+            // for ANY e < 1, so the floor collapses to a single cell at
+            // 0.95 as readily as at 0.35 (measured V-ratio 0.00 at every
+            // rung). This form keeps a finite wall slope, which is what
+            // leaves a floor at all.
             let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
             // Hillslope reach keys off DISCHARGE too. A fixed 260 m for
@@ -351,6 +359,12 @@ pub fn banks_small_cut(spec: &GridSpec, surface: &Grid<f64>, near2: &[Nearest]) 
             let groove_d = 12.0;
             let d_full = 25.0 + 25.0 * (km2 / 0.12).clamp(0.0, 1.0);
             let d_eff = (n.dist_m - floor_hw).max(0.0);
+            // GROOVE CURVE. `1-(1-u)²` leaves the bank climbing gently at
+            // the axis, which measures as a flat bottom: V-ratio (width at
+            // 10 % depth over width at 50 %) reads 0.34-0.40 on our small
+            // and medium channels against a corpus 0.25-0.30. A concave
+            // power `u^e` with e < 1 rises steeply from zero — a V — and
+            // e = 1 is the straight-sided form.
             let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
             let uh = (d_eff / d_full).min(1.0);

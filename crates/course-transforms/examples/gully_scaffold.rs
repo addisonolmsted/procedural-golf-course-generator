@@ -38,14 +38,20 @@ fn main() {
     let id = RunIdentity::from_seed(seed);
     let mut spec = SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(biome) });
     // ladder overrides (visual calibration): TRIB_REACH / TRIB_DEPTH env
-    if let Ok(v) = std::env::var("TRIB_REACH") {
-        if let Ok(x) = v.parse::<f64>() {
-            spec.dials.insert("skeleton.tributary_reach".into(), x);
-        }
-    }
-    if let Ok(v) = std::env::var("TRIB_DEPTH") {
-        if let Ok(x) = v.parse::<f64>() {
-            spec.dials.insert("skeleton.tributary_depth_m".into(), x);
+    for (env, dial) in [
+        ("TRIB_REACH", "skeleton.tributary_reach"),
+        ("TRIB_DEPTH", "skeleton.tributary_depth_m"),
+        ("FLOOR_MIN", "skeleton.floor_hw_min_m"),
+        ("GROOVE_SMALL", "skeleton.groove_small_m"),
+        ("GROOVE_SHARE", "skeleton.groove_share"),
+        ("FLOOR_SCALE", "skeleton.floor_width_scale"),
+        ("FLOODPLAIN_KM2", "skeleton.floodplain_km2"),
+        ("TRUNK_RIVER", "skeleton.trunk_river"),
+    ] {
+        if let Ok(v) = std::env::var(env) {
+            if let Ok(x) = v.parse::<f64>() {
+                spec.dials.insert(dial.into(), x);
+            }
         }
     }
     let dict = ["assets/dictionary_v2.bin", "../../assets/dictionary_v2.bin"]
