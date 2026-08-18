@@ -51,6 +51,8 @@ fn main() {
         ("MEXP", "skeleton.area_exp"),
         ("INFLOW_START", "skeleton.inflow_start"),
         ("ROUGH", "skeleton.roughness_frac"),
+        ("WAVE_ISO", "primitives.wave_iso_frac"),
+        ("WAVE_BETA", "primitives.wave_beta"),
     ] {
         if let Ok(v) = std::env::var(env) {
             if let Ok(x) = v.parse::<f64>() {

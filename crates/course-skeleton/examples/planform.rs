@@ -91,6 +91,7 @@ fn main() {
                 ("WANDER", "skeleton.route_wander"),
                 ("WAVE_BETA", "primitives.wave_beta"),
                 ("WAVE_SHARE", "primitives.wave_share"),
+                ("WAVE_ISO", "primitives.wave_iso_frac"),
             ] {
                 if let Ok(v) = std::env::var(ev) {
                     if let Ok(x) = v.parse::<f64>() {

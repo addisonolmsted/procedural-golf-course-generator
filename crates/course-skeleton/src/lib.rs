@@ -477,12 +477,67 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     }
 
     // ---- 2 m presentation ---------------------------------------------
+    // CATMULL-ROM, not bilinear. Bilinear is only C0: its gradient jumps at
+    // every 8 m node, so the presented surface carries a curvature spike on
+    // every grid line — measured 749x the local level at the first line out
+    // from a channel, against 1.15x (no spike at all) on corpus tiles, and
+    // decaying copies at 16, 24, 32 m. That is the "sharp and uniform edges"
+    // read: the seams are hardest where the surface bends most, which is
+    // exactly the banks. S3's mid band hit the same wall and took the same
+    // fix (`blend::upsample_catmull`, "bilinear left piecewise-linear
+    // facets ... a pixelated cross-hatch"); this is the base surface's turn.
     let spec2 = world_spec(RES_FULL_M);
     let mut height2 = Grid::filled(spec2, 0.0f64);
-    for y in 0..spec2.ny {
-        for x in 0..spec2.nx {
-            let p = spec2.world_of(x, y);
-            height2.set(x, y, height8.bilinear(p));
+    {
+        let cr = |t: f64| -> [f64; 4] {
+            let (t2, t3) = (t * t, t * t * t);
+            [
+                -0.5 * t3 + t2 - 0.5 * t,
+                1.5 * t3 - 2.5 * t2 + 1.0,
+                -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+                0.5 * t3 - 0.5 * t2,
+            ]
+        };
+        let taps = |f: f64, n: usize| -> ([usize; 4], [f64; 4]) {
+            let f = f.clamp(0.0, (n - 1) as f64);
+            let i1 = f.floor() as usize;
+            (
+                [
+                    i1.saturating_sub(1),
+                    i1,
+                    (i1 + 1).min(n - 1),
+                    (i1 + 2).min(n - 1),
+                ],
+                cr(f - i1 as f64),
+            )
+        };
+        let (n2x, n2y) = (spec2.nx as usize, spec2.ny as usize);
+        // separable: horizontal into a scratch row set, then vertical
+        let xmap: Vec<([usize; 4], [f64; 4])> = (0..n2x)
+            .map(|x| {
+                let p = spec2.world_of(x as u32, 0);
+                taps((p.x - spec8.origin.x) / spec8.cell_size, nx)
+            })
+            .collect();
+        let mut tmp = vec![0.0f64; ny * n2x];
+        for y in 0..ny {
+            let row = &height8.data[y * nx..(y + 1) * nx];
+            for (x, (idx, w)) in xmap.iter().enumerate() {
+                tmp[y * n2x + x] = row[idx[0]] * w[0]
+                    + row[idx[1]] * w[1]
+                    + row[idx[2]] * w[2]
+                    + row[idx[3]] * w[3];
+            }
+        }
+        for y in 0..n2y {
+            let p = spec2.world_of(0, y as u32);
+            let (idx, w) = taps((p.y - spec8.origin.y) / spec8.cell_size, ny);
+            for x in 0..n2x {
+                height2.data[y * n2x + x] = tmp[idx[0] * n2x + x] * w[0]
+                    + tmp[idx[1] * n2x + x] * w[1]
+                    + tmp[idx[2] * n2x + x] * w[2]
+                    + tmp[idx[3] * n2x + x] * w[3];
+            }
         }
     }
 

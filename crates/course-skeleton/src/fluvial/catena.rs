@@ -34,6 +34,33 @@ pub const D_FULL_M: f64 = 260.0;
 pub const D_FULL_FLOOR_M: f64 = 70.0;
 /// Drained area (km²) at which the reach reaches `D_FULL_M`.
 pub const D_FULL_FULL_KM2: f64 = 2.0;
+/// Along-channel variation of the valley-floor half-width, as a fraction.
+pub const FLOOR_JITTER: f64 = 0.35;
+/// Radius (m) over which the floor-to-groove corner is rounded.
+pub const FLOOR_KNEE_M: f64 = 7.0;
+
+/// Position-hashed field, box-blurred to a correlation length and
+/// normalized to unit RMS — the same construction the carve's routing
+/// dither uses, and deterministic for the same reason (no RNG, no draw
+/// transcript, identical for a given grid).
+fn jitter_field(spec: &GridSpec, salt: u64, passes: usize) -> Vec<f64> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let mut d: Vec<f64> = (0..nx * ny)
+        .map(|i| {
+            let (y, x) = ((i / nx) as u64, (i % nx) as u64);
+            let mut h = x.wrapping_mul(salt) ^ y.rotate_left(32).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            h ^= h >> 30;
+            h = h.wrapping_mul(0x94D0_49BB_1331_11EB);
+            h ^= h >> 31;
+            (h >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+        })
+        .collect();
+    for _ in 0..passes {
+        d = box3(&d, nx, ny);
+    }
+    let rms = (d.iter().map(|v| v * v).sum::<f64>() / (nx * ny) as f64).sqrt().max(1e-12);
+    d.iter().map(|v| v / rms).collect()
+}
 
 /// Channel base profile: elevation gain above base level as a function of
 /// network arc from the outlet. Concave (slope decays downstream) — the
@@ -144,10 +171,20 @@ pub fn banks(
     d_full_floor_m: f64,
 ) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
+    // Along-channel variation of the floor width. The bank break used to
+    // sit at EXACTLY `floor_hw` on every reach in the tile — a curvature
+    // spike measured 749x the surrounding level at a fixed 8 m offset,
+    // against 1.15x (i.e. no spike at all) on corpus tiles. That is the
+    // "sharp and uniform edges" tell: real banks break wherever the ground
+    // happens to break, so no single offset stands out. A correlated field
+    // (~150 m) keeps the section coherent across the channel while the
+    // break wanders along it.
+    let jitter = jitter_field(spec, 0x9E37_79B9_7F4A_7C15, 8);
     let mut cut: Vec<f64> = near
         .iter()
         .zip(&carved.data)
-        .map(|(n, z)| {
+        .enumerate()
+        .map(|(i, (n, z))| {
             if !n.dist_m.is_finite() {
                 return 0.0;
             }
@@ -161,11 +198,18 @@ pub fn banks(
             // incision_boost (envelope, hc 1.6 / pied 1.35): ravines
             // and draws cut WIDER as well as deeper — the deeper cut
             // itself comes from the carve's boosted incision_scale
-            let floor_hw =
-                (9.5 * libm::pow(km2, 0.45) * incision_boost).clamp(8.0, 34.0 * incision_boost);
+            let floor_hw = (9.5 * libm::pow(km2, 0.45) * incision_boost)
+                .clamp(8.0, 34.0 * incision_boost)
+                * (1.0 + FLOOR_JITTER * jitter[i]);
             let groove_d =
                 (if km2 >= 2.0 { 26.0 } else { 40.0 }) * libm::sqrt(incision_boost);
-            let d_eff = (n.dist_m - floor_hw).max(0.0);
+            // SOFT knee. `max(0)` is a slope discontinuity — the profile is
+            // flat inside the floor and rises immediately outside it, so
+            // the second derivative is a delta function at the floor edge
+            // and the hillshade draws a hard line there. This is the same
+            // curve with the corner rounded over ~FLOOR_KNEE_M.
+            let u = n.dist_m - floor_hw;
+            let d_eff = 0.5 * (u + (u * u + FLOOR_KNEE_M * FLOOR_KNEE_M).sqrt()) - FLOOR_KNEE_M * 0.5;
             let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
             // Hillslope reach keys off DISCHARGE too. A fixed 260 m for
