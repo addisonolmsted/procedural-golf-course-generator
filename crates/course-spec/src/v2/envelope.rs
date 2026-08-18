@@ -208,6 +208,19 @@ pub struct BiomeEnvelope {
     /// against 31-39 here.
     #[serde(default)]
     pub trunk_bank_angle_deg: Option<f64>,
+    /// Smallest valley-floor half-width (m). The clamp floor here is what
+    /// decides whether a small draw is V-shaped or flat-bottomed: at 8 m
+    /// every swale in the tile got a 16 m dead-flat bottom.
+    #[serde(default)]
+    pub floor_hw_min_m: Option<f64>,
+    /// Groove width (m) at the extraction threshold — the V end of the
+    /// discharge-keyed range. The old law had this WIDER than the
+    /// floodplain end, which is backwards.
+    #[serde(default)]
+    pub groove_small_m: Option<f64>,
+    /// Share of the bank's recovery owned by the groove at the V end.
+    #[serde(default)]
+    pub groove_share: Option<f64>,
     /// Amplitude of the sub-macro convergence seed, as a fraction of the
     /// S1 relief amplitude (None = the crate default). Too weak against a
     /// macro tilt and flow runs in parallel sheets instead of competing.

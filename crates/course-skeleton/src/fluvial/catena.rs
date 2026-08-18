@@ -38,6 +38,15 @@ pub const D_FULL_FULL_KM2: f64 = 2.0;
 pub const FLOOR_JITTER: f64 = 0.35;
 /// Radius (m) over which the floor-to-groove corner is rounded.
 pub const FLOOR_KNEE_M: f64 = 7.0;
+/// Smallest valley-floor half-width. See `banks` — this is what decides
+/// whether a small draw comes out V-shaped or flat-bottomed.
+pub const FLOOR_HW_MIN_M: f64 = 8.0;
+/// Groove width (m) at the extraction threshold — the V end of the range.
+pub const GROOVE_SMALL_M: f64 = 40.0;
+/// Groove share of the recovery at the V end (the floodplain end is 0.30).
+pub const GROOVE_SHARE_SMALL: f64 = 0.30;
+/// Drained area (km²) at which the groove reaches its wide, floodplain form.
+pub const GROOVE_FULL_KM2: f64 = 2.0;
 
 /// Position-hashed field, box-blurred to a correlation length and
 /// normalized to unit RMS — the same construction the carve's routing
@@ -195,6 +204,9 @@ pub fn banks(
     incision_boost: f64,
     d_full_floor_m: f64,
     groove_scale: f64,
+    floor_hw_min_m: f64,
+    groove_small_m: f64,
+    groove_share: f64,
 ) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
     // Along-channel variation of the floor width. The bank break used to
@@ -224,14 +236,35 @@ pub fn banks(
             // incision_boost (envelope, hc 1.6 / pied 1.35): ravines
             // and draws cut WIDER as well as deeper — the deeper cut
             // itself comes from the carve's boosted incision_scale
+            // The clamp FLOOR is the shape decision, not a safety rail. At
+            // 8 m every channel in the tile — down to a 0.12 km² swale,
+            // for which the law asks 3.7 m — was given a 16 m-wide dead
+            // flat bottom, and the corpus says otherwise: near-channel
+            // slope p50 measured 0.8-2.7 deg here against 4.1-6.6 (real
+            // piedmont) and 10.9-19.5 (real hill country). A flat valley
+            // floor is an ALLUVIAL form — it needs the discharge to build
+            // a floodplain and migrate across it. Below that, streams
+            // incise: V, or a rounded concave swale where relief is low.
+            // Dropping the floor lets `floor_hw` follow discharge, so only
+            // the channels that earn a floodplain get one.
             let floor_hw = (9.5 * libm::pow(km2, 0.45) * incision_boost)
-                .clamp(8.0, 34.0 * incision_boost)
+                .clamp(floor_hw_min_m, 34.0 * incision_boost)
                 * (1.0 + FLOOR_JITTER * jitter[i]);
-            // The 26 m groove for big valleys was chosen to read "clean
-            // and decisive" when the carve was shallow. With the carve
-            // cutting its own depth, the same width over a deeper cut is
-            // a wall — `groove_scale` widens it back out.
-            let groove_d = (if km2 >= 2.0 { 26.0 } else { 40.0 })
+            // GROOVE WIDTH, and it decides the section's shape. The old
+            // law gave SMALL channels the WIDEST groove (40 m against 26
+            // for big valleys) — backwards. The groove is how fast the
+            // bank climbs away from the axis, so a wide one on a small
+            // draw is exactly a flat bottom: measured, the surface
+            // recovered ~15 % of its drop over the first 10 m, which is a
+            // 0.4-1.9 deg bank against a corpus 3.8-19.4.
+            //
+            // A small draw is a V because it has no discharge to build a
+            // floor with; a big valley has a floodplain and its bank
+            // stands back. So the width now RISES with discharge, from
+            // `groove_small_m` at the extraction threshold to the old
+            // wide value by ~2 km².
+            let gu = (km2 / GROOVE_FULL_KM2).clamp(0.0, 1.0);
+            let groove_d = (groove_small_m + (40.0 - groove_small_m) * libm::sqrt(gu))
                 * libm::sqrt(incision_boost)
                 * groove_scale;
             // SOFT knee. `max(0)` is a slope discontinuity — the profile is
@@ -257,7 +290,11 @@ pub fn banks(
                 .clamp(floor, D_FULL_M);
             let uh = (d_eff / d_full).min(1.0);
             let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
-            let w = 0.3 * groove + 0.7 * hillslope;
+            // ...and how much of the recovery the groove owns. Same
+            // reasoning: a V section is groove all the way, a floodplain
+            // valley hands most of the work to the long hillslope limb.
+            let share = groove_share + (0.30 - groove_share) * gu;
+            let w = share * groove + (1.0 - share) * hillslope;
             // how far this cell still stands above the channel it drains to
             ((z - n.z_channel).max(0.0)) * (1.0 - w)
         })

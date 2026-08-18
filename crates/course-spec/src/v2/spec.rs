@@ -345,6 +345,15 @@ fn derive_dials(
         env.trunk_bank_angle_deg.unwrap_or(env.bank_angle_deg.unwrap_or(0.0)),
     );
     m.insert(
+        "skeleton.floor_hw_min_m".into(),
+        env.floor_hw_min_m.unwrap_or(8.0),
+    );
+    m.insert(
+        "skeleton.groove_small_m".into(),
+        env.groove_small_m.unwrap_or(40.0),
+    );
+    m.insert("skeleton.groove_share".into(), env.groove_share.unwrap_or(0.30));
+    m.insert(
         "skeleton.roughness_frac".into(),
         env.roughness_frac.unwrap_or(0.05),
     );

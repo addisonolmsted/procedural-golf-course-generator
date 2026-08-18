@@ -241,6 +241,9 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
             dial("skeleton.incision_boost", 1.0),
             dial("skeleton.valley_reach_m", catena::D_FULL_FLOOR_M),
             dial("skeleton.groove_scale", 1.0),
+            dial("skeleton.floor_hw_min_m", catena::FLOOR_HW_MIN_M),
+            dial("skeleton.groove_small_m", catena::GROOVE_SMALL_M),
+            dial("skeleton.groove_share", catena::GROOVE_SHARE_SMALL),
         );
     stage_dump("banks", &height8.data);
     // Tier-2 dendritic side-valleys (purely morphological — the tier is

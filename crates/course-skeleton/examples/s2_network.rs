@@ -57,6 +57,9 @@ fn main() {
         ("TRUNK_RIVER", "skeleton.trunk_river"),
         ("STRAT", "skeleton.stratigraphy"),
         ("GROOVE", "skeleton.groove_scale"),
+        ("FLOOR_MIN", "skeleton.floor_hw_min_m"),
+        ("GROOVE_SMALL", "skeleton.groove_small_m"),
+        ("GROOVE_SHARE", "skeleton.groove_share"),
         ("WAVE_ISO", "primitives.wave_iso_frac"),
         ("WAVE_BETA", "primitives.wave_beta"),
     ] {

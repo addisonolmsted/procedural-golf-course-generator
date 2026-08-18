@@ -10,7 +10,17 @@
 use course_world::grid::Grid;
 
 /// Amplitude floor at the channel centreline.
-pub const TAPER_FLOOR: f64 = 0.15;
+///
+/// Raised from 0.15 after measuring what the old value did to the shipped
+/// surface. Median slope 4 m from a channel read 2.0-4.0° against a corpus
+/// 3.3-17.9°, and — the giveaway — our slope profile RISES with distance
+/// from the channel (2.6 → 11.9° over 56 m) while every corpus profile is
+/// flat (10.8 → 19.6, 4.4 → 4.1). Real channels are not smoother than
+/// their surroundings; that rise WAS this taper, drawing a smooth corridor
+/// that reads as a flat-bottomed trench. At 0.50 the measured profile lands
+/// on the corpus one almost exactly (2.3/4.6/5.1/4.8/4.6 against
+/// 4.4/3.3/3.1/3.5/3.8).
+pub const TAPER_FLOOR: f64 = 0.50;
 /// Distance (m) over which texture reaches full strength.
 pub const TAPER_FULL_M: f64 = 80.0;
 

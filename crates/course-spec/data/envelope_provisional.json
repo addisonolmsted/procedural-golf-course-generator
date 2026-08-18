@@ -107,6 +107,9 @@
     "t04080_10380"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "modules": {
     "aeolian": 0.1,
     "closed_basin": 0.1,
@@ -263,6 +266,9 @@
     "t04623_08653"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "modules": {
     "aeolian": 0.15,
     "closed_basin": 1.0,
@@ -414,6 +420,9 @@
     "t03695_09115"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "incision_boost": 1.6,
    "modules": {
     "aeolian": 0.0,
@@ -586,6 +595,9 @@
     "t03550_08002"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "incision_boost": 1.35,
    "modules": {
     "aeolian": 0.0,
@@ -749,7 +761,10 @@
     "t04305_09025"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
    "grain_lock": 1.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "modules": {
     "aeolian": 0.0,
     "closed_basin": 0.0,
@@ -910,6 +925,9 @@
     "t04246_10082"
    ],
    "exemplars_per_course": 2,
+   "floor_hw_min_m": 2.0,
+   "groove_share": 0.6,
+   "groove_small_m": 16.0,
    "modules": {
     "aeolian": 1.0,
     "closed_basin": 0.5,
