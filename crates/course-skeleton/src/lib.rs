@@ -341,14 +341,6 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     // `skeleton.area_exp` the carve reaches that depth itself (hill
     // country valley p90 3.7 → 4.7 m, crest/valley 1.33 → 1.05 at the
     // shipped setting), so the stamp has nothing left to fake.
-    // REPOSE ANGLE, last. Applied inside the carve loop it measured almost
-    // nothing (p99 50.0 -> 47.1 deg): the carve is not the only thing that
-    // steepens a bank — the catena's cut, the floodplain margin and the
-    // channel pin all re-cut afterwards. Run on the finished surface it
-    // caps whatever any of them left. Only lowers, so the descent enforced
-    // just above still holds.
-    carve::talus(&mut height8, dial("skeleton.bank_angle_deg", 0.0));
-
     stage_dump("final", &height8.data);
 
     // ---- flow fields on the built surface ------------------------------
@@ -485,6 +477,50 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     // Carved::pre_rim.
     for &(lin, zv) in &carved.pre_rim {
         height8.data[lin] = zv;
+    }
+
+    // REPOSE ANGLE, and it runs HERE — after the rim strip — for a reason.
+    // Applied inside the carve loop it measured almost nothing (p99 50.0 ->
+    // 47.1 deg), because the catena, the modules and the channel pin all
+    // re-cut afterwards. Applied before the rim strip it missed the worst
+    // faces in the tile: the border row is restored to its pre-rim height
+    // while the row inboard of it has been carved, catena'd and trenched,
+    // so the frame leaves a step exactly where the TRUNK crosses it — the
+    // trunk is the outlet reach, so the tile's widest channel is always in
+    // that band. Measured: trunk-bank p99 39.2 deg over the whole tile
+    // against 30.7 with the frame band excluded, and 20.6 for interior
+    // wide channels (the corpus reads 20.4-24.3). Running last, over every
+    // cell including the border, caps the step from whichever side is
+    // high. Only lowers, so the enforced descent still holds.
+    //
+    // The cap is DISCHARGE-KEYED. A hillslope can stand at its repose
+    // angle; the bank of a wide channel cannot, and the corpus says so —
+    // real trunk banks read p99 20.4 deg while ours read 30.8-39.2, and
+    // our interior WIDE channels are already gentler than real (12.6-25.9
+    // against 24.3-48.3). So the defect is specific: big channels want a
+    // lower ceiling over a wider skirt, small ones do not.
+    {
+        let base = dial("skeleton.bank_angle_deg", 0.0);
+        let trunk = dial("skeleton.trunk_bank_angle_deg", base);
+        let cap: Vec<f64> = (0..n8)
+            .map(|i| {
+                let nr = &near[i];
+                if base <= 0.0 || !nr.dist_m.is_finite() {
+                    return base;
+                }
+                let km2 = (nr.area_m2 / 1.0e6).max(0.0);
+                // how much of a "big channel" this is: nothing under
+                // 0.3 km², fully by 4 km²
+                let u = ((km2 - 0.3) / 3.7).clamp(0.0, 1.0);
+                let big = u * u * (3.0 - 2.0 * u);
+                // ...and how close, over a skirt that widens with it
+                let skirt = 90.0 + 210.0 * big;
+                let v = (1.0 - nr.dist_m / skirt).clamp(0.0, 1.0);
+                let near_w = v * v * (3.0 - 2.0 * v);
+                base + (trunk - base) * big * near_w
+            })
+            .collect();
+        carve::talus(&mut height8, &cap);
     }
 
     // ---- 2 m presentation ---------------------------------------------

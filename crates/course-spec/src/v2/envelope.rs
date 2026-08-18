@@ -202,6 +202,12 @@ pub struct BiomeEnvelope {
     /// real slope holds; this is the repose angle that caps them.
     #[serde(default)]
     pub bank_angle_deg: Option<f64>,
+    /// Maximum bank angle beside a WIDE channel, degrees (None = the same
+    /// as `bank_angle_deg`). A hillslope stands at its repose angle; the
+    /// bank of a big channel does not, and the corpus reads 20 deg there
+    /// against 31-39 here.
+    #[serde(default)]
+    pub trunk_bank_angle_deg: Option<f64>,
     /// Amplitude of the sub-macro convergence seed, as a fraction of the
     /// S1 relief amplitude (None = the crate default). Too weak against a
     /// macro tilt and flow runs in parallel sheets instead of competing.

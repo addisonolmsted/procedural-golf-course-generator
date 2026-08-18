@@ -53,6 +53,7 @@ fn main() {
         ("ROUGH", "skeleton.roughness_frac"),
         ("BANK_ANGLE", "skeleton.bank_angle_deg"),
         ("CH_SPREAD", "skeleton.channel_spread"),
+        ("TRUNK_ANGLE", "skeleton.trunk_bank_angle_deg"),
         ("GROOVE", "skeleton.groove_scale"),
         ("WAVE_ISO", "primitives.wave_iso_frac"),
         ("WAVE_BETA", "primitives.wave_beta"),
@@ -86,6 +87,13 @@ fn main() {
         .map(|g| g.data.clone())
         .unwrap_or_else(|| vec![0u8; chan.len()]);
     std::fs::write(format!("{out}/{key}_{seed}_tier2.u8"), &tier2).unwrap();
+    // the kernel's own accumulation on the built surface (m^2, 8 m) — the
+    // honest discharge for "how big is the channel this bank belongs to"
+    let mut ab = Vec::with_capacity(sk.flow_accum.data.len() * 4);
+    for v in &sk.flow_accum.data {
+        ab.extend_from_slice(&(*v as f32).to_le_bytes());
+    }
+    std::fs::write(format!("{out}/{key}_{seed}_acc8.f32"), &ab).unwrap();
 
     let mut net = String::new();
     for ch in &sk.channels {

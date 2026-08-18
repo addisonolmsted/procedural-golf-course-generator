@@ -341,6 +341,10 @@ fn derive_dials(
         env.bank_angle_deg.unwrap_or(0.0),
     );
     m.insert(
+        "skeleton.trunk_bank_angle_deg".into(),
+        env.trunk_bank_angle_deg.unwrap_or(env.bank_angle_deg.unwrap_or(0.0)),
+    );
+    m.insert(
         "skeleton.roughness_frac".into(),
         env.roughness_frac.unwrap_or(0.05),
     );

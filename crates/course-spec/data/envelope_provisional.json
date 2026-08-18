@@ -155,6 +155,7 @@
      "lo": 2.0
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "wave_iso_frac": 0.55,
    "weight": 1.0
   },
@@ -300,6 +301,7 @@
      "lo": -0.6
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "wave_iso_frac": 0.45,
    "wave_share": 0.46,
    "weight": 1.0
@@ -466,6 +468,7 @@
      "lo": 3.0
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "wave_beta": 3.0,
    "wave_iso_frac": 0.45,
    "wave_share": 0.36,
@@ -627,6 +630,7 @@
      "lo": -1.0
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "weight": 1.0
   },
   "river_valley": {
@@ -790,6 +794,7 @@
      "lo": -0.5
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "wave_iso_frac": 0.12,
    "weight": 1.0
   },
@@ -942,6 +947,7 @@
      "lo": 15.0
     }
    ],
+   "trunk_bank_angle_deg": 20.0,
    "weight": 1.0
   }
  },

@@ -1230,19 +1230,30 @@ fn hillslope_creep(z: &mut Grid<f64>, area: &[f64], p: &CarveParams) {
 /// fails; this is that rule, and it is why real tiles have a ceiling at
 /// all. Only ever lowers (the shaving comes off the bank top, never fills
 /// the channel), so drainage monotonicity is untouched.
-pub fn talus(z: &mut Grid<f64>, max_deg: f64) {
-    if max_deg <= 0.0 || max_deg >= 89.0 {
+pub fn talus(z: &mut Grid<f64>, max_deg: &[f64]) {
+    let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
+    debug_assert_eq!(max_deg.len(), nx * ny);
+    if max_deg.iter().all(|d| *d <= 0.0 || *d >= 89.0) {
         return;
     }
-    let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
     let cell = z.spec.cell_size;
-    let step = libm::tan(max_deg * core::f64::consts::PI / 180.0) * cell;
-    let diag = step * core::f64::consts::SQRT_2;
+    let tan_of = |d: f64| -> f64 {
+        if d <= 0.0 || d >= 89.0 {
+            f64::INFINITY
+        } else {
+            libm::tan(d * core::f64::consts::PI / 180.0) * cell
+        }
+    };
     for _ in 0..TALUS_PASSES {
         let src = z.data.clone();
-        for y in 1..ny - 1 {
-            for x in 1..nx - 1 {
+        for y in 0..ny {
+            for x in 0..nx {
                 let i = y * nx + x;
+                let step = tan_of(max_deg[i]);
+                if !step.is_finite() {
+                    continue;
+                }
+                let diag = step * core::f64::consts::SQRT_2;
                 let mut cap = f64::INFINITY;
                 for (dx, dy, s) in [
                     (-1i64, 0i64, step),
@@ -1254,8 +1265,11 @@ pub fn talus(z: &mut Grid<f64>, max_deg: f64) {
                     (-1, 1, diag),
                     (1, 1, diag),
                 ] {
-                    let j = (y as i64 + dy) as usize * nx + (x as i64 + dx) as usize;
-                    cap = cap.min(src[j] + s);
+                    let (xx, yy) = (x as i64 + dx, y as i64 + dy);
+                    if xx < 0 || yy < 0 || xx >= nx as i64 || yy >= ny as i64 {
+                        continue; // edge of the world, not a slope
+                    }
+                    cap = cap.min(src[yy as usize * nx + xx as usize] + s);
                 }
                 if src[i] > cap {
                     z.data[i] = cap;
