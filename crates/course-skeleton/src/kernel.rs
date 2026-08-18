@@ -93,6 +93,11 @@ pub struct Skeleton {
     /// trunk dial is 0). S4's river walks the receiver chain from here
     /// to the outlet — edge-to-edge by construction.
     pub trunk_inlet: Option<usize>,
+    /// DIAGNOSTIC ONLY, 8 m: the tier-2 dendritic side-valley cells (1 =
+    /// carved side-valley). The tier is purely morphological — it is not
+    /// in `channels`/`flow_distance` and nothing downstream of S2 reads
+    /// this field; probes and renders use it to draw the carved network.
+    pub tier2: Option<Grid<u8>>,
     pub meta: StructureMeta,
     pub diagnostics: SkeletonDiagnostics,
 }

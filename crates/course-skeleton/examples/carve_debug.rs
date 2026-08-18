@@ -94,6 +94,12 @@ fn main() {
             derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
             iters: envf("ITERS", 15.0) as usize,
             step_clamp_m: envf("CLAMP", 0.45),
+            tributary_reach: 1.0,
+            creep: envf("CREEP", 0.0),
+            route_wander: 0.0,
+            cut_spread_m: 0.0,
+        area_exp: 0.5,
+        uplift_m: 0.0,
         };
 
         // Snapshots: rerun the carve with a truncated iteration budget by

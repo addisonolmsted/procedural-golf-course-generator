@@ -54,6 +54,24 @@ pub const STEP_CLAMP_M: f64 = 0.45;
 /// Minimum roughness amplitude (m) regardless of relief — the flat-biome
 /// symmetry breaker (see `carve`).
 pub const ROUGH_FLOOR_M: f64 = 0.55;
+/// Stability ceiling for the explicit creep step (5-point Laplacian).
+pub const CREEP_ALPHA_MAX: f64 = 0.25;
+/// Correlation length of the routing-wander field, as box3 passes
+/// (~120 m at the 8 m grid).
+pub const WANDER_BLUR_PASSES: usize = 9;
+/// Length scale that turns the unit wander field into metres of relief
+/// per unit slope: deflection angle ≈ atan(wander · 2π · WANDER_LEN_M / λ).
+pub const WANDER_LEN_M: f64 = 24.0;
+/// Minimum share of `cut_spread_m` applied even in full channels.
+pub const SPREAD_CHANNEL_FLOOR: f64 = 0.30;
+/// Wander amplitude floor (m of relief per unit dial) on ground too flat
+/// for the slope-proportional term to reach. Ladder-picked: 0.5 bends the
+/// low-gradient reaches without letting the field out-vote the grade.
+pub const WANDER_FLOOR_M: f64 = 0.5;
+/// Macro slope (300 m lowpass) a tier-2 head needs. Dendritic gullies
+/// dissect FLANKS; on a footslope plain the tier has no relief above its
+/// path to cut and only draws lines.
+pub const TIER2_MIN_SLOPE: f64 = 0.035;
 
 /// The carve's own dials, derived from the biome dials by the caller.
 pub struct CarveParams {
@@ -82,6 +100,46 @@ pub struct CarveParams {
     pub iters: usize,
     /// Per-iteration vertical clamp (m).
     pub step_clamp_m: f64,
+    /// Tier-2 side-valley extraction: multiplier (< 1.0) on the area
+    /// cut for a second, PURELY MORPHOLOGICAL channel tier — carved and
+    /// catena'd at area-scaled width but never entering `channel_of`,
+    /// Strahler, the traced network, or the flow-distance metrics (the
+    /// D5 invariant and every downstream consumer stay tier-1). 1.0
+    /// disables the tier.
+    pub tributary_reach: f64,
+    /// Hillslope creep coefficient per erosion iteration (0 disables).
+    /// See `hillslope_creep` — this is the diffusive half of the erosion
+    /// law, and it only runs where the stream-power loop runs.
+    pub creep: f64,
+    /// Slope-proportional routing wander (0 disables): how far flow paths
+    /// are allowed to stray from the fall line before D8 quantizes them.
+    /// ~0.25 gives ≈15° of deflection at any steepness. ROUTING SURFACE
+    /// ONLY — the terrain never carries this field.
+    pub route_wander: f64,
+    /// Lateral spread (m) of the HILLSLOPE share of each iteration's cut
+    /// (0 disables). Channels keep a crisp cut; sub-threshold ground gets
+    /// its incision smeared across the fall line, which is what turns a
+    /// one-cell D8 rill into diffuse wash.
+    pub cut_spread_m: f64,
+    /// Discharge exponent m in the stream-power law `k·A^m·S`. The
+    /// classic 0.5 erodes divides almost as fast as channels over a short
+    /// run; higher values concentrate the cut where the water is and
+    /// leave interfluves standing. Normalized at the extraction threshold
+    /// so `k` keeps its calibrated meaning.
+    pub area_exp: f64,
+    /// TOTAL rock uplift (m) spread over the erosion run, applied to the
+    /// interior against a fixed base edge (0 disables).
+    ///
+    /// Without it the carve can only ever REMOVE relief: it starts from
+    /// S1's macro surface and erodes, so more erosion means a flatter
+    /// tile, never a more dissected one. Measured directly — raising the
+    /// stream-power boost 1.0→4.5 lowered piedmont's crest p90 5.98→4.64 m
+    /// while its valleys stayed at 3.8 m, and featureless ground rose
+    /// 30.5→34.8 %. Real landscapes are valley-dominated because uplift
+    /// keeps feeding the interfluves while the drainage cuts down; this is
+    /// that term, and it is what turns the carve from a shave into an
+    /// incision.
+    pub uplift_m: f64,
 }
 
 /// What the carve produces: the eroded surface plus the extracted network.
@@ -108,6 +166,17 @@ pub struct Carved {
     /// kernel strips the walls from the PRESENTED height only, after
     /// all routing/divide/connectivity derivations.
     pub pre_rim: Vec<(usize, f64)>,
+    /// Tier-2 side-valley cells (dendritic morphology tier; empty set
+    /// when `tributary_reach` >= 1.0). Never part of the channel set.
+    pub tier2: Vec<bool>,
+    /// The tier-2 extraction cut actually used (m²; 0 when disabled) —
+    /// the kernel's depth taper needs the same number.
+    pub tier2_cut_m2: f64,
+    /// Tier-2 reaches as SMOOTHED world-space polylines (Chaikin ×2 on the
+    /// receiver chain). The raw chain is a D8 staircase, and at gully
+    /// width the staircase IS the feature; the kernel cuts along these
+    /// instead of along the cells.
+    pub tier2_paths: Vec<Vec<Vec2>>,
 }
 
 /// Amplitude and band of the flat-breaking perturbation (see `carve`).
@@ -459,6 +528,65 @@ pub fn carve(
             let g = (DEFLAT_AMP_M / 1.732) / rms;
             d.iter().map(|v| v * g).collect::<Vec<f64>>()
         };
+        // ROUTING WANDER — the second routing-surface field, and the one
+        // that decides whether the drainage looks made or found.
+        //
+        // C1 is band-limited to >= 400 m, so a hillslope is locally a
+        // near-perfect plane, and D8 on a plane picks the SAME neighbour
+        // every step: paths lock onto an axis or a 45 deg diagonal and run
+        // straight for hundreds of metres. That is the grid signature the
+        // S2-isolation probe measured (orientation excess 1.7-1.9 against
+        // 1.02 on real tiles) and no amount of smoothing removes it —
+        // blurring a straight line leaves a straight line.
+        //
+        // The deflat dither cannot help: it is deliberately flat-ground
+        // only (slope < DITHER_SLOPE_MAX) and fixed-amplitude, so on any
+        // real gradient it is invisible. This field is SLOPE-PROPORTIONAL
+        // instead: amplitude = wander * slope * WANDER_LEN_M gives the same
+        // angular deflection (~15 deg at 0.25) at every steepness, which is
+        // what sub-grid roughness does to a real flow path. Correlated at
+        // ~120 m so neighbouring cells agree on the deflection — the
+        // T-junction lesson from the dither applies here too.
+        let wander: Vec<f64> = {
+            let mut d: Vec<f64> = (0..n)
+                .map(|i| {
+                    let (y, x) = ((i / nx) as u64, (i % nx) as u64);
+                    let mut h = x
+                        .wrapping_mul(0xD6E8_FEB8_6659_FD93)
+                        ^ y.rotate_left(32).wrapping_mul(0xA0761D6478BD642F)
+                        ^ 0x2545_F491_4F6C_DD1D;
+                    h ^= h >> 33;
+                    h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+                    h ^= h >> 33;
+                    h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+                    h ^= h >> 33;
+                    (h >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+                })
+                .collect();
+            for _ in 0..WANDER_BLUR_PASSES {
+                let mut out = vec![0.0; n];
+                for y in 0..ny {
+                    for x in 0..nx {
+                        let mut acc = 0.0;
+                        let mut cnt = 0.0;
+                        for dy in -1i64..=1 {
+                            for dx in -1i64..=1 {
+                                let (yy, xx) = (y as i64 + dy, x as i64 + dx);
+                                if yy < 0 || xx < 0 || yy >= ny as i64 || xx >= nx as i64 {
+                                    continue;
+                                }
+                                acc += d[yy as usize * nx + xx as usize];
+                                cnt += 1.0;
+                            }
+                        }
+                        out[y * nx + x] = acc / cnt;
+                    }
+                }
+                d = out;
+            }
+            let rms = (d.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt().max(1e-12);
+            d.iter().map(|v| v / rms).collect::<Vec<f64>>()
+        };
         // ROUTING SHOULDER — on the ROUTING SURFACE ONLY, like the dither.
         // The rim is a single-row wall, so any cross-tilt piles flow
         // against it and erosion carves the collector channel RIGHT ALONG
@@ -527,7 +655,15 @@ pub fn carve(
                     // taper in over the last decade of slope so there is no
                     // seam between dithered and undithered ground
                     let w = (1.0 - slope / DITHER_SLOPE_MAX).clamp(0.0, 1.0);
-                    zf.data[i] += deflat[i] * w * w + shoulder[i];
+                    // The floor matters where it is least obvious: a valley
+                    // FLOOR has almost no slope, so a purely slope-keyed
+                    // wander vanishes exactly on the reaches whose
+                    // straightness is most visible. The deflat dither is
+                    // 0.10 m at 40 m — enough to break ties, not enough to
+                    // bend a trunk.
+                    let amp = (slope * WANDER_LEN_M).max(WANDER_FLOOR_M);
+                    zf.data[i] += deflat[i] * w * w + shoulder[i]
+                        + wander[i] * amp * p.route_wander;
                 }
             }
             // The flood then guarantees a depression-free routing surface,
@@ -538,7 +674,32 @@ pub fn carve(
             // died two cells after its inlet).
             flow::fill_depressions_masked(&zf, keep_pit)
         };
+        // Uplift weight: zero at the base edge (the outlet elevation is the
+        // datum the whole network grades to and must not move), full
+        // beyond the drawdown ramp. Same profile the drawdown uses, so the
+        // two are consistent.
+        let uplift_w: Vec<f64> = if p.uplift_m > 0.0 {
+            (0..n)
+                .map(|i| {
+                    let (y, x) = (i / nx, i % nx);
+                    let d = edge_distance_m(spec, base_edge, x, y);
+                    let t = (d / base_ramp_m()).clamp(0.0, 1.0);
+                    t * t * (3.0 - 2.0 * t)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let uplift_step = if p.iters > 0 { p.uplift_m / p.iters as f64 } else { 0.0 };
         for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
+            // Uplift FIRST, then route and cut: the drainage spends the
+            // iteration cutting back down through what just rose, which is
+            // the loop that leaves interfluves standing between valleys.
+            if !uplift_w.is_empty() {
+                for i in 0..n {
+                    z.data[i] += uplift_step * uplift_w[i];
+                }
+            }
             let zf = route_surface(&z, keep_pit);
             let (r, slope) = flow::receivers(&zf, cell);
             let acc = flow::accumulate(&r);
@@ -559,6 +720,17 @@ pub fn carve(
             carve_downstream(
                 &mut z, &rec, &slope, &area, erodibility, &outlet, cell_area, p,
             );
+            // ...then let the hillslopes relax. Stream power alone writes
+            // its cut along ONE D8 receiver per cell, and a D8 chain can
+            // only run along an axis or a diagonal: 15 iterations of it
+            // etch an 8-24 m rectilinear comb into every flank (the S2
+            // isolation probe found the comb complete in this stage,
+            // untouched by the catena, and present with every later tier
+            // switched off). Real flanks are smooth BETWEEN their gullies
+            // because creep diffuses them; this is that missing half of
+            // the erosion law, and the pairing is what gives convex
+            // interfluves with concave valleys between them.
+            hillslope_creep(&mut z, &area, p);
         }
         // Final route on the carved surface: this is the field the network
         // is extracted from, so it must match the surface exactly. It runs
@@ -681,6 +853,110 @@ pub fn carve(
             a_ext[i] >= thresh * f
         })
         .collect();
+    // Tier-2 side-valleys: same slope-adaptive initiation at a lower cut,
+    // so heads concentrate on steep flanks — exactly where real dendritic
+    // networks dissect high ground.
+    //
+    // TRACED, not thresholded. The first cut of this tier marked every
+    // cell that passed the area test, and cells pass it INTERMITTENTLY
+    // along a path (the slope factor varies cell to cell), so the tier
+    // came out as disconnected 40-200 m dashes that read as marks
+    // scattered on an unchanged hillside. Here a qualifying cell is a
+    // HEAD, and each head's receiver chain is walked downstream and
+    // marked until it meets tier-1: connectivity is then structural, and
+    // what gets carved is a branch of the drainage rather than a dash.
+    // Walks stop on already-marked cells, so the whole pass is O(n).
+    //
+    // Heads inside the routing frame are refused. The closed border
+    // collects flow along its whole length, so the old 40 m margin let a
+    // 2 km border-parallel drawdown line qualify as one enormous
+    // "side-valley" — the densest tier-2 feature in the tile was
+    // construction. Walks also stop when they enter the frame band.
+    let tier2_cut_m2 = thresh * p.tributary_reach;
+    let tier2: Vec<bool> = if p.tributary_reach < 1.0 {
+        let nx = spec.nx as usize;
+        let head_margin = ((SHOULDER_W_M / spec.cell_size) as usize).max(2);
+        let walk_margin = ((SHOULDER_W_M / 2.0 / spec.cell_size) as usize).max(2);
+        let in_band = |i: usize, m: usize| -> bool {
+            let (y, x) = (i / nx, i % nx);
+            x < m || y < m || x >= nx - m || y >= nx - m
+        };
+        let mut mask = vec![false; n];
+        for i in 0..n {
+            if is_channel[i] || in_band(i, head_margin) || slope[i] < TIER2_MIN_SLOPE {
+                continue;
+            }
+            let r = s_med / slope[i].max(1e-9);
+            let f = if r < 1.0 { libm::pow(r, SLOPE_INIT_STEEP_EXP) } else { r }
+                .clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
+            if a_ext[i] < tier2_cut_m2 * f {
+                continue;
+            }
+            let mut cur = i;
+            let mut guard = 0usize;
+            while guard < n {
+                guard += 1;
+                // A gully dies where the flank does. Without this the walk
+                // runs out across the footslope plain as a dead-straight
+                // D8 line — flat ground has no relief above the path for
+                // the banks profile to cut, so it draws a line and carves
+                // nothing, which is the worst of both.
+                if is_channel[cur]
+                    || mask[cur]
+                    || in_band(cur, walk_margin)
+                    || slope[cur] < TIER2_MIN_SLOPE * 0.6
+                {
+                    break;
+                }
+                mask[cur] = true;
+                match rec[cur] {
+                    r if r >= 0 => cur = r as usize,
+                    _ => break,
+                }
+            }
+        }
+        mask
+    } else {
+        vec![false; n]
+    };
+    // Tier-2 reaches → smoothed polylines. Same head/confluence split the
+    // tier-1 tracer uses, then Chaikin ×2: a 25-50 m gully cut along a raw
+    // D8 chain reproduces every 45° corner at a scale where the corner is
+    // as wide as the valley, which is the "not organic" tell at close zoom.
+    let tier2_paths: Vec<Vec<Vec2>> = if tier2.iter().any(|&t| t) {
+        let nxu = spec.nx as usize;
+        let mut donors = vec![0u32; n];
+        for i in 0..n {
+            if !tier2[i] {
+                continue;
+            }
+            if let Some(r) = usize::try_from(rec[i]).ok().filter(|&r| tier2[r]) {
+                donors[r] += 1;
+            }
+        }
+        (0..n)
+            .filter(|&i| tier2[i] && donors[i] != 1)
+            .map(|s| {
+                let mut path = vec![s];
+                let mut cur = s;
+                while let Some(r) = usize::try_from(rec[cur]).ok().filter(|&r| tier2[r]) {
+                    path.push(r);
+                    if donors[r] >= 2 {
+                        break;
+                    }
+                    cur = r;
+                }
+                let pts: Vec<Vec2> = path
+                    .iter()
+                    .map(|&l| spec.world_of((l % nxu) as u32, (l / nxu) as u32))
+                    .collect();
+                chaikin(&pts, 2)
+            })
+            .filter(|p| p.len() > 1)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
@@ -740,7 +1016,19 @@ pub fn carve(
         }
     }
 
-    Carved { z, channel_of, order_at, rec, area, channels, inlet, pre_rim }
+    Carved {
+        z,
+        channel_of,
+        order_at,
+        rec,
+        area,
+        channels,
+        inlet,
+        pre_rim,
+        tier2,
+        tier2_cut_m2,
+        tier2_paths,
+    }
 }
 
 /// One carving pass in downstream-to-upstream order: a cell is cut only
@@ -760,6 +1048,53 @@ fn carve_downstream(
     p: &CarveParams,
 ) {
     let n = rec.len();
+    // The DESIRED cut, before the drainability caps. Computing it up front
+    // is what makes the hillslope share smearable: on sub-threshold ground
+    // a D8 chain concentrates the whole iteration's cut into a one-cell
+    // groove, and fifteen of those are the rectilinear comb. Channels are
+    // genuinely narrow, so their cut stays exactly where the flow put it —
+    // the blend is keyed on drained area.
+    // Stream power with a TUNABLE discharge exponent. At the classic m=0.5
+    // a divide cell erodes only ~40× less than a threshold channel, so
+    // fifteen iterations lower the interfluves nearly as much as the
+    // valleys and the tile stays symmetric rolling ground — measured
+    // crest/valley p90 ratio ~1.6 against a corpus 0.76-0.85, and neither
+    // a higher ceiling, a bigger k, uplift, nor less S1 relief moved it.
+    // Raising m concentrates the same erosion into the channels and leaves
+    // the interfluves standing, which is the shape the corpus has.
+    // Normalized at the extraction threshold so k keeps its meaning.
+    let a_ref = (p.area_threshold_m2 / cell_area).max(1.0);
+    let norm = libm::pow(a_ref, 0.5 - p.area_exp);
+    let mut want: Vec<f64> = (0..n)
+        .map(|i| {
+            if outlet[i] {
+                0.0
+            } else {
+                p.k * norm
+                    * libm::pow((area[i] / cell_area).max(1.0), p.area_exp)
+                    * slope[i]
+                    * erodibility[i]
+                    * p.incision_scale
+            }
+        })
+        .collect();
+    if p.cut_spread_m > 0.0 {
+        let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
+        let r = (p.cut_spread_m / z.spec.cell_size / 1.6).round().max(1.0) as usize;
+        let spread = box_blur_sep(&want, nx, ny, r, 2);
+        let thresh = p.area_threshold_m2.max(1.0);
+        for i in 0..n {
+            let u = ((area[i] - 0.5 * thresh) / thresh).clamp(0.0, 1.0);
+            // Channels keep most of their crispness, but not all of it: a
+            // fully unspread cut lands entirely in ONE 8 m cell and reads
+            // as a black one-pixel slot on the hillshade (the catena
+            // shapes banks, it does not smooth a notch). The floor gives
+            // the cut a three-cell cross-section — still a channel, no
+            // longer a knife line.
+            let hill = (1.0 - u * u * (3.0 - 2.0 * u)).max(SPREAD_CHANNEL_FLOOR);
+            want[i] += hill * (spread[i] - want[i]);
+        }
+    }
     let mut donors: Vec<Vec<u32>> = vec![Vec::new(); n];
     let mut stack: Vec<usize> = Vec::new();
     for i in 0..n {
@@ -774,14 +1109,88 @@ fn carve_downstream(
         for &d in &donors[i] {
             let d = d as usize;
             if !outlet[d] {
-                let a_term = (area[d] / cell_area).sqrt();
-                let want = p.k * a_term * slope[d] * erodibility[d] * p.incision_scale;
                 // never take more than half the drop to the receiver, and
                 // never more than the per-iteration clamp
                 let head = (z.data[d] - z.data[i]).max(0.0) * 0.5;
-                z.data[d] -= want.min(p.step_clamp_m).min(head);
+                z.data[d] -= want[d].min(p.step_clamp_m).min(head);
             }
             stack.push(d);
+        }
+    }
+}
+
+/// Separable box blur, `passes` × (2r+1) taps, edge-clamped.
+fn box_blur_sep(src: &[f64], nx: usize, ny: usize, r: usize, passes: usize) -> Vec<f64> {
+    let mut cur = src.to_vec();
+    let mut tmp = vec![0.0f64; nx * ny];
+    for _ in 0..passes {
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut acc = 0.0;
+                for dx in -(r as i64)..=(r as i64) {
+                    let xx = (x as i64 + dx).clamp(0, nx as i64 - 1) as usize;
+                    acc += cur[y * nx + xx];
+                }
+                tmp[y * nx + x] = acc / (2 * r + 1) as f64;
+            }
+        }
+        for x in 0..nx {
+            for y in 0..ny {
+                let mut acc = 0.0;
+                for dy in -(r as i64)..=(r as i64) {
+                    let yy = (y as i64 + dy).clamp(0, ny as i64 - 1) as usize;
+                    acc += tmp[yy * nx + x];
+                }
+                cur[y * nx + x] = acc / (2 * r + 1) as f64;
+            }
+        }
+    }
+    cur
+}
+
+/// Hillslope creep — the diffusive half of the erosion law.
+///
+/// One explicit 5-point step per erosion iteration: `z += α·w·(mean4 − z)`.
+/// Over `ITERS` steps that is a Gaussian of σ ≈ `cell·√(N·α/2)` — ~7 m at
+/// α = 0.10, which erases the D8 comb (8–24 m) while leaving the bands S2
+/// owns (≥64 m) nearly intact.
+///
+/// Two things it must not do:
+/// - **Fill the channels.** `w` fades creep out as drained area approaches
+///   the extraction threshold: fluvial transport dominates there, and the
+///   carve's cut is the whole point.
+/// - **Smear the rim.** The closed border is a single-row wall tens of
+///   metres tall (routing construction, stripped before presentation).
+///   Averaging against it would pull a berm inboard — the mirror image of
+///   the catena's moat. Border cells are neither updated nor read: a
+///   neighbour on the border contributes the centre value instead, which
+///   is a zero-flux wall.
+fn hillslope_creep(z: &mut Grid<f64>, area: &[f64], p: &CarveParams) {
+    let alpha = p.creep.clamp(0.0, CREEP_ALPHA_MAX);
+    if alpha <= 0.0 {
+        return;
+    }
+    let (nx, ny) = (z.spec.nx as usize, z.spec.ny as usize);
+    let src = z.data.clone();
+    let thresh = p.area_threshold_m2.max(1.0);
+    for y in 1..ny - 1 {
+        for x in 1..nx - 1 {
+            let i = y * nx + x;
+            let u = ((area[i] - 0.5 * thresh) / thresh).clamp(0.0, 1.0);
+            let w = 1.0 - u * u * (3.0 - 2.0 * u);
+            if w <= 0.0 {
+                continue;
+            }
+            let nb = |xx: usize, yy: usize| -> f64 {
+                if xx == 0 || yy == 0 || xx == nx - 1 || yy == ny - 1 {
+                    src[i]
+                } else {
+                    src[yy * nx + xx]
+                }
+            };
+            let mean4 =
+                0.25 * (nb(x - 1, y) + nb(x + 1, y) + nb(x, y - 1) + nb(x, y + 1));
+            z.data[i] += alpha * w * (mean4 - src[i]);
         }
     }
 }

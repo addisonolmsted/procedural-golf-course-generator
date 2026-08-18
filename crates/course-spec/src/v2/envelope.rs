@@ -135,6 +135,64 @@ pub struct BiomeEnvelope {
     /// and deeper than the shared carve default (user round 2026-08-16).
     #[serde(default)]
     pub incision_boost: Option<f64>,
+    /// Tier-2 dendritic side-valley extraction: multiplier on the S2
+    /// channel-extraction area cut for a SECOND, purely morphological
+    /// tier (carved + catena'd at area-scaled width, never entering the
+    /// channel set / flow-distance metrics). None = 1.0 = no tier-2.
+    /// Real dissected terrain reads as hills carved by the drainage
+    /// network; the round-7 audit showed the structure must live in the
+    /// S2 base at >=64 m wavelength to persist through S3's lowpass.
+    #[serde(default)]
+    pub tributary_reach: Option<f64>,
+    /// Peak tier-2 trench depth, metres (taper, never a floor).
+    #[serde(default)]
+    pub tributary_depth_m: Option<f64>,
+    /// Hillslope creep coefficient per S2 erosion iteration (None = 0 =
+    /// off). The diffusive half of the erosion law: without it stream
+    /// power writes its cut along single D8 receiver chains and etches a
+    /// rectilinear 8-24 m comb into every flank. Only acts where the
+    /// erosion loop runs, so non-eroding biomes are untouched.
+    #[serde(default)]
+    pub creep: Option<f64>,
+    /// Slope-proportional routing wander (None = 0 = off). C1 is band-
+    /// limited to >=400 m, so hillslopes are locally planes and D8 locks
+    /// flow onto one of eight directions for hundreds of metres; this is
+    /// the sub-grid roughness that lets a path stray. Routing surface
+    /// only — never in the terrain.
+    #[serde(default)]
+    pub route_wander: Option<f64>,
+    /// Lateral spread (m) of the hillslope share of the carve's cut
+    /// (None = 0 = off). Channels keep a crisp cut.
+    #[serde(default)]
+    pub cut_spread_m: Option<f64>,
+    /// Hillslope reach (m) of the catena for a THRESHOLD-area draw; big
+    /// valleys still reach `catena::D_FULL_M`. Shorter than the spacing
+    /// between neighbouring channels is what leaves a ridge standing
+    /// between them (None = the crate default).
+    #[serde(default)]
+    pub valley_reach_m: Option<f64>,
+    /// Per-iteration incision ceiling (m) in the S2 carve. `iters × this`
+    /// is the hard cap on how deep the drainage can cut into the macro
+    /// surface; the low default is why valley depth had to be faked with
+    /// a stamped trench (None = the crate default).
+    #[serde(default)]
+    pub cut_ceiling_m: Option<f64>,
+    /// Multiplier on the GMM-sampled S1 macro relief amplitude (None =
+    /// 1.0). The counterweight to `cut_ceiling_m`: relief moves out of
+    /// smooth macro landform and into the drainage that cut it, holding
+    /// total p1-p99 relief roughly constant.
+    #[serde(default)]
+    pub relief_amp_scale: Option<f64>,
+    /// TOTAL rock uplift (m) over the S2 erosion run, against a fixed base
+    /// edge (None = 0). The term that lets the carve BUILD valley relief
+    /// instead of only shaving the macro surface flatter; pairs with
+    /// `relief_amp_scale`, which takes the same budget out of S1.
+    #[serde(default)]
+    pub uplift_m: Option<f64>,
+    /// Discharge exponent in S2's stream-power law (None = 0.5). The knob
+    /// that decides whether erosion smooths the tile or dissects it.
+    #[serde(default)]
+    pub area_exp: Option<f64>,
     /// Per-biome amplitude trims on the S3 closer targets (None = 1.0):
     /// measured generated-vs-held-out band-std ratios showed the global
     /// closer leaves plains/sandhills fine texture x1.3-1.6 hot and

@@ -301,6 +301,41 @@ fn derive_dials(
         env.incision_boost.unwrap_or(1.0),
     );
     m.insert(
+        "skeleton.tributary_reach".into(),
+        env.tributary_reach.unwrap_or(1.0),
+    );
+    m.insert(
+        "skeleton.tributary_depth_m".into(),
+        env.tributary_depth_m.unwrap_or(1.0),
+    );
+    m.insert("skeleton.creep".into(), env.creep.unwrap_or(0.0));
+    m.insert(
+        "skeleton.route_wander".into(),
+        env.route_wander.unwrap_or(0.0),
+    );
+    m.insert("skeleton.cut_spread_m".into(), env.cut_spread_m.unwrap_or(0.0));
+    // Default 260 = the historic fixed reach. The discharge-keyed range was
+    // laddered (70/90/130/260) and measured: shorter reaches sharpen the
+    // valley lines slightly but move the corpus-policy re-derivation the
+    // WRONG way (hc seed 5: density 2.18 → 2.05 km/km², d2c 123 → 130 m),
+    // because a wide flank is part of what makes a valley legible to an
+    // accumulation-threshold network. The knob stays; the default does not
+    // change behaviour.
+    m.insert(
+        "skeleton.valley_reach_m".into(),
+        env.valley_reach_m.unwrap_or(260.0),
+    );
+    m.insert(
+        "skeleton.cut_ceiling_m".into(),
+        env.cut_ceiling_m.unwrap_or(0.45),
+    );
+    m.insert(
+        "primitives.relief_amp_scale".into(),
+        env.relief_amp_scale.unwrap_or(1.0),
+    );
+    m.insert("skeleton.uplift_m".into(), env.uplift_m.unwrap_or(0.0));
+    m.insert("skeleton.area_exp".into(), env.area_exp.unwrap_or(0.5));
+    m.insert(
         "amplify.amp_trim_fine".into(),
         env.amp_trim_fine.unwrap_or(1.0),
     );

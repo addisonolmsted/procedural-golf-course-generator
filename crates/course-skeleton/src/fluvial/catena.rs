@@ -28,6 +28,12 @@ pub const THETA: f64 = 0.62;
 /// current form has finite channel-wall slope ((1+θ)·inc/D_FULL) and zero
 /// slope at the divide (rounded crests).
 pub const D_FULL_M: f64 = 260.0;
+/// Hillslope reach for a threshold-area draw — the SHORT end of the
+/// discharge-keyed range in `banks`. Ladder-tunable via the
+/// `skeleton.valley_reach_m` dial, which overrides this floor.
+pub const D_FULL_FLOOR_M: f64 = 70.0;
+/// Drained area (km²) at which the reach reaches `D_FULL_M`.
+pub const D_FULL_FULL_KM2: f64 = 2.0;
 
 /// Channel base profile: elevation gain above base level as a function of
 /// network arc from the outlet. Concave (slope decays downstream) — the
@@ -135,6 +141,7 @@ pub fn banks(
     carved: &Grid<f64>,
     near: &[Nearest],
     incision_boost: f64,
+    d_full_floor_m: f64,
 ) -> Grid<f64> {
     debug_assert_eq!(carved.data.len(), near.len());
     let mut cut: Vec<f64> = near
@@ -161,7 +168,19 @@ pub fn banks(
             let d_eff = (n.dist_m - floor_hw).max(0.0);
             let ug = (d_eff / groove_d).min(1.0);
             let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
-            let uh = (d_eff / D_FULL_M).min(1.0);
+            // Hillslope reach keys off DISCHARGE too. A fixed 260 m for
+            // every channel is wider than the SPACING between them: the
+            // corpus sits at d2c ~104-118 m, i.e. neighbours ~200-400 m
+            // apart, so two fixed catenas overlap across the whole
+            // interfluve and the pair reads as one broad swale with no
+            // ridge between. Real terrain keeps the long reach for the
+            // valley that earned it and gives a threshold draw a ~60-75 m
+            // flank — which is what leaves a crest standing.
+            let floor = d_full_floor_m.clamp(24.0, D_FULL_M);
+            let d_full = (floor
+                + (D_FULL_M - floor) * libm::sqrt((km2 / D_FULL_FULL_KM2).min(1.0)))
+                .clamp(floor, D_FULL_M);
+            let uh = (d_eff / d_full).min(1.0);
             let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
             let w = 0.3 * groove + 0.7 * hillslope;
             // how far this cell still stands above the channel it drains to
@@ -191,4 +210,63 @@ pub fn banks(
         out.data[i] = carved.data[i] - c;
     }
     out
+}
+
+/// Bank profile for the TIER-2 side-valley cells (dendritic morphology
+/// tier), returned as a CUT to be combined with the tier's trench and
+/// smoothed once — a tier-2 path is a raw D8 chain, so its axis carries
+/// 45°/90° staircase corners, and blurring the assembled cut is what
+/// rounds them into a valley. Area-scaled geometry: a threshold-area
+/// tributary gets a ~4-10 m floor, ~20 m groove and a 70-110 m hillslope
+/// tail. Only ever lowers ground toward the tier-2 cell's elevation.
+pub fn banks_small_cut(spec: &GridSpec, surface: &Grid<f64>, near2: &[Nearest]) -> Vec<f64> {
+    debug_assert_eq!(surface.data.len(), near2.len());
+    let mut cut: Vec<f64> = near2
+        .iter()
+        .zip(&surface.data)
+        .map(|(n, z)| {
+            if !n.dist_m.is_finite() {
+                return 0.0;
+            }
+            let km2 = (n.area_m2 / 1.0e6).max(0.0);
+            // GULLY geometry, not valley geometry. The first cut used a
+            // 70-110 m tail so the feature would survive S3's 64 m
+            // lowpass, and the result was a 150 m bowl 5 m deep — a 3%
+            // grade that no hillshade can show. Real gullies at this
+            // discharge are 25-50 m across with 15-25% walls; keeping
+            // them through S3 is the corridor restore's job, not the
+            // width's.
+            let floor_hw = (6.0 * libm::pow(km2, 0.45)).clamp(3.0, 7.0);
+            let groove_d = 12.0;
+            let d_full = 25.0 + 25.0 * (km2 / 0.12).clamp(0.0, 1.0);
+            let d_eff = (n.dist_m - floor_hw).max(0.0);
+            let ug = (d_eff / groove_d).min(1.0);
+            let groove = 1.0 - (1.0 - ug) * (1.0 - ug);
+            let uh = (d_eff / d_full).min(1.0);
+            let hillslope = 1.0 - libm::pow(1.0 - uh, 1.0 + THETA);
+            let w = 0.3 * groove + 0.7 * hillslope;
+            ((z - n.z_channel).max(0.0)) * (1.0 - w)
+        })
+        .collect();
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    // construction rows carry no catena cut (the rim-moat lesson)
+    for y in 0..ny {
+        for x in 0..nx {
+            if x == 0 || y == 0 || x == nx - 1 || y == ny - 1 {
+                cut[y * nx + x] = 0.0;
+            }
+        }
+    }
+    cut
+}
+
+/// Smooth an assembled tier-2 cut field. Three box3 passes (~48 m) is
+/// what turns the staircase into a valley without erasing it; the caller
+/// subtracts the result.
+pub fn smooth_cut(spec: &GridSpec, mut cut: Vec<f64>, passes: usize) -> Vec<f64> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    for _ in 0..passes {
+        cut = box3(&cut, nx, ny);
+    }
+    cut
 }

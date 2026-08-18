@@ -27,6 +27,12 @@ fn main() {
                 close_borders: std::env::var("OPEN").is_err(),
             derangement: ((0.5 - spec.dials.get("skeleton.integration").copied().unwrap_or(0.5)) * 1.6).clamp(0.0, 0.9),
                 iters: 15, step_clamp_m: 0.45,
+            tributary_reach: 1.0,
+            creep: 0.0,
+            route_wander: 0.0,
+            cut_spread_m: 0.0,
+        area_exp: 0.5,
+        uplift_m: 0.0,
             };
             let mut rng = id.stream(streams::SKELETON_MODULE);
             let c = carve::carve(&spec8, &implied, &erod, &keep, c1.meta.base_level.edge, &mut rng, &p, relief_amp);

@@ -71,7 +71,15 @@ pub fn generate(spec: &SiteSpec, identity: &RunIdentity) -> PrimitiveField {
         2 => Edge::S,
         _ => Edge::W,
     };
-    let relief_amp = spec.dials.get("primitives.relief_amp_m").copied().unwrap_or(8.0);
+    // The macro amplitude is GMM-SAMPLED per course, so the relief trade
+    // against S2's incision is expressed as a multiplier rather than by
+    // touching the calibrated sampler: as the drainage cuts deeper, the
+    // smooth macro relief comes down and total p1-p99 relief holds — the
+    // same landform budget, spent on valleys instead of domes. Every
+    // consumer below (tilt grade, wave amplitude, aeolian macro, base
+    // drop) reads this one value, so they scale coherently.
+    let relief_amp = spec.dials.get("primitives.relief_amp_m").copied().unwrap_or(8.0)
+        * spec.dials.get("primitives.relief_amp_scale").copied().unwrap_or(1.0);
     let wave_iso_frac = spec
         .dials
         .get("primitives.wave_iso_frac")
