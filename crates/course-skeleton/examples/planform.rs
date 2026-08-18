@@ -82,8 +82,22 @@ fn main() {
         let mut par_rel_len = [0.0f64; 3]; // by dominant relation: pc/sib/unrel
         for k in 0..20u64 {
             let id = RunIdentity::from_seed(41_000 + k);
-            let spec =
+            let mut spec =
                 SiteSpec::generate_builtin(id, &SpecOverridesV2 { forced_biome: Some(*biome) });
+            // ladder overrides, same env names as `s2_network`
+            for (ev, dial) in [
+                ("INFLOW_START", "skeleton.inflow_start"),
+                ("ROUGH", "skeleton.roughness_frac"),
+                ("WANDER", "skeleton.route_wander"),
+                ("WAVE_BETA", "primitives.wave_beta"),
+                ("WAVE_SHARE", "primitives.wave_share"),
+            ] {
+                if let Ok(v) = std::env::var(ev) {
+                    if let Ok(x) = v.parse::<f64>() {
+                        spec.dials.insert(dial.into(), x);
+                    }
+                }
+            }
             let c1 = course_primitives::generate(&spec, &id);
             let sk = course_skeleton::generate(&spec, &c1, &id);
             // ---- window sinuosity + straight runs, per channel ----

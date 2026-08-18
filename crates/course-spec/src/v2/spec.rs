@@ -335,6 +335,11 @@ fn derive_dials(
     );
     m.insert("skeleton.uplift_m".into(), env.uplift_m.unwrap_or(0.0));
     m.insert("skeleton.area_exp".into(), env.area_exp.unwrap_or(0.5));
+    m.insert("skeleton.inflow_start".into(), env.inflow_start.unwrap_or(0.0));
+    m.insert(
+        "skeleton.roughness_frac".into(),
+        env.roughness_frac.unwrap_or(0.05),
+    );
     m.insert(
         "amplify.amp_trim_fine".into(),
         env.amp_trim_fine.unwrap_or(1.0),

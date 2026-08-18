@@ -98,7 +98,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     let keep_pit: Vec<bool> = vec![false; n8];
     let relief_amp = dial("primitives.relief_amp_m", 8.0);
     let carve_params = carve::CarveParams {
-        roughness_frac: carve::ROUGHNESS_FRAC,
+        roughness_frac: dial("skeleton.roughness_frac", carve::ROUGHNESS_FRAC),
         k: if density >= 0.5 { carve::K_STREAM_POWER } else { 0.0 },
         area_threshold_m2: carve::AREA_THRESHOLD_M2,
         incision_scale: integration::incision_scale(m_integration)
@@ -121,6 +121,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         creep: dial("skeleton.creep", 0.0),
         route_wander: dial("skeleton.route_wander", 0.0),
         cut_spread_m: dial("skeleton.cut_spread_m", 0.0),
+        inflow_start_frac: dial("skeleton.inflow_start", 0.0),
         area_exp: dial("skeleton.area_exp", 0.5),
         uplift_m: dial("skeleton.uplift_m", 0.0),
     };

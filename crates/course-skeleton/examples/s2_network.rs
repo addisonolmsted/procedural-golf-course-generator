@@ -49,7 +49,8 @@ fn main() {
         ("BOOST", "skeleton.incision_boost"),
         ("UPLIFT", "skeleton.uplift_m"),
         ("MEXP", "skeleton.area_exp"),
-        ("STAMP", "skeleton.trench_stamp"),
+        ("INFLOW_START", "skeleton.inflow_start"),
+        ("ROUGH", "skeleton.roughness_frac"),
     ] {
         if let Ok(v) = std::env::var(env) {
             if let Ok(x) = v.parse::<f64>() {

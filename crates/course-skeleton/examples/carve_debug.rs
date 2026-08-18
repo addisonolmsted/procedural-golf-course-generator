@@ -98,6 +98,7 @@ fn main() {
             creep: envf("CREEP", 0.0),
             route_wander: 0.0,
             cut_spread_m: 0.0,
+        inflow_start_frac: 0.0,
         area_exp: 0.5,
         uplift_m: 0.0,
         };

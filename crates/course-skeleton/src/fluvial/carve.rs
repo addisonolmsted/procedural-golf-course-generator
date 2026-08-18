@@ -121,6 +121,10 @@ pub struct CarveParams {
     /// its incision smeared across the fall line, which is what turns a
     /// one-cell D8 rill into diffuse wash.
     pub cut_spread_m: f64,
+    /// Fraction of the erosion run to withhold the external inflow for
+    /// (0 = inject from iteration 1, the historic behaviour). See the
+    /// loop: injecting early locks the trunk onto its straightest path.
+    pub inflow_start_frac: f64,
     /// Discharge exponent m in the stream-power law `k·A^m·S`. The
     /// classic 0.5 erodes divides almost as fast as channels over a short
     /// run; higher values concentrate the cut where the water is and
@@ -691,7 +695,17 @@ pub fn carve(
             Vec::new()
         };
         let uplift_step = if p.iters > 0 { p.uplift_m / p.iters as f64 } else { 0.0 };
-        for _ in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
+        // The imported catchment arrives LATE. Injected from iteration 1 it
+        // lands on the smoothest version of the surface — where D8 gives
+        // the straightest path it will ever give — and 10-20 km² of
+        // discharge cuts that path so deep on the first pass that no later
+        // iteration can move it: the trunk locks in, ruler-straight, and
+        // stays. Holding it back lets the terrain grow its own main stem
+        // first, and the river then inherits a valley rather than drawing
+        // one. Zero keeps the historic behaviour.
+        let inflow_from = ((p.inflow_start_frac.clamp(0.0, 0.9) * p.iters as f64) as usize)
+            .min(p.iters.saturating_sub(1));
+        for it in 0..(if p.k > 0.0 { p.iters } else { 0 }) {
             // Uplift FIRST, then route and cut: the drainage spends the
             // iteration cutting back down through what just rose, which is
             // the loop that leaves interfluves standing between valleys.
@@ -706,7 +720,9 @@ pub fn carve(
             for i in 0..n {
                 area[i] = acc[i] as f64 * cell_area;
             }
-            add_inflow(&mut area, &r, inlet, p.inflow_area_m2);
+            if it >= inflow_from {
+                add_inflow(&mut area, &r, inlet, p.inflow_area_m2);
+            }
             rec = r;
             // Carve DOWNSTREAM-FIRST, capping each cell's cut at half its
             // drop to the already-carved receiver. Two artifacts died here:

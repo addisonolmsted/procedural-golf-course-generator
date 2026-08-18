@@ -193,6 +193,15 @@ pub struct BiomeEnvelope {
     /// that decides whether erosion smooths the tile or dissects it.
     #[serde(default)]
     pub area_exp: Option<f64>,
+    /// Fraction of the S2 erosion run to withhold the imported trunk
+    /// catchment for (None = 0 = inject from the first iteration).
+    #[serde(default)]
+    pub inflow_start: Option<f64>,
+    /// Amplitude of the sub-macro convergence seed, as a fraction of the
+    /// S1 relief amplitude (None = the crate default). Too weak against a
+    /// macro tilt and flow runs in parallel sheets instead of competing.
+    #[serde(default)]
+    pub roughness_frac: Option<f64>,
     /// Per-biome amplitude trims on the S3 closer targets (None = 1.0):
     /// measured generated-vs-held-out band-std ratios showed the global
     /// closer leaves plains/sandhills fine texture x1.3-1.6 hot and
