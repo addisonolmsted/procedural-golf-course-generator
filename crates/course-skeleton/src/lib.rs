@@ -110,7 +110,23 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         base_drop_m: carve::BASE_DROP_M,
         inflow_area_m2: carve::INFLOW_PER_TRUNK_DIAL_M2 * m_trunk_river,
         close_borders: true,
-        derangement: ((0.5 - m_integration) * 1.6).clamp(0.0, 0.9),
+        // Derangement is DRAWN per course around the archetype's base, not
+        // fixed to it. Measured: a constant gave 6 of 6 piedmont tiles a
+        // trunk-class river and 0 of 6 heathland tiles one, against a
+        // corpus that carries a trunk on 1-4 of every 4-6 tiles in every
+        // archetype. Real ground mixes rivered and riverless tiles inside
+        // an archetype; a constant cannot. INTEG_SPREAD is a ladder
+        // escape hatch (same pattern as carve's RAMP) so the per-archetype
+        // spread sweeps without re-blessing the envelope at every rung.
+        derangement: {
+            let base = ((0.5 - m_integration) * 1.6).clamp(0.0, 0.9);
+            let spread = std::env::var("INTEG_SPREAD")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or_else(|| dial("skeleton.integration_spread", 0.0));
+            let u = identity.course_scalar(course_seed::RunIdentity::INTEGRATION_SALT);
+            (base + spread * (2.0 * u - 1.0)).clamp(0.0, 0.95)
+        },
         iters: carve::ITERS,
         // THE depth lever. `iters × step_clamp` is a hard ceiling on how
         // far the drainage can cut into the macro surface — at the old

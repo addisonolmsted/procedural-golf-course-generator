@@ -53,6 +53,7 @@ fn main() {
         ("SLOPE_FLOOR", "skeleton.slope_init_floor"),
         ("PRUNE", "skeleton.shadow_prune_m"),
         ("MEANDER", "skeleton.route_meander"),
+        ("INTEG", "skeleton.integration"),
         ("MAJ_CAP", "skeleton.majors_cap"),
         ("MAJ_BOOST", "skeleton.majors_boost"),
         ("MAJ_ITERS", "skeleton.majors_iters"),

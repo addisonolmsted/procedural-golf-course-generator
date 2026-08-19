@@ -264,7 +264,21 @@ pub struct ModuleIntensities {
     pub stratigraphy: f64,
     pub closed_basin: f64,
     pub aeolian: f64,
+    /// MEAN drainage integration for the archetype; the per-course draw
+    /// spreads around it by `integration_spread`.
     pub integration: f64,
+    /// Half-range of the per-course integration draw (None = 0 = every
+    /// tile of this archetype integrates identically, which is what
+    /// shipped and what the measurement faults).
+    ///
+    /// A 3 km tile carries a trunk-class river when one system drains
+    /// more than 4 km2 of it. Measured on 6 seeds against 4-8 corpus
+    /// holdouts, the share of tiles that do: ours 6/6 piedmont, 6/6 hill
+    /// country, 0/6 heathland, 0/6 sandhills — against a corpus 2/4, 1/4,
+    /// 2/5, 3/6. Real ground mixes rivered and riverless tiles inside
+    /// every archetype; a constant cannot.
+    #[serde(default)]
+    pub integration_spread: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

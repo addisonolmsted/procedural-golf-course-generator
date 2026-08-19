@@ -383,6 +383,17 @@ fn derive_dials(
     m.insert("skeleton.closed_basin".into(), env.modules.closed_basin);
     m.insert("skeleton.aeolian".into(), env.modules.aeolian);
     m.insert("skeleton.integration".into(), env.modules.integration);
+    // The dispersion rides on DERANGEMENT, not on integration. The map
+    // between them, `((0.5 - integration) * 1.6).clamp(0, 0.9)`, is a
+    // clamped linear, and every archetype sits against one of its stops:
+    // the four integrated ones pin at the 0 floor and the two deranged
+    // ones at the 0.9 ceiling. Laddered on integration, heathland came
+    // back byte-identical at every spread. S2 applies this around the
+    // derived base.
+    m.insert(
+        "skeleton.integration_spread".into(),
+        env.modules.integration_spread.unwrap_or(0.0),
+    );
     m.insert("amplify.residual_share".into(), 0.35);
     m
 }

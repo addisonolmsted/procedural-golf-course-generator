@@ -92,6 +92,99 @@ pub fn macro_flow(spec: &GridSpec, macro_z: &Grid<f64>, base_edge: Edge, rim_m: 
     flow::route(&z)
 }
 
+/// Smoothing length for the macro's structure tensor. Long enough that
+/// the answer is the LANDFORM's grain and not a single wave crest.
+pub const GRAIN_SIGMA_M: f64 = 300.0;
+/// A donor has to carry at least this share of the biggest donor's
+/// discharge to be considered at all. Without it the walk can follow a
+/// well-aligned trickle off the main stem; with it the grain only ever
+/// decides between credible continuations.
+pub const GRAIN_ACC_SHARE: f64 = 0.35;
+/// Weight of alignment against normalized discharge in the donor score.
+/// At 1.0 a perfectly aligned, fully coherent donor can beat a rival
+/// carrying up to ~65 % more water — enough to follow a strike valley,
+/// not enough to leave the drainage.
+pub const GRAIN_W: f64 = 1.0;
+
+/// The macro's grain: `(along_axis_rad, coherence)` per cell.
+///
+/// Structure tensor of the lowpass gradient, smoothed. The MINOR
+/// eigenvector is the direction the surface varies least — the ridge or
+/// valley axis, which is the boundary between high and low ground a real
+/// trunk tends to run along. Coherence is `(λ1−λ2)/(λ1+λ2)`: 0 where the
+/// macro has no grain at all, and the caller must gate on it, because an
+/// axis angle taken from an isotropic patch is noise.
+pub fn grain(spec: &GridSpec, macro_z: &Grid<f64>) -> (Vec<f64>, Vec<f64>) {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let cell = spec.cell_size;
+    let n = nx * ny;
+    let (mut gx, mut gy) = (vec![0.0f64; n], vec![0.0f64; n]);
+    for y in 0..ny {
+        for x in 0..nx {
+            let xm = x.saturating_sub(1);
+            let xp = (x + 1).min(nx - 1);
+            let ym = y.saturating_sub(1);
+            let yp = (y + 1).min(ny - 1);
+            gx[y * nx + x] = (macro_z.data[y * nx + xp] - macro_z.data[y * nx + xm])
+                / ((xp - xm) as f64 * cell).max(1e-9);
+            gy[y * nx + x] = (macro_z.data[yp * nx + x] - macro_z.data[ym * nx + x])
+                / ((yp - ym) as f64 * cell).max(1e-9);
+        }
+    }
+    let sig = (GRAIN_SIGMA_M / cell).max(1.0);
+    let jxx = blur(&gx.iter().zip(&gx).map(|(a, b)| a * b).collect::<Vec<_>>(), nx, ny, sig);
+    let jyy = blur(&gy.iter().zip(&gy).map(|(a, b)| a * b).collect::<Vec<_>>(), nx, ny, sig);
+    let jxy = blur(&gx.iter().zip(&gy).map(|(a, b)| a * b).collect::<Vec<_>>(), nx, ny, sig);
+    let mut along = vec![0.0f64; n];
+    let mut coh = vec![0.0f64; n];
+    for i in 0..n {
+        let (a, b, c) = (jxx[i], jyy[i], jxy[i]);
+        let tr = a + b;
+        let disc = ((a - b) * (a - b) + 4.0 * c * c).max(0.0).sqrt();
+        coh[i] = if tr > 1e-15 { (disc / tr).clamp(0.0, 1.0) } else { 0.0 };
+        // major-gradient direction, then a quarter turn onto the axis
+        along[i] = 0.5 * libm::atan2(2.0 * c, a - b) + std::f64::consts::FRAC_PI_2;
+    }
+    (along, coh)
+}
+
+/// Separable Gaussian, σ in cells, edge-clamped — a local copy so this
+/// module does not reach into `carve`'s private helpers.
+fn blur(src: &[f64], nx: usize, ny: usize, sigma: f64) -> Vec<f64> {
+    let r = (sigma * 3.0).ceil().max(1.0) as i64;
+    let k: Vec<f64> = (-r..=r)
+        .map(|d| {
+            let t = d as f64 / sigma;
+            libm::exp(-0.5 * t * t)
+        })
+        .collect();
+    let s: f64 = k.iter().sum();
+    let k: Vec<f64> = k.iter().map(|v| v / s).collect();
+    let mut tmp = vec![0.0f64; nx * ny];
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let xx = (x as i64 + i as i64 - r).clamp(0, nx as i64 - 1) as usize;
+                acc += src[y * nx + xx] * w;
+            }
+            tmp[y * nx + x] = acc;
+        }
+    }
+    let mut out = vec![0.0f64; nx * ny];
+    for x in 0..nx {
+        for y in 0..ny {
+            let mut acc = 0.0;
+            for (i, w) in k.iter().enumerate() {
+                let yy = (y as i64 + i as i64 - r).clamp(0, ny as i64 - 1) as usize;
+                acc += tmp[yy * nx + x] * w;
+            }
+            out[y * nx + x] = acc;
+        }
+    }
+    out
+}
+
 /// Pick up to `count` trunks and walk each one upstream along maximum
 /// accumulation.
 ///
@@ -100,11 +193,28 @@ pub fn macro_flow(spec: &GridSpec, macro_z: &Grid<f64>, base_edge: Edge, rim_m: 
 /// qualify. The walk climbs the donor with the most drained area, which is
 /// the main stem by definition, and stops when the stem stops being a
 /// trunk.
+///
+/// The walk is GRAIN-AWARE. Maximum accumulation alone sends the trunk
+/// down the macro's steepest overall descent, which on a wave-sum macro
+/// crosses the crests: measured, our hill-country trunks ran at 44° to the
+/// macro's grain against a corpus 16°. Real trunks exploit structure —
+/// strike valleys, range-front streams — and run along the boundary
+/// between high and low ground. So among donors that carry a credible
+/// share of the stem's discharge, the walk prefers the one heading along
+/// the local grain, weighted by how coherent that grain is. Where the
+/// macro is isotropic every candidate scores the same and discharge
+/// decides, which is the old behaviour.
+///
+/// Following the grain and descending are in tension — a boundary that
+/// runs level cannot carry a river — so this can only prefer along-grain
+/// AMONG descending options. `grain_cross_share` reports how often it had
+/// to cross anyway.
 pub fn trunks(
     spec: &GridSpec,
     ff: &flow::FlowField,
     base_edge: Edge,
     count: usize,
+    grain: Option<&(Vec<f64>, Vec<f64>)>,
 ) -> Vec<Trunk> {
     let (nx, ny) = (spec.nx as usize, spec.ny as usize);
     let cell = spec.cell_size;
@@ -141,24 +251,46 @@ pub fn trunks(
         }) {
             continue;
         }
-        // upstream walk along the biggest donor
+        // upstream walk: discharge sets the field of candidates, the
+        // macro's grain picks among them
         let mut path = vec![mouth];
         let mut cur = mouth;
         loop {
-            let Some(&next) = donors[cur]
-                .iter()
-                .max_by(|&&a, &&b| {
-                    ff.acc[a as usize]
-                        .cmp(&ff.acc[b as usize])
-                        .then((b as usize).cmp(&(a as usize)))
-                })
-            else {
-                break;
-            };
-            let next = next as usize;
-            if (ff.acc[next] as f64) * cell_area < TRUNK_STOP_M2 {
+            if donors[cur].is_empty() {
                 break;
             }
+            let best_acc = donors[cur].iter().map(|&d| ff.acc[d as usize]).max().unwrap_or(0);
+            if (best_acc as f64) * cell_area < TRUNK_STOP_M2 {
+                break;
+            }
+            // direction is taken over the last few cells, not one step: a
+            // single D8 hop only ever points in eight directions, which is
+            // far too coarse to compare against a continuous axis.
+            let back = path[path.len().saturating_sub(4)];
+            let (bx, by) = ((back % nx) as f64, (back / nx) as f64);
+            let mut best: Option<(f64, usize)> = None;
+            for &d in &donors[cur] {
+                let d = d as usize;
+                let a = ff.acc[d] as f64;
+                if a < GRAIN_ACC_SHARE * best_acc as f64 || a * cell_area < TRUNK_STOP_M2 {
+                    continue;
+                }
+                let mut score = a / best_acc as f64;
+                if let Some((along, coh)) = grain {
+                    let (dx, dy) = ((d % nx) as f64 - bx, (d / nx) as f64 - by);
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len > 1e-9 {
+                        let th = libm::atan2(dy, dx);
+                        let align = libm::cos(th - along[cur]).abs();
+                        score += GRAIN_W * coh[cur] * align;
+                    }
+                }
+                // deterministic tie-break on the linear index
+                if best.is_none_or(|(s, i)| score > s || (score == s && d < i)) {
+                    best = Some((score, d));
+                }
+            }
+            let Some((_, next)) = best else { break };
             path.push(next);
             cur = next;
             if path.len() > n {
@@ -176,6 +308,128 @@ pub fn trunks(
             mouth,
             area_m2: area,
         });
+    }
+    out
+}
+
+/// Cost weights for the constructed trunk line. Descent is penalised
+/// because the walk runs UPSTREAM; height above the local surroundings is
+/// penalised so the line stays in the low corridor rather than climbing a
+/// flank; misalignment with the grain is penalised so it prefers the
+/// boundary between high and low ground.
+pub const TRUNK_W_DESCENT: f64 = 2.0;
+pub const TRUNK_W_HIGH: f64 = 1.6;
+pub const TRUNK_W_GRAIN: f64 = 0.6;
+/// Cost of TURNING. Without it the grain term steers the line sideways at
+/// every step and the result is a scribble: measured sinuosity 1.34-2.41
+/// against a corpus 1.06-1.10. This is the same lesson the meander taught
+/// — a directional prior has to bound the perturbation, or the
+/// perturbation becomes the path.
+pub const TRUNK_W_TURN: f64 = 1.5;
+/// Neighbourhood the "height above local surroundings" is measured over.
+pub const TRUNK_RELH_M: f64 = 400.0;
+
+/// A trunk CONSTRUCTED as a least-cost line, not read off the flow field.
+///
+/// Why this exists. The first cut chose among donors on the macro's D8
+/// forest and weighted them by grain alignment — and it changed nothing
+/// (measured: 46°→48°, 29°→29°, 17°→17° against the grain). The reason is
+/// structural: on a receiver forest most cells have exactly ONE donor
+/// carrying a credible share of the discharge, because a place with two is
+/// by definition a confluence and those are rare. A selection rule cannot
+/// steer a path when there is nothing to select between. The trunk's route
+/// is fixed by the macro's flow field, and the only way to move it is to
+/// stop deriving it from that field.
+///
+/// So this walks the macro directly: from the mouth, step to the
+/// 8-neighbour that minimises descent, height above the local
+/// surroundings, and misalignment with the grain, subject to strictly
+/// increasing distance from the mouth (which guarantees termination and
+/// forward progress). The result is a line that follows the low corridor
+/// and the toe of a ridge — and it is only a proposal until the corridor
+/// carve makes the flow field agree with it, which is the step that keeps
+/// the derivation invariant intact.
+pub fn trunk_line(
+    spec: &GridSpec,
+    macro_z: &Grid<f64>,
+    grain: &(Vec<f64>, Vec<f64>),
+    mouth: usize,
+    max_len_m: f64,
+) -> Vec<Vec2> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let cell = spec.cell_size;
+    let n = nx * ny;
+    let (along, coh) = grain;
+    // height above the local surroundings, and a scale to normalise it
+    let lp = blur(&macro_z.data, nx, ny, (TRUNK_RELH_M / cell).max(1.0));
+    let relh: Vec<f64> = (0..n).map(|i| macro_z.data[i] - lp[i]).collect();
+    let mut sorted: Vec<f64> = relh.iter().map(|v| v.abs()).collect();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let scale = sorted[sorted.len() * 9 / 10].max(0.5);
+
+    let (mx, my) = ((mouth % nx) as f64, (mouth / nx) as f64);
+    let mut visited = vec![false; n];
+    let mut cur = mouth;
+    let mut out = vec![spec.world_of((mouth % nx) as u32, (mouth / nx) as u32)];
+    visited[cur] = true;
+    let mut len = 0.0f64;
+    let mut path = vec![mouth];
+    while len < max_len_m {
+        let (cx, cy) = ((cur % nx) as i64, (cur / nx) as i64);
+        // heading over the last few cells, for the turn cost; a single
+        // 8 m hop only points in eight directions and is far too coarse
+        let heading = if path.len() >= 5 {
+            let b = path[path.len() - 5];
+            let (bx, by) = ((b % nx) as f64, (b / nx) as f64);
+            let (dx, dy) = (cx as f64 - bx, cy as f64 - by);
+            if dx.hypot(dy) > 1e-9 { Some(libm::atan2(dy, dx)) } else { None }
+        } else {
+            None
+        };
+        let d_cur = (((cx as f64 - mx).powi(2)) + ((cy as f64 - my).powi(2))).sqrt();
+        let mut best: Option<(f64, usize)> = None;
+        for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let (xx, yy) = (cx + dx, cy + dy);
+                if xx <= 0 || yy <= 0 || xx >= nx as i64 - 1 || yy >= ny as i64 - 1 {
+                    continue;
+                }
+                let nb = yy as usize * nx + xx as usize;
+                if visited[nb] {
+                    continue;
+                }
+                let d_nb = (((xx as f64 - mx).powi(2)) + ((yy as f64 - my).powi(2))).sqrt();
+                if d_nb <= d_cur {
+                    continue; // forward progress, and it is what terminates the walk
+                }
+                let dz = macro_z.data[nb] - macro_z.data[cur];
+                let th = libm::atan2(dy as f64, dx as f64);
+                let align = libm::cos(th - along[cur]).abs();
+                let turn = match heading {
+                    Some(h) => 1.0 - libm::cos(th - h),
+                    None => 0.0,
+                };
+                let c = TRUNK_W_DESCENT * (-dz).max(0.0) / scale
+                    + TRUNK_W_HIGH * relh[nb].max(0.0) / scale
+                    + TRUNK_W_GRAIN * coh[cur] * (1.0 - align)
+                    + TRUNK_W_TURN * turn;
+                if best.is_none_or(|(s, i)| c < s || (c == s && nb < i)) {
+                    best = Some((c, nb));
+                }
+            }
+        }
+        let Some((_, next)) = best else { break };
+        let step = ((next % nx) as f64 - (cur % nx) as f64)
+            .hypot((next / nx) as f64 - (cur / nx) as f64)
+            * cell;
+        visited[next] = true;
+        path.push(next);
+        out.push(spec.world_of((next % nx) as u32, (next / nx) as u32));
+        len += step;
+        cur = next;
     }
     out
 }

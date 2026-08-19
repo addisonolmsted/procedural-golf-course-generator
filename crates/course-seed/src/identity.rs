@@ -122,6 +122,14 @@ impl RunIdentity {
     /// read by S1 (macro dunes) and S2 (mid-band aeolian module).
     pub const AEOLIAN_SALT: u64 = 0xAE0_11A5;
 
+    /// Salt for the per-course drainage-integration draw. The envelope
+    /// declares an archetype's MEAN integration; this is what makes two
+    /// tiles of the same archetype differ. Measured motivation: a fixed
+    /// per-archetype constant gave 6 of 6 piedmont tiles a trunk-class
+    /// river and 0 of 6 heathland tiles one, where the corpus carries a
+    /// trunk on roughly half the tiles of every archetype.
+    pub const INTEGRATION_SALT: u64 = 0x1_47E_6A11;
+
     /// A single deterministic scalar in [0,1) derived from the course seed
     /// and a salt — for per-course values that MULTIPLE stages must agree
     /// on without threading a contract field through (first use: the

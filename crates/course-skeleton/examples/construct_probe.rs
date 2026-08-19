@@ -71,9 +71,22 @@ fn main() {
     let relief_amp = *spec.dials.get("primitives.relief_amp_m").unwrap_or(&8.0);
     let rim = 40.0 + 4.0 * relief_amp;
 
-    let count = envf("TRUNKS", 2.0).round().max(1.0) as usize;
+    // Trunk count is per archetype. River valley gets exactly ONE — the
+    // reviewer's spec, and it matches what S4 already ships (one river per
+    // tile); the rest get two.
+    let count = envf("TRUNKS", if key == "river_valley" { 1.0 } else { 2.0 })
+        .round()
+        .max(1.0) as usize;
     let ff = construct::macro_flow(&spec8, &implied, c1.meta.base_level.edge, rim);
-    let raw = construct::trunks(&spec8, &ff, c1.meta.base_level.edge, count);
+    let gr = construct::grain(&spec8, &implied);
+    let use_grain = envf("GRAIN", 1.0) > 0.5;
+    let raw = construct::trunks(
+        &spec8,
+        &ff,
+        c1.meta.base_level.edge,
+        count,
+        if use_grain { Some(&gr) } else { None },
+    );
 
     // Meander each trunk. Wavelength and phase are drawn per trunk from the
     // course identity so the result is deterministic and varies by seed.
@@ -89,6 +102,20 @@ fn main() {
             _ => 1.08,
         },
     );
+    // MODE 2 replaces the flow-derived trunk route with a constructed
+    // least-cost line from the same mouth. MODE 1 keeps the flow route.
+    let mode = envf("MODE", 2.0).round() as i32;
+    let raw: Vec<construct::Trunk> = if mode >= 2 {
+        raw.iter()
+            .map(|t| construct::Trunk {
+                pts: construct::trunk_line(&spec8, &implied, &gr, t.mouth, 3600.0),
+                mouth: t.mouth,
+                area_m2: t.area_m2,
+            })
+            .collect()
+    } else {
+        raw
+    };
     let mut ct: Vec<(f64, Vec<Vec2>)> = Vec::new();
     for (k, t) in raw.iter().enumerate() {
         let u = id.course_scalar(0x51_4E_00 ^ (k as u64));
