@@ -52,6 +52,7 @@ fn main() {
         ("AREA_TH", "skeleton.area_threshold_m2"),
         ("SLOPE_FLOOR", "skeleton.slope_init_floor"),
         ("PRUNE", "skeleton.shadow_prune_m"),
+        ("MEANDER", "skeleton.route_meander"),
         ("INFLOW_START", "skeleton.inflow_start"),
         ("ROUGH", "skeleton.roughness_frac"),
         ("BANK_ANGLE", "skeleton.bank_angle_deg"),

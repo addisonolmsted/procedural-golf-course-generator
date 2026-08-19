@@ -37,6 +37,7 @@ fn main() {
         area_exp: 0.5,
         slope_init_floor: carve::SLOPE_INIT_CLAMP.0,
         shadow_prune_m: 0.0,
+        route_meander: 0.0,
         uplift_m: 0.0,
             };
             let mut rng = id.stream(streams::SKELETON_MODULE);

@@ -70,6 +70,19 @@ pub const SPREAD_CHANNEL_FLOOR: f64 = 0.30;
 /// for the slope-proportional term to reach. Ladder-picked: 0.5 bends the
 /// low-gradient reaches without letting the field out-vote the grade.
 pub const WANDER_FLOOR_M: f64 = 0.5;
+/// LONG-WAVELENGTH meander on the routing surface. The wander field above
+/// is correlated at ~120 m: enough to break neighbouring D8 paths out of
+/// lockstep, far too short to swing a trunk, which is why straight-run p90
+/// sits at 1000-1150 m against a corpus 875-1090. A real trunk wanders at
+/// the scale of its own valley, so this band is chosen an order of
+/// magnitude longer.
+pub const MEANDER_BAND_M: (f64, f64) = (400.0, 900.0);
+pub const MEANDER_WAVES: usize = 8;
+/// Deflection angle is `atan(meander · 2π · MEANDER_LEN_M / λ)`, the same
+/// scale-free form the wander uses, so 0.2 gives ~12° at λ = 600 m.
+pub const MEANDER_LEN_M: f64 = 100.0;
+/// Floor in metres, for valley floors where the slope-keyed term vanishes.
+pub const MEANDER_FLOOR_M: f64 = 0.4;
 /// Macro slope (300 m lowpass) a tier-2 head needs. Dendritic gullies
 /// dissect FLANKS; on a footslope plain the tier has no relief above its
 /// path to cut and only draws lines.
@@ -139,6 +152,11 @@ pub struct CarveParams {
     /// leave interfluves standing. Normalized at the extraction threshold
     /// so `k` keeps its calibrated meaning.
     pub area_exp: f64,
+    /// Long-wavelength routing meander (0 disables): the same
+    /// slope-proportional trick as `route_wander` but in a 400-900 m band,
+    /// so trunks swing instead of running the fall line. Routing surface
+    /// only — the terrain never carries it.
+    pub route_meander: f64,
     /// Radius (m) inside which a LEAF reach counts as shadowed by a bigger
     /// channel and is deleted from the extraction (0 disables). See
     /// `prune_shadow_leaves` — this is the redundancy cut, and it is
@@ -612,6 +630,17 @@ pub fn carve(
             let rms = (d.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt().max(1e-12);
             d.iter().map(|v| v / rms).collect::<Vec<f64>>()
         };
+        // LONG-WAVELENGTH MEANDER — the second half of the wander, at ten
+        // times its scale. Built from the same deterministic wave sum the
+        // roughness uses, normalized to unit RMS so the dial reads as a
+        // deflection angle rather than as metres.
+        let meander: Vec<f64> = if p.route_meander > 0.0 {
+            let raw = roughness_at(spec, rng, 1.0, MEANDER_BAND_M, MEANDER_WAVES);
+            let rms = (raw.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt().max(1e-12);
+            raw.iter().map(|v| v / rms).collect()
+        } else {
+            vec![0.0; n]
+        };
         // ROUTING SHOULDER — on the ROUTING SURFACE ONLY, like the dither.
         // The rim is a single-row wall, so any cross-tilt piles flow
         // against it and erosion carves the collector channel RIGHT ALONG
@@ -687,8 +716,10 @@ pub fn carve(
                     // 0.10 m at 40 m — enough to break ties, not enough to
                     // bend a trunk.
                     let amp = (slope * WANDER_LEN_M).max(WANDER_FLOOR_M);
+                    let amp_m = (slope * MEANDER_LEN_M).max(MEANDER_FLOOR_M);
                     zf.data[i] += deflat[i] * w * w + shoulder[i]
-                        + wander[i] * amp * p.route_wander;
+                        + wander[i] * amp * p.route_wander
+                        + meander[i] * amp_m * p.route_meander;
                 }
             }
             // The flood then guarantees a depression-free routing surface,
@@ -1696,6 +1727,92 @@ pub fn arc_len(pts: &[Vec2]) -> f64 {
     pts.windows(2)
         .map(|w| ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt())
         .sum()
+}
+
+/// Horton ratios from ANY receiver forest plus channel mask — the
+/// extraction's own, or a network re-derived from the built surface.
+///
+/// The re-derived one is what the energy-distance battery sees, and the two
+/// disagree: on the same tile the extraction reads rb 5.0 while the
+/// re-derivation reads 3.4 against a corpus 5.45. Laddering against the
+/// wrong one sends the round in the wrong direction, so both are available
+/// from one function.
+///
+/// Returns `(rb, rl, max_order)`; the ratios are `None` when the network
+/// never branches.
+pub fn horton_from_flow(
+    spec: &GridSpec,
+    rec: &[i64],
+    is_channel: &[bool],
+) -> (Option<f64>, Option<f64>, u8) {
+    let nx = spec.nx as usize;
+    let cell = spec.cell_size;
+    let n = rec.len();
+    let order = strahler(rec, is_channel, n);
+    let mut donors = vec![0u32; n];
+    for i in 0..n {
+        if !is_channel[i] {
+            continue;
+        }
+        let r = rec[i];
+        if r >= 0 && is_channel[r as usize] {
+            donors[r as usize] += 1;
+        }
+    }
+    let max_o = order.iter().copied().max().unwrap_or(0) as usize;
+    if max_o < 2 {
+        return (None, None, max_o as u8);
+    }
+    let mut count = vec![0.0f64; max_o + 2];
+    let mut length = vec![0.0f64; max_o + 2];
+    for s in 0..n {
+        if !is_channel[s] || donors[s] == 1 {
+            continue;
+        }
+        let (mut cur, mut len, mut steps) = (s, 0.0f64, 0usize);
+        loop {
+            let r = rec[cur];
+            if r < 0 || !is_channel[r as usize] {
+                break;
+            }
+            let r = r as usize;
+            let (ax, ay) = ((cur % nx) as f64, (cur / nx) as f64);
+            let (bx, by) = ((r % nx) as f64, (r / nx) as f64);
+            len += ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt() * cell;
+            steps += 1;
+            if donors[r] >= 2 {
+                break;
+            }
+            cur = r;
+        }
+        if steps == 0 {
+            continue;
+        }
+        let o = (order[s].max(1) as usize).min(max_o);
+        count[o] += 1.0;
+        length[o] += len;
+    }
+    let med = |v: Vec<f64>| -> Option<f64> {
+        if v.is_empty() {
+            return None;
+        }
+        let mut v = v;
+        v.sort_by(|a, b| a.total_cmp(b));
+        Some(v[v.len() / 2])
+    };
+    let rb = med(
+        (1..max_o)
+            .filter(|&o| count[o] > 0.0 && count[o + 1] > 0.0)
+            .map(|o| count[o] / count[o + 1])
+            .collect(),
+    );
+    let rl = med(
+        (1..max_o)
+            .filter(|&o| count[o] > 0.0 && count[o + 1] > 0.0)
+            .map(|o| (length[o + 1] / count[o + 1]) / (length[o] / count[o]))
+            .collect(),
+    );
+    (rb, rl, max_o as u8)
 }
 
 /// Horton bifurcation and length ratios from the extracted network.

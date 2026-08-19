@@ -124,6 +124,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         tributary_reach: dial("skeleton.tributary_reach", 1.0),
         creep: dial("skeleton.creep", 0.0),
         route_wander: dial("skeleton.route_wander", 0.0),
+        route_meander: dial("skeleton.route_meander", 0.0),
         cut_spread_m: dial("skeleton.cut_spread_m", 0.0),
         channel_spread: dial("skeleton.channel_spread", carve::SPREAD_CHANNEL_FLOOR),
         bank_angle_deg: dial("skeleton.bank_angle_deg", 0.0),

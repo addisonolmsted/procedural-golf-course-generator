@@ -110,6 +110,7 @@ fn main() {
                 ("AREA_TH", "skeleton.area_threshold_m2"),
                 ("SLOPE_FLOOR", "skeleton.slope_init_floor"),
                 ("PRUNE", "skeleton.shadow_prune_m"),
+                ("MEANDER", "skeleton.route_meander"),
                 ("WAVE_BETA", "primitives.wave_beta"),
                 ("WAVE_SHARE", "primitives.wave_share"),
                 ("WAVE_ISO", "primitives.wave_iso_frac"),
