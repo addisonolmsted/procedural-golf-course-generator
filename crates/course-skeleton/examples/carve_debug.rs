@@ -105,6 +105,9 @@ fn main() {
         slope_init_floor: carve::SLOPE_INIT_CLAMP.0,
         shadow_prune_m: 0.0,
         route_meander: 0.0,
+        majors_cap: carve::MAJORS_CAP,
+        majors_boost: carve::MAJORS_K_BOOST,
+        majors_iters: carve::MAJORS_ITERS,
         uplift_m: 0.0,
         };
 

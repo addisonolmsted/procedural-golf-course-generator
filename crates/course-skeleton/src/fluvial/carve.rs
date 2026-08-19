@@ -152,6 +152,17 @@ pub struct CarveParams {
     /// leave interfluves standing. Normalized at the extraction threshold
     /// so `k` keeps its calibrated meaning.
     pub area_exp: f64,
+    /// How many channel SYSTEMS get the majors treatment, and how hard.
+    /// The review's ask is "one or two primary channels… all channels lead
+    /// to the one two (maybe 3) main trunks" — this is the contrast that
+    /// makes a trunk read as a trunk instead of as one line among sixty.
+    /// `majors_iters` is the real depth lever: the boost multiplies
+    /// erodibility, but `carve_downstream` caps every cut at
+    /// `step_clamp_m` and at half the drop to the receiver, so past a point
+    /// a bigger boost buys nothing and only more sweeps deepen the trunk.
+    pub majors_cap: usize,
+    pub majors_boost: f64,
+    pub majors_iters: usize,
     /// Long-wavelength routing meander (0 disables): the same
     /// slope-proportional trick as `route_wander` but in a 400-900 m band,
     /// so trunks swing instead of running the fall line. Routing surface
@@ -1060,23 +1071,22 @@ pub fn carve(
             .map(|&r| (channels[r as usize].area_m2, r))
             .collect();
         ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let mut majors: Vec<u32> = ranked.iter().take(MAJORS_CAP).map(|&(_, r)| r).collect();
-        if ranked.len() > MAJORS_CAP
-            && ranked[MAJORS_CAP].0 >= MAJORS_THIRD_FRAC * ranked[MAJORS_CAP - 1].0
-        {
-            majors.push(ranked[MAJORS_CAP].1);
+        let cap = p.majors_cap.max(1);
+        let mut majors: Vec<u32> = ranked.iter().take(cap).map(|&(_, r)| r).collect();
+        if ranked.len() > cap && ranked[cap].0 >= MAJORS_THIRD_FRAC * ranked[cap - 1].0 {
+            majors.push(ranked[cap].1);
         }
         let major_erod: Vec<f64> = (0..n)
             .map(|i| match channel_of[i] {
                 Some(ci) if majors.contains(&root_of[ci as usize]) => {
-                    erodibility[i] * MAJORS_K_BOOST
+                    erodibility[i] * p.majors_boost
                 }
                 _ => 0.0,
             })
             .collect();
         let (_, slope_now) = flow::receivers(&z, spec.cell_size);
         let outlet_mask: Vec<bool> = (0..n).map(|i| rec[i] < 0).collect();
-        for _ in 0..MAJORS_ITERS {
+        for _ in 0..p.majors_iters {
             carve_downstream(
                 &mut z,
                 &rec,

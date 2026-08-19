@@ -125,6 +125,10 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         creep: dial("skeleton.creep", 0.0),
         route_wander: dial("skeleton.route_wander", 0.0),
         route_meander: dial("skeleton.route_meander", 0.0),
+        majors_cap: dial("skeleton.majors_cap", carve::MAJORS_CAP as f64).round().max(1.0) as usize,
+        majors_boost: dial("skeleton.majors_boost", carve::MAJORS_K_BOOST),
+        majors_iters: dial("skeleton.majors_iters", carve::MAJORS_ITERS as f64).round().max(0.0)
+            as usize,
         cut_spread_m: dial("skeleton.cut_spread_m", 0.0),
         channel_spread: dial("skeleton.channel_spread", carve::SPREAD_CHANNEL_FLOOR),
         bank_angle_deg: dial("skeleton.bank_angle_deg", 0.0),
