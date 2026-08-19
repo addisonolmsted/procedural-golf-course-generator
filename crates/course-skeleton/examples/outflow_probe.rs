@@ -42,6 +42,7 @@ fn main() {
         trunk_count: 2,
         trunk_cut_m: 3.0,
         trunk_sinuosity: 1.08,
+        trunk_straight_max_m: 900.0,
         majors_cap: carve::MAJORS_CAP,
         majors_boost: carve::MAJORS_K_BOOST,
         majors_iters: carve::MAJORS_ITERS,

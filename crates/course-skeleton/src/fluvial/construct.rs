@@ -47,7 +47,35 @@ pub const TRUNK_MOUTH_SEP_M: f64 = 420.0;
 /// chosen an order of magnitude above the ~120 m routing wander, which is
 /// too short to swing a trunk (measured: it raised mean sinuosity without
 /// touching the straight-run tail).
-pub const MEANDER_LAM_M: (f64, f64) = (400.0, 900.0);
+pub const MEANDER_LAM_M: (f64, f64) = (650.0, 1450.0);
+/// Harmonics on the heading, as (wavelength multiple, amplitude share).
+/// A single sinusoid reads as a regular scallop — review: "a little less
+/// regularity, maybe higher wavelength". Real meander trains carry a
+/// long fundamental with weaker short and very long components; this is
+/// the same decomposition the river builder uses.
+pub const MEANDER_HARMONICS: [(f64, f64); 3] = [(1.0, 0.72), (0.41, 0.16), (2.3, 0.22)];
+/// Weak lateral pull toward the tile centre, per unit of off-centre
+/// distance. Review: the trunk should cheat toward the middle in most
+/// cases. It rides on the heading, not the position, so the mouth still
+/// lands where the flow field put it; the taper at both ends keeps the
+/// terminals honest.
+pub const MEANDER_CENTRE_PULL: f64 = 0.55;
+/// How far from each end the wind is tapered out, in METRES — not in
+/// wavelengths, which is the bug this constant replaces.
+///
+/// The taper exists so the mouth and head stay where the flow field put
+/// them. Scaling it as 0.8λ meant raising the wavelength band from
+/// 400-900 m to 650-1450 m suppressed the wind over 1160 m at EACH end of
+/// a trunk only ~3.5 km long — so most of the line was straight because
+/// the wind was off there, not because of any property of the curve. A
+/// sine-generated curve has zero curvature only at isolated inflection
+/// points and cannot produce a straight SECTION on its own.
+pub const MEANDER_TAPER_M: f64 = 220.0;
+/// Along-line wavelength modulation: λ breathes by ±35 % over a slow
+/// envelope, so no two bends come out the same size. One λ per trunk is
+/// what reads as a regular scallop.
+pub const MEANDER_LAM_BREATHE: f64 = 0.35;
+pub const MEANDER_LAM_ENVELOPE: f64 = 3.7;
 /// Heading swing, radians. Sinuosity rises with this; the corpus wants
 /// 1.06–1.10 at a 600 m window, which lands near 0.45 rad.
 pub const MEANDER_OMEGA: f64 = 0.45;
@@ -448,6 +476,17 @@ pub fn trunk_line(
 /// - a weak cross-track correction keeps the belt centred, and tapers kill
 ///   the wind at both ends so the mouth still arrives where it should.
 pub fn meander(base: &[Vec2], lam: f64, omega: f64, phase: f64) -> Vec<Vec2> {
+    meander_at(base, lam, omega, phase, 0.0)
+}
+
+/// As `meander`, plus a pull toward `centre` (0 disables).
+pub fn meander_at(
+    base: &[Vec2],
+    lam: f64,
+    omega: f64,
+    phase: f64,
+    tile_m: f64,
+) -> Vec<Vec2> {
     if base.len() < 3 || lam <= 0.0 || omega <= 0.0 {
         return base.to_vec();
     }
@@ -482,15 +521,38 @@ pub fn meander(base: &[Vec2], lam: f64, omega: f64, phase: f64) -> Vec<Vec2> {
         let b = at((proj + 12.0).min(total));
         let th_tan = libm::atan2(b.y - a.y, b.x - a.x);
         // taper the wind in and out so the ends stay put
-        let t_in = (proj / (0.8 * lam)).clamp(0.0, 1.0);
-        let t_out = ((total - proj) / (0.8 * lam)).clamp(0.0, 1.0);
+        let t_in = (proj / MEANDER_TAPER_M).clamp(0.0, 1.0);
+        let t_out = ((total - proj) / MEANDER_TAPER_M).clamp(0.0, 1.0);
         let om = omega * t_in * t_out;
         // cross-track correction against the base line
         let anchor = at(proj);
         let e = Vec2::new(p.x - anchor.x, p.y - anchor.y);
         let e_lat = -e.x * libm::sin(th_tan) + e.y * libm::cos(th_tan);
         let corr = (-0.9 * e_lat / lam).clamp(-0.4, 0.4);
-        let th = th_tan + om * libm::sin(proj / lam * std::f64::consts::TAU + phase) + corr;
+        // Harmonic sum, not a single sinusoid: one wave reads as a regular
+        // scallop at every crossing.
+        // Wavelength breathes along the line so no two bends match.
+        let lam_s = lam
+            * (1.0
+                + MEANDER_LAM_BREATHE
+                    * libm::sin(
+                        proj / (MEANDER_LAM_ENVELOPE * lam) * std::f64::consts::TAU + phase,
+                    ));
+        let mut wave = 0.0;
+        for (mult, share) in MEANDER_HARMONICS {
+            wave += share
+                * libm::sin(proj / (lam_s * mult) * std::f64::consts::TAU + phase * mult);
+        }
+        // Centre bias: steer toward the middle of the tile, tapered by the
+        // same end weights so the mouth and head stay put.
+        let centre = if tile_m > 0.0 {
+            let c = 0.5 * tile_m;
+            let off = -(p.x - c) * libm::sin(th_tan) + (p.y - c) * libm::cos(th_tan);
+            (MEANDER_CENTRE_PULL * off / tile_m).clamp(-0.35, 0.35) * t_in * t_out
+        } else {
+            0.0
+        };
+        let th = th_tan + om * wave + corr + centre;
         p = Vec2::new(
             p.x + MEANDER_STEP_M * libm::cos(th),
             p.y + MEANDER_STEP_M * libm::sin(th),
@@ -514,22 +576,116 @@ pub fn meander(base: &[Vec2], lam: f64, omega: f64, phase: f64) -> Vec<Vec2> {
 ///
 /// Eight bisection steps on a monotone response, so it is deterministic
 /// and costs eight cheap integrations of a polyline.
-pub fn meander_to(base: &[Vec2], lam: f64, target: f64, phase: f64) -> Vec<Vec2> {
-    let raw = window_sinuosity(base, 600.0).unwrap_or(1.0);
-    if raw >= target {
-        return base.to_vec(); // already at or past the corpus figure
+/// ~50 m moving average, the same pre-treatment `planform.rs` and
+/// `real_planform.py` apply before any planform statistic.
+///
+/// This is not cosmetic. A traced flow path is a chain of cell centres, so
+/// it staircases at 45°/90° every cell and reads as ~1.3 sinuosity on its
+/// own — the lesson `carve::trace` records. Measured raw, a dead-straight
+/// fall line looks winding, `meander_to` concludes there is nothing to fix
+/// and returns the base untouched. Every planform number this module
+/// compares against the corpus has to come off a smoothed line.
+pub fn smooth50(pts: &[Vec2]) -> Vec<Vec2> {
+    if pts.len() < 5 {
+        return pts.to_vec();
     }
+    let mut arc = 0.0;
+    for w in pts.windows(2) {
+        arc += (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+    }
+    let step = arc / (pts.len() - 1) as f64;
+    let k = (((50.0 / step.max(1e-6)).round() as usize).max(3)) | 1;
+    let h = k / 2;
+    (0..pts.len())
+        .map(|i| {
+            let (mut sx, mut sy) = (0.0, 0.0);
+            for j in 0..k {
+                let idx = (i + j).saturating_sub(h).min(pts.len() - 1);
+                sx += pts[idx].x;
+                sy += pts[idx].y;
+            }
+            Vec2 { x: sx / k as f64, y: sy / k as f64 }
+        })
+        .collect()
+}
+
+pub fn meander_to(
+    base: &[Vec2],
+    lam: f64,
+    target: f64,
+    straight_max_m: f64,
+    tile_m: f64,
+    phase: f64,
+) -> Vec<Vec2> {
+    let sm = smooth50(base);
+    let raw = window_sinuosity(&sm, 600.0).unwrap_or(1.0);
+    let raw_run = longest_straight_run(&sm, 600.0);
+    if raw >= target && raw_run <= straight_max_m {
+        return base.to_vec();
+    }
+    // Two criteria, not one. Median sinuosity alone lets a line hit its
+    // target while still carrying a kilometre of dead-straight channel —
+    // which is exactly the hill-country report, and hill country has the
+    // LOWEST sinuosity target of any archetype, so the median criterion
+    // gives it the least swing. The straight-run cap is what forces a
+    // bend into the long runs.
+    // Keep the SATISFYING candidate, not the failing one. With a single
+    // criterion the failing branch happened to hold the best undershoot;
+    // with two it holds the worst line tried, and straight runs came back
+    // LONGER than the unmeandered base (689 -> 777 m on piedmont, 855 ->
+    // 1065 on sandhills). Bisect on the smallest swing that satisfies
+    // both, and fall back to the largest swing tried if none does.
     let (mut lo, mut hi) = (0.0f64, MEANDER_OMEGA);
-    let mut best = base.to_vec();
-    for _ in 0..8 {
+    let mut ok: Option<Vec<Vec2>> = None;
+    let mut most = base.to_vec();
+    for _ in 0..9 {
         let mid = 0.5 * (lo + hi);
-        let cand = meander(base, lam, mid, phase);
-        let s = window_sinuosity(&cand, 600.0).unwrap_or(raw);
-        if s > target {
+        let cand = meander_at(base, lam, mid, phase, tile_m);
+        let cs = smooth50(&cand);
+        let s = window_sinuosity(&cs, 600.0).unwrap_or(raw);
+        let run = longest_straight_run(&cs, 600.0);
+        if s >= target && run <= straight_max_m {
+            ok = Some(cand);
             hi = mid;
         } else {
             lo = mid;
-            best = cand;
+            most = cand;
+        }
+    }
+    ok.unwrap_or(most)
+}
+
+/// Longest run, in metres, over which the 600 m window sinuosity stays
+/// under `STRAIGHT_S` — the same statistic `planform.rs` reports as
+/// `straight_run`, so the corpus figures are directly usable as caps.
+pub fn longest_straight_run(pts: &[Vec2], window_m: f64) -> f64 {
+    if pts.len() < 3 {
+        return 0.0;
+    }
+    let mut arcs = vec![0.0f64; pts.len()];
+    for i in 1..pts.len() {
+        let (a, b) = (pts[i - 1], pts[i]);
+        arcs[i] = arcs[i - 1] + ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    }
+    let total = arcs[pts.len() - 1];
+    if total < window_m {
+        return 0.0;
+    }
+    let (mut best, mut run) = (0.0f64, 0.0f64);
+    let mut i = 0usize;
+    for j in 0..pts.len() {
+        while arcs[j] - arcs[i] > window_m {
+            i += 1;
+        }
+        if arcs[j] - arcs[i] < window_m * 0.98 {
+            continue;
+        }
+        let chord = ((pts[j].x - pts[i].x).powi(2) + (pts[j].y - pts[i].y).powi(2)).sqrt();
+        if (arcs[j] - arcs[i]) / chord.max(1e-9) < 1.01 {
+            run += arcs[j] - arcs[j.saturating_sub(1)];
+            best = best.max(run + window_m);
+        } else {
+            run = 0.0;
         }
     }
     best
@@ -565,6 +721,7 @@ pub fn stamp_trunks(
     count: usize,
     cut_m: f64,
     target_sinuosity: f64,
+    straight_max_m: f64,
     phases: &[f64],
 ) -> Vec<Vec<Vec2>> {
     let (nx, ny) = (spec.nx as usize, spec.ny as usize);
@@ -590,7 +747,14 @@ pub fn stamp_trunks(
         let u = phases.get(2 * k).copied().unwrap_or(0.5);
         let lam = lo + (hi - lo) * u;
         let phase = phases.get(2 * k + 1).copied().unwrap_or(0.0) * std::f64::consts::TAU;
-        let line = meander_to(&raw, lam, target_sinuosity, phase);
+        let line = meander_to(
+            &raw,
+            lam,
+            target_sinuosity,
+            straight_max_m,
+            (nx - 1) as f64 * cell,
+            phase,
+        );
 
         // Resample the line at half-cell steps and lay a monotone bed:
         // walking upstream from the mouth the bed may only rise, so the

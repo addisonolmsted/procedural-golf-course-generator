@@ -145,6 +145,7 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         trunk_count: dial("skeleton.trunk_count", 2.0).round().max(0.0) as usize,
         trunk_cut_m: dial("skeleton.trunk_cut_m", 3.0),
         trunk_sinuosity: dial("skeleton.trunk_sinuosity", 1.08),
+        trunk_straight_max_m: dial("skeleton.trunk_straight_max_m", 900.0),
         majors_cap: dial("skeleton.majors_cap", carve::MAJORS_CAP as f64).round().max(1.0) as usize,
         majors_boost: dial("skeleton.majors_boost", carve::MAJORS_K_BOOST),
         majors_iters: dial("skeleton.majors_iters", carve::MAJORS_ITERS as f64).round().max(0.0)

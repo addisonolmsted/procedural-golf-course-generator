@@ -179,6 +179,11 @@ pub struct CarveParams {
     /// off the macro already carry 1.03-1.13 against a corpus 1.06-1.10,
     /// so a blanket swing overshoots the ones that were already winding.
     pub trunk_sinuosity: f64,
+    /// Cap on the longest dead-straight run of a constructed trunk, m —
+    /// the archetype's own corpus `straight_run_p90`. Median sinuosity
+    /// alone lets a line hit target while carrying a kilometre of straight
+    /// channel, which is what review flagged on hill country.
+    pub trunk_straight_max_m: f64,
     /// Long-wavelength routing meander (0 disables): the same
     /// slope-proportional trick as `route_wander` but in a 400-900 m band,
     /// so trunks swing instead of running the fall line. Routing surface
@@ -463,6 +468,7 @@ pub fn carve(
             p.trunk_count,
             p.trunk_cut_m,
             p.trunk_sinuosity,
+            p.trunk_straight_max_m,
             &phases,
         );
     }

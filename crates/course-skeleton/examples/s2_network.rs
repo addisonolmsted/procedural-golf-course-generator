@@ -57,6 +57,7 @@ fn main() {
         ("TRUNKS", "skeleton.trunk_count"),
         ("TRUNK_CUT", "skeleton.trunk_cut_m"),
         ("TRUNK_SIN", "skeleton.trunk_sinuosity"),
+        ("TRUNK_STR", "skeleton.trunk_straight_max_m"),
         ("INTEG", "skeleton.integration"),
         ("MAJ_CAP", "skeleton.majors_cap"),
         ("MAJ_BOOST", "skeleton.majors_boost"),

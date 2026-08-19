@@ -122,7 +122,10 @@ fn main() {
         let (lo, hi) = construct::MEANDER_LAM_M;
         let lam = if lam0 > 0.0 { lam0 } else { lo + (hi - lo) * u };
         let phase = id.course_scalar(0x51_4E_01 ^ (k as u64)) * std::f64::consts::TAU;
-        ct.push((t.area_m2, construct::meander_to(&t.pts, lam, target, phase)));
+        ct.push((
+            t.area_m2,
+            construct::meander_to(&t.pts, lam, target, envf("STRAIGHT", 900.0), 3000.0, phase),
+        ));
     }
 
     // For comparison: the shipped stage's own biggest systems.
