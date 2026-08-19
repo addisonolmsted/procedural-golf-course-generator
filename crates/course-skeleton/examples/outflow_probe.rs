@@ -35,6 +35,8 @@ fn main() {
         bank_angle_deg: 0.0,
         inflow_start_frac: 0.0,
         area_exp: 0.5,
+        slope_init_floor: carve::SLOPE_INIT_CLAMP.0,
+        shadow_prune_m: 0.0,
         uplift_m: 0.0,
             };
             let mut rng = id.stream(streams::SKELETON_MODULE);

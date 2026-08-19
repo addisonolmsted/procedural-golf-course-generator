@@ -100,7 +100,11 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
     let carve_params = carve::CarveParams {
         roughness_frac: dial("skeleton.roughness_frac", carve::ROUGHNESS_FRAC),
         k: if density >= 0.5 { carve::K_STREAM_POWER } else { 0.0 },
-        area_threshold_m2: carve::AREA_THRESHOLD_M2,
+        // The initiation area, and the only lever that re-centres d2c once
+        // something else changes how many channels the terrain carries. It
+        // was a bare constant, so a network change had nothing to trade
+        // against the D5 band; the slope-adaptive factor scales THIS.
+        area_threshold_m2: dial("skeleton.area_threshold_m2", carve::AREA_THRESHOLD_M2),
         incision_scale: integration::incision_scale(m_integration)
             * dial("skeleton.incision_boost", 1.0),
         base_drop_m: carve::BASE_DROP_M,
@@ -125,6 +129,8 @@ pub fn generate(spec: &SiteSpec, c1: &PrimitiveField, identity: &RunIdentity) ->
         bank_angle_deg: dial("skeleton.bank_angle_deg", 0.0),
         inflow_start_frac: dial("skeleton.inflow_start", 0.0),
         area_exp: dial("skeleton.area_exp", 0.5),
+        slope_init_floor: dial("skeleton.slope_init_floor", carve::SLOPE_INIT_CLAMP.0),
+        shadow_prune_m: dial("skeleton.shadow_prune_m", 0.0),
         uplift_m: dial("skeleton.uplift_m", 0.0),
     };
     let carved = carve::carve(

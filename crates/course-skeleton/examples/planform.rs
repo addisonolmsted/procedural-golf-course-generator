@@ -14,6 +14,20 @@ const WINDOWS_M: [f64; 2] = [300.0, 600.0];
 const PAR_SAMPLE_M: f64 = 30.0;
 const PAR_BAND: (f64, f64) = (40.0, 200.0);
 const STRAIGHT_S: f64 = 1.01;
+/// NEAR-parallel: the tight companion to `par_frac`, and the one that caught
+/// the defect `par_frac` missed. The old measure bands at 40-200 m and only
+/// counts runs over 400 m, so a channel 150 m from its neighbour scores the
+/// same as one 30 m away and a 300 m run scores nothing at all. Review saw
+/// "some get close to intersecting"; at 60 m with no run minimum the
+/// generated network reads 3-10x the corpus rate on the integrated biomes.
+const NEAR_SAMPLE_M: f64 = 20.0;
+const NEAR_BAND_M: f64 = 60.0;
+/// Junction exemption. Two reaches that MEET are within a cell of each other
+/// by construction, so proximity is only evidence of a defect away from the
+/// other reach's ends. Measured against the sample's distance to those ends,
+/// not to the nearest point, so a tributary running alongside its own parent
+/// still counts once it is clear of the confluence.
+const NEAR_END_EXEMPT_M: f64 = 90.0;
 
 /// ~50 m moving average, matching `real_planform.py`'s `smooth_resample`
 /// exactly. Without it the two sides are not comparable: a traced path is
@@ -80,6 +94,8 @@ fn main() {
         let mut total_len = 0.0f64;
         let mut par_len = 0.0f64; // channel length sitting in runs > 400 m
         let mut par_rel_len = [0.0f64; 3]; // by dominant relation: pc/sib/unrel
+        let mut near_len = 0.0f64; // length within NEAR_BAND_M of another reach
+        let mut near_total = 0.0f64; // total length on the NEAR_SAMPLE_M grid
         for k in 0..20u64 {
             let id = RunIdentity::from_seed(41_000 + k);
             let mut spec =
@@ -89,6 +105,11 @@ fn main() {
                 ("INFLOW_START", "skeleton.inflow_start"),
                 ("ROUGH", "skeleton.roughness_frac"),
                 ("WANDER", "skeleton.route_wander"),
+                ("CREEP", "skeleton.creep"),
+                ("MEXP", "skeleton.area_exp"),
+                ("AREA_TH", "skeleton.area_threshold_m2"),
+                ("SLOPE_FLOOR", "skeleton.slope_init_floor"),
+                ("PRUNE", "skeleton.shadow_prune_m"),
                 ("WAVE_BETA", "primitives.wave_beta"),
                 ("WAVE_SHARE", "primitives.wave_share"),
                 ("WAVE_ISO", "primitives.wave_iso_frac"),
@@ -181,6 +202,31 @@ fn main() {
                     par_rel_len[dom] += run;
                 }
             }
+            // ---- near-parallel: 20 m samples, 60 m band, no run minimum ----
+            let near: Vec<Vec<Vec2>> =
+                sk.channels.iter().map(|c| resample(&smooth(&c.pts, 8.0), NEAR_SAMPLE_M)).collect();
+            for (i, si) in near.iter().enumerate() {
+                near_total += si.len() as f64 * NEAR_SAMPLE_M;
+                for p in si {
+                    let mut hit = false;
+                    for (j, sj) in near.iter().enumerate() {
+                        if j == i || sj.is_empty() {
+                            continue;
+                        }
+                        let end = |q: &Vec2| ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
+                        if end(&sj[0]).min(end(&sj[sj.len() - 1])) <= NEAR_END_EXEMPT_M {
+                            continue;
+                        }
+                        if sj.iter().any(|q| end(q) < NEAR_BAND_M) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                    if hit {
+                        near_len += NEAR_SAMPLE_M;
+                    }
+                }
+            }
         }
         if bi > 0 {
             print!(",");
@@ -216,14 +262,16 @@ fn main() {
             sr.last().copied().unwrap_or(f64::NAN)
         );
         print!(
-            "\"par_run_p50\":{:.0},\"par_run_p90\":{:.0},\"par_run_max\":{:.0},\"par_frac\":{:.3},\"par_pc\":{:.3},\"par_sib\":{:.3},\"par_unrel\":{:.3}}}",
+            "\"par_run_p50\":{:.0},\"par_run_p90\":{:.0},\"par_run_max\":{:.0},\"par_frac\":{:.3},\"par_pc\":{:.3},\"par_sib\":{:.3},\"par_unrel\":{:.3},\"near_par_frac\":{:.4},\"net_km\":{:.1}}}",
             quant(&mut pr, 0.5),
             quant(&mut pr, 0.9),
             pr.last().copied().unwrap_or(f64::NAN),
             if total_len > 0.0 { par_len / total_len } else { 0.0 },
             if total_len > 0.0 { par_rel_len[0] / total_len } else { 0.0 },
             if total_len > 0.0 { par_rel_len[1] / total_len } else { 0.0 },
-            if total_len > 0.0 { par_rel_len[2] / total_len } else { 0.0 }
+            if total_len > 0.0 { par_rel_len[2] / total_len } else { 0.0 },
+            if near_total > 0.0 { near_len / near_total } else { 0.0 },
+            near_total / 20_000.0
         );
     }
     println!("}}");

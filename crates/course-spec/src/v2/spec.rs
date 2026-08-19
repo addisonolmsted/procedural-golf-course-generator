@@ -314,6 +314,10 @@ fn derive_dials(
         env.route_wander.unwrap_or(0.0),
     );
     m.insert("skeleton.cut_spread_m".into(), env.cut_spread_m.unwrap_or(0.0));
+    m.insert(
+        "skeleton.shadow_prune_m".into(),
+        env.shadow_prune_m.unwrap_or(0.0),
+    );
     // Default 260 = the historic fixed reach. The discharge-keyed range was
     // laddered (70/90/130/260) and measured: shorter reaches sharpen the
     // valley lines slightly but move the corpus-policy re-derivation the

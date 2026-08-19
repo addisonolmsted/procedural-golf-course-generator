@@ -139,6 +139,19 @@ pub struct CarveParams {
     /// leave interfluves standing. Normalized at the extraction threshold
     /// so `k` keeps its calibrated meaning.
     pub area_exp: f64,
+    /// Radius (m) inside which a LEAF reach counts as shadowed by a bigger
+    /// channel and is deleted from the extraction (0 disables). See
+    /// `prune_shadow_leaves` — this is the redundancy cut, and it is
+    /// deliberately not a size cut: it removes length that covers no new
+    /// ground and leaves the rest of the network alone.
+    pub shadow_prune_m: f64,
+    /// Floor on the slope-adaptive initiation factor — the smallest the
+    /// per-cell threshold is ever allowed to become, as a fraction of
+    /// `area_threshold_m2`. See `SLOPE_INIT_CLAMP`: the factor rewards
+    /// steep ground with an earlier channel head, and this is how early it
+    /// may get. It is the lever that re-centres d2c when anything else
+    /// changes how much network the tile carries.
+    pub slope_init_floor: f64,
     /// TOTAL rock uplift (m) spread over the erosion run, applied to the
     /// interior against a fixed base edge (0 disables).
     ///
@@ -869,11 +882,11 @@ pub fn carve(
             med.max(0.6 * mean)
         }
     };
-    let is_channel: Vec<bool> = (0..n)
+    let mut is_channel: Vec<bool> = (0..n)
         .map(|i| {
             let r = s_med / slope[i].max(1e-9);
             let f = if r < 1.0 { libm::pow(r, SLOPE_INIT_STEEP_EXP) } else { r }
-                .clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
+                .clamp(p.slope_init_floor, SLOPE_INIT_CLAMP.1);
             a_ext[i] >= thresh * f
         })
         .collect();
@@ -912,7 +925,7 @@ pub fn carve(
             }
             let r = s_med / slope[i].max(1e-9);
             let f = if r < 1.0 { libm::pow(r, SLOPE_INIT_STEEP_EXP) } else { r }
-                .clamp(SLOPE_INIT_CLAMP.0, SLOPE_INIT_CLAMP.1);
+                .clamp(p.slope_init_floor, SLOPE_INIT_CLAMP.1);
             if a_ext[i] < tier2_cut_m2 * f {
                 continue;
             }
@@ -981,6 +994,12 @@ pub fn carve(
     } else {
         Vec::new()
     };
+    // Redundant strands: a leaf that shadows a bigger channel is not a
+    // second valley, it is the same valley drawn twice. See
+    // `prune_shadow_leaves` — the network the extraction mints is length-
+    // INEFFICIENT without this, and thinning it by threshold instead costs
+    // coverage faster than it costs duplicates.
+    prune_shadow_leaves(spec, &rec, &mut is_channel, &area, &z, p.shadow_prune_m);
     let order_at = strahler(&rec, &is_channel, n);
     let (channels, channel_of) = trace(spec, &rec, &is_channel, &order_at, &area, &z);
 
@@ -1418,6 +1437,139 @@ fn strahler(rec: &[i64], is_channel: &[bool], n: usize) -> Vec<u8> {
         }
     }
     order
+}
+
+/// Passes of leaf pruning. A deleted leaf can expose the reach below it as
+/// a new leaf, and a chain of three duplicated strands does occur; beyond
+/// three passes nothing measurable moves.
+pub const SHADOW_PRUNE_PASSES: usize = 3;
+/// How much bigger the neighbour has to be before it counts as shadowing.
+/// At 1.0 two near-equal rivals delete each other on a hash tie; 1.2 keeps
+/// the competition decisive without demanding a whole Strahler order.
+pub const SHADOW_DOMINANCE: f64 = 1.2;
+/// Share of a leaf's own cells that must be shadowed before it goes. A
+/// tributary that runs beside its neighbour for a third of its length is a
+/// real tributary with a tight confluence; one that does it for most of its
+/// length is a duplicate.
+pub const SHADOW_SHARE: f64 = 0.6;
+/// Junction exemption, in metres, matching the near-parallel instrument:
+/// two reaches that MEET are adjacent by construction.
+pub const SHADOW_JUNCTION_M: f64 = 90.0;
+
+/// Delete leaf reaches that run alongside a bigger channel.
+///
+/// Measured cause, not a hunch. The extracted network carries 2.2-2.6 km of
+/// channel per km² against a corpus 1.6, and reaches the SAME median
+/// distance-to-channel doing it — the extra length covers no new ground
+/// because it lies within a few tens of metres of length already there.
+/// That is what the review saw as channels "close to intersecting", and the
+/// near-parallel instrument puts it at 3-5% of network length against a
+/// corpus 1-1.4% on the archetypes that carry it.
+///
+/// Every uniform lever was measured first and none of them is the cause:
+/// zeroing the routing wander makes parallelism WORSE (5.0 -> 7.8%, since
+/// wander is what breaks neighbouring D8 paths out of lockstep), and creep,
+/// the discharge exponent and wave isotropy do nothing at all. The two
+/// threshold levers do lower it, but they thin the network everywhere: at
+/// the setting that halves parallelism, d2c leaves the corpus band entirely.
+///
+/// So the cut has to be keyed on redundancy rather than on size. A LEAF is
+/// safe to delete — nothing drains through it — and a leaf that spends most
+/// of its length within `radius_m` of a channel carrying `SHADOW_DOMINANCE`
+/// times its own discharge is drawing a valley that already exists. The
+/// ground keeps whatever the erosion loop cut there (the loop runs on
+/// continuous stream power and never sees this mask); what it loses is the
+/// second catena cut and the second drawn line.
+fn prune_shadow_leaves(
+    spec: &GridSpec,
+    rec: &[i64],
+    is_channel: &mut [bool],
+    area: &[f64],
+    z: &Grid<f64>,
+    radius_m: f64,
+) {
+    if radius_m <= 0.0 {
+        return;
+    }
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let n = nx * ny;
+    let cell = spec.cell_size;
+    let r = (radius_m / cell).ceil() as i64;
+    for _ in 0..SHADOW_PRUNE_PASSES {
+        let order_at = strahler(rec, is_channel, n);
+        let (channels, channel_of) = trace(spec, rec, is_channel, &order_at, area, z);
+        if channels.len() < 2 {
+            return;
+        }
+        let mut has_child = vec![false; channels.len()];
+        for c in &channels {
+            if let Some(par) = c.parent {
+                has_child[par as usize] = true;
+            }
+        }
+        // cells owned by each reach, and the reach id per cell
+        let mut cells: Vec<Vec<usize>> = vec![Vec::new(); channels.len()];
+        let mut owner: Vec<i32> = vec![-1; n];
+        for (i, co) in channel_of.iter().enumerate() {
+            if let Some(id) = co {
+                cells[*id as usize].push(i);
+                owner[i] = *id as i32;
+            }
+        }
+        let mut doomed: Vec<u32> = Vec::new();
+        for (id, own) in cells.iter().enumerate() {
+            if has_child[id] || own.is_empty() {
+                continue;
+            }
+            let a_self = own.iter().fold(0.0f64, |m, &c| m.max(area[c]));
+            // the confluence this leaf arrives at, exempted below
+            let mouth = *own.last().unwrap();
+            let (mx, my) = ((mouth % nx) as i64, (mouth / nx) as i64);
+            let mut shadowed = 0usize;
+            for &c in own {
+                let (cx, cy) = ((c % nx) as i64, (c / nx) as i64);
+                let mut hit = false;
+                'scan: for dy in -r..=r {
+                    for dx in -r..=r {
+                        let (xx, yy) = (cx + dx, cy + dy);
+                        if xx < 0 || yy < 0 || xx >= nx as i64 || yy >= ny as i64 {
+                            continue;
+                        }
+                        let o = yy as usize * nx + xx as usize;
+                        if !is_channel[o] || owner[o] == id as i32 {
+                            continue;
+                        }
+                        if ((dx * dx + dy * dy) as f64).sqrt() * cell > radius_m {
+                            continue;
+                        }
+                        // near the confluence every neighbour is adjacent
+                        let (jx, jy) = (xx - mx, yy - my);
+                        if ((jx * jx + jy * jy) as f64).sqrt() * cell <= SHADOW_JUNCTION_M {
+                            continue;
+                        }
+                        if area[o] >= SHADOW_DOMINANCE * a_self {
+                            hit = true;
+                            break 'scan;
+                        }
+                    }
+                }
+                if hit {
+                    shadowed += 1;
+                }
+            }
+            if shadowed as f64 >= SHADOW_SHARE * own.len() as f64 {
+                doomed.push(id as u32);
+            }
+        }
+        if doomed.is_empty() {
+            return;
+        }
+        for id in doomed {
+            for &c in &cells[id as usize] {
+                is_channel[c] = false;
+            }
+        }
+    }
 }
 
 /// Trace the raster network into polylines: one `Channel` per maximal

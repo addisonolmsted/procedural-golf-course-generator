@@ -119,6 +119,7 @@
    },
    "province2_p": 0.35,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [
     {
      "dip_rad": 0.002,
@@ -279,6 +280,7 @@
    "pock_field": 1.0,
    "province2_p": 0.1,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [],
    "transforms": [
     {
@@ -433,6 +435,7 @@
    },
    "province2_p": 0.5,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [
     {
      "dip_rad": 0.005,
@@ -608,6 +611,7 @@
    },
    "province2_p": 0.3,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [
     {
      "dip_rad": 0.01,
@@ -774,6 +778,7 @@
    },
    "province2_p": 0.4,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [
     {
      "dip_rad": 0.001,
@@ -937,6 +942,7 @@
    },
    "province2_p": 0.1,
    "route_wander": 0.35,
+   "shadow_prune_m": 100.0,
    "strata": [],
    "transforms": [
     {

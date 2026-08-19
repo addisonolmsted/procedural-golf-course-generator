@@ -161,6 +161,18 @@ pub struct BiomeEnvelope {
     /// only — never in the terrain.
     #[serde(default)]
     pub route_wander: Option<f64>,
+    /// Radius (m) inside which a LEAF reach that runs alongside a bigger
+    /// channel is deleted from the extraction (None = 0 = off).
+    ///
+    /// The extracted network carried 2.2-2.6 km of channel per km2 against
+    /// a corpus 1.6 and reached the SAME distance-to-channel doing it: the
+    /// extra length lay within tens of metres of length already there, so
+    /// it covered no new ground. Measured before choosing this lever —
+    /// zeroing the routing wander makes the doubling WORSE, creep and the
+    /// discharge exponent do nothing, and both threshold levers buy the
+    /// improvement by thinning everywhere until d2c leaves its band.
+    #[serde(default)]
+    pub shadow_prune_m: Option<f64>,
     /// Lateral spread (m) of the hillslope share of the carve's cut
     /// (None = 0 = off). Channels keep a crisp cut.
     #[serde(default)]
