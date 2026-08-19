@@ -53,6 +53,10 @@ fn main() {
         ("SLOPE_FLOOR", "skeleton.slope_init_floor"),
         ("PRUNE", "skeleton.shadow_prune_m"),
         ("MEANDER", "skeleton.route_meander"),
+        ("NETMODE", "skeleton.network_mode"),
+        ("TRUNKS", "skeleton.trunk_count"),
+        ("TRUNK_CUT", "skeleton.trunk_cut_m"),
+        ("TRUNK_SIN", "skeleton.trunk_sinuosity"),
         ("INTEG", "skeleton.integration"),
         ("MAJ_CAP", "skeleton.majors_cap"),
         ("MAJ_BOOST", "skeleton.majors_boost"),
@@ -123,6 +127,19 @@ fn main() {
         db.extend_from_slice(&(*v as f32).to_le_bytes());
     }
     std::fs::write(format!("{out}/{key}_{seed}_d2c8.f32"), &db).unwrap();
+
+    // Constructed trunk proposals, empty in mode 0. The viewer draws these
+    // beside the extraction so the two can be compared: did the built
+    // surface end up carrying the trunk we asked for?
+    let mut ct = String::new();
+    for line in &sk.constructed {
+        ct.push_str("0");
+        for p in line {
+            ct.push_str(&format!(" {:.2},{:.2}", p.x, p.y));
+        }
+        ct.push('\n');
+    }
+    std::fs::write(format!("{out}/{key}_{seed}_ctrunk.txt"), ct).unwrap();
 
     let mut net = String::new();
     for ch in &sk.channels {

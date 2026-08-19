@@ -29,6 +29,7 @@
 use course_contracts::metadata::Edge;
 use course_seed::DetRng;
 use course_world::flow;
+use super::construct;
 use course_world::grid::{Grid, GridSpec};
 use course_world::math::Vec2;
 use course_world::world::EXTENT_M;
@@ -163,6 +164,21 @@ pub struct CarveParams {
     pub majors_cap: usize,
     pub majors_boost: f64,
     pub majors_iters: usize,
+    /// CONSTRUCTED trunks (0 = the derived network exactly as before).
+    /// When on, one to three trunks are placed from the macro's own low
+    /// ground and ridge toes, meandered to the archetype's corpus
+    /// sinuosity, and cut in as the lowest ground BEFORE the erosion loop
+    /// runs — so the loop reinforces them and extraction still reads the
+    /// network off the built surface. See `fluvial::construct`.
+    pub network_mode: f64,
+    /// How many constructed trunks, and how deep their corridor is cut.
+    pub trunk_count: usize,
+    pub trunk_cut_m: f64,
+    /// Sinuosity the constructed trunk is meandered TO, at a 600 m window
+    /// — the archetype's own corpus figure, not a fixed swing. Trunks read
+    /// off the macro already carry 1.03-1.13 against a corpus 1.06-1.10,
+    /// so a blanket swing overshoots the ones that were already winding.
+    pub trunk_sinuosity: f64,
     /// Long-wavelength routing meander (0 disables): the same
     /// slope-proportional trick as `route_wander` but in a 400-900 m band,
     /// so trunks swing instead of running the fall line. Routing surface
@@ -210,6 +226,10 @@ pub struct Carved {
     pub area: Vec<f64>,
     /// The traced vector network (for QA instruments and the viewer).
     pub channels: Vec<Channel>,
+    /// Constructed trunk lines, empty unless `network_mode > 0` — the
+    /// PROPOSAL, kept beside the extraction so an instrument can measure
+    /// whether the built surface agreed with it.
+    pub constructed: Vec<Vec<Vec2>>,
     /// Where external inflow enters (usize::MAX if none) — diagnostic.
     pub inlet: usize,
     /// Pre-rim heights of the rimmed border rows. The rim is ROUTING
@@ -427,6 +447,24 @@ pub fn carve(
                 }
             }
         }
+    }
+
+    // CONSTRUCTED TRUNKS — cut in here, after the rim so drainage already
+    // exits at the base edge, and before the erosion loop so the loop
+    // routes down them. Draws are taken only in this branch, so mode 0 is
+    // byte-identical to the derived path.
+    let mut constructed: Vec<Vec<Vec2>> = Vec::new();
+    if p.network_mode > 0.0 && p.trunk_count > 0 {
+        let phases: Vec<f64> = (0..2 * p.trunk_count.max(1)).map(|_| rng.next_f64()).collect();
+        constructed = construct::stamp_trunks(
+            spec,
+            &mut z,
+            base_edge,
+            p.trunk_count,
+            p.trunk_cut_m,
+            p.trunk_sinuosity,
+            &phases,
+        );
     }
 
     // Outlet band: the base-level edge must stay the lowest ground so the
@@ -1107,6 +1145,7 @@ pub fn carve(
         rec,
         area,
         channels,
+        constructed,
         inlet,
         pre_rim,
         tier2,

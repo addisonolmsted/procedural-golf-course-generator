@@ -535,6 +535,129 @@ pub fn meander_to(base: &[Vec2], lam: f64, target: f64, phase: f64) -> Vec<Vec2>
     best
 }
 
+/// Corridor half-width of the pre-carved trunk, metres. Wide enough that
+/// D8 cannot step out of it, narrow enough that the erosion loop still
+/// owns the valley's final width.
+pub const CORRIDOR_HW_M: f64 = 44.0;
+/// Minimum rise per sample walking UPSTREAM along the bed. The bed is laid
+/// by running maximum from the mouth so it descends monotonically to base
+/// level; without that a corridor can dam itself and the fill turns it
+/// into a lake, which is the failure the river builder hit twice.
+pub const BED_RISE_M: f64 = 0.012;
+
+/// Build the trunks and cut their corridors into `z`, returning the lines.
+///
+/// This is the whole of step one: the trunk is CONSTRUCTED — placed from
+/// the macro's own low ground and ridge toes, meandered to the archetype's
+/// corpus sinuosity — and then cut in as the lowest ground on the tile
+/// before the erosion loop runs. The loop then routes down it and fifteen
+/// iterations of stream power reinforce it, so the network that reaches
+/// extraction is still read off the built surface.
+///
+/// The corridor is deliberately modest. It exists to say WHERE the trunk
+/// goes, not to be the finished valley — the catena and the erosion own
+/// its section, and those are calibrated.
+#[allow(clippy::too_many_arguments)]
+pub fn stamp_trunks(
+    spec: &GridSpec,
+    z: &mut Grid<f64>,
+    base_edge: Edge,
+    count: usize,
+    cut_m: f64,
+    target_sinuosity: f64,
+    phases: &[f64],
+) -> Vec<Vec<Vec2>> {
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let cell = spec.cell_size;
+    let ff = flow::route(z);
+    let gr = grain(spec, z);
+    let seeds = trunks(spec, &ff, base_edge, count, Some(&gr));
+    let mut out: Vec<Vec<Vec2>> = Vec::new();
+    for (k, t) in seeds.iter().enumerate() {
+        // The FLOW path, not `trunk_line`. Measured: `trunk_line` only
+        // guarantees increasing distance from the mouth, not descent, so
+        // wherever the ground falls away from the mouth the monotone bed
+        // rises above the surface and nothing gets cut — the corridor came
+        // out discontinuous and the erosion loop ignored it (median gap
+        // 73-161 m between the proposal and the network it produced). The
+        // flow path descends by construction; the meander then moves it
+        // laterally, which the bed can still follow.
+        let raw = t.pts.clone();
+        if raw.len() < 8 {
+            continue;
+        }
+        let (lo, hi) = MEANDER_LAM_M;
+        let u = phases.get(2 * k).copied().unwrap_or(0.5);
+        let lam = lo + (hi - lo) * u;
+        let phase = phases.get(2 * k + 1).copied().unwrap_or(0.0) * std::f64::consts::TAU;
+        let line = meander_to(&raw, lam, target_sinuosity, phase);
+
+        // Resample the line at half-cell steps and lay a monotone bed:
+        // walking upstream from the mouth the bed may only rise, so the
+        // corridor drains to base level by construction.
+        let mut pts: Vec<Vec2> = Vec::new();
+        for w in line.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let len = (b.x - a.x).hypot(b.y - a.y).max(1e-9);
+            let steps = ((len / (cell * 0.5)).ceil() as usize).max(1);
+            for s in 0..steps {
+                let t = s as f64 / steps as f64;
+                pts.push(Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+            }
+        }
+        pts.push(*line.last().unwrap());
+        let at = |p: Vec2| -> Option<usize> {
+            let (x, y) = ((p.x / cell).round(), (p.y / cell).round());
+            if x < 0.0 || y < 0.0 || x >= nx as f64 || y >= ny as f64 {
+                return None;
+            }
+            Some(y as usize * nx + x as usize)
+        };
+        let mut bed: Vec<f64> = Vec::with_capacity(pts.len());
+        for (i, p) in pts.iter().enumerate() {
+            let Some(lin) = at(*p) else {
+                bed.push(bed.last().copied().unwrap_or(0.0));
+                continue;
+            };
+            // depth tapers from the mouth upstream: a trunk is deepest
+            // where it carries the most water
+            let f = 1.0 - (i as f64 / pts.len() as f64);
+            let want = z.data[lin] - cut_m * (0.25 + 0.75 * f);
+            bed.push(match bed.last() {
+                Some(&prev) => want.max(prev + BED_RISE_M),
+                None => want,
+            });
+        }
+        // Stamp: every cell within the corridor is pulled down to the bed,
+        // with a cosine shoulder so the edge is not a wall.
+        let r = (CORRIDOR_HW_M / cell).ceil() as i64;
+        for (i, p) in pts.iter().enumerate() {
+            let Some(lin) = at(*p) else { continue };
+            let (cx, cy) = ((lin % nx) as i64, (lin / nx) as i64);
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let (xx, yy) = (cx + dx, cy + dy);
+                    if xx <= 0 || yy <= 0 || xx >= nx as i64 - 1 || yy >= ny as i64 - 1 {
+                        continue;
+                    }
+                    let d = ((dx * dx + dy * dy) as f64).sqrt() * cell;
+                    if d > CORRIDOR_HW_M {
+                        continue;
+                    }
+                    let w = 0.5 * (1.0 + libm::cos(std::f64::consts::PI * d / CORRIDOR_HW_M));
+                    let j = yy as usize * nx + xx as usize;
+                    let target = bed[i] + (1.0 - w) * cut_m;
+                    if target < z.data[j] {
+                        z.data[j] = target;
+                    }
+                }
+            }
+        }
+        out.push(line);
+    }
+    out
+}
+
 /// Sinuosity over a sliding window, the same statistic `planform.rs`
 /// reports — arc over chord, so 1.0 is dead straight.
 pub fn window_sinuosity(pts: &[Vec2], window_m: f64) -> Option<f64> {

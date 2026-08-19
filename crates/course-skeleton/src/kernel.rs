@@ -85,6 +85,13 @@ pub struct Skeleton {
     /// [0,1] relative elevation above the nearest channel base, 8 m.
     pub hillslope_position: Grid<f64>,
     pub channels: Vec<Channel>,
+    /// Constructed trunk PROPOSALS, empty unless `skeleton.network_mode`
+    /// is on. These are never the network — the network is `channels`,
+    /// read off the built surface as always. They are kept so an
+    /// instrument can ask whether the surface ended up carrying the trunk
+    /// that was asked for, which is the acceptance test for the whole
+    /// constructive path.
+    pub constructed: Vec<Vec<Vec2>>,
     pub embryos: Vec<BasinEmbryo>,
     /// Derived from the flow field — never authored.
     pub divides: Vec<Vec<Vec2>>,
