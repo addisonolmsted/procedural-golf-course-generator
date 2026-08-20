@@ -255,14 +255,26 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
   candidates, and the lowest candidates all sit in the same low, so a greedy pick with a distance floor walks along the
   bottom of one hollow. The distance floor was never testing for the thing it was there to prevent. Placement now
   requires a high between mouths, and the metre floor drops to a physical minimum of 60 m.</p>
-  <p class="sub">Two honest consequences. <strong>The drawn trunk count is now a ceiling, not a target</strong> —
-  a tile whose base edge has one broad low genuinely supports one trunk however many were drawn (fulfilment 61–80 %).
-  And spacing is now <em>wider</em> than real (median 1250 m against 510–784 m). Sweeping the threshold barely moves
-  it — 1156 m at 0.10, 1313 m at 0.18 — which says the gap is structural, not a mistuning: divides in a field
-  band-limited to ≥ 420 m are inherently far apart, and real tile edges carry only 0.3–0.55 trunk-class outlets each
-  (most carry none) spread over four sides where ours uses one. The sharp narrow divides that let real mouths sit
-  16–64 m apart are sub-macro features that <strong>emerge at step 4 from the network itself</strong>, and step 2 is
-  the wrong place to fake them.</p>
+  <p class="sub">A wide metre floor sits on top of the divide rule, because the two catch different things: a divide
+  can be sharp enough to separate two systems while still leaving two trunks close enough to <em>read</em> as one river
+  drawn twice. <strong>750 m</strong> over the 2000 m of usable edge puts a practical ceiling of three trunks on a tile.
+  Both rules are asserted in tests.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>rule</th><th>closest pair</th><th>gap p10</th><th>median</th><th>no divide</th><th>trunks placed</th></tr></thead>
+    <tbody>
+      <tr><td>Distance only (420 m)</td><td>437 m</td><td>438 m</td><td>500–531 m</td><td class="w">43 %</td><td>~100 %</td></tr>
+      <tr><td>Divide only (0.14)</td><td>438 m</td><td>781 m</td><td>1250 m</td><td class="g">0 %</td><td>61–80 %</td></tr>
+      <tr><td>Divide + 750 m floor</td><td class="g">750 m</td><td>844 m</td><td>1312 m</td><td class="g">0 %</td><td>70–79 %</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub"><strong>The drawn trunk count is a ceiling, not a target.</strong> A tile whose base edge has one broad
+  low genuinely supports one trunk however many were drawn. Great Plains was capped from 4 to 3, since four mouths
+  cannot fit 750 m apart on 2000 m of usable edge and a 4 would always have been silently cut back.</p>
+  <p class="sub"><strong>Wide trunk spacing is the intended design, not a residual.</strong> These are main trunks
+  only; the medium and small systems that fill the space between them are step 4's tributaries. The comparison against
+  “real outlet spacing” was never like-for-like — a real 3 km border carries 2.4–3.9 outlets at the channel threshold
+  but only <strong>0.3–0.55 at trunk scale</strong>, and most borders carry none. Judge trunk spacing again once
+  tributaries exist, not before.</p>
 </section>
 
 <section class="notes">

@@ -92,7 +92,9 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(108.0, 125.0),
-            trunk_count: Range::new(2.0, 4.0),
+            // 3, not 4: four mouths cannot fit 750 m apart on the 2000 m of
+            // usable edge, so a 4 would always be silently cut back to 3.
+            trunk_count: Range::new(2.0, 3.0),
             external_inflow_km2: Range::new(0.0, 4.0),
             integration: Range::fixed(1.0),
             anisotropy: Range::new(0.05, 0.18),

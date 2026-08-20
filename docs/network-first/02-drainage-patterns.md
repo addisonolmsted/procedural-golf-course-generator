@@ -148,6 +148,21 @@ and why `width_survey` measured rv rivers at 53 m mean against piedmont's 29 m.
 > only from the tile's own 9 km² produces three or four comparable systems in
 > every archetype, including river valley.
 
+### Trunk spacing is deliberately wide — SETTLED 2026-08-20
+
+Step 2 places **main trunks only**, at a 750 m floor plus a divide test, which
+gives median spacing near 1300 m against 510–784 m for all real outlets at the
+6e4 m² channel threshold. **That gap is the design, not a residual**, and it is
+recorded here so a later round does not "fix" it:
+
+- the medium and small systems that fill the space between trunks are **step 4's
+  tributaries**, and they do not exist yet;
+- the comparison was never like-for-like. A real 3 km border carries 2.4–3.9
+  outlets at the channel threshold but only **0.3–0.55 at trunk scale**
+  (1e6–2e6 m²), and most borders carry none — `outlet_sweep.txt`.
+
+**Judge trunk spacing again once tributaries exist, not before.**
+
 ---
 
 ## 5. A corpus problem this survey exposed — **resolved by 03, kept for the record**

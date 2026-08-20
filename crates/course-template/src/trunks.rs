@@ -70,18 +70,26 @@ pub struct TrunkParams {
     pub dominance: f64,
 }
 
-/// Hard floor on mouth separation. Two rivers cannot be closer than their own
-/// widths; this is a physical minimum, NOT a spacing policy.
+/// Minimum separation between trunk mouths. **Deliberately wide.**
 ///
-/// It was 420 m, inherited from `heartland`, where the failure being avoided
-/// was "the tile gets one trunk drawn twice". That failure is two mouths on
-/// the SAME river, and a distance is the wrong instrument for it — measured,
-/// **43 % of adjacent pairs at 420 m had no divide between them at all** and
-/// 66 % had only a weak one, so the floor was not preventing the thing it was
-/// there to prevent. Real major outlets come as close as 16–64 m
-/// (`docs/network-first/major_outlets.txt`), which a 420 m floor forbids
-/// outright. The divide test below is the correct instrument.
-pub const MOUTH_SEP_M: f64 = 60.0;
+/// These are MAIN TRUNKS only. The medium and small systems that fill the
+/// space between them are step 4's tributaries, so this spacing is not
+/// supposed to match the spacing of all real outlets — a real 3 km border at
+/// the 6e4 m² channel threshold carries 2.4–3.9 outlets, but at trunk scale
+/// (1e6–2e6 m²) it carries only 0.3–0.55, and most borders carry none
+/// (`docs/network-first/outlet_sweep.txt`). **Wide trunk spacing with the gaps
+/// filled by tributaries is the intended design**, not a defect to tune out.
+///
+/// The divide rule below is the correctness test and this is the aesthetic
+/// floor on top of it: a divide can be sharp enough to separate two systems
+/// while still leaving two trunks close enough to read as one river drawn
+/// twice. 750 m over the 2000 m of usable edge (after corner clearance) puts
+/// a practical ceiling of three trunks on a tile.
+///
+/// It was briefly 60 m — a physical minimum — when the divide rule replaced the
+/// old 420 m distance floor. That was right about correctness and wrong about
+/// how it looks.
+pub const MOUTH_SEP_M: f64 = 750.0;
 
 /// Required prominence of the HIGH between two mouths, in `relief_pred` units
 /// (the field spans [-1, 1]).

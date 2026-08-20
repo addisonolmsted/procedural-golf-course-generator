@@ -163,6 +163,13 @@ mod tests {
                 // edge has one broad low genuinely supports one trunk however
                 // many were drawn. Measured fulfilment 61-80%.
                 assert!(t.trunks.len() <= want as usize, "{a} seed {seed}: too many trunks");
+                // The wide floor must actually bind, not just the divide rule.
+                for i in 0..t.trunks.len() {
+                    for j in i + 1..t.trunks.len() {
+                        let d = t.trunks[i].mouth.distance(t.trunks[j].mouth);
+                        assert!(d >= trunks::MOUTH_SEP_M - 1e-6, "{a} seed {seed}: {d:.0} m apart");
+                    }
+                }
                 assert!(want == 0 || !t.trunks.is_empty(), "{a} seed {seed}: no trunk at all");
                 for i in 0..t.trunks.len() {
                     for j in i + 1..t.trunks.len() {
