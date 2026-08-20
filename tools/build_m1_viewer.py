@@ -237,28 +237,32 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
   floodplain, which is why its terrace flight is <em>authored</em> rather than left to the rock. Piedmont is marginal
   by design: a thin veneer should barely bench.</p>
 
-  <h3 class="sh">Are the trunk mouths clustered?</h3>
-  <p class="sub">Measured, because it is the kind of question eyes get wrong. Real <em>major</em> outlets (≥ 4·10⁵ m²)
-  crossing a 3 km border, against ours:</p>
+  <h3 class="sh">Were the trunk mouths clustered? Yes — and it was worse than it looked</h3>
+  <p class="sub">The review concern was that two mouths in the same low grow into essentially one trunk running side
+  by side, and may cross. That is exactly the near-parallel-channel defect that ended the previous attempt's network
+  round, so it was measured rather than argued.</p>
+  <p class="sub">The right test is not distance — it is whether a <strong>divide</strong> stands between two mouths.
+  Two mouths in one low share a catchment however far apart they are. Measuring the prominence of the highest ground
+  between adjacent mouths, on the 420 m separation rule that was in place:</p>
   <div class="tblwrap"><table class="tbl">
-    <thead><tr><th></th><th>closest pair</th><th>gap p10</th><th>median gap</th><th>gap p90</th></tr></thead>
+    <thead><tr><th></th><th>no divide at all</th><th>weak divide (&lt; 0.10)</th><th>median prominence</th></tr></thead>
     <tbody>
-      <tr><td>Real corpus</td><td>16–64 m</td><td>67–182 m</td><td>510–784 m</td><td>1546–1958 m</td></tr>
-      <tr><td>Ours</td><td>437 m</td><td>438 m</td><td>500–531 m</td><td>1031–1375 m</td></tr>
+      <tr><td>Distance rule (420 m)</td><td class="w">43 %</td><td class="w">66 %</td><td>0.020</td></tr>
+      <tr><td>Divide rule (0.14)</td><td class="g">0 %</td><td class="g">0 %</td><td>0.302</td></tr>
     </tbody>
   </table></div>
-  <p class="sub"><strong>They are not clustered — they are the opposite.</strong> Our median spacing is right
-  (500–531 m against a real 510–784 m), but our distribution is far too narrow at both ends: real networks put major
-  outlets as close as 16 m and as far apart as 1958 m, while a 420 m floor forbids the tight pairs and nothing pushes
-  the wide ones wider. What reads as clustering on screen is something else — <strong>all our mouths are on one
-  edge</strong>, because the tile has one declared base level and three no-flux rims, where a real 3 km window drains
-  out all four sides (corpus max-edge share 46–78 %). That is a deliberate architectural choice with a recorded
-  reason, not a defect.</p>
-  <p class="sub">The fixable half is the narrow distribution, and it is an M2 item. The 420 m floor exists because a
-  previous attempt found that below it “the tile gets one trunk drawn twice” — but that failure is two mouths on the
-  <em>same</em> river, and real tight pairs are two <em>different</em> systems. Because attempt 4 constructs the
-  network rather than extracting it, it knows which is which, so the floor can be dropped for genuinely separate
-  systems.</p>
+  <p class="sub"><strong>Two-thirds of adjacent pairs were sharing a low.</strong> The cause: scoring picks the lowest
+  candidates, and the lowest candidates all sit in the same low, so a greedy pick with a distance floor walks along the
+  bottom of one hollow. The distance floor was never testing for the thing it was there to prevent. Placement now
+  requires a high between mouths, and the metre floor drops to a physical minimum of 60 m.</p>
+  <p class="sub">Two honest consequences. <strong>The drawn trunk count is now a ceiling, not a target</strong> —
+  a tile whose base edge has one broad low genuinely supports one trunk however many were drawn (fulfilment 61–80 %).
+  And spacing is now <em>wider</em> than real (median 1250 m against 510–784 m). Sweeping the threshold barely moves
+  it — 1156 m at 0.10, 1313 m at 0.18 — which says the gap is structural, not a mistuning: divides in a field
+  band-limited to ≥ 420 m are inherently far apart, and real tile edges carry only 0.3–0.55 trunk-class outlets each
+  (most carry none) spread over four sides where ours uses one. The sharp narrow divides that let real mouths sit
+  16–64 m apart are sub-macro features that <strong>emerge at step 4 from the network itself</strong>, and step 2 is
+  the wrong place to fake them.</p>
 </section>
 
 <section class="notes">

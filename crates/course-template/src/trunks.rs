@@ -70,9 +70,29 @@ pub struct TrunkParams {
     pub dominance: f64,
 }
 
-/// Minimum separation between mouths. Below this the tile reads as one river
-/// drawn twice — the failure `heartland` hit at 420 m, kept here.
-pub const MOUTH_SEP_M: f64 = 420.0;
+/// Hard floor on mouth separation. Two rivers cannot be closer than their own
+/// widths; this is a physical minimum, NOT a spacing policy.
+///
+/// It was 420 m, inherited from `heartland`, where the failure being avoided
+/// was "the tile gets one trunk drawn twice". That failure is two mouths on
+/// the SAME river, and a distance is the wrong instrument for it — measured,
+/// **43 % of adjacent pairs at 420 m had no divide between them at all** and
+/// 66 % had only a weak one, so the floor was not preventing the thing it was
+/// there to prevent. Real major outlets come as close as 16–64 m
+/// (`docs/network-first/major_outlets.txt`), which a 420 m floor forbids
+/// outright. The divide test below is the correct instrument.
+pub const MOUTH_SEP_M: f64 = 60.0;
+
+/// Required prominence of the HIGH between two mouths, in `relief_pred` units
+/// (the field spans [-1, 1]).
+///
+/// **This is the real separation rule.** Two mouths are two systems only if a
+/// divide stands between them; two mouths in one low share a catchment, and
+/// their trunks grow side by side down the same hollow and may cross — which
+/// is precisely the near-parallel-channel defect that ended the previous
+/// attempt's network round. Calibrated so the resulting spacing distribution
+/// matches real major outlets; see `examples/divide_probe.rs`.
+pub const MIN_DIVIDE_PROMINENCE: f64 = 0.14;
 
 /// Minimum distance from a mouth to the nearest corner.
 ///
@@ -110,14 +130,34 @@ pub fn place(rng: &mut DetRng, p: &TrunkParams, relief_pred: &Grid<f64>, edge: E
         .collect();
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(core::cmp::Ordering::Equal));
 
+    // Ground on the probe line, as a function of the along-edge parameter.
+    let ground = |t: f64| {
+        let m = edge.point(t);
+        relief_pred.bilinear(Vec2::new(m.x + ic * probe_in, m.y + is * probe_in))
+    };
+    // Prominence of the highest ground between two along-positions, above
+    // whichever end is higher. <= 0 means they sit in one low.
+    let divide = |a: f64, b: f64| {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        let n = (((hi - lo) * EXTENT_M) / 16.0).ceil().max(2.0) as usize;
+        let mut peak = f64::MIN;
+        for i in 1..n {
+            peak = peak.max(ground(lo + (hi - lo) * i as f64 / n as f64));
+        }
+        peak - ground(lo).max(ground(hi))
+    };
+
     let mut chosen: Vec<f64> = Vec::new();
-    for (t, _) in scored {
+    for (t, _) in &scored {
         if chosen.len() >= p.count as usize {
             break;
         }
-        let m = edge.point(t);
-        if chosen.iter().all(|&c| edge.point(c).distance(m) >= MOUTH_SEP_M) {
-            chosen.push(t);
+        let m = edge.point(*t);
+        let ok = chosen.iter().all(|&c| {
+            edge.point(c).distance(m) >= MOUTH_SEP_M && divide(c, *t) >= MIN_DIVIDE_PROMINENCE
+        });
+        if ok {
+            chosen.push(*t);
         }
     }
     chosen.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));

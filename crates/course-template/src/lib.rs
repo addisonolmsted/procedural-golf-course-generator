@@ -157,14 +157,13 @@ mod tests {
             for a in Archetype::ALL {
                 let t = tpl(seed, a);
                 let want = course_draw::generate(&RunIdentity::from_seed(seed), Some(a)).d.trunk_count;
-                // <=, not ==: when the drawn count will not fit the usable
-                // edge at MOUTH_SEP_M, placement DROPS a trunk rather than
-                // crowding two rivers together. Measured 3 shortfalls in 3549.
+                // The drawn count is a CEILING, not a target. A mouth is only
+                // accepted if a divide stands between it and every mouth
+                // already placed (MIN_DIVIDE_PROMINENCE), so a tile whose base
+                // edge has one broad low genuinely supports one trunk however
+                // many were drawn. Measured fulfilment 61-80%.
                 assert!(t.trunks.len() <= want as usize, "{a} seed {seed}: too many trunks");
-                assert!(
-                    t.trunks.len() as u32 + 1 >= want || want == 0,
-                    "{a} seed {seed}: dropped more than one trunk ({} of {want})", t.trunks.len()
-                );
+                assert!(want == 0 || !t.trunks.is_empty(), "{a} seed {seed}: no trunk at all");
                 for i in 0..t.trunks.len() {
                     for j in i + 1..t.trunks.len() {
                         let d = t.trunks[i].mouth.distance(t.trunks[j].mouth);
@@ -229,6 +228,53 @@ mod tests {
                 }
                 for v in &t.fields.relief_pred.data {
                     assert!((-1.0..=1.0).contains(v), "{a}: relief_pred {v}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn adjacent_mouths_are_separated_by_a_divide() {
+        // The review concern this rule exists for: two mouths in one low grow
+        // into the same trunk side by side and may cross. Distance does not
+        // test for that -- a divide does. Before the rule, 43% of adjacent
+        // pairs had NO high between them at 420 m separation.
+        use course_world::math::Vec2;
+        for a in [Archetype::Piedmont, Archetype::GreatPlains, Archetype::HillCountry] {
+            for seed in 0..80u64 {
+                let t = tpl(seed, a);
+                if t.trunks.len() < 2 {
+                    continue;
+                }
+                let (ic, is) = (
+                    course_world::math::cos(t.base_edge.inward()),
+                    course_world::math::sin(t.base_edge.inward()),
+                );
+                let g = |along: f64| {
+                    let m = match t.base_edge {
+                        Edge::South => Vec2::new(along, 0.0),
+                        Edge::North => Vec2::new(along, EXTENT_M),
+                        Edge::West => Vec2::new(0.0, along),
+                        Edge::East => Vec2::new(EXTENT_M, along),
+                    };
+                    t.fields.relief_pred.bilinear(Vec2::new(m.x + ic * 180.0, m.y + is * 180.0))
+                };
+                let mut al: Vec<f64> = t.trunks.iter().map(|k| match t.base_edge {
+                    Edge::South | Edge::North => k.mouth.x,
+                    _ => k.mouth.y,
+                }).collect();
+                al.sort_by(|x, y| x.partial_cmp(y).unwrap());
+                for w in al.windows(2) {
+                    let n = ((w[1] - w[0]) / 16.0).ceil().max(2.0) as usize;
+                    let mut peak = f64::MIN;
+                    for i in 1..n {
+                        peak = peak.max(g(w[0] + (w[1] - w[0]) * i as f64 / n as f64));
+                    }
+                    let prom = peak - g(w[0]).max(g(w[1]));
+                    assert!(
+                        prom >= trunks::MIN_DIVIDE_PROMINENCE - 1e-6,
+                        "{a} seed {seed}: mouths share a low (prominence {prom:.3})"
+                    );
                 }
             }
         }
