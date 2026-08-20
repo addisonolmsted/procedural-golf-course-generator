@@ -1,0 +1,9 @@
+piedmont       n=27 | A: Rb  3.92 [3.42-6.34] Rl  2.02 W 3 | B: Rb  2.62 [1.88-5.23] Rl  1.01 W 3
+great_plains   n=36 | A: Rb  4.42 [3.41-6.52] Rl  2.25 W 3 | B: Rb  2.28 [1.76-5.09] Rl  1.09 W 3
+river_valley   n=32 | A: Rb  4.58 [3.65-6.70] Rl  1.68 W 3 | B: Rb  2.98 [2.00-4.31] Rl  0.96 W 3
+hill_country   n=27 | A: Rb  4.18 [3.50-6.54] Rl  1.93 W 3 | B: Rb  2.15 [1.67-3.33] Rl  0.93 W 3
+heathland      n=37 | A: Rb  4.00 [3.49-4.89] Rl  1.80 W 3 | B: Rb  2.25 [1.81-5.83] Rl  0.95 W 3
+sandhills      n=44 | A: Rb  4.74 [3.60-6.46] Rl  1.64 W 3 | B: Rb  2.38 [1.84-6.75] Rl  0.98 W 3
+
+POLICY A across biomes: Rb 3.92-4.74  Rl 1.64-2.25
+POLICY B across biomes: Rb 2.15-2.98  Rl 0.93-1.09

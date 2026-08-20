@@ -761,6 +761,10 @@ dependencies = [
 [[package]]
 name = "course-draw"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-earthmoving"
@@ -769,6 +773,10 @@ version = "0.0.0"
 [[package]]
 name = "course-fabric"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-framing"
@@ -792,6 +800,10 @@ version = "0.0.0"
 [[package]]
 name = "course-network"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-primitives"
@@ -808,6 +820,10 @@ dependencies = [
 [[package]]
 name = "course-relief"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-routing"
@@ -860,6 +876,10 @@ version = "0.0.0"
 [[package]]
 name = "course-template"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-transforms"
@@ -892,6 +912,10 @@ dependencies = [
 [[package]]
 name = "course-water"
 version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
 
 [[package]]
 name = "course-world"

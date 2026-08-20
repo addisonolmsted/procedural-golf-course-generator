@@ -27,6 +27,7 @@ FILES=(
   tools/macro_campaign/macro_campaign/netstats.py
   tools/macro_campaign/macro_campaign/cgrid.py
   tools/macro_campaign/horton_real.py
+  tools/macro_campaign/horton_policy_compare.py
   tools/macro_campaign/junction_real.py
   tools/macro_campaign/real_planform.py
   tools/golf_proxy/proxy.py

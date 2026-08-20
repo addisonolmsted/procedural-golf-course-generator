@@ -32,14 +32,27 @@ macro-as-heightfield; `course-amplify`'s `synth`/`conditioning`/`blend`;
 `course-transforms`' hydrology. All of these encode the subtractive
 surface-first assumption this attempt replaces.
 
+### Admitted — substrate (user decision, 2026-08-19)
+
+| Item | Why it is not approach-specific |
+|---|---|
+| `crates/course-world` | Grid/GridSpec, the **CGRID1 codec** (the interchange format the frozen Python ruler reads), `flow::route` (priority-flood + D8, **pinned by parity fixtures to `macro_campaign/flow.py`**), Vec2/libm bit-stable math, splines, noise, ease. ~1 950 LOC, deps `serde` + `libm` only, zero pipeline types. |
+| `crates/course-seed` | `DetRng` (ChaCha8 over blake3, explicit 53-bit mantissa mapping), `RunIdentity`, the stream registry. ~820 LOC, no pipeline types. |
+
+**Used in place, not copied** — the same exception as the ruler, for the same
+reason. Forking `Grid`/CGRID1 would create two interchange formats, and forking
+`flow::route` would create a second D8 that can disagree with the ruler's D8 in
+ways indistinguishable from a generator defect. The parity fixtures are the
+whole point: they are what makes M3's *"does the synthesised surface route to
+the constructed network"* check mean something.
+
+*Trim on arrival:* `course-seed/src/streams.rs` stream names are v2-stage-shaped
+and the `Scope`/reroll machinery is already documented as vestigial.
+
 ### Flagged as likely re-requests — **do not take without asking**
 
-`course-world` (Grid/CGRID1 IO, `flow::route` pinned by parity fixtures to the
-Python reference, libm bit-stable math, splines, noise) and `course-seed`
-(`DetRng`, stream registry) are ~2 800 LOC of approach-neutral substrate with no
-pipeline types. `course-viz` + `tile-lab` are a self-contained
-heightfield-plus-network viewer. Rebuilding them buys nothing — but reuse stays
-opt-in, per the rule.
+`course-viz` + `tile-lab` are a self-contained heightfield-plus-network viewer.
+Rebuilding them buys nothing — but reuse stays opt-in, per the rule.
 
 ---
 

@@ -28,7 +28,7 @@ Two Horton numbers were in circulation and they disagreed by a factor of two:
 | how the ratio is fitted | log-linear **regression** over all orders, `Rb = exp(-slope)` | **median of successive order-pair ratios** |
 
 Both were re-run over the *same* tiles to confirm the disagreement is
-definitional and not a bug (`scratchpad/horton_policy.py`). **Both prior numbers
+definitional and not a bug (`tools/macro_campaign/horton_policy_compare.py`). **Both prior numbers
 reproduced**, which is the evidence that closes the question:
 
 | biome | A: Rb | A: Rl | A: Ω | B: Rb | B: Rl | B: Ω |
@@ -118,10 +118,55 @@ instrument that has never been seen to fail is not evidence.
 
 ## 4. The bands
 
-Corpus: the 203 clean tiles in `tools/macro_campaign/out/`, per
-`exclude.json` / `review_v2.json` (both digest-locked).
+Corpus: all **203 clean tiles** in `tools/macro_campaign/out/`, per `exclude.json` / `review_v2.json` (both
+digest-locked). Full output: `horton_full.txt`.
 
-<!-- FULL-CORPUS TABLE PENDING -->
+| biome | n | **A: Rb med** | A: Rb p10–p90 | **A: Rl med** | A: Ω | B: Rb med | B: Rl med |
+|---|---|---|---|---|---|---|---|
+| piedmont | 27 | **3.92** | 3.42–6.34 | **2.02** | 3 | 2.62 | 1.01 |
+| great_plains | 36 | **4.42** | 3.41–6.52 | **2.25** | 3 | 2.28 | 1.09 |
+| river_valley | 32 | **4.58** | 3.65–6.70 | **1.68** | 3 | 2.98 | 0.96 |
+| hill_country | 27 | **4.18** | 3.50–6.54 | **1.93** | 3 | 2.15 | 0.93 |
+| heathland | 37 | **4.00** | 3.49–4.89 | **1.80** | 3 | 2.25 | 0.95 |
+| sandhills | 44 | **4.74** | 3.60–6.46 | **1.64** | 3 | 2.38 | 0.98 |
+| **across biomes** | 203 | **3.92–4.74** | 3.41–6.70 | **1.64–2.25** | 3 | 2.15–2.98 | 0.93–1.09 |
+
+### The declared targets
+
+> **Rb 3.92–4.74, Rl 1.64–2.25**, biome-invariant, measured by Policy A
+> on the synthesised surface.
+
+The pilot's wider spread (Rb 3.88–5.55) was small-n noise: at n=8 river_valley
+read 5.55, at n=32 it reads 4.58. **Take the medians from this table, not the
+pilot.**
+
+### Two caveats that change how the gate must be written
+
+**1. Ω is 3 in every biome, so Rb comes from a three-point log-linear fit.**
+That is inherently noisy, and the measured per-tile spread shows it:
+p10–p90 runs 3.41–6.70 against biome medians of only 3.92–4.74. The
+per-tile ratio is a weak estimate; the per-biome median over many tiles is a
+strong one.
+
+**2. So Horton must NOT be gated pointwise.** `docs/calibration/metric-battery.md`
+classes process metrics as "match pointwise, within a narrow band" — for this
+metric, at this corpus, the band is *not* narrow and a pointwise gate would
+either reject good seeds or accept anything. The gate is:
+
+- **median over the seed battery vs the corpus median**, per biome, and
+- **dispersion ratio 0.7–1.3** on the per-seed spread against the per-tile
+  spread above.
+
+This is the same shape the D5 battery already uses for `d2c` (medians must land
+in band and spread under 30 m), and it is the honest reading of the data.
+
+### Where "real 5.20" sits
+
+Round 1's figure is above every biome median in this table but inside the
+per-tile p10–p90 everywhere. It is consistent with Policy A and not with Policy
+B, which is what identified the ruler — but it is **not** the corpus median, and
+aiming the network stage at 5.20 would aim it high by roughly 10–30 %. The
+targets above supersede it.
 
 ---
 

@@ -1,5 +1,5 @@
 # RULER LOCK — regenerate only by deliberate decision.
-# 8ca66d9 on network-first
+# 94e21ea on network-first
 841139bedc5ae900e034fde62654e0af393a90cc7c044529c806b409fc3ca79e  tools/metrics/metrics/core.py
 10df019939f032f168d127d5afa07dbbb2ac85b34619434de01a8edafcbe925a  tools/metrics/metrics/features.py
 4f283cf320edc81d2976c5d22cbdf028f77de6e54206ea23f6a7049bb7fa5347  tools/metrics/metrics/io.py
@@ -10,6 +10,7 @@ aaf5f53de02b3dd4a4673c719a7935de406c590eee1ebd320cdb9b768bb96402  tools/metrics/
 bf5708137c8c15946866b12ee030c5933393a3ff79c2407112432307450ec4e8  tools/macro_campaign/macro_campaign/netstats.py
 3f0dc3fbb8dca5f04665b57e667edccd9d3d8a0ebcee8fcbdafc5a58c45561f3  tools/macro_campaign/macro_campaign/cgrid.py
 29e18f910b7af389a3ef0356c85e1b066bcbc9e7019013fa96ae4de895696418  tools/macro_campaign/horton_real.py
+f45fd68f4e0fdcfd1b955fd5b0bcd43181de18d498478bc3ef6461274e929bc6  tools/macro_campaign/horton_policy_compare.py
 809467ad307b8a688a52d2d3a7e1d5e4905c5854466803ab3c46602edf2e5321  tools/macro_campaign/junction_real.py
 c6c8bed079c6bfe7887d79b0f6ea43c514e66b8b1034a453949f4028285a79cb  tools/macro_campaign/real_planform.py
 3f2b63aa7fed0f4b4ad1193d0305c13bd99bd1254ef76e91526b7ebb47c96e31  tools/golf_proxy/proxy.py
