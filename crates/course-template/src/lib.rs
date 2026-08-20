@@ -167,19 +167,16 @@ mod tests {
                 // many were drawn. Measured fulfilment 61-80%.
                 assert!(t.trunks.len() <= want as usize, "{a} seed {seed}: too many trunks");
                 // The wide floor must actually bind, not just the divide rule.
-                for i in 0..t.trunks.len() {
-                    for j in i + 1..t.trunks.len() {
-                        let d = t.trunks[i].mouth.distance(t.trunks[j].mouth);
+                // Joining trunks SHARE the primary's mouth by design, so
+                // mouth-based rules apply only to trunks with their own outlet.
+                let own: Vec<_> = t.trunks.iter().filter(|k| k.joins.is_none()).collect();
+                for i in 0..own.len() {
+                    for j in i + 1..own.len() {
+                        let d = own[i].mouth.distance(own[j].mouth);
                         assert!(d >= trunks::MOUTH_SEP_M - 1e-6, "{a} seed {seed}: {d:.0} m apart");
                     }
                 }
                 assert!(want == 0 || !t.trunks.is_empty(), "{a} seed {seed}: no trunk at all");
-                for i in 0..t.trunks.len() {
-                    for j in i + 1..t.trunks.len() {
-                        let d = t.trunks[i].mouth.distance(t.trunks[j].mouth);
-                        assert!(d >= trunks::MOUTH_SEP_M - 1e-6, "{a} seed {seed}: mouths {d} m apart");
-                    }
-                }
             }
         }
     }
@@ -188,7 +185,7 @@ mod tests {
     fn mouths_sit_on_the_base_edge_and_off_the_corners() {
         for seed in 0..40u64 {
             let t = tpl(seed, Archetype::Piedmont);
-            for tk in &t.trunks {
+            for tk in t.trunks.iter().filter(|k| k.joins.is_none()) {
                 let on_edge = match t.base_edge {
                     Edge::South => tk.mouth.y == 0.0,
                     Edge::North => tk.mouth.y == EXTENT_M,
@@ -253,7 +250,8 @@ mod tests {
         for a in [Archetype::Piedmont, Archetype::GreatPlains, Archetype::HillCountry] {
             for seed in 0..80u64 {
                 let t = tpl(seed, a);
-                if t.trunks.len() < 2 {
+                let own: Vec<_> = t.trunks.iter().filter(|k| k.joins.is_none()).cloned().collect();
+                if own.len() < 2 {
                     continue;
                 }
                 let (ic, is) = (
@@ -269,7 +267,7 @@ mod tests {
                     };
                     t.fields.relief_pred.bilinear(Vec2::new(m.x + ic * 180.0, m.y + is * 180.0))
                 };
-                let mut al: Vec<f64> = t.trunks.iter().map(|k| match t.base_edge {
+                let mut al: Vec<f64> = own.iter().map(|k| match t.base_edge {
                     Edge::South | Edge::North => k.mouth.x,
                     _ => k.mouth.y,
                 }).collect();

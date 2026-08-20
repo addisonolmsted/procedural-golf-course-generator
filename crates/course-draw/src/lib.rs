@@ -85,7 +85,21 @@ pub fn generate(id: &RunIdentity, forced: Option<Archetype>) -> SiteDraw {
         terrace_steps: draw(&mut p, rec.terrace_steps).round() as u32,
         terrace_asymmetry: draw(&mut p, rec.terrace_asymmetry),
         d2c_target_m: draw(&mut p, rec.d2c_target_m),
-        trunk_count: draw(&mut p, rec.trunk_count).round() as u32,
+        trunk_count: {
+            // categorical over the weights; one draw, same as the old range,
+            // so the descriptor transcript keeps its shape
+            let total: f64 = rec.trunk_weights.iter().sum();
+            let mut t = p.next_f64() * total;
+            let mut n = 0u32;
+            for (k, w) in rec.trunk_weights.iter().enumerate() {
+                if t < *w {
+                    n = k as u32;
+                    break;
+                }
+                t -= w;
+            }
+            n
+        },
         external_inflow_km2: draw(&mut p, rec.external_inflow_km2),
         integration: draw(&mut p, rec.integration),
         anisotropy: draw(&mut p, rec.anisotropy),
@@ -151,6 +165,19 @@ mod tests {
             assert!(s.d.external_inflow_km2 >= 40.0);
             assert!(s.d.terrace_steps >= 2);
         }
+    }
+
+    #[test]
+    fn trunk_counts_follow_the_weights() {
+        let mut counts = [0usize; 4];
+        for seed in 0..400u64 {
+            let s = generate(&RunIdentity::from_seed(seed), Some(Archetype::Piedmont));
+            counts[s.d.trunk_count as usize] += 1;
+        }
+        // piedmont weights [0, .62, .33, .05]: mostly 1, sometimes 2, rare 3
+        assert_eq!(counts[0], 0);
+        assert!(counts[1] > counts[2] && counts[2] > counts[3], "{counts:?}");
+        assert!(counts[3] < 50, "{counts:?}");
     }
 
     #[test]

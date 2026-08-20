@@ -18,7 +18,7 @@ for a in ARCHES:
         r = by[(a,s)]
         img = uri(f"{a}_{s}_trunk.jpg")
         tiles.append(f'''<button class="tile" data-img="{img}" data-stats='{html.escape(json.dumps(r))}'>
-<img alt="{LABEL[a]} seed {s}" loading="lazy" src="{img}"><span class="tile-tag"><b>{s}</b><i>{r['trunks']}T · sin {r['sin600']:.2f}</i></span></button>''')
+<img alt="{LABEL[a]} seed {s}" loading="lazy" src="{img}"><span class="tile-tag"><b>{s}</b><i>{r['trunks']}T · {'Y' if r.get('joins',0)>0 else str(r['trunks'])+'T'}</i></span></button>''')
     rows.append(f'''<section class="row"><header class="row-head"><h3>{LABEL[a]}</h3></header>
 <div class="row-tiles">{"".join(tiles)}</div></section>''')
 
@@ -79,15 +79,16 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
 <header class="top">
   <p class="eyebrow">Attempt 4 · network restart · phase N1 — trunks only</p>
   <h1>Trunks: end-to-end, long-wave, and downhill all the way</h1>
-  <p class="lede">The M2 maze is deleted. A trunk is now an authored spline through the lows of the relief field —
-  entering at a far edge when it carries external inflow, starting on high ground otherwise — with a 900–1800 m
-  meander and a long profile assigned at construction. <strong>This page is the N1 gate: review the trunks before any
-  tributary is built.</strong></p>
+  <p class="lede">Round 2, after review. <strong>Every trunk is now a through-river</strong> — a trunk-scale valley
+  is carved by a river whose catchment far exceeds the window (real borders carry only 0.29 trunk-class outlets per
+  edge), so headwater starts are reserved for the tributaries. Counts dialled down: mostly one, sometimes two — which
+  may <strong>converge at an in-tile confluence</strong> — very rarely three. A 400 m corridor floor keeps separate
+  trunks apart along their whole length, not just at the mouths.</p>
   <div class="legend">
     <span><i class="grad"></i> elevation along the line: pale = base level → blue = head</span>
     <span><i class="sw" style="background:#E8B93E"></i> mouth</span>
-    <span><i class="sw" style="background:#78EBAA"></i> head on a far edge (through-river)</span>
-    <span><i class="sw" style="background:#EB7878"></i> headwater start (high ground)</span>
+    <span><i class="sw" style="background:#78EBAA"></i> entry on a far edge</span>
+    <span><i class="sw" style="background:#4B5AC8;border:2px solid #FFF"></i> confluence junction</span>
     <span>background: relief field, blue low → orange high</span>
   </div>
 </header>
@@ -98,8 +99,9 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
     <thead><tr><th>check</th><th>result</th></tr></thead>
     <tbody>
       <tr><td>min curvature radius (asserted in tests)</td><td>150 m — enforced by iterated smoothing, not hoped for</td></tr>
-      <tr><td>long profile</td><td>strictly monotone, zero at the mouth; through-rivers drop gently (4–12 % of relief budget), headwater trunks climb to 45–65 %</td></tr>
-      <tr><td>trunk–trunk crossings</td><td>0 — far-end sectors are disjoint (edge Voronoi) + a deterministic rebuild ladder; an unplaceable trunk is dropped and counted, never overlapped</td></tr>
+      <tr><td>long profile</td><td>strictly monotone, zero at the mouth; all trunks drop gently (4–12 % of relief budget — mature rivers, not headwater streams); a joining trunk's profile starts at the junction elevation</td></tr>
+      <tr><td>trunk–trunk crossings</td><td>0 — disjoint far-end sectors + a 400 m whole-path corridor floor + rebuild ladder; an unplaceable trunk is dropped, never overlapped</td></tr>
+      <tr><td>convergence</td><td>a secondary joins the primary at 45 % probability — junction chosen where the primary's local tangent faces the entry (mid-bend junctions hairpinned; measured 2 m radius before the fix), approach at 35–50° off the downstream tangent</td></tr>
       <tr><td>600 m window sinuosity</td><td>1.03–1.04 (corpus pooled band 1.06–1.10 — trunks are deliberately the straightest members; the pooled band becomes binding at N3 when tributaries dominate)</td></tr>
       <tr><td>1500 m window sinuosity</td><td>1.07–1.14 — the long-wave meander lives here</td></tr>
       <tr><td>river valley</td><td>always exactly 1 trunk, always edge-to-edge</td></tr>
@@ -116,7 +118,7 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
 <div class="dbody"><img id="dimg" alt=""><dl class="dstats" id="dstats"></dl></div></dialog>
 <script>
 const LABEL={json.dumps(LABEL)};
-const F=[["trunks","trunks",v=>v],["through","through-rivers",v=>v],["sin600","sinuosity 600 m",v=>v.toFixed(3)],
+const F=[["trunks","trunks",v=>v],["joins","converging",v=>v],["sin600","sinuosity 600 m",v=>v.toFixed(3)],
  ["min_rad","min radius m",v=>v],["len_km","total length km",v=>v.toFixed(2)],["head_z","head elevation m",v=>v.toFixed(1)]];
 const dlg=document.getElementById("dlg");
 document.querySelectorAll(".tile").forEach(t=>t.addEventListener("click",()=>{{

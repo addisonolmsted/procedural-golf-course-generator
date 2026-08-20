@@ -24,6 +24,7 @@ pub use trunk_path::{TrunkPath, TrunkPathParams};
 use course_draw::rng::stream;
 use course_seed::RunIdentity;
 use course_template::Template;
+use course_world::math::Vec2;
 
 /// Phase N1's stream. Registered in `course_draw::rng`.
 pub const NETWORK_TRUNKPATH: &str = "n4/network/trunkpath/v1";
@@ -49,55 +50,160 @@ impl Network {
 }
 
 /// Build the network a template implies. Phase N1: trunks only.
+///
+/// Every trunk is a THROUGH-river; a secondary may CONVERGE onto the primary
+/// (a confluence inside the tile). Build order: primaries first, then joining
+/// trunks, so the junction can be placed on an existing path.
 pub fn build(id: &RunIdentity, t: &Template) -> Network {
     let mut rng = stream(id, NETWORK_TRUNKPATH);
     let relief_budget = t.relief_budget_m;
-    let mut params = TrunkPathParams::default();
     let mut trunks: Vec<TrunkPath> = Vec::new();
-    for k in &t.trunks {
-        // A through-river drops gently across the tile — it is a mature
-        // river, not a headwater stream. rv corpus relief is ~4.6 m over
-        // 3 km. A headwater trunk climbs to a real fraction of the budget.
-        params.head_relief_frac = if k.through {
-            rng.range_f64(0.04, 0.12)
-        } else {
-            rng.range_f64(0.45, 0.65)
-        };
-        // Sectors make crossings rare, not impossible: two meanders can
-        // still touch across a sector boundary. Deterministic ladder —
-        // narrow the swing and stretch the wavelength until clean; a trunk
-        // that cannot be placed cleanly is DROPPED and counted, never
-        // silently overlapped.
+    // template index -> built index, so joins survive drops
+    let mut built_of: Vec<Option<usize>> = vec![None; t.trunks.len()];
+
+    let order: Vec<usize> = (0..t.trunks.len())
+        .filter(|i| t.trunks[*i].joins.is_none())
+        .chain((0..t.trunks.len()).filter(|i| t.trunks[*i].joins.is_some()))
+        .collect();
+
+    for ti in order {
+        let k = &t.trunks[ti];
+        // All trunks are mature rivers crossing the tile: gentle drop.
+        let head_frac = rng.range_f64(0.04, 0.12);
+
+        // For a joining trunk: junction on the primary, acute approach.
+        let join = k.joins.and_then(|pi| {
+            let built = built_of[pi as usize]?;
+            let primary = &trunks[built];
+            let sp = course_world::spline::Spine::new(primary.pts.clone());
+            // CHOOSE the junction where the geometry works: on a meandering
+            // primary the local tangent mid-bend can point away from the
+            // secondary's entry, and an acute approach built there faces the
+            // wrong way and hairpins back (measured: 2 m curve radius). Scan
+            // candidate positions and take the one whose upstream tangent
+            // agrees best with the direction to the entry.
+            let mut u = 0.45;
+            let mut best = f64::MIN;
+            for i in 0..16 {
+                let cand = 0.28 + 0.44 * (i as f64 + rng.next_f64() * 0.5) / 16.0;
+                let pt = sp.point_at(cand);
+                let toward = Vec2::new(k.far.x - pt.x, k.far.y - pt.y).normalized();
+                let score = sp.tangent_at(cand).dot(toward);
+                if score > best {
+                    best = score;
+                    u = cand;
+                }
+            }
+            let jp = sp.point_at(u);
+            let up_t = sp.tangent_at(u);
+            let down = Vec2::new(-up_t.x, -up_t.y);
+            let to_entry = Vec2::new(k.far.x - jp.x, k.far.y - jp.y).normalized();
+            let th = rng.range_f64(35.0, 50.0).to_radians();
+            // Both rotation sides give an acute junction; take the one whose
+            // approach actually faces the entry.
+            let rot = |sgn: f64| {
+                let (c, sn) = (course_world::math::cos(th * sgn), course_world::math::sin(th * sgn));
+                let inc = Vec2::new(down.x * c - down.y * sn, down.x * sn + down.y * c);
+                Vec2::new(-inc.x, -inc.y).normalized()
+            };
+            let (a, b) = (rot(1.0), rot(-1.0));
+            let up_dir = if a.dot(to_entry) >= b.dot(to_entry) { a } else { b };
+            // junction elevation from the primary's profile
+            let arc = u * sp.length();
+            let mut acc = 0.0;
+            let mut jz = 0.0;
+            for i in 1..primary.pts.len() {
+                acc += primary.pts[i].distance(primary.pts[i - 1]);
+                if acc >= arc {
+                    jz = primary.z[i];
+                    break;
+                }
+            }
+            if std::env::var("N1_DEBUG").is_ok() {
+                eprintln!("join: u={u:.2} jp=({:.0},{:.0}) up_dir=({:.2},{:.2}) agree={best:.2}",
+                          jp.x, jp.y, up_dir.x, up_dir.y);
+            }
+            Some((jp, up_dir, jz))
+        });
+        let mouth = join.map(|(jp, _, _)| jp).unwrap_or(k.mouth);
+        let join_arg = join.map(|(_, d, z)| (d, z));
+
+        // Deterministic ladder: narrow the swing until the candidate neither
+        // crosses nor crowds what is already placed. A trunk that cannot be
+        // placed cleanly is DROPPED and counted, never overlapped.
         let mut placed = None;
-        let mut p2 = TrunkPathParams { ..TrunkPathParams::default() };
-        p2.head_relief_frac = params.head_relief_frac;
         for attempt in 0..4 {
             let shrink = 0.72_f64.powi(attempt);
+            let base = TrunkPathParams::default();
             let cand = trunk_path::build_trunk(
                 &mut rng,
-                k.mouth,
+                mouth,
                 k.far,
-                k.through,
                 k.external_km2,
                 &t.fields.relief_pred,
                 relief_budget,
                 &TrunkPathParams {
-                    swing_rad: (p2.swing_rad.0 * shrink, p2.swing_rad.1 * shrink),
-                    lam_m: (p2.lam_m.0 / shrink.max(0.5), p2.lam_m.1 / shrink.max(0.5)),
-                    head_relief_frac: p2.head_relief_frac,
-                    ..TrunkPathParams::default()
+                    swing_rad: (base.swing_rad.0 * shrink, base.swing_rad.1 * shrink),
+                    lam_m: (base.lam_m.0 / shrink.max(0.5), base.lam_m.1 / shrink.max(0.5)),
+                    head_relief_frac: head_frac,
+                    ..base
                 },
+                join_arg,
             );
-            if !crosses_any(&cand, &trunks) {
+            let clean = if join.is_some() {
+                // allowed to touch its primary AT the junction
+                !crosses_any_except_near(&cand, &trunks, mouth, 150.0)
+            } else {
+                !crosses_any(&cand, &trunks) && min_corridor_ok(&cand, &trunks, 400.0)
+            };
+            if clean {
                 placed = Some(cand);
                 break;
             }
         }
-        if let Some(tp) = placed {
+        if let Some(mut tp) = placed {
+            tp.joins = k.joins.and_then(|pi| built_of[pi as usize].map(|b| b as u32));
+            built_of[ti] = Some(trunks.len());
             trunks.push(tp);
         }
     }
     Network { trunks }
+}
+
+/// Closest approach between a candidate and every placed trunk, sampled
+/// coarsely. Two through-corridors closer than this read as one river drawn
+/// twice — the review finding that set the 750 m mouth floor, applied to the
+/// whole path.
+fn min_corridor_ok(cand: &TrunkPath, placed: &[TrunkPath], min_m: f64) -> bool {
+    for other in placed {
+        for a in cand.pts.iter().step_by(3) {
+            for b in other.pts.iter().step_by(3) {
+                if a.distance(*b) < min_m {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn crosses_any_except_near(cand: &TrunkPath, placed: &[TrunkPath], junction: Vec2, r: f64) -> bool {
+    for other in placed {
+        for wa in cand.pts.windows(2) {
+            if wa[0].distance(junction) < r {
+                continue;
+            }
+            for wb in other.pts.windows(2) {
+                if wb[0].distance(junction) < r {
+                    continue;
+                }
+                if segs_cross(wa[0], wa[1], wb[0], wb[1]) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn segs_cross(a1: course_world::math::Vec2, a2: course_world::math::Vec2,
@@ -153,7 +259,11 @@ mod tests {
         for seed in 0..30u64 {
             for a in [Archetype::Piedmont, Archetype::RiverValley, Archetype::HillCountry] {
                 for t in net(seed, a).trunks {
-                    assert_eq!(t.z[0], 0.0, "{a} seed {seed}: mouth not at base level");
+                    if t.joins.is_none() {
+                        assert_eq!(t.z[0], 0.0, "{a} seed {seed}: mouth not at base level");
+                    } else {
+                        assert!(t.z[0] > 0.0, "{a} seed {seed}: junction at base level");
+                    }
                     for w in t.z.windows(2) {
                         assert!(w[1] >= w[0], "{a} seed {seed}: profile not monotone");
                     }
@@ -183,7 +293,6 @@ mod tests {
             let n = net(seed, Archetype::RiverValley);
             assert_eq!(n.trunks.len(), 1, "seed {seed}");
             let t = &n.trunks[0];
-            assert!(t.through, "seed {seed}: rv trunk must be a through-river");
             let on_edge = |p: course_world::math::Vec2| {
                 p.x <= 1.0 || p.y <= 1.0 || p.x >= EXTENT_M - 1.0 || p.y >= EXTENT_M - 1.0
             };
@@ -193,25 +302,45 @@ mod tests {
     }
 
     #[test]
-    fn trunks_do_not_cross() {
-        // Few trunks, so the O(n^2) segment test is fine.
-        fn segs_cross(a1: course_world::math::Vec2, a2: course_world::math::Vec2,
-                      b1: course_world::math::Vec2, b2: course_world::math::Vec2) -> bool {
-            let d = |p: course_world::math::Vec2, q: course_world::math::Vec2,
-                     r: course_world::math::Vec2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
-            let (d1, d2) = (d(b1, b2, a1), d(b1, b2, a2));
-            let (d3, d4) = (d(a1, a2, b1), d(a1, a2, b2));
-            ((d1 > 0.0) != (d2 > 0.0)) && ((d3 > 0.0) != (d4 > 0.0))
-        }
+    fn trunks_do_not_cross_and_every_trunk_ends_at_an_edge_or_junction() {
+        use course_world::world::EXTENT_M;
         for seed in 0..30u64 {
             for a in [Archetype::Piedmont, Archetype::GreatPlains, Archetype::HillCountry] {
                 let n = net(seed, a);
-                for i in 0..n.trunks.len() {
-                    for j in i + 1..n.trunks.len() {
-                        for wa in n.trunks[i].pts.windows(2) {
-                            for wb in n.trunks[j].pts.windows(2) {
+                for (i, tk) in n.trunks.iter().enumerate() {
+                    // every ENTRY is on an edge (all trunks are through)
+                    let head = *tk.pts.last().unwrap();
+                    let on_edge = head.x <= 1.0 || head.y <= 1.0
+                        || head.x >= EXTENT_M - 1.0 || head.y >= EXTENT_M - 1.0;
+                    assert!(on_edge, "{a} seed {seed}: trunk {i} entry off edge");
+                    // and the downstream end is an edge mouth or a junction
+                    if tk.joins.is_none() {
+                        let m = tk.pts[0];
+                        let m_edge = m.x <= 1.0 || m.y <= 1.0
+                            || m.x >= EXTENT_M - 1.0 || m.y >= EXTENT_M - 1.0;
+                        assert!(m_edge, "{a} seed {seed}: trunk {i} mouth off edge");
+                    }
+                    // no proper crossings against other trunks, away from a
+                    // shared junction
+                    for (j, other) in n.trunks.iter().enumerate() {
+                        if j <= i { continue; }
+                        let junction = if tk.joins == Some(j as u32) {
+                            Some(tk.pts[0])
+                        } else if other.joins == Some(i as u32) {
+                            Some(other.pts[0])
+                        } else {
+                            None
+                        };
+                        for wa in tk.pts.windows(2) {
+                            if let Some(jp) = junction {
+                                if wa[0].distance(jp) < 160.0 { continue; }
+                            }
+                            for wb in other.pts.windows(2) {
+                                if let Some(jp) = junction {
+                                    if wb[0].distance(jp) < 160.0 { continue; }
+                                }
                                 assert!(
-                                    !segs_cross(wa[0], wa[1], wb[0], wb[1]),
+                                    !super::segs_cross(wa[0], wa[1], wb[0], wb[1]),
                                     "{a} seed {seed}: trunks {i} and {j} cross"
                                 );
                             }
@@ -220,6 +349,27 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn convergent_junctions_exist_and_sit_on_the_primary() {
+        let mut joins = 0;
+        for seed in 0..120u64 {
+            for a in [Archetype::Piedmont, Archetype::GreatPlains, Archetype::HillCountry] {
+                let n = net(seed, a);
+                for tk in &n.trunks {
+                    if let Some(pi) = tk.joins {
+                        joins += 1;
+                        let primary = &n.trunks[pi as usize];
+                        let jp = tk.pts[0];
+                        let d = primary.pts.iter().fold(f64::MAX, |m, q| m.min(q.distance(jp)));
+                        assert!(d < 25.0, "{a} seed {seed}: junction {d:.0} m off the primary");
+                        assert!(tk.z[0] > 0.0, "{a} seed {seed}: junction at base level");
+                    }
+                }
+            }
+        }
+        assert!(joins > 10, "converge coin never fired ({joins})");
     }
 
     #[test]

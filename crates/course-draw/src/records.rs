@@ -40,14 +40,21 @@ pub struct Record {
     pub floor_widen: Range,
     /// Number of terrace treads on the trunk's valley side. 0 = no flight.
     pub terrace_steps: Range,
+    /// Probability weights for drawing 0/1/2/3 trunks.
+    ///
+    /// **All trunks are THROUGH-rivers** (user decision 2026-08-20): a
+    /// trunk-scale valley is carved by a river whose catchment far exceeds
+    /// the 3 km window — measured, real borders carry only 0.29 trunk-class
+    /// outlets per edge — so every trunk crosses the tile and headwater
+    /// starts are reserved for tributaries. Mostly 1, sometimes 2 (which may
+    /// converge downstream), very rarely 3.
+    pub trunk_weights: [f64; 4],
     /// How one-sided the terrace flight is. 0 = symmetric, 1 = all on one bank.
     pub terrace_asymmetry: Range,
 
     // ---- network: corpus-measured plausibility bands ----
     /// Target median distance-to-channel, metres.
     pub d2c_target_m: Range,
-    /// Trunk mouths on the base edge.
-    pub trunk_count: Range,
     /// Catchment entering at the trunk mouth from OUTSIDE the tile, km².
     /// Trunk dominance is discharge, not tile-internal area — measured in
     /// `02-drainage-patterns.md` §4.
@@ -76,8 +83,8 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(95.0, 115.0),
-            trunk_count: Range::new(2.0, 3.0),
-            external_inflow_km2: Range::new(0.0, 6.0),
+            trunk_weights: [0.0, 0.62, 0.33, 0.05],
+            external_inflow_km2: Range::new(3.0, 12.0),
             integration: Range::fixed(1.0),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
@@ -92,10 +99,8 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(108.0, 125.0),
-            // 3, not 4: four mouths cannot fit 750 m apart on the 2000 m of
-            // usable edge, so a 4 would always be silently cut back to 3.
-            trunk_count: Range::new(2.0, 3.0),
-            external_inflow_km2: Range::new(0.0, 4.0),
+            trunk_weights: [0.0, 0.55, 0.38, 0.07],
+            external_inflow_km2: Range::new(2.0, 9.0),
             integration: Range::fixed(1.0),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
@@ -113,7 +118,7 @@ pub fn record(a: Archetype) -> Record {
             terrace_asymmetry: Range::new(0.6, 1.0),
             d2c_target_m: Range::new(90.0, 105.0),
             // ONE trunk. Dominance comes from the inflow, not the count.
-            trunk_count: Range::fixed(1.0),
+            trunk_weights: [0.0, 1.0, 0.0, 0.0],
             external_inflow_km2: Range::new(40.0, 160.0),
             integration: Range::fixed(1.0),
             anisotropy: Range::new(0.08, 0.20),
@@ -129,8 +134,8 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(100.0, 120.0),
-            trunk_count: Range::new(1.0, 3.0),
-            external_inflow_km2: Range::new(0.0, 12.0),
+            trunk_weights: [0.0, 0.65, 0.30, 0.05],
+            external_inflow_km2: Range::new(3.0, 14.0),
             integration: Range::fixed(1.0),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
@@ -146,8 +151,8 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(90.0, 110.0),
-            trunk_count: Range::new(0.0, 1.0),
-            external_inflow_km2: Range::fixed(0.0),
+            trunk_weights: [0.55, 0.45, 0.0, 0.0],
+            external_inflow_km2: Range::new(0.8, 3.0),
             integration: Range::new(0.02, 0.12),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
@@ -162,7 +167,7 @@ pub fn record(a: Archetype) -> Record {
             terrace_steps: Range::fixed(0.0),
             terrace_asymmetry: Range::fixed(0.0),
             d2c_target_m: Range::new(95.0, 115.0),
-            trunk_count: Range::fixed(0.0),
+            trunk_weights: [1.0, 0.0, 0.0, 0.0],
             external_inflow_km2: Range::fixed(0.0),
             integration: Range::fixed(0.0),
             // the ONE archetype with real anisotropy -- dune trains

@@ -47,7 +47,12 @@ fn main() {
                 }
                 c.disc(tk.pts[0], 5.0, course_lab::MOUTH, 1.0);
                 let head = *tk.pts.last().unwrap();
-                c.disc(head, 4.0, if tk.through { [120, 235, 170] } else { [235, 120, 120] }, 1.0);
+                c.disc(head, 4.0, [120, 235, 170], 1.0);
+                if tk.joins.is_some() {
+                    // ring the junction so the confluence is visible
+                    c.disc(tk.pts[0], 6.0, [255, 255, 255], 0.9);
+                    c.disc(tk.pts[0], 3.5, [40, 90, 200], 1.0);
+                }
             }
             c.save_jpeg(&format!("{out}/{stem}_trunk.jpg"), 88).unwrap();
 
@@ -70,9 +75,9 @@ fn main() {
             sins.sort_by(|x, y| x.partial_cmp(y).unwrap());
             let sin = if sins.is_empty() { 0.0 } else { sins[sins.len() / 2] };
             rows.push(format!(
-                r#"{{"arch":"{}","seed":{seed},"trunks":{},"through":{},"sin600":{sin:.3},"min_rad":{:.0},"len_km":{:.2},"head_z":{:.1}}}"#,
+                r#"{{"arch":"{}","seed":{seed},"trunks":{},"joins":{},"sin600":{sin:.3},"min_rad":{:.0},"len_km":{:.2},"head_z":{:.1}}}"#,
                 arch.key(), net.trunks.len(),
-                net.trunks.iter().filter(|k| k.through).count(),
+                net.trunks.iter().filter(|k| k.joins.is_some()).count(),
                 if rmin == f64::MAX { 0.0 } else { rmin },
                 net.trunk_len_m() / 1000.0,
                 net.trunks.iter().map(|k| *k.z.last().unwrap_or(&0.0)).fold(0.0, f64::max)));

@@ -38,7 +38,7 @@ fn main() {
     };
     println!("N1 gate — corpus 600 m sinuosity band: 1.06–1.10\n");
     println!("{:<14} {:>7} {:>7} {:>7} {:>8} {:>8} {:>9} {:>8} {:>7}",
-             "archetype", "sin600", "p10", "p90", "sin1500", "min_rad", "len_km", "through%", "ms");
+             "archetype", "sin600", "p10", "p90", "sin1500", "min_rad", "len_km", "joins%", "ms");
     for a in Archetype::ALL {
         let (mut sin, mut sin15, mut rad, mut len, mut thr, mut tot): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, usize, usize) = (vec![], vec![], vec![], vec![], 0, 0);
         let mut ms = 0.0;
@@ -53,7 +53,7 @@ fn main() {
                 sin15.extend(window_sinuosity(&tk.pts, 1500.0));
                 rad.push(Spine::new(tk.pts.clone()).min_curvature_radius());
                 len.push(Spine::new(tk.pts.clone()).length() / 1000.0);
-                if tk.through { thr += 1; }
+                if tk.joins.is_some() { thr += 1; }
                 tot += 1;
             }
         }

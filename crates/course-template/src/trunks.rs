@@ -60,12 +60,17 @@ pub struct Trunk {
     /// Catchment entering here from outside the window, km². This is what
     /// makes a trunk a trunk.
     pub external_km2: f64,
-    /// The far END of the trunk. A point on a far edge when the trunk is a
-    /// through-river (it carries external inflow, so it must ENTER the tile
-    /// somewhere); a high-ground headwater point inside the tile otherwise.
+    /// Where the trunk ENTERS the tile, on a far edge.
+    ///
+    /// **Every trunk is a through-river** (user decision 2026-08-20): a
+    /// trunk-scale valley is carved by a river whose catchment far exceeds
+    /// the window — real borders carry only 0.29 trunk-class outlets per edge
+    /// — so headwater starts are reserved for tributaries.
     pub far: Vec2,
-    /// True when `far` sits on an edge.
-    pub through: bool,
+    /// `Some(i)` when this trunk CONVERGES onto trunk `i` inside the tile
+    /// instead of running to its own mouth: two rivers, one outlet, a
+    /// confluence landform. Its `mouth` equals the primary's.
+    pub joins: Option<u32>,
 }
 
 pub struct TrunkParams {
@@ -199,84 +204,73 @@ pub fn place(rng: &mut DetRng, p: &TrunkParams, relief_pred: &Grid<f64>, edge: E
             // which is how two authored paths end up crossing mid-tile.
             let lo = if i == 0 { c } else { 0.5 * (chosen[i - 1] + t) };
             let hi = if i + 1 == n { 1.0 - c } else { 0.5 * (t + chosen[i + 1]) };
-            let (far, through) = far_end(rng, relief_pred, edge, t, external, lo, hi);
+            let far = far_end(rng, relief_pred, edge, t, lo, hi);
             Trunk {
                 mouth,
                 azimuth_rad: edge.inward() + jitter,
                 external_km2: external,
                 far,
-                through,
+                joins: None,
             }
         })
         .collect();
+    converge(rng, trunks)
+}
+
+/// Probability that a secondary trunk converges onto the primary instead of
+/// running to its own mouth.
+pub const CONVERGE_P: f64 = 0.45;
+
+/// Two trunks, one outlet: with `CONVERGE_P` per secondary, re-point it at
+/// the primary. Its mouth becomes the primary's (shared outlet); its entry
+/// stays where it was placed. The junction itself is geometry and belongs to
+/// the network build, which knows the primary's actual path.
+fn converge(rng: &mut DetRng, mut trunks: Vec<Trunk>) -> Vec<Trunk> {
+    if trunks.len() < 2 {
+        return trunks;
+    }
+    let primary_mouth = trunks[0].mouth;
+    for i in 1..trunks.len() {
+        if rng.next_f64() < CONVERGE_P {
+            trunks[i].joins = Some(0);
+            trunks[i].mouth = primary_mouth;
+        }
+    }
     trunks
 }
 
-/// Pick the far END of a trunk.
-///
-/// A trunk with real external inflow is a THROUGH-river: the catchment it
-/// carries lies outside the window, so the river must enter through a far
-/// edge. Entry candidates are scored the same way mouths are — through the
-/// lows — on the edge OPPOSITE the base edge, offset along-edge from the
-/// mouth so the river crosses the tile diagonally more often than dead
-/// straight. Below the threshold the trunk is headwater: it rises to a HIGH
-/// of the relief field in its own sector of the tile.
-pub const THROUGH_KM2: f64 = 8.0;
-
+/// Pick where a trunk ENTERS the tile: a point on the edge opposite the base
+/// edge, scored through the lows inside this trunk's sector (the same probe
+/// mouths use), with a gentle preference for an entry offset from the mouth so
+/// the river crosses the tile rather than shooting straight over.
 fn far_end(
     rng: &mut DetRng,
     relief: &Grid<f64>,
     base: Edge,
     mouth_t: f64,
-    external_km2: f64,
     sector_lo: f64,
     sector_hi: f64,
-) -> (Vec2, bool) {
-    if external_km2 >= THROUGH_KM2 {
-        let opp = match base {
-            Edge::South => Edge::North,
-            Edge::North => Edge::South,
-            Edge::West => Edge::East,
-            Edge::East => Edge::West,
-        };
-        // score entry candidates through the lows, same probe the mouth used
-        let probe_in = 180.0;
-        let (ic, is) = (math::cos(opp.inward()), math::sin(opp.inward()));
-        let c = MOUTH_CORNER_CLEARANCE_M / EXTENT_M;
-        let (lo, hi) = (sector_lo.max(c), sector_hi.min(1.0 - c));
-        let mut best = (f64::MAX, opp.point((lo + hi) * 0.5));
-        for i in 0..48 {
-            let t = lo + (hi - lo) * (i as f64 + 0.5) / 48.0;
-            let m = opp.point(t);
-            let probe = Vec2::new(m.x + ic * probe_in, m.y + is * probe_in);
-            let mut v = relief.bilinear(probe) + rng.range_f64(-0.10, 0.10);
-            // gentle preference for an entry offset from the mouth, so the
-            // river crosses the tile rather than shooting straight over
-            v += 0.25 * (1.0 - (t - mouth_t).abs());
-            if v < best.0 {
-                best = (v, m);
-            }
+) -> Vec2 {
+    let opp = match base {
+        Edge::South => Edge::North,
+        Edge::North => Edge::South,
+        Edge::West => Edge::East,
+        Edge::East => Edge::West,
+    };
+    let probe_in = 180.0;
+    let (ic, is) = (math::cos(opp.inward()), math::sin(opp.inward()));
+    let c = MOUTH_CORNER_CLEARANCE_M / EXTENT_M;
+    let (lo, hi) = (sector_lo.max(c), sector_hi.min(1.0 - c));
+    let mut best = (f64::MAX, opp.point((lo + hi) * 0.5));
+    for i in 0..48 {
+        let t = lo + (hi - lo) * (i as f64 + 0.5) / 48.0;
+        let m = opp.point(t);
+        let probe = Vec2::new(m.x + ic * probe_in, m.y + is * probe_in);
+        let mut v = relief.bilinear(probe) + rng.range_f64(-0.10, 0.10);
+        v += 0.25 * (1.0 - (t - mouth_t).abs());
+        if v < best.0 {
+            best = (v, m);
         }
-        (best.1, true)
-    } else {
-        // headwater: the HIGHEST relief inside the trunk's own sector
-        let sector_lo = sector_lo.max(0.08).max(mouth_t - 0.30);
-        let sector_hi = sector_hi.min(0.92).min(mouth_t + 0.30);
-        let mut best = (f64::MIN, Vec2::new(EXTENT_M * 0.5, EXTENT_M * 0.5));
-        for _ in 0..160 {
-            let t = rng.range_f64(sector_lo, sector_hi);
-            let depth = rng.range_f64(0.45, 0.88) * EXTENT_M;
-            let (ic, is) = (math::cos(base.inward()), math::sin(base.inward()));
-            let m = base.point(t);
-            let p = Vec2::new(m.x + ic * depth, m.y + is * depth);
-            if p.x < 150.0 || p.y < 150.0 || p.x > EXTENT_M - 150.0 || p.y > EXTENT_M - 150.0 {
-                continue;
-            }
-            let v = relief.bilinear(p);
-            if v > best.0 {
-                best = (v, p);
-            }
-        }
-        (best.1, false)
     }
+    best.1
 }

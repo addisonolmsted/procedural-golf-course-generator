@@ -20,15 +20,16 @@ use course_world::world::EXTENT_M;
 /// A trunk as phase N1 emits it: planform + long profile.
 #[derive(Clone, Debug)]
 pub struct TrunkPath {
-    /// Mouth-first, ~20 m spacing after densify.
+    /// Mouth-first, ~20 m spacing after densify. For a joining trunk the
+    /// "mouth" is the junction on the primary.
     pub pts: Vec<Vec2>,
-    /// Elevation per point, metres above the tile base level. `z[0] == 0`.
+    /// Elevation per point, metres above the tile base level. `z[0]` is 0 for
+    /// a trunk with its own mouth, the junction elevation for a joining one.
     pub z: Vec<f64>,
-    /// Catchment entering at the HEAD from outside the tile, km². Zero for a
-    /// headwater trunk.
+    /// Catchment entering at the HEAD from outside the tile, km².
     pub external_km2: f64,
-    /// True if the head sits on an edge (a through-river).
-    pub through: bool,
+    /// Index of the trunk this one converges onto, if any.
+    pub joins: Option<u32>,
 }
 
 pub struct TrunkPathParams {
@@ -101,16 +102,31 @@ pub fn build_trunk(
     rng: &mut DetRng,
     mouth: Vec2,
     far: Vec2,
-    through: bool,
     external_km2: f64,
     relief: &Grid<f64>,
     relief_budget_m: f64,
     p: &TrunkPathParams,
+    // For a JOINING trunk: the upstream direction its first segment must
+    // leave the junction along (set so the flow enters the primary at an
+    // acute angle), and the junction elevation its profile starts from.
+    join: Option<(Vec2, f64)>,
 ) -> TrunkPath {
     // --- baseline through the lows
     let n_ctrl = 2 + rng.below(2); // 2-3 interior controls
-    let ctrl = low_controls(relief, mouth, far, n_ctrl, rng);
+    let mut ctrl = low_controls(relief, mouth, far, n_ctrl, rng);
     let mut base_pts = vec![mouth];
+    if let Some((up_dir, _)) = join {
+        // pin the initial tangent: an extra control 320 m up the desired
+        // approach direction, BEFORE the low controls — and drop any low
+        // control that sits BEHIND that approach, which folds the baseline
+        // into a hairpin at the junction (measured: 13 m radius) that the
+        // smoother cannot heal against a pinned endpoint.
+        base_pts.push(Vec2::new(mouth.x + up_dir.x * 320.0, mouth.y + up_dir.y * 320.0));
+        ctrl.retain(|c| {
+            let v = Vec2::new(c.x - mouth.x, c.y - mouth.y);
+            v.length() > 500.0 && v.normalized().dot(up_dir) > 0.2
+        });
+    }
     base_pts.extend(ctrl);
     base_pts.push(far);
     let base = Spine::new(catmull_rom(&base_pts, 20.0));
@@ -184,14 +200,15 @@ pub fn build_trunk(
     let spine = Spine::new(pts.clone());
     let total = spine.length();
     let hh = relief_budget_m * p.head_relief_frac;
+    let z0 = join.map(|(_, jz)| jz).unwrap_or(0.0);
     let mut z = Vec::with_capacity(pts.len());
     let mut acc = 0.0;
     for (i, q) in pts.iter().enumerate() {
         if i > 0 {
             acc += q.distance(pts[i - 1]);
         }
-        z.push(hh * math::pow((acc / total).clamp(0.0, 1.0), p.concavity));
+        z.push(z0 + hh * math::pow((acc / total).clamp(0.0, 1.0), p.concavity));
     }
 
-    TrunkPath { pts, z, external_km2, through }
+    TrunkPath { pts, z, external_km2, joins: None }
 }
