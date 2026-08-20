@@ -51,6 +51,8 @@ pub struct PatternDials {
 /// What steps 1-3 hand to step 4.
 pub struct Template {
     pub archetype: Archetype,
+    /// Carried through for the trunk long profile.
+    pub relief_budget_m: f64,
     pub structure: StructureKind,
     pub pattern: PatternDials,
     pub base_edge: Edge,
@@ -113,6 +115,7 @@ pub fn build(id: &RunIdentity, draw: &SiteDraw) -> Template {
 
     Template {
         archetype: draw.archetype,
+        relief_budget_m: d.relief_budget_m,
         structure: draw.structure,
         pattern: PatternDials {
             anisotropy: d.anisotropy,

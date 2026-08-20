@@ -312,68 +312,48 @@ scarps, and sandhills is the one archetype with real grain anisotropy
 
 ---
 
-## 7. M2 — step 4, network growth: PARTIAL (2026-08-20)
+## 7. M2 — the headward maze: RETIRED (2026-08-20)
 
-`course-network`. The growth engine, the accounting and the battery are built;
-**two of six metrics are out of band and growth is not yet reliable.** Recorded
-honestly rather than left implied by a commit.
+The first step-4 formulation (headward growth with a spacing claim) produced a
+**space-filling maze, not a drainage network** — the renders showed channels
+snaking, doubling back, and converging on nothing, because growth had no
+elevation constraint: it organised by where there was *room*, not where water
+can *go*. Four measured fixes (branch grace, ancestry exemption, claim
+recalibration, tree-distance spacing ramp) and two dial sweeps could not save
+it; the spacing rule and repulsion were doing three jobs at once and every fix
+to one moved the others. Two findings survive it:
 
-### What holds
+- **A strictly binary tree has Rb = 2 by construction** (corpus 3.92–4.74); no
+  dial reaches the band. Branching must be asymmetric — a stem with side
+  tributaries.
+- The battery-on-the-graph works: d2c, density, Horton, junctions are all
+  measurable before any surface exists.
 
-- **Loop-free and crossing-free by construction**, not policed. A node's parent
-  is always laid before it, so the receiver graph cannot contain a cycle; a head
-  dies on encountering claimed ground, so two branches cannot intersect.
-  Asserted over 150 tiles.
-- **The battery measures on the GRAPH** — `d2c`, drainage density, Horton
-  Rb/Rl, Strahler Ω and junction angles, all before any surface exists. This is
-  the payoff the reorder was for, and it works.
-- Drained area from territory (nearest-node assignment, summed downstream), so
-  the corpus extraction threshold means the same thing here as on real lidar.
-- River valley reaches d2c 94.6 m and density 2.98 against bands of 96–116 and
-  2.21–2.60 — the mechanism can hit the targets.
+`grow.rs` is deleted (stream `n4/network/grow/v1` retired, never to be
+reused). The replacement is the N-phase plan below.
 
-### What does not
+## 8. The N-phase network build (user direction, 2026-08-20)
 
-| metric | corpus | ours |
+**Trunks move end-to-end** (high-ground start acceptable): very high-wavelength
+meander, smooth curves. **Tributaries begin on high ground and converge onto
+trunks**: lower-wavelength meander, still smooth. Built in phases with a review
+gate between each. Elevations exist DURING construction — step 5 folds into
+step 4. Full plan in the session plan file; summary:
+
+| phase | content | gate |
 |---|---|---|
-| `d2c` | 96–116 m | 95 (rv) to 1300 (most) |
-| density | 2.21–2.60 | 0.37–2.98 |
-| Horton Rb | 3.92–4.74 | ~2.0 |
-| junction p50 | 37–45° | 54–85° |
+| **N1** | trunk paths: authored spline through the lows, λ 900–1800 m, long profile at construction | ✅ built — sinuosity 600/1500 m = 1.03–1.04 / 1.07–1.14, min radius 150 m enforced + asserted, monotone z, 0 crossings (disjoint far-end sectors + rebuild ladder). **User review before N2.** |
+| **N2** | major tributaries: descend a proto-elevation field from territory peaks, join at the trunk's downstream tangent | junctions 37–45°, >80° 8.5–13.4%, near-par band |
+| **N3** | minor tiers to density | the full M0 battery |
+| **N4** | archetype expression (rv single trunk ✅ already, heathland pit-termination, resistance deflection) | battery per archetype + viewer |
 
-**Growth is bimodal.** At one set of dials river valley fills the tile and
-piedmont collapses after ~150 nodes; the same dials in a narrower sweep gave
-piedmont density 2.66. It is seed-dependent in a way that says the rule set is
-fragile, not mistuned.
+Why authored trunks are safe here when they failed in `heartland`: there the
+authored line disagreed with an independently generated surface ("the erosion
+declines to adopt it"); here the surface is built FROM the network, so there is
+no second authority. Divides are still never authored.
 
-### Four defects found and fixed, each by instrument rather than argument
-
-1. **Branching was self-defeating.** Two children leave the same node ~30 m
-   apart, inside `claim_m`, so one died immediately — 37 nodes, density 0.10.
-2. **A head collided with its own upstream path.** The lineage exemption reset
-   at every branch, and with a 468 m trail against a 420 m claim any curvature
-   was fatal.
-3. **`claim_m` was calibrated from a parallel-channel model** (spacing ≈ 4·d2c).
-   A dendritic tree packs more length into the same spacing; the measured factor
-   is nearer 1.4.
-4. **A uniform spacing rule forbids junctions.** A junction is exactly where two
-   channels are close together. Required spacing now ramps with distance through
-   the tree — zero at a confluence, full `claim_m` at 2·`claim_m` of tree
-   distance.
-
-### The structural finding, and the open problem
-
-**A strictly binary tree has a bifurcation ratio of exactly 2**, against a
-corpus band of 3.92–4.74, and no dial fixes that — a sweep over branch angle and
-rate moved Rb only between 1.5 and 2.4. Real networks are stems with many short
-tributaries entering along their length, not bifurcating trees. Branching is now
-asymmetric (the stem continues, a tributary sprouts beside it), which is also
-what gives an acute junction angle, since a tributary needs a *continuing* stem
-to join at an angle to.
-
-That change is in and helped the junction angles, but Rb is still ~2.0. The
-open problem is that **the spacing rule and the repulsion are doing three jobs
-at once** — setting density, setting junction geometry, and deciding whether a
-head survives — and they are over-coupled: every attempt to fix one moved the
-others. The next round should separate them, most likely by making head
-survival depend on available catchment rather than on proximity.
+New machinery: `TrunkPath { pts, z, external_km2, through }`;
+`Trunk.far`/`through` + edge-Voronoi far-end sectors in `course-template`;
+through-rivers (≥ 8 km² external) enter at a far edge and drop gently
+(4–12 % of relief budget over the tile), headwater trunks climb to 45–65 %.
+Streams: `n4/network/trunkpath/v1`, `n4/network/tribs/v1` (reserved).

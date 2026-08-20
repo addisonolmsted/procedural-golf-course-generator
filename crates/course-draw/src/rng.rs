@@ -28,16 +28,20 @@ pub const TEMPLATE_TRUNK: &str = "n4/template/trunk/v1";
 pub const TEMPLATE_FIELDS: &str = "n4/template/fields/v1";
 /// Step 3: escarpment traces.
 pub const TEMPLATE_SCARP: &str = "n4/template/scarp/v1";
-/// Step 4: headward network growth.
-pub const NETWORK_GROW: &str = "n4/network/grow/v1";
+/// Step 4, phase N1: trunk paths.
+pub const NETWORK_TRUNKPATH: &str = "n4/network/trunkpath/v1";
+/// Step 4, phases N2-N3: tributary tiers.
+pub const NETWORK_TRIBS: &str = "n4/network/tribs/v1";
+// RETIRED: "n4/network/grow/v1" (the M2 headward maze). Never reuse the name.
 
-pub const REGISTRY: [&str; 6] = [
+pub const REGISTRY: [&str; 7] = [
     DRAW_SELECT,
     DRAW_PARAMS,
     TEMPLATE_TRUNK,
     TEMPLATE_FIELDS,
     TEMPLATE_SCARP,
-    NETWORK_GROW,
+    NETWORK_TRUNKPATH,
+    NETWORK_TRIBS,
 ];
 
 /// THE way an attempt-4 step obtains randomness. Panics on an unregistered

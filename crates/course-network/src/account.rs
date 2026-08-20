@@ -6,8 +6,21 @@
 //! Area comes from territory: every cell of the tile is assigned to its
 //! nearest node, and those areas are summed downstream.
 
-use crate::grow::Node;
 use course_world::math::Vec2;
+
+/// One node of the network graph. `parent` points DOWNSTREAM — the receiver
+/// convention. (Lived in `grow.rs` until the M2 maze was deleted; the graph
+/// currency outlived the algorithm that first produced it.)
+#[derive(Clone, Debug)]
+pub struct Node {
+    pub p: Vec2,
+    /// Index of the node one step downstream. `None` at a mouth or a pit.
+    pub parent: Option<u32>,
+    /// Strahler order; 0 until assigned.
+    pub order: u32,
+    /// Drained area, m²; 0 until accumulated.
+    pub area_m2: f64,
+}
 use course_world::world::EXTENT_M;
 
 /// Cell size the territory assignment runs at. 8 m matches the declared
