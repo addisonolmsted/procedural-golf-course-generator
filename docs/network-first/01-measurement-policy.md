@@ -170,14 +170,58 @@ targets above supersede it.
 
 ---
 
-## 5. Still to declare before M2
+## 5. The planform family — declared and measured
 
-These follow the same rule — declare the policy, then measure the corpus with
-it, before any of them becomes a construction target:
+**Policy (planform family):** reaches traced on an **8 m** grid at
+`extract_v2.CHANNEL_AREA_M2` = **6 e4 m²** — the same threshold Policy A
+declares, at the coarser grid the matched generated-side twin
+(`planform.rs`) routes on. Tracing the corpus at its native 2 m resolves the
+same catchment into 464 reaches against our ~100, which changes both the pair
+count and the junction exemption rate, so the grid is part of the policy.
 
-- `near_par_frac` — `planform.rs` / `real_planform.py` are already a matched
-  pair (20 m samples, 60 m band, 90 m junction exemption, corpus traced at 8 m).
-  Confirm the pair still agrees under this branch's channel-extraction policy.
-- `d2c` / drainage density — `measure_battery` mirrors `structure.py`'s policy
-  at 6e4 m², which already matches Policy A. Re-measure and record.
-- junction angles — `junction_real.py`, 48 m baseline.
+`near_par_frac` is **pooled across tiles** (`near_len / near_total`, matching
+`real_planform.py:264`), not a median of per-tile ratios. The two differ and
+only one is the declared number.
+
+Measured over all 203 clean tiles — `tools/macro_campaign/pattern_survey.py`,
+raw output `pattern_full.txt`:
+
+| biome | n | near_par % | d2c m | density km/km² | junction p50 | >80° |
+|---|---|---|---|---|---|---|
+| piedmont | 27 | 1.29 | 104.3 | 2.36 | 40.6° | 10.7% |
+| great_plains | 36 | 3.06 | 115.9 | 2.21 | 39.8° | 8.5% |
+| river_valley | 32 | 3.04 | 96.2 | 2.60 | 36.9° | 13.0% |
+| hill_country | 27 | 2.94 | 106.7 | 2.30 | 45.0° | 11.8% |
+| heathland | 37 | 1.38 | 97.3 | 2.58 | 39.8° | 13.4% |
+| sandhills | 44 | 1.95 | 104.3 | 2.39 | 41.6° | 12.4% |
+| **band** | 203 | **1.3–3.1** | **96–116** | **2.21–2.60** | **37–45°** | **8.5–13.4%** |
+
+Two confirmations that the instrument is the same one the corpus record used:
+piedmont `near_par` reads 1.29 % against the recorded 1.4 %, great_plains 3.06 %
+against 3.5 %. `d2c` 96–116 and density 2.21–2.60 reproduce the known
+shared-invariant bands.
+
+**Junction angles supersede the old 3 % T-junction band.** That band came from
+the authored engine, which enforced a 30–62° mouth angle by construction. The
+corpus measures 8.5–13.4 % above 80° at the 6-cell baseline — real networks make
+far more orthogonal confluences than the old gate allowed.
+
+### Derangement is NOT measurable this way
+
+`fill_depressions` runs before routing, so heathland's and sandhills' rows above
+describe a **phantom** network on filled ground. They remain the correct
+shared-invariant targets — the corpus measures every biome this way — but
+derangement must be gated on `network_connectivity` with pits kept (0.04–0.06
+for these two against 1.00 integrated), never on `d2c` or density.
+
+---
+
+## 6. Still to declare before M2
+
+- Valley cross-section (`w10/w50`) — `heartland` closed this question with
+  `scratchpad/vratio.py`; re-derive under this branch's policy.
+- `network_connectivity` with pits kept, for the two deranged biomes.
+- Relief per biome is already measured here and matters more than expected:
+  p50 runs hill_country 74 m, piedmont 48 m, great_plains 45 m, sandhills 38 m,
+  heathland 18 m, **river_valley 4.6 m** — see `02-drainage-patterns.md` §5,
+  which is a corpus problem, not a measurement one.

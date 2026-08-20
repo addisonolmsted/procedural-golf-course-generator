@@ -1,0 +1,8 @@
+piedmont       n= 27 | nearpar  1.29% | d2c  104.3 | dens  2.36 | junc  40.6 (>80 10.7%) | aniso 0.080 | main  59.4% | nsys 3 | W 3
+great_plains   n= 36 | nearpar  3.06% | d2c  115.9 | dens  2.21 | junc  39.8 (>80  8.5%) | aniso 0.117 | main  56.7% | nsys 4 | W 3
+river_valley   n= 32 | nearpar  3.04% | d2c   96.2 | dens  2.60 | junc  36.9 (>80 13.0%) | aniso 0.146 | main  37.5% | nsys 4 | W 3
+hill_country   n= 27 | nearpar  2.94% | d2c  106.7 | dens  2.30 | junc  45.0 (>80 11.8%) | aniso 0.095 | main  56.0% | nsys 3 | W 3
+heathland      n= 37 | nearpar  1.38% | d2c   97.3 | dens  2.58 | junc  39.8 (>80 13.4%) | aniso 0.120 | main  48.0% | nsys 4 | W 3
+sandhills      n= 44 | nearpar  1.95% | d2c  104.3 | dens  2.39 | junc  41.6 (>80 12.4%) | aniso 0.145 | main  44.7% | nsys 4 | W 3
+
+wrote pattern_survey.json

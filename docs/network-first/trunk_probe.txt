@@ -1,0 +1,7 @@
+biome            n  max_acc/area  flat_floor%  relief_m
+piedmont        12         0.550          0.7      40.0
+great_plains    12         0.478          2.8      40.5
+river_valley    12         0.283          2.3       2.8
+hill_country    12         0.627          0.1     116.3
+heathland       12         0.448         12.7      17.4
+sandhills       12         0.361          0.1      39.1
