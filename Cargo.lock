@@ -809,7 +809,10 @@ version = "0.0.0"
 name = "course-network"
 version = "0.0.0"
 dependencies = [
+ "course-draw",
+ "course-lab",
  "course-seed",
+ "course-template",
  "course-world",
 ]
 

@@ -308,3 +308,72 @@ checkable — and are, in tests and on the sheet — are: piedmont draws no scar
 trunk carrying 40-160 km² of external inflow, heathland and sandhills get no
 scarps, and sandhills is the one archetype with real grain anisotropy
 (0.55-0.85 against 0.05-0.20).
+
+
+---
+
+## 7. M2 — step 4, network growth: PARTIAL (2026-08-20)
+
+`course-network`. The growth engine, the accounting and the battery are built;
+**two of six metrics are out of band and growth is not yet reliable.** Recorded
+honestly rather than left implied by a commit.
+
+### What holds
+
+- **Loop-free and crossing-free by construction**, not policed. A node's parent
+  is always laid before it, so the receiver graph cannot contain a cycle; a head
+  dies on encountering claimed ground, so two branches cannot intersect.
+  Asserted over 150 tiles.
+- **The battery measures on the GRAPH** — `d2c`, drainage density, Horton
+  Rb/Rl, Strahler Ω and junction angles, all before any surface exists. This is
+  the payoff the reorder was for, and it works.
+- Drained area from territory (nearest-node assignment, summed downstream), so
+  the corpus extraction threshold means the same thing here as on real lidar.
+- River valley reaches d2c 94.6 m and density 2.98 against bands of 96–116 and
+  2.21–2.60 — the mechanism can hit the targets.
+
+### What does not
+
+| metric | corpus | ours |
+|---|---|---|
+| `d2c` | 96–116 m | 95 (rv) to 1300 (most) |
+| density | 2.21–2.60 | 0.37–2.98 |
+| Horton Rb | 3.92–4.74 | ~2.0 |
+| junction p50 | 37–45° | 54–85° |
+
+**Growth is bimodal.** At one set of dials river valley fills the tile and
+piedmont collapses after ~150 nodes; the same dials in a narrower sweep gave
+piedmont density 2.66. It is seed-dependent in a way that says the rule set is
+fragile, not mistuned.
+
+### Four defects found and fixed, each by instrument rather than argument
+
+1. **Branching was self-defeating.** Two children leave the same node ~30 m
+   apart, inside `claim_m`, so one died immediately — 37 nodes, density 0.10.
+2. **A head collided with its own upstream path.** The lineage exemption reset
+   at every branch, and with a 468 m trail against a 420 m claim any curvature
+   was fatal.
+3. **`claim_m` was calibrated from a parallel-channel model** (spacing ≈ 4·d2c).
+   A dendritic tree packs more length into the same spacing; the measured factor
+   is nearer 1.4.
+4. **A uniform spacing rule forbids junctions.** A junction is exactly where two
+   channels are close together. Required spacing now ramps with distance through
+   the tree — zero at a confluence, full `claim_m` at 2·`claim_m` of tree
+   distance.
+
+### The structural finding, and the open problem
+
+**A strictly binary tree has a bifurcation ratio of exactly 2**, against a
+corpus band of 3.92–4.74, and no dial fixes that — a sweep over branch angle and
+rate moved Rb only between 1.5 and 2.4. Real networks are stems with many short
+tributaries entering along their length, not bifurcating trees. Branching is now
+asymmetric (the stem continues, a tributary sprouts beside it), which is also
+what gives an acute junction angle, since a tributary needs a *continuing* stem
+to join at an angle to.
+
+That change is in and helped the junction angles, but Rb is still ~2.0. The
+open problem is that **the spacing rule and the repulsion are doing three jobs
+at once** — setting density, setting junction geometry, and deciding whether a
+head survives — and they are over-coupled: every attempt to fix one moved the
+others. The next round should separate them, most likely by making head
+survival depend on available catchment rather than on proximity.
