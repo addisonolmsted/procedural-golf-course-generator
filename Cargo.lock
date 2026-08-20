@@ -759,7 +759,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "course-draw"
+version = "0.0.0"
+
+[[package]]
 name = "course-earthmoving"
+version = "0.0.0"
+
+[[package]]
+name = "course-fabric"
 version = "0.0.0"
 
 [[package]]
@@ -782,6 +790,10 @@ name = "course-micro"
 version = "0.0.0"
 
 [[package]]
+name = "course-network"
+version = "0.0.0"
+
+[[package]]
 name = "course-primitives"
 version = "0.0.0"
 dependencies = [
@@ -792,6 +804,10 @@ dependencies = [
  "course-world",
  "libm",
 ]
+
+[[package]]
+name = "course-relief"
+version = "0.0.0"
 
 [[package]]
 name = "course-routing"
@@ -842,6 +858,10 @@ name = "course-substrate"
 version = "0.0.0"
 
 [[package]]
+name = "course-template"
+version = "0.0.0"
+
+[[package]]
 name = "course-transforms"
 version = "0.0.0"
 dependencies = [
@@ -868,6 +888,10 @@ dependencies = [
  "course-world",
  "image",
 ]
+
+[[package]]
+name = "course-water"
+version = "0.0.0"
 
 [[package]]
 name = "course-world"

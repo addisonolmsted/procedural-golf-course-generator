@@ -24,6 +24,15 @@ members = [
     "crates/course-cli",
     "crates/stage-lab",
     "crates/tile-lab",
+    # --- ATTEMPT 4: network-first terrain (branch `network-first`).
+    # Replaces S0-S4. Must not depend on the retired pipeline crates --
+    # enforced by tools/no_old_deps.sh. See docs/network-first/README.md.
+    "crates/course-draw",
+    "crates/course-template",
+    "crates/course-network",
+    "crates/course-relief",
+    "crates/course-fabric",
+    "crates/course-water",
     # Superseded by S1/S2; retained until the skeleton kernel lands.
     # See MIGRATION.md.
     "crates/course-framing",
@@ -53,6 +62,12 @@ course-zoning = { path = "crates/course-zoning" }
 course-validate = { path = "crates/course-validate" }
 course-calibration = { path = "crates/course-calibration" }
 course-framing = { path = "crates/course-framing" }
+course-draw = { path = "crates/course-draw" }
+course-template = { path = "crates/course-template" }
+course-network = { path = "crates/course-network" }
+course-relief = { path = "crates/course-relief" }
+course-fabric = { path = "crates/course-fabric" }
+course-water = { path = "crates/course-water" }
 libm = "0.2"
 eframe = { version = "0.31", features = ["wgpu"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
