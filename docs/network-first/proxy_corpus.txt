@@ -1,0 +1,9 @@
+floors from 64 real courses: cap>=0.409 steep>=0.713 contig>=124ha relief 7.0-81.9m
+
+biome            n  cap p50  steep p50  contig_ha p50  relief p50  PASS all
+piedmont        27    0.327      0.627           81.5        47.7       30%
+great_plains    36    0.707      0.916          462.6        44.5       83%
+river_valley    32    0.957      0.984          667.5         4.6       31%
+hill_country    27    0.169      0.368           29.7        74.4        0%
+heathland       37    0.815      0.936          595.3        18.3       92%
+sandhills       44    0.386      0.672          144.4        37.7       23%

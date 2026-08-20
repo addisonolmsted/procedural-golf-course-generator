@@ -163,7 +163,7 @@ real 0.744 and `moran_60` to 0.272 against 0.408. Texture in the corridor
 fragments valley lines. Step 8 is a finisher, **never the author** — "erosion"
 has already failed here once as a general-purpose realism source.
 
-### Routability is a readout, not a gate
+### Routability — SUPERSEDED 2026-08-20, see `03-macro-is-designed.md`
 
 Attempt 1 died on unroutable terrain, so a blocking gate is the obvious
 reflex. The corpus says don't:
@@ -178,9 +178,15 @@ reflex. The corpus says don't:
   100/80/40/40/20/20 % against real cores at 53/51/0/7/9/5 %. Generated land is
   *more* sitable than real land in every biome.
 
-So `tools/golf_proxy/` is a **readout on every surface**. If it goes red the
-constraint has become binding and we will know. Optimising against it would make
-duller terrain than reality.
+The finding that survives is **calm is a floor, not a maximand** — optimising
+`frac_under_cap` makes duller terrain than reality.
+
+What changed: measuring the proxy over the corpus (`03-macro-is-designed.md` §1)
+showed that **corpus-matched macro terrain is mostly not routable** — 0 % of real
+hill-country tiles pass, piedmont 30 %, and river valley fails for being too
+*flat*. So the proxy is **the macro gate**, not a readout; the macro landform is
+designed for golf while texture stays fitted to the corpus. The two statements
+are compatible: meet the floors, then maximise interest — never maximise calm.
 
 ---
 
@@ -213,10 +219,10 @@ duller terrain than reality.
 
 | M | Content | Verification |
 |---|---|---|
-| **M0** | branch, allowlist, scaffold, **ruler** | corpus bands re-measured under one declared extraction policy and written down once — see `01-measurement-policy.md` |
+| **M0** | branch, allowlist, scaffold, **ruler** | corpus bands re-measured under one declared extraction policy and written down once — `01-measurement-policy.md`; drainage patterns measured — `02-drainage-patterns.md`; macro/texture authority split — `03-macro-is-designed.md` |
 | **M1** | steps 0–3 | blind legibility on the fields alone: a reviewer names the drainage pattern from a field render (≥80 %, the analogue of the existing C1 class-legibility test). *Expected failure: there is no terrain to judge.* |
 | **M2** | step 4, network growth | **the main practical payoff of the reorder** — Horton `rb`/`rl`, `near_par_frac`, drainage density, `d2c`, junction angles and zero-crossings are all checkable **before any surface exists**. Perf measured here, not at the end. |
 | **M3** | steps 5–6 | loop-free / crossing-free / monotone-descent asserted; flow routed over the synthesised surface reproduces the constructed network — the agreement metric that was a *ceiling* in `heartland` becomes a *tautology check*, and any disagreement is a synthesis bug. Golf proxy readout. P1 overlay review. *Expected failure: all texture and roughness metrics.* |
-| **M4** | steps 7–8 | pooled energy distance vs the 2.35 baseline (`heartland`'s best 2.30; 1.91 reached once before the dendrite revert); valley connectivity and `moran_60` vs real 0.744 / 0.408; PSD seam at the dictionary patch pitch |
+| **M4** | steps 7–8 | **ED_texture** vs the real split-half floor (ED_macro reported, not gated — `03-macro-is-designed.md` §4) (`heartland`'s best 2.30; 1.91 reached once before the dendrite revert); valley connectivity and `moran_60` vs real 0.744 / 0.408; PSD seam at the dictionary patch pitch |
 | **M5** | step 9, hydrology | water in low places, P1 |
 | **Gate** | | blind A/B ≤65 %, name-the-archetype ≥80 % (protocol in `docs/03-success-indicators.md`), dispersion ratio 0.7–1.3 |

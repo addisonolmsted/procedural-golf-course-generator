@@ -33,6 +33,7 @@ FILES=(
   tools/macro_campaign/junction_real.py
   tools/macro_campaign/real_planform.py
   tools/golf_proxy/proxy.py
+  tools/golf_proxy/proxy_corpus.py
   tools/golf_proxy/proxy_thresholds.json
   tools/macro_campaign/out/exclude.json
   tools/macro_campaign/out/review_v2.json

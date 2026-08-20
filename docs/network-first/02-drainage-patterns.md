@@ -150,7 +150,7 @@ and why `width_survey` measured rv rivers at 53 m mean against piedmont's 29 m.
 
 ---
 
-## 5. A corpus problem this survey exposed — **blocks river valley**
+## 5. A corpus problem this survey exposed — **resolved by 03, kept for the record**
 
 The relief column above is not a rounding artifact. Across all 32 clean
 river_valley tiles:
@@ -195,8 +195,16 @@ good target for bottomland courses. The terraced class needs either the 4
 valley-spanning tiles accepted as a thin corpus, or a re-sample aimed
 deliberately at valley-spanning windows.
 
-**This is a decision for the user, and it is on the M2 critical path for river
-valley only.** Every other biome is unaffected.
+**RESOLVED 2026-08-20 — see `03-macro-is-designed.md` §5.** The macro landform
+is a design target, not a realism target, so the terrace flight is authored to a
+golf spec and no terraced corpus is required. The 26 low-relief tiles remain an
+excellent `ValleyFloor` **texture** corpus; valley-side texture comes from hill
+country's exemplar pool via the dictionary's position conditioning. **No
+re-sampling campaign is needed and river valley is not blocked.**
+
+The diagnosis above stands and is worth keeping: it is why `hypsometric_bimodality`
+must not be trusted as river valley's identity discriminant, and it is a worked
+example of a metric passing for the wrong reason.
 
 ---
 
@@ -211,7 +219,7 @@ hung off it.
 | **Piedmont** | mid relief (p50 48 m); 3 comparable systems; smooth **convex** interfluves | 6 |
 | **Hill Country** | **high relief (p50 74 m)**; benched cross-section — every slope a staircase, from the resistance bands | 3 → 6 |
 | **Great Plains** | low relief held flat by a caprock; **sparsest** network (d2c 116, density 2.21); breaks into small scarps | 3 → 6 |
-| **River Valley** | **one trunk with large external inflow**; flat floor + terrace flight from a **datum history** | 2 → 5 |
+| **River Valley** | **one trunk with large external inflow**; flat floor + **authored side-asymmetric terrace flight** (step 5 at successive datums) | 2 → 5 |
 | **Heathland** | `integration` ≈ 0 — many small systems each ending in a pit; basin-and-hummock; flat_floor 12.7 %, the highest | 4 |
 | **Sandhills** | **no fluvial structure at all** — aeolian dune trains, 100–400 m, oriented by wind | 1 |
 
