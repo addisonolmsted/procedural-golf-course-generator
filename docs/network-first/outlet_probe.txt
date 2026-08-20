@@ -1,0 +1,7 @@
+biome            n | outlets/edge  gap p10     p50     p90 | slope p50     p90
+piedmont        27 |          2.4       87     432    1338 |     11.4%   25.8%
+great_plains    36 |          2.9       92     360     958 |      5.4%   12.6%
+river_valley    32 |          3.9      106     368     976 |      0.9%    3.4%
+hill_country    27 |          2.6       64     468    1087 |     18.7%   33.0%
+heathland       37 |          3.0       80     344    1140 |      1.8%   10.7%
+sandhills       44 |          3.7       94     356    1024 |      9.7%   22.9%

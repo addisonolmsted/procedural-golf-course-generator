@@ -130,6 +130,17 @@ h1{{font-size:clamp(26px,3.4vw,40px);line-height:1.08;margin:0 0 10px;letter-spa
 .find code{{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   background:var(--surface2);padding:1px 4px;border-radius:2px;color:var(--ink)}}
 
+
+.sh{{font-size:15px;margin:30px 0 4px;letter-spacing:-.01em}}
+.tblwrap{{overflow-x:auto;margin:0 0 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}}
+.tbl{{border-collapse:collapse;width:100%;min-width:560px;font-size:13px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}}
+.tbl th{{text-align:left;font-weight:600;color:var(--muted);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line)}}
+.tbl td{{padding:8px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}}
+.tbl tr:last-child td{{border-bottom:0}}
+.tbl td.g{{color:var(--ok);white-space:normal}}
+.tbl td.w{{color:var(--warn);white-space:normal}}
 dialog{{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);
   padding:0;max-width:min(940px,94vw);width:100%}}
 dialog::backdrop{{background:rgba(8,9,12,.66)}}
@@ -162,6 +173,7 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
     <li><b>6</b> <span>archetypes</span></li>
     <li><b>203</b> <span>corpus tiles behind the bands</span></li>
     <li><b>3</b> <span>defects this viewer caught</span></li>
+    <li><a href="#guide"><b>What to look for &rarr;</b></a></li>
   </ul>
 </header>
 
@@ -181,6 +193,73 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
 </div>
 
 {"".join(rows)}
+
+
+<section class="notes" id="guide">
+  <h2>What to look for</h2>
+  <p class="sub">Nothing here is a matter of taste. Each view has one or two things that can be judged by eye, and a
+  number behind them measured from the 203-tile corpus.</p>
+
+  <div class="finds">
+    <div class="find"><span class="num" style="color:var(--trunk)">Relief field</span><h4>Are the mouths in the lows?</h4>
+      <p>A river leaves through a low, not over a rise. Every yellow dot should sit on blue ground, or at the blue edge
+      of an orange patch. If a mouth sits mid-orange, the scoring is broken.</p></div>
+
+    <div class="find"><span class="num" style="color:var(--scarp)">Strata</span><h4>Do contacts close into loops?</h4>
+      <p>A bed outcrops where the surface crosses it, so its trace is a <strong>contour</strong>. Expect nested closed
+      loops around highs — those are mesa tops, which become plateau tees and greens. <strong>Straight parallel
+      stripes are the failure mode</strong>; that was the first version of this stage.</p></div>
+
+    <div class="find"><span class="num" style="color:var(--grain)">Grain</span><h4>Coherent, or unstructured?</h4>
+      <p>Five archetypes should look near-random — the corpus measures all six as dendritic, anisotropy 0.08–0.15.
+      Only <strong>sandhills</strong> should show a locked axis (0.55–0.85). If piedmont's strokes line up, the dial
+      leaked.</p></div>
+  </div>
+
+  <h3 class="sh">The number that decides whether strata make good golf</h3>
+  <p class="sub">Bed thickness is not the golf-relevant quantity — <strong>tread width</strong> is. A soft bed of
+  thickness T outcropping on a grade s makes a bench <code>T / s</code> metres wide. Slopes below are the measured
+  corpus medians and p90s. For reference: a fairway is 30–45 m, a green complex 35–45 m, a tee 10–15 m.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>archetype</th><th>riser</th><th>soft bed</th><th>tread @ typical slope</th><th>tread @ steep</th><th>verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Piedmont</td><td>1.5 m</td><td>3.3–6.8 m</td><td>29–59 m</td><td>13–26 m</td><td class="w">marginal — only the widest hold a fairway</td></tr>
+      <tr><td>Great Plains</td><td>1.5–4.0 m</td><td>3.3–18 m</td><td>61–333 m</td><td>26–143 m</td><td class="g">fairway on most benches</td></tr>
+      <tr><td>River Valley</td><td>1.5–3.0 m</td><td>3.3–13.5 m</td><td>367–1500 m</td><td>97–397 m</td><td class="g">every bench holds a fairway</td></tr>
+      <tr><td>Hill Country</td><td>3.0–8.0 m</td><td>6.6–36 m</td><td>35–193 m</td><td>20–109 m</td><td class="g">fairway on most benches; tees and greens on the steep ones</td></tr>
+      <tr><td>Heathland</td><td colspan="4">no strata — kettles and bog, not bedrock</td><td>—</td></tr>
+      <tr><td>Sandhills</td><td colspan="4">no strata — deep sand</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">Read that as: <strong>hill country is the one doing real work.</strong> Treads of 35–193 m hold a
+  fairway on ordinary ground and narrow to tee-and-green benches on the steep parts, which is exactly the biome's
+  brief — holes on the plateau tops, holes dropping through the benches. River valley's “benches” are the whole
+  floodplain, which is why its terrace flight is <em>authored</em> rather than left to the rock. Piedmont is marginal
+  by design: a thin veneer should barely bench.</p>
+
+  <h3 class="sh">Are the trunk mouths clustered?</h3>
+  <p class="sub">Measured, because it is the kind of question eyes get wrong. Real <em>major</em> outlets (≥ 4·10⁵ m²)
+  crossing a 3 km border, against ours:</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th></th><th>closest pair</th><th>gap p10</th><th>median gap</th><th>gap p90</th></tr></thead>
+    <tbody>
+      <tr><td>Real corpus</td><td>16–64 m</td><td>67–182 m</td><td>510–784 m</td><td>1546–1958 m</td></tr>
+      <tr><td>Ours</td><td>437 m</td><td>438 m</td><td>500–531 m</td><td>1031–1375 m</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub"><strong>They are not clustered — they are the opposite.</strong> Our median spacing is right
+  (500–531 m against a real 510–784 m), but our distribution is far too narrow at both ends: real networks put major
+  outlets as close as 16 m and as far apart as 1958 m, while a 420 m floor forbids the tight pairs and nothing pushes
+  the wide ones wider. What reads as clustering on screen is something else — <strong>all our mouths are on one
+  edge</strong>, because the tile has one declared base level and three no-flux rims, where a real 3 km window drains
+  out all four sides (corpus max-edge share 46–78 %). That is a deliberate architectural choice with a recorded
+  reason, not a defect.</p>
+  <p class="sub">The fixable half is the narrow distribution, and it is an M2 item. The 420 m floor exists because a
+  previous attempt found that below it “the tile gets one trunk drawn twice” — but that failure is two mouths on the
+  <em>same</em> river, and real tight pairs are two <em>different</em> systems. Because attempt 4 constructs the
+  network rather than extracting it, it knows which is which, so the floor can be dropped for genuinely separate
+  systems.</p>
+</section>
 
 <section class="notes">
   <h2>What the viewer caught that the tests did not</h2>

@@ -1,0 +1,7 @@
+biome            n | major/edge  gap p10     p50     p90    min
+piedmont        42 |       0.93      115     510    1555     64
+great_plains    62 |       0.97      109     664    1883     36
+river_valley    57 |       1.13       67     644    1546     16
+hill_country    43 |       0.95      158     784    1958     40
+heathland       67 |       1.05      173     704    1589     24
+sandhills       60 |       1.00      182     696    1520     16
