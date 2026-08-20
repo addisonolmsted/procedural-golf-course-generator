@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NEW=(course-draw course-template course-network course-relief course-fabric course-water)
+NEW=(course-draw course-template course-network course-relief course-fabric course-water course-lab)
 FORBIDDEN='course-skeleton|course-primitives|course-amplify|course-transforms|course-framing|course-spec'
 
 fail=0

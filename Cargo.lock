@@ -790,6 +790,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "course-lab"
+version = "0.0.0"
+dependencies = [
+ "course-world",
+ "image",
+]
+
+[[package]]
 name = "course-layout"
 version = "0.0.0"
 
@@ -877,6 +885,8 @@ version = "0.0.0"
 name = "course-template"
 version = "0.0.0"
 dependencies = [
+ "course-draw",
+ "course-lab",
  "course-seed",
  "course-world",
 ]

@@ -226,3 +226,85 @@ are compatible: meet the floors, then maximise interest — never maximise calm.
 | **M4** | steps 7–8 | **ED_texture** vs the real split-half floor (ED_macro reported, not gated — `03-macro-is-designed.md` §4) (`heartland`'s best 2.30; 1.91 reached once before the dendrite revert); valley connectivity and `moran_60` vs real 0.744 / 0.408; PSD seam at the dictionary patch pitch |
 | **M5** | step 9, hydrology | water in low places, P1 |
 | **Gate** | | blind A/B ≤65 %, name-the-archetype ≥80 % (protocol in `docs/03-success-indicators.md`), dispersion ratio 0.7–1.3 |
+
+---
+
+## 6. M1 — steps 0-3, built 2026-08-20
+
+Crates: `course-draw` (step 0), `course-template` (steps 1-3), `course-lab`
+(the visualiser). 16 tests. Step 1-3 runs in **3-4 ms/tile**.
+
+### Stream registry (attempt 4)
+
+`course-seed`'s registry is mirrored against `ARCHITECTURE.md` by a test and
+enumerates the RETIRED pipeline's stages, so `RunIdentity::stream` panics on any
+name this branch invents. Attempt 4 keeps its own list in
+`course_draw::rng::REGISTRY` and builds the `DetRng` identically
+(`DetRng::new(stream_seed, name)`). Reusing one stream for two purposes stays
+forbidden.
+
+| stream | owner |
+|---|---|
+| `n4/draw/select/v1` | step 0 — which archetype |
+| `n4/draw/params/v1` | step 0 — continuous descriptors |
+| `n4/template/trunk/v1` | step 2 — mouths, azimuths, inflow |
+| `n4/template/fields/v1` | step 3 — grain, strata, relief predisposition |
+| `n4/template/scarp/v1` | step 3 — escarpment traces |
+
+### The visualiser
+
+`course-lab` is written fresh rather than reusing `course-viz`, for a technical
+reason: `course-viz` renders **heightfields**, and steps 1-6 have none. What
+needs looking at is vector geometry, direction fields and scalar fields over an
+empty tile.
+
+```
+cargo run --release -p course-template --example template_render -- out/m1_template 1 2 3
+cargo run --release -p course-template --example template_sheet  -- out/m1_template/SHEET.png 1 2 3 4
+```
+
+The sheet is six archetype rows (in `Archetype::ALL` order, colour-tabbed) by
+seed columns. **The relief field is identical down a column** — all six
+archetypes share a seed's site, which isolates the archetype's contribution. In
+production a seed draws exactly one archetype, so this is a diagnostic
+property, not a leak.
+
+### Three defects the visualiser caught that the tests did not
+
+Recorded because each is an argument for rendering early, and because two of
+them passed every assertion that existed at the time.
+
+1. **Resistance was a barcode.** Generating resistance as an (x, y) field
+   produces uniform stripes across the map. Real beds outcrop where the land
+   surface crosses them, so a contact's map trace follows a **contour** — which
+   is precisely why a dissected plateau reads as a staircase. Fixed by making
+   resistance a property of the rock **column** (`fields::Strata`: layers, dip
+   azimuth, dip grade, datum) evaluated at an elevation. The consequence for a
+   network-first pipeline is structural: **the true map pattern cannot exist
+   until step 6**, so step 3 emits the column plus a `resistance_hint`
+   evaluated on a proxy elevation, which is all step 4 needs to steer.
+2. **`relief_pred` used a fifth of its declared range.** Documented `[-1, 1]`,
+   measured rms 0.21 and range −0.52..0.62 — a summed-octave field never
+   reaches its bounds. Every consumer would have been silently mis-scaled.
+   Now normalised symmetrically about zero.
+3. **Scarp chaining was O(n²), and 190× too slow on the archetype with the
+   LEAST structure.** Piedmont measured 555 ms/tile against hill country's
+   14 ms, because piedmont's thin beds make the most contacts. Bucketed by
+   endpoint cell: 2.9 ms. A stage that gets slower the less structure it has is
+   a bug, not a budget problem.
+
+Also tightened: `MOUTH_CORNER_CLEARANCE_M` = 500. Before it existed, 23.6 % of
+trunk mouths sat within 450 m of a corner (closest 260 m) — a mouth there has
+almost no catchment behind it and its trunk runs along the adjacent edge, which
+is the edge-hugging trunk `heartland` spent a round diagnosing. Where the drawn
+count no longer fits at `MOUTH_SEP_M`, placement **drops** a trunk rather than
+crowding two rivers together (measured: 3 shortfalls in 3549).
+
+### Expected failures at M1
+
+Every terrain metric. There is no surface. The archetype signatures that ARE
+checkable — and are, in tests and on the sheet — are: piedmont draws no scarps
+(thin veneer), great plains and hill country do, river valley gets exactly one
+trunk carrying 40-160 km² of external inflow, heathland and sandhills get no
+scarps, and sandhills is the one archetype with real grain anisotropy
+(0.55-0.85 against 0.05-0.20).

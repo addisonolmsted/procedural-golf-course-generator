@@ -33,6 +33,7 @@ members = [
     "crates/course-relief",
     "crates/course-fabric",
     "crates/course-water",
+    "crates/course-lab",
     # Superseded by S1/S2; retained until the skeleton kernel lands.
     # See MIGRATION.md.
     "crates/course-framing",
@@ -68,6 +69,7 @@ course-network = { path = "crates/course-network" }
 course-relief = { path = "crates/course-relief" }
 course-fabric = { path = "crates/course-fabric" }
 course-water = { path = "crates/course-water" }
+course-lab = { path = "crates/course-lab" }
 libm = "0.2"
 eframe = { version = "0.31", features = ["wgpu"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
