@@ -140,6 +140,18 @@ impl Canvas {
     pub fn save(&self, path: &str) -> std::io::Result<()> {
         self.img.save(path).map_err(std::io::Error::other)
     }
+
+    /// Save as JPEG at `quality`. These renders are mostly smooth colormapped
+    /// gradients, which PNG stores badly -- a 460 px tile costs 229 KB as PNG
+    /// and about a tenth of that as a high-quality JPEG. Only used for the
+    /// viewer artifact, which has a hard total size budget.
+    pub fn save_jpeg(&self, path: &str, quality: u8) -> std::io::Result<()> {
+        let rgb = image::DynamicImage::ImageRgba8(self.img.clone()).to_rgb8();
+        let mut f = std::fs::File::create(path)?;
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut f, quality)
+            .encode_image(&image::DynamicImage::ImageRgb8(rgb))
+            .map_err(std::io::Error::other)
+    }
 }
 
 /// Diverging blue-grey-orange, for signed fields.
