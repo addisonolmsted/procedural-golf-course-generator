@@ -217,3 +217,25 @@ the cost is visible.
 - **P2 / P3.** See §4.
 - **The ruler.** Still frozen. Redefining a metric because a design decision
   moved it is exactly the drift `tools/ruler_lock.sh` exists to catch.
+
+
+## 8. Macro design intent per archetype (user direction, 2026-08-21)
+
+Restated at T1, before the surface generator existed, so it could not drift
+toward corpus imitation: **the corpus informs the macro; gameplay governs
+it.** The corpus rv tiles are flat floodplain, and many corpus hc/piedmont
+tiles are unroutable — copying any of them at the macro level is wrong by
+policy.
+
+| archetype | macro intent | mechanism |
+|---|---|---|
+| River Valley | **distinct, often asymmetric terracing** over a genuinely flat floor | flat measured catena + authored terrace flight (steps/asymmetry/riser from records) |
+| Piedmont | **rolling** — near-linear soft walls, usable interfluves | catena_exp ~0.96, rise@400 10–18 m; ravine character stays in texture |
+| Hill Country | **bimodal**: 45°+ bluffs AND workable ground | tall risers (6–16 m) between near-flat treads; floor_widen for routable floors; never uniform moderation |
+| Great Plains | flat with edges | caprock benching at low riser heights |
+| Heathland | broad, subdued, basin-pocked | wide floors, low rise; kettles at T4 |
+| Sandhills | dune trains carry everything | aeolian generator, no fluvial macro |
+
+The slope/contiguity readout at T1 is judged against the golf floors
+(frac-under-cap, 124 ha contiguous, relief ≥ 7 m), not against corpus
+resemblance.

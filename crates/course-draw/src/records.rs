@@ -114,9 +114,13 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.62, 0.33, 0.05],
             external_inflow_km2: Range::new(3.0, 12.0),
             integration: Range::fixed(1.0),
+            // GOLF: piedmont macro = ROLLING — near-linear walls (~3-4%
+            // grade) and soft interfluves; the corpus's routing difficulty
+            // lives in its ravine TEXTURE (fine tiers), which stays with
+            // the texture authority, not here.
             catena_exp: Range::new(0.85, 1.05),
             rise_400_m: Range::new(10.0, 18.0),
-            floor_hw_m: Range::new(20.0, 32.0),
+            floor_hw_m: Range::new(24.0, 40.0),
             trib_spacing: Range::new(0.70, 0.85),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
@@ -150,6 +154,10 @@ pub fn record(a: Archetype) -> Record {
             weight: 1.0,
             relief_budget_m: Range::new(25.0, 60.0),
             floor_widen: Range::new(1.0, 1.3),
+            // GOLF: DISTINCT terracing, often one-sided — risers derive
+            // from relief_budget / terrace_steps (6-20 m treads-to-riser),
+            // so the flight reads as landform, with the flat corpus catena
+            // underneath it.
             terrace_steps: Range::new(2.0, 4.0),
             terrace_asymmetry: Range::new(0.6, 1.0),
             d2c_target_m: Range::new(90.0, 105.0),
@@ -181,12 +189,21 @@ pub fn record(a: Archetype) -> Record {
             integration: Range::fixed(1.0),
             catena_exp: Range::new(0.55, 0.70),
             rise_400_m: Range::new(40.0, 62.0),
+            // GOLF (user direction 2026-08-21): hc macro is BIMODAL by
+            // design — some 45°+ bluffs AND workable routing ground, never
+            // uniform moderation. The wall rise concentrates into tall
+            // risers (riser_m below, raised for real bluffs) between
+            // near-flat treads; floor_widen keeps the valley floors
+            // routable. The corpus median (24 m floors, 0% routable) is
+            // exactly what this is designed AWAY from.
             floor_hw_m: Range::new(20.0, 32.0),
             trib_spacing: Range::new(0.62, 0.80),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
             resistance_response: Range::new(0.4, 0.8),
-            riser_m: Range::new(3.0, 8.0),
+            // raised 3-8 -> 6-16: a 45° bluff needs a riser tall enough to
+            // read as a landform, not a step (golf, see floor_hw_m note)
+            riser_m: Range::new(6.0, 16.0),
         },
         // corpus relief 18.3, flat_floor 12.7% (the highest). Deranged:
         // integration near zero is the identity, and constructing it is free.
