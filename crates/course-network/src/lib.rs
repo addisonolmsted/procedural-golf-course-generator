@@ -16,9 +16,12 @@
 //! `tools/no_old_deps.sh`.
 
 pub mod account;
+pub mod proto;
+pub mod tribs;
 pub mod trunk_path;
 
 pub use account::{Node, Reach, ACCOUNT_RES_M};
+pub use tribs::Trib;
 pub use trunk_path::{TrunkPath, TrunkPathParams};
 
 use course_draw::rng::stream;
@@ -34,9 +37,14 @@ pub const NETWORK_TRUNKPATH: &str = "n4/network/trunkpath/v1";
 /// the same thing as the bands in `01-measurement-policy.md`.
 pub const CHANNEL_AREA_M2: f64 = 6.0e4;
 
-/// The network as of phase N1: trunks only.
+/// The network as of phase N2: trunks + tier-2 tributaries.
 pub struct Network {
     pub trunks: Vec<TrunkPath>,
+    pub tribs: Vec<Trib>,
+    /// Sources that died, by cause — reported, never hidden.
+    pub died_offtile: u32,
+    pub died_exhausted: u32,
+    pub died_stub: u32,
 }
 
 impl Network {
@@ -167,7 +175,52 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
             trunks.push(tp);
         }
     }
-    Network { trunks }
+
+    // ---- phase N2: tier-2 tributaries descend onto the trunks.
+    let mut tribs: Vec<Trib> = Vec::new();
+    let (mut d_off, mut d_exh, mut d_stub) = (0u32, 0u32, 0u32);
+    if !trunks.is_empty() {
+        let mut chans = proto::ChannelSet::new();
+        for tk in &trunks {
+            chans.add_polyline(&tk.pts, &tk.z);
+        }
+        let mut trng = stream(id, course_draw::rng::NETWORK_TRIBS);
+        let tier = tribs::tier2();
+        // Rise scaled so an interfluve midway between trunks climbs a real
+        // fraction of the budget: k * 800^0.6 ~ 0.55 * budget. The macro
+        // weight below must stay SMALL relative to this: at w_macro 0.30 the
+        // macro term's gradient (~0.22 slope, ±15 m over a 420 m wavelength)
+        // was 10x the rise term's (~0.02), so walkers descended relief_pred
+        // — whose lows can be anywhere, including the borders — instead of
+        // descending toward channels. Measured: 170 of 233 walkers off-tile.
+        // The macro field STEERS between channels; it must never outweigh
+        // the pull of the channels themselves.
+        let k_rise = 0.55 * relief_budget / math_pow(800.0, 0.6);
+        let srcs = tribs::sources(&mut trng, &chans, &tier, 26);
+        for src in srcs {
+            let proto_f = proto::Proto {
+                chans: &chans,
+                relief: &t.fields.relief_pred,
+                k_rise,
+                w_macro: 0.05,
+                budget_m: relief_budget,
+            };
+            match tribs::descend(&mut trng, src, &proto_f, &tier) {
+                Ok(tb) => {
+                    chans.add_polyline(&tb.pts, &tb.z);
+                    tribs.push(tb);
+                }
+                Err(tribs::Death::OffTile) => d_off += 1,
+                Err(tribs::Death::Exhausted) => d_exh += 1,
+                Err(tribs::Death::Stub) => d_stub += 1,
+            }
+        }
+    }
+    Network { trunks, tribs, died_offtile: d_off, died_exhausted: d_exh, died_stub: d_stub }
+}
+
+fn math_pow(x: f64, y: f64) -> f64 {
+    course_world::math::pow(x, y)
 }
 
 /// Closest approach between a candidate and every placed trunk, sampled
@@ -373,9 +426,51 @@ mod tests {
     }
 
     #[test]
+    fn tribs_are_monotone_and_attach_to_earlier_channels() {
+        for seed in 0..25u64 {
+            for a in [Archetype::Piedmont, Archetype::RiverValley, Archetype::HillCountry] {
+                let n = net(seed, a);
+                let n_polys = n.trunks.len() as u32;
+                for (ti, tb) in n.tribs.iter().enumerate() {
+                    // junction-first, profile climbs from the junction z
+                    for w in tb.z.windows(2) {
+                        assert!(w[1] >= w[0], "{a} seed {seed}: trib profile not monotone");
+                    }
+                    // attaches only to a channel placed BEFORE it, so every
+                    // chain terminates on a trunk — acyclic by construction
+                    assert!(
+                        tb.parent_poly < n_polys + ti as u32,
+                        "{a} seed {seed}: trib attached to a later channel"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trib_survival_is_high_and_deaths_are_counted() {
+        // The walkers went through three measured failure modes (persistence
+        // over-weighted, macro term dominating the field, join side
+        // inverted); this pins the recovered behaviour.
+        let (mut ok, mut died) = (0u32, 0u32);
+        for seed in 0..25u64 {
+            let n = net(seed, Archetype::Piedmont);
+            ok += n.tribs.len() as u32;
+            died += n.died_offtile + n.died_exhausted + n.died_stub;
+        }
+        assert!(ok > 0);
+        assert!(
+            (died as f64) < 0.15 * (ok + died) as f64,
+            "trib death rate too high: {died}/{}", ok + died
+        );
+    }
+
+    #[test]
     fn sandhills_has_no_trunks() {
         for seed in 0..10u64 {
-            assert!(net(seed, Archetype::Sandhills).trunks.is_empty());
+            let n = net(seed, Archetype::Sandhills);
+            assert!(n.trunks.is_empty());
+            assert!(n.tribs.is_empty());
         }
     }
 }
