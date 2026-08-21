@@ -27,6 +27,10 @@ pub struct ChannelSet {
     pub down: Vec<Vec2>,
     /// Which polyline each point belongs to.
     pub poly: Vec<u32>,
+    /// Arc distance from the polyline's mouth, per point.
+    pub arc: Vec<f64>,
+    /// Total arc length per polyline id.
+    pub total: Vec<f64>,
     cell: f64,
     n: usize,
     buckets: Vec<Vec<u32>>,
@@ -42,6 +46,8 @@ impl ChannelSet {
             z: Vec::new(),
             down: Vec::new(),
             poly: Vec::new(),
+            arc: Vec::new(),
+            total: Vec::new(),
             cell,
             n,
             buckets: vec![Vec::new(); n * n],
@@ -61,7 +67,11 @@ impl ChannelSet {
         assert_eq!(pts.len(), z.len());
         let id = self.next_poly;
         self.next_poly += 1;
+        let mut acc = 0.0;
         for (i, &p) in pts.iter().enumerate() {
+            if i > 0 {
+                acc += p.distance(pts[i - 1]);
+            }
             // downstream = toward the previous (lower-index) point
             let d = if i == 0 {
                 if pts.len() > 1 {
@@ -77,9 +87,11 @@ impl ChannelSet {
             self.z.push(z[i]);
             self.down.push(d);
             self.poly.push(id);
+            self.arc.push(acc);
             let (kx, ky) = self.key(p);
             self.buckets[ky * self.n + kx].push(idx);
         }
+        self.total.push(acc.max(1.0));
         id
     }
 
@@ -175,20 +187,17 @@ pub struct Proto<'a> {
     /// Macro weight on `relief_pred` (dimensionless × budget).
     pub w_macro: f64,
     pub budget_m: f64,
+    /// DOWN-VALLEY GRAVITY (user direction, N2 review): how far downstream
+    /// the field's reference point shifts at the channel, metres. With the
+    /// rise measured to the NEAREST point its gradient is radial and every
+    /// approach is orthogonal; referencing a point downstream tilts the
+    /// equipotentials so descent curves toward the mouth over its whole
+    /// lower course. The rung ladder in `examples/n2_ladder.rs` is the
+    /// instrument this is chosen with.
+    pub along_shift_m: f64,
+    /// The pull fades out beyond this distance from the channel.
+    pub along_reach_m: f64,
 }
-
-/// How far downstream the field's reference point shifts at the channel, m.
-/// This is the "valley floor slopes down-valley" term (user suggestion at the
-/// N2 review): with the rise measured to the NEAREST point, its gradient is
-/// radial and every approach is orthogonal until the analytic tail hooks it —
-/// which the 50 m junction metric cannot see but the eye integrates over the
-/// whole approach. Referencing a point DOWNSTREAM of the nearest tilts the
-/// equipotentials diagonally, so descent curves down-valley over its whole
-/// lower course. Entry angle ~ atan(d / shift): 300 m gives ~40 deg at 250 m
-/// out, which is the corpus junction band emerging from geometry.
-pub const ALONG_SHIFT_M: f64 = 420.0;
-/// The shift fades out beyond this distance from the channel.
-pub const ALONG_REACH_M: f64 = 750.0;
 
 impl<'a> Proto<'a> {
     /// Ground climbs away from every channel and the valley floor slopes
@@ -197,9 +206,19 @@ impl<'a> Proto<'a> {
     pub fn e(&self, p: Vec2) -> f64 {
         let (zc, d) = match self.chans.nearest(p) {
             Some((i, d)) => {
-                let fade = (1.0 - d / ALONG_REACH_M).clamp(0.0, 1.0);
+                let fade = if self.along_reach_m > 0.0 {
+                    (1.0 - d / self.along_reach_m).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 if fade > 0.0 {
-                    let r = self.chans.downstream_of(i, ALONG_SHIFT_M * fade);
+                    // "downstream sections have greater mass": the pull
+                    // scales with how far down its channel the nearest
+                    // point sits — 1.3x at the mouth, 0.7x at the head.
+                    let iu = i as usize;
+                    let frac = self.chans.arc[iu] / self.chans.total[self.chans.poly[iu] as usize];
+                    let mass = 1.3 - 0.6 * frac.clamp(0.0, 1.0);
+                    let r = self.chans.downstream_of(i, self.along_shift_m * fade * mass);
                     (self.chans.z[r as usize], p.distance(self.chans.pts[r as usize]))
                 } else {
                     (self.chans.z[i as usize], d)

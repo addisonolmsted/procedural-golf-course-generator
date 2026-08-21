@@ -177,24 +177,46 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
     }
 
     // ---- phase N2: tier-2 tributaries descend onto the trunks.
+    let g = grow_tribs(id, t, &trunks, DOWN_VALLEY_SHIFT_M, DOWN_VALLEY_REACH_M);
+    Network {
+        trunks,
+        tribs: g.0,
+        died_offtile: g.1,
+        died_exhausted: g.2,
+        died_stub: g.3,
+    }
+}
+
+/// The down-valley gravity operating point. Chosen from the rung ladder
+/// (`examples/n2_ladder.rs`, artifact review).
+pub const DOWN_VALLEY_SHIFT_M: f64 = 420.0;
+pub const DOWN_VALLEY_REACH_M: f64 = 750.0;
+
+/// Grow the tier-2 tributaries at a given gravity setting. Public so the
+/// rung ladder can sweep the dial through the same code path the pipeline
+/// uses — a ladder through a copy would measure the copy.
+pub fn grow_tribs(
+    id: &RunIdentity,
+    t: &Template,
+    trunks: &[TrunkPath],
+    shift_m: f64,
+    reach_m: f64,
+) -> (Vec<Trib>, u32, u32, u32) {
+    let relief_budget = t.relief_budget_m;
     let mut tribs: Vec<Trib> = Vec::new();
     let (mut d_off, mut d_exh, mut d_stub) = (0u32, 0u32, 0u32);
     if !trunks.is_empty() {
         let mut chans = proto::ChannelSet::new();
-        for tk in &trunks {
+        for tk in trunks {
             chans.add_polyline(&tk.pts, &tk.z);
         }
         let mut trng = stream(id, course_draw::rng::NETWORK_TRIBS);
         let tier = tribs::tier2();
         // Rise scaled so an interfluve midway between trunks climbs a real
         // fraction of the budget: k * 800^0.6 ~ 0.55 * budget. The macro
-        // weight below must stay SMALL relative to this: at w_macro 0.30 the
-        // macro term's gradient (~0.22 slope, ±15 m over a 420 m wavelength)
-        // was 10x the rise term's (~0.02), so walkers descended relief_pred
-        // — whose lows can be anywhere, including the borders — instead of
-        // descending toward channels. Measured: 170 of 233 walkers off-tile.
-        // The macro field STEERS between channels; it must never outweigh
-        // the pull of the channels themselves.
+        // weight must stay SMALL relative to this — at w 0.30 the macro
+        // gradient was 10x the rise gradient and walkers descended
+        // relief_pred off the tile (measured, 170 of 233).
         let k_rise = 0.55 * relief_budget / math_pow(800.0, 0.6);
         let srcs = tribs::sources(&mut trng, &chans, &tier, 26);
         for src in srcs {
@@ -204,6 +226,8 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
                 k_rise,
                 w_macro: 0.05,
                 budget_m: relief_budget,
+                along_shift_m: shift_m,
+                along_reach_m: reach_m,
             };
             match tribs::descend(&mut trng, src, &proto_f, &tier) {
                 Ok(tb) => {
@@ -216,7 +240,7 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
             }
         }
     }
-    Network { trunks, tribs, died_offtile: d_off, died_exhausted: d_exh, died_stub: d_stub }
+    (tribs, d_off, d_exh, d_stub)
 }
 
 fn math_pow(x: f64, y: f64) -> f64 {

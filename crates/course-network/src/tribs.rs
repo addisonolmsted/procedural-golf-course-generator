@@ -132,11 +132,30 @@ pub fn descend(
     };
     let mut arc = 0.0;
     let mut attach: Option<(u32, f64)> = None;
+    // Anti-orbit guard: if the walker has barely displaced over the last 30
+    // steps it is circling a pocket of the field — force the analytic join
+    // to the nearest channel instead of engraving a knot.
+    let mut ring: Vec<Vec2> = Vec::new();
 
     for _ in 0..500 {
+        ring.push(*pts.last().unwrap());
+        if ring.len() > 30 {
+            ring.remove(0);
+        }
+        let orbiting =
+            ring.len() == 30 && ring[0].distance(*pts.last().unwrap()) < 0.30 * 30.0 * p.step_m;
+        if orbiting {
+            // TRIM the loop before joining: the guard used to force-join with
+            // the orbit already walked, which engraved a knot into the path
+            // (visible at the strong-gravity ladder rungs). Drop the circled
+            // tail, then take the analytic join from clean geometry.
+            let keep = pts.len().saturating_sub(26).max(1);
+            pts.truncate(keep);
+            ring.clear();
+        }
         let cur = *pts.last().unwrap();
         if let Some((idx, d)) = chans.nearest(cur) {
-            if d <= p.join_r_m * 2.2 {
+            if d <= p.join_r_m * 2.2 || (orbiting && d <= 600.0) {
                 // ANALYTIC final approach. Steering toward the target angle
                 // only reaches it AT the junction, so the measured entry
                 // (over the last ~50-100 m) stayed wide — p50 74 deg against
@@ -171,7 +190,18 @@ pub fn descend(
             // 1.3-3.1 corpus band).
             let g = proto.grad(cur);
             let downhill = if g.length() < 1e-9 { heading } else { Vec2::new(-g.x, -g.y).normalized() };
-            let dir = Vec2::new(downhill.x * 1.7 + heading.x * 0.9, downhill.y * 1.7 + heading.y * 0.9).normalized();
+            // MOMENTUM, not a weighted sum re-derived each step. Near a
+            // confluence the nearest-channel reference flips between the two
+            // channels, the gradient rotates step to step, and a plain sum
+            // let the walker orbit in a tight scribble (user report:
+            // piedmont seed 2, the knot beside the junction). Momentum
+            // integrates the flips away; the knot cannot form.
+            heading = Vec2::new(
+                heading.x * 0.62 + downhill.x * 0.38,
+                heading.y * 0.62 + downhill.y * 0.38,
+            )
+            .normalized();
+            let dir = heading;
             let wob = p.swing_rad * math::sin(core::f64::consts::TAU * arc / lam + phase);
             // taper the meander out approaching the junction zone
             let blend = ((p.join_r_m * 3.5 - d) / (p.join_r_m * 3.5)).clamp(0.0, 1.0);
