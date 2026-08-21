@@ -61,6 +61,16 @@ pub struct Record {
     pub external_inflow_km2: Range,
     /// 1 = every branch reaches base level, 0 = every branch ends in a pit.
     pub integration: Range,
+    /// Scale on major-tributary spacing (and claim). >1 = sparser tribs.
+    ///
+    /// DESIGN-GOVERNED (03-macro-is-designed), user direction 2026-08-21:
+    /// river valley much sparser — open floodplain corridors, not incised
+    /// ravines crossing every fairway — piedmont/hill country denser.
+    /// Recorded departure: the corpus measures rv's CHANNEL density highest
+    /// of the six (2.60 km/km², bottomland sloughs and ditches); that is a
+    /// fine-tier texture statistic, and the fine tiers (N3) still answer to
+    /// the corpus band. This dial governs the MAJOR tier only.
+    pub trib_spacing: Range,
 
     // ---- steering fields (step 3) ----
     /// How strongly the grain axis biases growth. All six measured isotropic.
@@ -86,6 +96,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.62, 0.33, 0.05],
             external_inflow_km2: Range::new(3.0, 12.0),
             integration: Range::fixed(1.0),
+            trib_spacing: Range::new(0.70, 0.85),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
             riser_m: Range::new(0.0, 1.5),
@@ -102,6 +113,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.55, 0.38, 0.07],
             external_inflow_km2: Range::new(2.0, 9.0),
             integration: Range::fixed(1.0),
+            trib_spacing: Range::new(1.10, 1.40),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
             resistance_response: Range::new(0.3, 0.6),
@@ -121,6 +133,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 1.0, 0.0, 0.0],
             external_inflow_km2: Range::new(40.0, 160.0),
             integration: Range::fixed(1.0),
+            trib_spacing: Range::new(1.70, 2.20),
             anisotropy: Range::new(0.08, 0.20),
             resistance_response: Range::new(0.1, 0.3),
             riser_m: Range::new(1.0, 3.0),
@@ -137,6 +150,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.65, 0.30, 0.05],
             external_inflow_km2: Range::new(3.0, 14.0),
             integration: Range::fixed(1.0),
+            trib_spacing: Range::new(0.62, 0.80),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
             resistance_response: Range::new(0.4, 0.8),
@@ -154,6 +168,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.55, 0.45, 0.0, 0.0],
             external_inflow_km2: Range::new(0.8, 3.0),
             integration: Range::new(0.02, 0.12),
+            trib_spacing: Range::new(1.20, 1.50),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
             riser_m: Range::fixed(0.0),
@@ -170,6 +185,7 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [1.0, 0.0, 0.0, 0.0],
             external_inflow_km2: Range::fixed(0.0),
             integration: Range::fixed(0.0),
+            trib_spacing: Range::fixed(1.0),
             // the ONE archetype with real anisotropy -- dune trains
             anisotropy: Range::new(0.55, 0.85),
             resistance_response: Range::fixed(0.0),

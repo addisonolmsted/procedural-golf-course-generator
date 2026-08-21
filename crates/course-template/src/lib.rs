@@ -53,6 +53,8 @@ pub struct Template {
     pub archetype: Archetype,
     /// Carried through for the trunk long profile.
     pub relief_budget_m: f64,
+    /// Major-tributary spacing scale, from the draw. >1 = sparser.
+    pub trib_spacing_scale: f64,
     pub structure: StructureKind,
     pub pattern: PatternDials,
     pub base_edge: Edge,
@@ -116,6 +118,7 @@ pub fn build(id: &RunIdentity, draw: &SiteDraw) -> Template {
     Template {
         archetype: draw.archetype,
         relief_budget_m: d.relief_budget_m,
+        trib_spacing_scale: d.trib_spacing_scale,
         structure: draw.structure,
         pattern: PatternDials {
             anisotropy: d.anisotropy,

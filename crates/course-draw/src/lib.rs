@@ -45,6 +45,7 @@ pub struct Descriptors {
     pub anisotropy: f64,
     pub resistance_response: f64,
     pub riser_m: f64,
+    pub trib_spacing_scale: f64,
 }
 
 fn draw(rng: &mut DetRng, r: Range) -> f64 {
@@ -105,6 +106,8 @@ pub fn generate(id: &RunIdentity, forced: Option<Archetype>) -> SiteDraw {
         anisotropy: draw(&mut p, rec.anisotropy),
         resistance_response: draw(&mut p, rec.resistance_response),
         riser_m: draw(&mut p, rec.riser_m),
+        // appended last so every earlier descriptor keeps its per-seed value
+        trib_spacing_scale: draw(&mut p, rec.trib_spacing),
     };
     SiteDraw { archetype, structure: archetype.structure(), d }
 }

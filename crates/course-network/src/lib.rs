@@ -215,6 +215,12 @@ pub fn grow_tribs_with(
         }
         let mut trng = stream(id, course_draw::rng::NETWORK_TRIBS);
         let mut tier = tribs::tier2();
+        // Per-archetype density, via the drawn record — config, not code:
+        // no biome name appears in this crate. Spacing and claim scale
+        // together so interfluve width stays proportional to spacing.
+        let sc = t.trib_spacing_scale.max(0.2);
+        tier.attach_spacing_m = (tier.attach_spacing_m.0 * sc, tier.attach_spacing_m.1 * sc);
+        tier.claim_m *= sc.sqrt();
         if let Some(h) = hold_override {
             tier.hold_m = h;
         }
