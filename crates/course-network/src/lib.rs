@@ -177,7 +177,7 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
     }
 
     // ---- phase N2: tier-2 tributaries descend onto the trunks.
-    let g = grow_tribs(id, t, &trunks, DOWN_VALLEY_SHIFT_M, DOWN_VALLEY_REACH_M);
+    let g = grow_tribs(id, t, &trunks, DOWN_VALLEY_GRAVITY);
     Network {
         trunks,
         tribs: g.0,
@@ -187,10 +187,14 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
     }
 }
 
-/// The down-valley gravity operating point. Chosen from the rung ladder
-/// (`examples/n2_ladder.rs`, artifact review).
-pub const DOWN_VALLEY_SHIFT_M: f64 = 420.0;
-pub const DOWN_VALLEY_REACH_M: f64 = 750.0;
+/// The down-valley gravity operating point. Reach is the shipped value
+/// (user: keep it); the mass ratio awaits the rung pick from the ladder.
+pub const DOWN_VALLEY_GRAVITY: proto::Gravity = proto::Gravity {
+    reach_m: 750.0,
+    mass_ratio: 2.0,
+    strength: 0.55,
+    cap: 2.6,
+};
 
 /// Grow the tier-2 tributaries at a given gravity setting. Public so the
 /// rung ladder can sweep the dial through the same code path the pipeline
@@ -199,8 +203,7 @@ pub fn grow_tribs(
     id: &RunIdentity,
     t: &Template,
     trunks: &[TrunkPath],
-    shift_m: f64,
-    reach_m: f64,
+    gravity: proto::Gravity,
 ) -> (Vec<Trib>, u32, u32, u32) {
     let relief_budget = t.relief_budget_m;
     let mut tribs: Vec<Trib> = Vec::new();
@@ -226,8 +229,7 @@ pub fn grow_tribs(
                 k_rise,
                 w_macro: 0.05,
                 budget_m: relief_budget,
-                along_shift_m: shift_m,
-                along_reach_m: reach_m,
+                gravity,
             };
             match tribs::descend(&mut trng, src, &proto_f, &tier) {
                 Ok(tb) => {

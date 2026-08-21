@@ -12,13 +12,17 @@ use course_world::math::{self, Vec2};
 use course_world::world::{CORE_MAX_M, CORE_MIN_M, EXTENT_M};
 
 const PX: u32 = 430;
-const RUNGS: [(f64, f64, &str); 5] = [
-    (0.0, 0.0, "L0 · no gravity"),
-    (420.0, 750.0, "L1 · current"),
-    (900.0, 1400.0, "L2"),
-    (1500.0, 2200.0, "L3"),
-    (2400.0, 3400.0, "L4 · whole-tile pull"),
+// Round 2 of the ladder (user direction): REACH stays at the shipped 750 m;
+// the axis is the MOUTH/HEAD PULL RATIO — "the mouth may be 50 or even 100
+// times more pull than the head."
+const RUNGS: [(f64, &str); 5] = [
+    (2.0, "M1 · ratio 2 (≈ shipped)"),
+    (10.0, "M2 · ratio 10"),
+    (30.0, "M3 · ratio 30"),
+    (60.0, "M4 · ratio 60"),
+    (100.0, "M5 · ratio 100"),
 ];
+
 const TILES: [(Archetype, u64); 4] = [
     (Archetype::Piedmont, 1),
     (Archetype::Piedmont, 2),
@@ -31,13 +35,16 @@ fn main() {
     std::fs::create_dir_all(&out).unwrap();
     let mut rows = Vec::new();
 
-    for (ri, (shift, reach, label)) in RUNGS.iter().enumerate() {
+    for (ri, (ratio, label)) in RUNGS.iter().enumerate() {
         let mut angs: Vec<f64> = Vec::new();
         for (arch, seed) in TILES {
             let id = RunIdentity::from_seed(seed);
             let t = course_template::build(&id, &generate(&id, Some(arch)));
             let trunks = course_network::build(&id, &t).trunks;
-            let (tribs, _, _, _) = grow_tribs(&id, &t, &trunks, *shift, *reach);
+            let (tribs, _, _, _) = grow_tribs(&id, &t, &trunks, course_network::proto::Gravity {
+                mass_ratio: *ratio,
+                ..course_network::DOWN_VALLEY_GRAVITY
+            });
 
             // measure entry angles over a 130 m baseline — the EYE's scale,
             // not the ruler's 50 m
@@ -88,8 +95,8 @@ fn main() {
         let g80 = if angs.is_empty() { f64::NAN } else {
             100.0 * angs.iter().filter(|v| **v > 80.0).count() as f64 / angs.len() as f64 };
         rows.push(format!(
-            r#"{{"rung":{ri},"label":"{label}","shift":{shift},"reach":{reach},"junc130_p50":{p50:.1},"g80":{g80:.1}}}"#));
-        println!("{label:22}  shift {shift:6.0}  reach {reach:6.0}  junc@130m p50 {p50:5.1}  >80 {g80:4.1}%");
+            r#"{{"rung":{ri},"label":"{label}","ratio":{ratio},"junc130_p50":{p50:.1},"g80":{g80:.1}}}"#));
+        println!("{label:26}  ratio {ratio:5.0}  junc@130m p50 {p50:5.1}  >80 {g80:4.1}%");
     }
     std::fs::write(format!("{out}/rungs.json"), format!("[\n{}\n]", rows.join(",\n"))).unwrap();
     let _ = CHANNEL_AREA_M2;

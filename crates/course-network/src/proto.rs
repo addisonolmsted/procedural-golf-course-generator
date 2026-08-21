@@ -187,16 +187,56 @@ pub struct Proto<'a> {
     /// Macro weight on `relief_pred` (dimensionless × budget).
     pub w_macro: f64,
     pub budget_m: f64,
-    /// DOWN-VALLEY GRAVITY (user direction, N2 review): how far downstream
-    /// the field's reference point shifts at the channel, metres. With the
-    /// rise measured to the NEAREST point its gradient is radial and every
-    /// approach is orthogonal; referencing a point downstream tilts the
-    /// equipotentials so descent curves toward the mouth over its whole
-    /// lower course. The rung ladder in `examples/n2_ladder.rs` is the
-    /// instrument this is chosen with.
-    pub along_shift_m: f64,
-    /// The pull fades out beyond this distance from the channel.
-    pub along_reach_m: f64,
+    /// Down-valley gravity — see [`Gravity`]. Carried here so `e()` stays a
+    /// pure radial field; the gravity acts on the WALKER as a force, not on
+    /// the field as a reference shift. The shift formulation carved eddies
+    /// at high gain (the reference jumps discontinuously as the nearest
+    /// point changes) and walkers corkscrewed through them — measured on the
+    /// mass ladder at ratio 100, loops surviving trim-and-rejoin. A force
+    /// has no wells to fall into, at any gain.
+    pub gravity: Gravity,
+}
+
+/// The down-valley pull (user direction across two review rounds): channels
+/// attract like they have gravity, and "downstream sections have greater
+/// mass — the mouth may be 50 or even 100 times more pull than the head."
+#[derive(Clone, Copy, Debug)]
+pub struct Gravity {
+    /// The pull fades to zero this far from a channel.
+    pub reach_m: f64,
+    /// Mouth/head pull ratio: mass(frac) = ratio^(1 - frac).
+    pub mass_ratio: f64,
+    /// Pull strength at the head (mass 1), as a fraction of the downhill
+    /// unit force. The mouth pulls at `strength × ratio`, capped below.
+    pub strength: f64,
+    /// Cap on the total pull, in downhill-force units, so ratio 100 bends
+    /// the course instead of teleporting it.
+    pub cap: f64,
+}
+
+impl Gravity {
+    /// The down-valley force at `p`: the DOWNSTREAM tangent of the nearest
+    /// channel point, weighted by fade × mass. Smooth in `p` except at
+    /// equidistance seams, where momentum carries the walker through.
+    pub fn pull(&self, chans: &ChannelSet, p: Vec2) -> Vec2 {
+        let Some((i, d)) = chans.nearest(p) else {
+            return Vec2::new(0.0, 0.0);
+        };
+        let fade = if self.reach_m > 0.0 {
+            (1.0 - d / self.reach_m).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if fade <= 0.0 {
+            return Vec2::new(0.0, 0.0);
+        }
+        let iu = i as usize;
+        let frac = (chans.arc[iu] / chans.total[chans.poly[iu] as usize]).clamp(0.0, 1.0);
+        let mass = math::pow(self.mass_ratio.max(1.0), 1.0 - frac);
+        let w = (self.strength * mass * fade).min(self.cap);
+        let dn = chans.down[iu];
+        Vec2::new(dn.x * w, dn.y * w)
+    }
 }
 
 impl<'a> Proto<'a> {
@@ -205,25 +245,7 @@ impl<'a> Proto<'a> {
     /// where the template said high ground is.
     pub fn e(&self, p: Vec2) -> f64 {
         let (zc, d) = match self.chans.nearest(p) {
-            Some((i, d)) => {
-                let fade = if self.along_reach_m > 0.0 {
-                    (1.0 - d / self.along_reach_m).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                if fade > 0.0 {
-                    // "downstream sections have greater mass": the pull
-                    // scales with how far down its channel the nearest
-                    // point sits — 1.3x at the mouth, 0.7x at the head.
-                    let iu = i as usize;
-                    let frac = self.chans.arc[iu] / self.chans.total[self.chans.poly[iu] as usize];
-                    let mass = 1.3 - 0.6 * frac.clamp(0.0, 1.0);
-                    let r = self.chans.downstream_of(i, self.along_shift_m * fade * mass);
-                    (self.chans.z[r as usize], p.distance(self.chans.pts[r as usize]))
-                } else {
-                    (self.chans.z[i as usize], d)
-                }
-            }
+            Some((i, d)) => (self.chans.z[i as usize], d),
             None => (0.0, 0.0),
         };
         zc + self.k_rise * math::pow(d.max(0.0), 0.6) + self.w_macro * self.relief.bilinear(p) * self.budget_m

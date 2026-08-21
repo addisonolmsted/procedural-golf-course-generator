@@ -14,10 +14,10 @@ for r in rungs:
     cells = "".join(
         f'<figure><img src="{uri(f"r{ri}_{a}_{s}.jpg")}" alt="{lab} at {r["label"]}" loading="lazy"><figcaption>{lab}</figcaption></figure>'
         for a,s,lab in TILES)
-    sel = ' class="pick"' if ri==1 else ""
+    sel = ' class="pick"' if ri==0 else ""
     rows.append(f'''<section class="rung"{sel}>
 <header><h2>{r["label"]}</h2>
-<p class="mono">shift {r["shift"]:.0f} m · reach {r["reach"]:.0f} m{" · SHIPPING TODAY" if ri==1 else ""}</p></header>
+<p class="mono">mouth/head ratio {r["ratio"]:.0f}{" · ≈ SHIPPING TODAY" if ri==0 else ""}</p></header>
 <div class="strip">{cells}</div></section>''')
 
 DOC = f'''<title>N2 · Down-valley gravity ladder</title>
@@ -50,23 +50,20 @@ figcaption{{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--
 <div class="wrap">
 <header class="top">
   <p class="eyebrow">Attempt 4 · N2 review · pick a rung</p>
-  <h1>Down-valley gravity: the same four tiles at five pull strengths</h1>
-  <p class="lede">"Almost like the trunks have a gravity pulling tributaries towards them at all times and the
-  downstream sections have greater mass." Implemented exactly so: the field's reference point shifts downstream of the
-  nearest channel point (the pull), scaled ×1.3 at a channel's mouth down to ×0.7 at its head (the mass), fading with
-  distance (the reach). Same seeds on every row — only the dial moves. <strong>Reply with a rung (or between two) and
-  it becomes the operating point.</strong></p>
+  <h1>Down-valley gravity, round 2: the mass ratio, mouth over head</h1>
+  <p class="lede">Reach stays at the shipped 750 m; the axis is now the <strong>mouth/head pull ratio</strong> —
+  "the mouth may be 50 or even 100 times more pull than the head." mass(frac) = ratio^(1−frac), exponential from ×1 at
+  the head to ×ratio at the mouth, capped at 2.6× the downhill force so the top rungs bend courses rather than
+  teleporting them. Same seeds on every row — only the ratio moves. <strong>Reply with a rung and it ships.</strong></p>
 </header>
 {"".join(rows)}
 <section class="notes">
-  <p><strong>Also fixed in this round:</strong> the tight squiggle on Piedmont seed 2's left tributary. Near a
-  confluence the nearest-channel reference flips between the two channels, the gradient rotates every step, and the
-  walker orbited in place, engraving a knot. Two changes: heading is now integrated momentum rather than a per-step
-  weighted sum, and an anti-orbit guard detects a circling walker, <em>trims the loop it walked</em>, and takes the
-  analytic join from clean geometry.</p>
-  <p><strong>A caveat the ladder makes visible:</strong> at L3–L4 tributaries run long, glancing courses beside the
-  trunk before joining. That is the look of strong gravity — and it will raise the near-parallel fraction at N3, when
-  density arrives. Not an argument against L3–L4; just the trade named before it is bought.</p>
+  <p><strong>The loops are gone at the source.</strong> The corkscrews on the previous ladder (and seed 2's squiggle)
+  were not a tuning problem: the old formulation shifted the field's <em>reference point</em> downstream, and at high
+  gain that reference jumps discontinuously as the nearest channel point changes — carving eddies into the field that
+  walkers spiralled through. Trimming loops treated the symptom; walkers re-entered the same wells. Gravity is now an
+  explicit <em>force on the walker</em> (the downstream tangent of the nearest channel, weighted by fade × mass),
+  which has no wells to fall into at any gain. Verified at ratio 100 on the tiles that looped worst: clean.</p>
 </section>
 </div>
 '''

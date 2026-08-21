@@ -196,9 +196,10 @@ pub fn descend(
             // let the walker orbit in a tight scribble (user report:
             // piedmont seed 2, the knot beside the junction). Momentum
             // integrates the flips away; the knot cannot form.
+            let pull = proto.gravity.pull(chans, cur);
             heading = Vec2::new(
-                heading.x * 0.62 + downhill.x * 0.38,
-                heading.y * 0.62 + downhill.y * 0.38,
+                heading.x * 0.62 + (downhill.x + pull.x) * 0.38,
+                heading.y * 0.62 + (downhill.y + pull.y) * 0.38,
             )
             .normalized();
             let dir = heading;
