@@ -41,10 +41,11 @@ pub const CHANNEL_AREA_M2: f64 = 6.0e4;
 pub struct Network {
     pub trunks: Vec<TrunkPath>,
     pub tribs: Vec<Trib>,
-    /// Sources that died, by cause — reported, never hidden.
-    pub died_offtile: u32,
-    pub died_exhausted: u32,
-    pub died_stub: u32,
+    /// Terminations, by cause — reported, never hidden. Stubs are the only
+    /// failures; edge and claimed are legitimate head placements.
+    pub n_stub: u32,
+    pub n_edge: u32,
+    pub n_claimed: u32,
 }
 
 impl Network {
@@ -177,72 +178,89 @@ pub fn build(id: &RunIdentity, t: &Template) -> Network {
     }
 
     // ---- phase N2: tier-2 tributaries descend onto the trunks.
-    let g = grow_tribs(id, t, &trunks, DOWN_VALLEY_GRAVITY);
+    let g = grow_tribs(id, t, &trunks);
     Network {
         trunks,
         tribs: g.0,
-        died_offtile: g.1,
-        died_exhausted: g.2,
-        died_stub: g.3,
+        n_stub: g.1,
+        n_edge: g.2,
+        n_claimed: g.3,
     }
 }
 
-/// The down-valley gravity operating point. Reach is the shipped value
-/// (user: keep it); the mass ratio awaits the rung pick from the ladder.
-pub const DOWN_VALLEY_GRAVITY: proto::Gravity = proto::Gravity {
-    reach_m: 750.0,
-    mass_ratio: 2.0,
-    strength: 0.55,
-    cap: 2.6,
-};
 
-/// Grow the tier-2 tributaries at a given gravity setting. Public so the
-/// rung ladder can sweep the dial through the same code path the pipeline
-/// uses — a ladder through a copy would measure the copy.
-pub fn grow_tribs(
+
+/// Grow the tier-2 tributaries: attach-and-climb (the reversal — user
+/// design, N2 rework). Junction sites are AUTHORED along the channels;
+/// each climber departs at the drawn angle and must gain proto-elevation
+/// every step, so loops are structurally impossible.
+///
+/// Public, with `hold_override` exposed, so the rung ladder sweeps the
+/// hold-distance dial through the SAME code path the pipeline uses.
+pub fn grow_tribs_with(
     id: &RunIdentity,
     t: &Template,
     trunks: &[TrunkPath],
-    gravity: proto::Gravity,
+    hold_override: Option<(f64, f64)>,
 ) -> (Vec<Trib>, u32, u32, u32) {
     let relief_budget = t.relief_budget_m;
     let mut tribs: Vec<Trib> = Vec::new();
-    let (mut d_off, mut d_exh, mut d_stub) = (0u32, 0u32, 0u32);
+    // ends by cause: (kept is implicit) stubs, divide/claimed/edge/max are
+    // normal terminations — only stubs are "failures", the rest are heads
+    let (mut n_stub, mut n_edge, mut n_claimed) = (0u32, 0u32, 0u32);
     if !trunks.is_empty() {
         let mut chans = proto::ChannelSet::new();
         for tk in trunks {
             chans.add_polyline(&tk.pts, &tk.z);
         }
         let mut trng = stream(id, course_draw::rng::NETWORK_TRIBS);
-        let tier = tribs::tier2();
-        // Rise scaled so an interfluve midway between trunks climbs a real
-        // fraction of the budget: k * 800^0.6 ~ 0.55 * budget. The macro
-        // weight must stay SMALL relative to this — at w 0.30 the macro
-        // gradient was 10x the rise gradient and walkers descended
-        // relief_pred off the tile (measured, 170 of 233).
+        let mut tier = tribs::tier2();
+        if let Some(h) = hold_override {
+            tier.hold_m = h;
+        }
         let k_rise = 0.55 * relief_budget / math_pow(800.0, 0.6);
-        let srcs = tribs::sources(&mut trng, &chans, &tier, 26);
-        for src in srcs {
+        let sites = tribs::attach_points(&mut trng, &chans, &tier);
+        for site in sites {
             let proto_f = proto::Proto {
                 chans: &chans,
                 relief: &t.fields.relief_pred,
                 k_rise,
                 w_macro: 0.05,
                 budget_m: relief_budget,
-                gravity,
             };
-            match tribs::descend(&mut trng, src, &proto_f, &tier) {
-                Ok(tb) => {
-                    chans.add_polyline(&tb.pts, &tb.z);
-                    tribs.push(tb);
+            // One retry on a stub: a site inside a meander bend often cannot
+            // support the first drawn departure but takes a different one.
+            let mut placed = false;
+            for _attempt in 0..2 {
+                match tribs::climb(&mut trng, site, &proto_f, &tier) {
+                    Ok((tb, end)) => {
+                        match end {
+                            tribs::End::Edge => n_edge += 1,
+                            tribs::End::Claimed => n_claimed += 1,
+                            _ => {}
+                        }
+                        chans.add_polyline(&tb.pts, &tb.z);
+                        tribs.push(tb);
+                        placed = true;
+                        break;
+                    }
+                    Err(_) => {}
                 }
-                Err(tribs::Death::OffTile) => d_off += 1,
-                Err(tribs::Death::Exhausted) => d_exh += 1,
-                Err(tribs::Death::Stub) => d_stub += 1,
+            }
+            if !placed {
+                n_stub += 1;
             }
         }
     }
-    (tribs, d_off, d_exh, d_stub)
+    (tribs, n_stub, n_edge, n_claimed)
+}
+
+pub fn grow_tribs(
+    id: &RunIdentity,
+    t: &Template,
+    trunks: &[TrunkPath],
+) -> (Vec<Trib>, u32, u32, u32) {
+    grow_tribs_with(id, t, trunks, None)
 }
 
 fn math_pow(x: f64, y: f64) -> f64 {
@@ -474,21 +492,59 @@ mod tests {
     }
 
     #[test]
-    fn trib_survival_is_high_and_deaths_are_counted() {
-        // The walkers went through three measured failure modes (persistence
-        // over-weighted, macro term dominating the field, join side
-        // inverted); this pins the recovered behaviour.
-        let (mut ok, mut died) = (0u32, 0u32);
-        for seed in 0..25u64 {
-            let n = net(seed, Archetype::Piedmont);
-            ok += n.tribs.len() as u32;
-            died += n.died_offtile + n.died_exhausted + n.died_stub;
+    fn tribs_cannot_loop() {
+        // The structural guarantee, verified anyway: proto-elevation (and so
+        // z) strictly increases along every path, and a strictly increasing
+        // path cannot revisit any point. Belt: no two non-adjacent points
+        // closer than half a step.
+        for seed in 0..20u64 {
+            for a in [Archetype::Piedmont, Archetype::RiverValley, Archetype::HillCountry] {
+                let n = net(seed, a);
+                for tb in &n.tribs {
+                    for w in tb.z.windows(2) {
+                        assert!(w[1] > w[0], "{a} seed {seed}: z not strictly increasing");
+                    }
+                    for i in 0..tb.pts.len() {
+                        for j in (i + 3)..tb.pts.len() {
+                            let d = tb.pts[i].distance(tb.pts[j]);
+                            assert!(
+                                d > 12.0,
+                                "{a} seed {seed}: trib self-approaches ({d:.1} m, pts {i}/{j})"
+                            );
+                        }
+                    }
+                }
+            }
         }
-        assert!(ok > 0);
-        assert!(
-            (died as f64) < 0.15 * (ok + died) as f64,
-            "trib death rate too high: {died}/{}", ok + died
-        );
+    }
+
+    #[test]
+    fn departure_angles_land_in_the_corpus_band() {
+        use course_world::math::Vec2;
+        let mut angs: Vec<f64> = Vec::new();
+        for seed in 0..20u64 {
+            let n = net(seed, Archetype::Piedmont);
+            let mut chans = proto::ChannelSet::new();
+            for tk in &n.trunks {
+                chans.add_polyline(&tk.pts, &tk.z);
+            }
+            for tb in &n.tribs {
+                if (tb.attach_pt as usize) >= chans.pts.len() {
+                    continue; // attached to another trib
+                }
+                let k = 3.min(tb.pts.len() - 1);
+                let inc = Vec2::new(tb.pts[0].x - tb.pts[k].x, tb.pts[0].y - tb.pts[k].y);
+                if inc.length() < 1e-6 {
+                    continue;
+                }
+                let down = chans.down[tb.attach_pt as usize];
+                let c = inc.normalized().dot(down).clamp(-1.0, 1.0);
+                angs.push(course_world::math::acos(c).to_degrees());
+            }
+        }
+        angs.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let p50 = angs[angs.len() / 2];
+        assert!((30.0..=55.0).contains(&p50), "departure p50 {p50:.1}");
     }
 
     #[test]

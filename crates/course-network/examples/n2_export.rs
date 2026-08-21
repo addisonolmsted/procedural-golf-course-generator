@@ -123,7 +123,7 @@ fn main() {
                 arch.key(), net.trunks.len(),
                 net.trunks.iter().filter(|k| k.joins.is_some()).count(),
                 net.tribs.len(),
-                net.died_offtile + net.died_exhausted + net.died_stub,
+                net.n_stub,
                 if rmin == f64::MAX { 0.0 } else { rmin },
                 len / 1000.0));
         }

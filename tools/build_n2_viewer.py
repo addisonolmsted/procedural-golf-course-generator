@@ -79,12 +79,10 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
 <header class="top">
   <p class="eyebrow">Attempt 4 · network restart · phase N2 — tier-2 tributaries</p>
   <h1>Tributaries: down from the high ground, onto the trunks</h1>
-  <p class="lede">Each tributary starts on a territory peak — the high ground farthest from any channel — and walks
-  DOWNHILL on a proto-elevation field whose valley floors are the channels already placed, with a 300–700 m meander.
-  Convergence is structural, not steered: a descent ends on a channel because there is nowhere else downhill to go.
-  Each placed tributary joins the field before the next is routed, so later ones descend into earlier ones — the
-  stem-with-side-branches structure that gives real networks their bifurcation ratio. The final ~150 m of every
-  approach is an analytic curve that enters at the drawn junction angle by construction.</p>
+  <p class="lede">Reworked per review: tributaries now grow FROM the trunk, outward and uphill. Each departs an
+  authored attachment point at exactly the drawn acute angle, holds its course, then climbs the proto field toward
+  high ground or a high edge, with a small meander. Every step must gain elevation — a strictly increasing path
+  cannot revisit any point, so <strong>loops are impossible by construction</strong>, not guarded against.</p>
   <div class="legend">
     <span><i class="grad" style="background:linear-gradient(90deg,#F2F2EE,#6E37AA)"></i> elevation along the line: pale = base level → violet = upstream</span>
     <span>▸ chevrons point DOWNSTREAM — a Y is two rivers merging, not one splitting</span>
@@ -100,20 +98,18 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
   <div class="tblwrap"><table>
     <thead><tr><th>check</th><th>result · corpus band</th></tr></thead>
     <tbody>
-      <tr><td>junction angle p50</td><td>44.4–45.2° · band 37–45° ✓</td></tr>
-      <tr><td>orthogonal junctions (&gt;80°)</td><td>12.9–13.0% · band 8.5–13.4% ✓</td></tr>
-      <tr><td>approach geometry (round 2, user review)</td><td>the ENTRY was acute but the APPROACH was orthogonal — walkers descended a radial field and got hooked by the analytic tail, which the 50 m metric cannot see and the eye integrates. Fixed in the field, per the review suggestion: the proto reference point shifts up to 420 m DOWNSTREAM of the nearest channel point (fading over 750 m), so the valley floor slopes down-valley and descent curves into the trunk over its whole lower course.</td></tr>
-      <tr><td>near-parallel (reach-based, declared policy)</td><td>0.0–0.04% · band 1.3–3.1% — BELOW band, expected at N2: one tier only; binds at N3</td></tr>
-      <tr><td>walker survival</td><td>227 of 228 typical; deaths counted by cause (off-tile / exhausted / stub), never hidden</td></tr>
-      <tr><td>monotone profiles</td><td>every tributary climbs from its junction elevation; asserted</td></tr>
-      <tr><td>acyclic by construction</td><td>a tributary attaches only to channels placed before it, so every chain terminates on a trunk</td></tr>
+      <tr><td>departure angle p50</td><td>43.5° · band 37–45° ✓</td></tr>
+      <tr><td>orthogonal junctions (&gt;80°)</td><td>11.1–11.4% · band 8.5–13.4% ✓</td></tr>
+      <tr><td>loops</td><td>impossible by construction (strictly increasing potential); asserted anyway over 60 tiles</td></tr>
+      <tr><td>near-parallel (reach-based)</td><td>0.27–0.48% · binds at N3 with density</td></tr>
+      <tr><td>heads</td><td>divide / high-edge / claimed — all counted; ~40 of 130 sites reach a tile edge</td></tr>
+      <tr><td>monotone profiles</td><td>strictly increasing z on every tributary; asserted</td></tr>
     </tbody>
 </table></div>
-  <p class="sub"><strong>What to look for:</strong> tributaries should read as smooth curves off the high ground
-  (orange) converging into the trunks at acute angles, with later ones joining earlier ones into small trees. The
-  meander should be visible but gentler than the trunks'. Density is deliberately sparse — this is the MAJOR
-  tributary tier only; the minor tiers that fill the ground to corpus density are N3. If any junction reads as a
-  T-bone, or a tributary as nervous or straight, say so now.</p>
+  <p class="sub"><strong>What to look for:</strong> acute departures that read acute at a glance (the junction owns
+  its angle now), smooth committed lower courses, gentle meander, heads on high ground or high edges, no loops
+  anywhere — including piedmont seed 2, the tile that squiggled. Density is deliberately sparse; N3 adds the minor
+  tiers. The hold-distance ladder is the companion page for choosing how long courses stay committed.</p>
 </section>
 </div>
 <dialog id="dlg"><div class="dhead"><h3 id="dtitle">—</h3><button id="dclose">Close</button></div>

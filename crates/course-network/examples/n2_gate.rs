@@ -10,30 +10,29 @@ use course_world::math::{self, Vec2};
 /// Junction angle, corpus convention: the trib's incoming direction vs the
 /// parent's downstream continuation, both averaged over ~100 m.
 fn junction_angles(net: &course_network::Network) -> Vec<f64> {
-    // rebuild the channel set the tribs were routed against, so downstream
-    // tangents mean the same thing
+    // Rebuild the incremental channel set EXACTLY as the build saw it —
+    // trunks, then each trib in placement order — so attach_pt resolves
+    // against the right geometry. Resolving against a trunks-only set
+    // misattributed every trib-on-trib junction to a random trunk point,
+    // which polluted the >80 deg share.
     let mut chans = course_network::proto::ChannelSet::new();
     for tk in &net.trunks {
         chans.add_polyline(&tk.pts, &tk.z);
     }
     let mut out = Vec::new();
     for tb in &net.tribs {
-        // incoming: over ~50 m, the corpus's 6-cell baseline at 8 m
-        let k = 3usize;
-        let a = tb.pts[k.min(tb.pts.len() - 1)];
-        let inc = Vec2::new(tb.pts[0].x - a.x, tb.pts[0].y - a.y);
-        if inc.length() < 1e-6 {
-            continue;
+        let a = tb.attach_pt as usize;
+        if a < chans.pts.len() {
+            let k = 3.min(tb.pts.len() - 1);
+            let p0 = tb.pts[0];
+            let inc = Vec2::new(p0.x - tb.pts[k].x, p0.y - tb.pts[k].y);
+            if inc.length() > 1e-6 {
+                let down = chans.down[a];
+                let c = inc.normalized().dot(down).clamp(-1.0, 1.0);
+                out.push(math::acos(c).to_degrees());
+            }
         }
-        // parent downstream at the attach point — only valid for tribs
-        // attached to TRUNKS (tier-2's parents); trib-on-trib junctions are
-        // scored the same way against the growing set at build time, but for
-        // the gate we approximate with the stored geometry
-        if (tb.attach_pt as usize) < chans.pts.len() {
-            let down = chans.down[tb.attach_pt as usize];
-            let c = inc.normalized().dot(down).clamp(-1.0, 1.0);
-            out.push(math::acos(c).to_degrees());
-        }
+        chans.add_polyline(&tb.pts, &tb.z);
     }
     out
 }
@@ -153,7 +152,7 @@ fn main() {
     };
     println!("N2 gate — corpus: junc p50 37-45 | >80 8.5-13.4% | near_par 1.3-3.1%\n");
     println!("{:<14} {:>6} {:>7} {:>8} {:>7} {:>7} {:>8} {:>6}",
-             "archetype", "tribs", "died", "junc p50", ">80%", "nearpar", "len km", "ms");
+             "archetype", "tribs", "stub", "junc p50", ">80%", "nearpar", "len km", "ms");
     for a in Archetype::ALL {
         let (mut nt, mut nd, mut nde, mut ndo, mut ang, mut nl, mut tl, mut lens) =
             (0u32, 0u32, 0u32, 0u32, Vec::new(), 0.0, 0.0, Vec::new());
@@ -165,8 +164,8 @@ fn main() {
             let net = build(&id, &t);
             ms += t0.elapsed().as_secs_f64() * 1000.0;
             nt += net.tribs.len() as u32;
-            nd += net.died_offtile + net.died_exhausted + net.died_stub;
-            nde += net.died_exhausted; ndo += net.died_offtile;
+            nd += net.n_stub;
+            nde += net.n_edge; ndo += net.n_claimed;
             ang.extend(junction_angles(&net));
             let (n, tot) = near_parallel(&net);
             nl += n;
@@ -178,7 +177,7 @@ fn main() {
             lens.push(len / 1000.0);
         }
         if ang.is_empty() {
-            println!("{:<14} {:>6} {:>4}/{:>4}o", a.key(), nt, nde, ndo);
+            println!("{:<14} {:>6} {:>3}e/{:>3}c", a.key(), nt, nde, ndo);
             continue;
         }
         ang.sort_by(|x, y| x.partial_cmp(y).unwrap());
@@ -186,7 +185,7 @@ fn main() {
         let g80 = 100.0 * ang.iter().filter(|v| **v > 80.0).count() as f64 / ang.len() as f64;
         let np = 100.0 * nl / tl.max(1.0);
         let ml = lens.iter().sum::<f64>() / lens.len().max(1) as f64;
-        println!("{:<14} {:>6} {:>4}/{:>4}o {:>8.1} {:>7.1} {:>7.2} {:>8.2} {:>6.1}",
+        println!("{:<14} {:>6} {:>3}e/{:>3}c {:>8.1} {:>7.1} {:>7.2} {:>8.2} {:>6.1}",
                  a.key(), nt, nde, ndo, p50, g80, np, ml, ms / seeds.len() as f64);
         let _ = nd;
     }

@@ -14,10 +14,10 @@ for r in rungs:
     cells = "".join(
         f'<figure><img src="{uri(f"r{ri}_{a}_{s}.jpg")}" alt="{lab} at {r["label"]}" loading="lazy"><figcaption>{lab}</figcaption></figure>'
         for a,s,lab in TILES)
-    sel = ' class="pick"' if ri==0 else ""
+    sel = ' class="pick"' if ri==2 else ""
     rows.append(f'''<section class="rung"{sel}>
 <header><h2>{r["label"]}</h2>
-<p class="mono">mouth/head ratio {r["ratio"]:.0f}{" · ≈ SHIPPING TODAY" if ri==0 else ""}</p></header>
+<p class="mono">hold {r["hold_mouth"]:.0f} m at the mouth · {r["hold_head"]:.0f} m at the head{" · TIER DEFAULT" if ri==2 else ""}</p></header>
 <div class="strip">{cells}</div></section>''')
 
 DOC = f'''<title>N2 · Down-valley gravity ladder</title>
@@ -50,20 +50,23 @@ figcaption{{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--
 <div class="wrap">
 <header class="top">
   <p class="eyebrow">Attempt 4 · N2 review · pick a rung</p>
-  <h1>Down-valley gravity, round 2: the mass ratio, mouth over head</h1>
-  <p class="lede">Reach stays at the shipped 750 m; the axis is now the <strong>mouth/head pull ratio</strong> —
-  "the mouth may be 50 or even 100 times more pull than the head." mass(frac) = ratio^(1−frac), exponential from ×1 at
-  the head to ×ratio at the mouth, capped at 2.6× the downhill force so the top rungs bend courses rather than
-  teleporting them. Same seeds on every row — only the ratio moves. <strong>Reply with a rung and it ships.</strong></p>
+  <h1>The reversal: tributaries grow FROM the trunk — and the dial is how long they hold their course</h1>
+  <p class="lede">Growth direction reversed per the review: a tributary now departs an authored point ON the trunk at
+  exactly the drawn acute angle, holds that course for H metres (the rung), then releases to uphill steering toward
+  high ground or a high edge. Loops are impossible by construction — every step must gain proto-elevation, and a
+  strictly increasing path cannot revisit any point. Same seeds on every row — only the hold moves.
+  <strong>Reply with a rung and it ships.</strong></p>
 </header>
 {"".join(rows)}
 <section class="notes">
-  <p><strong>The loops are gone at the source.</strong> The corkscrews on the previous ladder (and seed 2's squiggle)
-  were not a tuning problem: the old formulation shifted the field's <em>reference point</em> downstream, and at high
-  gain that reference jumps discontinuously as the nearest channel point changes — carving eddies into the field that
-  walkers spiralled through. Trimming loops treated the symptom; walkers re-entered the same wells. Gravity is now an
-  explicit <em>force on the walker</em> (the downstream tangent of the nearest channel, weighted by fade × mass),
-  which has no wells to fall into at any gain. Verified at ratio 100 on the tiles that looped worst: clean.</p>
+  <p><strong>What the reversal deleted:</strong> the approach blend, the analytic join, the gravity field, the gravity
+  force, the orbit guard and the loop trim — all machinery for <em>arriving</em> at the trunk correctly, and there is
+  no arrival anymore. The junction is t = 0 and owns its angle exactly.</p>
+  <p><strong>One measured bug on the way:</strong> the claim test exempted a climber's own parent by arc walked, not by
+  identity — an acute departure at 36–41° stays within the 180 m claim radius of its parent until ~275 m of arc, so
+  every acute climber died at the first check while orthogonal ones cleared instantly. Measured: >80° share 30–37%
+  against 10–12% drawn, from that one line. Identity-based exemption landed the departure p50 at 43.5° (band 37–45)
+  and the orthogonal share at 11.1% (band 8.5–13.4).</p>
 </section>
 </div>
 '''
