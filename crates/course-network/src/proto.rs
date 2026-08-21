@@ -120,6 +120,22 @@ impl ChannelSet {
         (best.0 != u32::MAX).then_some(best)
     }
 
+    /// The channel point `dist_m` DOWNSTREAM of `idx`, staying on its
+    /// polyline (mouth-first storage: downstream = lower index).
+    pub fn downstream_of(&self, idx: u32, dist_m: f64) -> u32 {
+        let pid = self.poly[idx as usize];
+        let mut i = idx as usize;
+        let mut acc = 0.0;
+        while i > 0 && self.poly[i - 1] == pid {
+            acc += self.pts[i].distance(self.pts[i - 1]);
+            i -= 1;
+            if acc >= dist_m {
+                break;
+            }
+        }
+        i as u32
+    }
+
     /// Emit the whole set as a node graph for the accounting machinery.
     /// Each polyline becomes a chain; `attach` gives, per polyline, the node
     /// index its mouth flows into (None for a trunk mouth).
@@ -161,12 +177,34 @@ pub struct Proto<'a> {
     pub budget_m: f64,
 }
 
+/// How far downstream the field's reference point shifts at the channel, m.
+/// This is the "valley floor slopes down-valley" term (user suggestion at the
+/// N2 review): with the rise measured to the NEAREST point, its gradient is
+/// radial and every approach is orthogonal until the analytic tail hooks it —
+/// which the 50 m junction metric cannot see but the eye integrates over the
+/// whole approach. Referencing a point DOWNSTREAM of the nearest tilts the
+/// equipotentials diagonally, so descent curves down-valley over its whole
+/// lower course. Entry angle ~ atan(d / shift): 300 m gives ~40 deg at 250 m
+/// out, which is the corpus junction band emerging from geometry.
+pub const ALONG_SHIFT_M: f64 = 420.0;
+/// The shift fades out beyond this distance from the channel.
+pub const ALONG_REACH_M: f64 = 750.0;
+
 impl<'a> Proto<'a> {
-    /// Ground climbs away from every channel; the macro field tilts the
-    /// interfluves so sources sit where the template said high ground is.
+    /// Ground climbs away from every channel and the valley floor slopes
+    /// down-valley; the macro field tilts the interfluves so sources sit
+    /// where the template said high ground is.
     pub fn e(&self, p: Vec2) -> f64 {
         let (zc, d) = match self.chans.nearest(p) {
-            Some((i, d)) => (self.chans.z[i as usize], d),
+            Some((i, d)) => {
+                let fade = (1.0 - d / ALONG_REACH_M).clamp(0.0, 1.0);
+                if fade > 0.0 {
+                    let r = self.chans.downstream_of(i, ALONG_SHIFT_M * fade);
+                    (self.chans.z[r as usize], p.distance(self.chans.pts[r as usize]))
+                } else {
+                    (self.chans.z[i as usize], d)
+                }
+            }
             None => (0.0, 0.0),
         };
         zc + self.k_rise * math::pow(d.max(0.0), 0.6) + self.w_macro * self.relief.bilinear(p) * self.budget_m

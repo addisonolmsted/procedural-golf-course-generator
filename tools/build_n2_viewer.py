@@ -100,8 +100,9 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
   <div class="tblwrap"><table>
     <thead><tr><th>check</th><th>result · corpus band</th></tr></thead>
     <tbody>
-      <tr><td>junction angle p50</td><td>43.6–43.8° · band 37–45° ✓</td></tr>
-      <tr><td>orthogonal junctions (&gt;80°)</td><td>11.7–11.8% · band 8.5–13.4% ✓</td></tr>
+      <tr><td>junction angle p50</td><td>44.4–45.2° · band 37–45° ✓</td></tr>
+      <tr><td>orthogonal junctions (&gt;80°)</td><td>12.9–13.0% · band 8.5–13.4% ✓</td></tr>
+      <tr><td>approach geometry (round 2, user review)</td><td>the ENTRY was acute but the APPROACH was orthogonal — walkers descended a radial field and got hooked by the analytic tail, which the 50 m metric cannot see and the eye integrates. Fixed in the field, per the review suggestion: the proto reference point shifts up to 420 m DOWNSTREAM of the nearest channel point (fading over 750 m), so the valley floor slopes down-valley and descent curves into the trunk over its whole lower course.</td></tr>
       <tr><td>near-parallel (reach-based, declared policy)</td><td>0.0–0.04% · band 1.3–3.1% — BELOW band, expected at N2: one tier only; binds at N3</td></tr>
       <tr><td>walker survival</td><td>227 of 228 typical; deaths counted by cause (off-tile / exhausted / stub), never hidden</td></tr>
       <tr><td>monotone profiles</td><td>every tributary climbs from its junction elevation; asserted</td></tr>
