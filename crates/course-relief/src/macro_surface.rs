@@ -37,8 +37,14 @@ pub struct MacroSurface {
 struct TrunkGeom {
     spine: Spine,
     ix: SegIndex,
-    /// z per arc fraction (parallel to spine pts).
+    /// z per spine POINT (parallel to spine pts).
     z: Vec<f64>,
+    /// Cumulative arc per spine point. z lookups MUST go through arc:
+    /// `u * (len-1)` assumes equal arc per index, and the 1600 m virtual
+    /// extension segments occupy ONE index each — the index-fraction mapping
+    /// skewed every bed lookup (measured: bed 4.18 m read as 2.87 at a
+    /// trunk head, surface 1.31 m below its own bed).
+    cum: Vec<f64>,
     /// Which side (sign of cross product) carries the terrace flight.
     terrace_side: f64,
     both_sides: bool,
@@ -63,9 +69,7 @@ pub fn build(
         .map(|tk| {
             // Extend both ends virtually along their tangents: distance to a
             // FINITE polyline turns into distance-to-endpoint past the head,
-            // and the surface grows concentric arcs around it (visible as a
-            // bullseye radiating from where the trunk leaves the tile).
-            // z extends flat at the end values.
+            // and the surface grows a bullseye around it. z extends flat.
             let mut pts = tk.pts.clone();
             let mut zs = tk.z.clone();
             let ext = 1600.0;
@@ -73,16 +77,24 @@ pub fn build(
                 let d0 = (pts[0] - pts[1]).normalized();
                 pts.insert(0, pts[0] + d0 * ext);
                 zs.insert(0, zs[0]);
-                let n = pts.len();
-                let d1 = (pts[n - 1] - pts[n - 2]).normalized();
-                pts.push(pts[n - 1] + d1 * ext);
+                let m = pts.len();
+                let d1 = (pts[m - 1] - pts[m - 2]).normalized();
+                pts.push(pts[m - 1] + d1 * ext);
                 zs.push(*zs.last().unwrap());
+            }
+            let mut cum = Vec::with_capacity(pts.len());
+            let mut acc = 0.0;
+            cum.push(0.0);
+            for w in pts.windows(2) {
+                acc += w[0].distance(w[1]);
+                cum.push(acc);
             }
             let spine = Spine::new(pts);
             let ix = SegIndex::for_spine(&spine);
             TrunkGeom {
                 ix,
                 z: zs,
+                cum,
                 spine,
                 terrace_side: if rng.next_f64() < 0.5 { 1.0 } else { -1.0 },
                 both_sides: rng.next_f64() > d.terrace_asymmetry,
@@ -90,8 +102,6 @@ pub fn build(
         })
         .collect();
 
-    // terrace geometry (river valley: steps >= 2; riser from the budget so
-    // the flight reads as landform -- 03 §8)
     let steps = d.terrace_steps as f64;
     let tread_w = if steps > 0.0 { rng.range_f64(90.0, 150.0) } else { 0.0 };
     let riser_h = if steps > 0.0 {
@@ -99,56 +109,83 @@ pub fn build(
     } else {
         0.0
     };
-
-    // benching (hill country / plains: resistance_response > ~0.25)
     let bench_period = (d.riser_m * 3.2).max(1.0);
     let bench_k = d.resistance_response;
-
     let fhw = d.floor_hw_m * d.floor_widen;
     let cap_m = d.relief_budget_m * 0.80;
     let r400 = d.rise_400_m;
     let cexp = d.catena_exp;
 
+    // ---- pass 1: per-trunk projection fields, then SMOOTH the distance.
+    // Projecting to a polyline leaves the distance field C0 across the
+    // medial axis and across segment switches on the outside of bends —
+    // its gradient jumps, and every profile applied to it prints a radial
+    // CREASE (user report, and the same class as heartland's "boxy cut").
+    // A small Gaussian on d (and on the bed reference) restores C1 before
+    // any profile touches it.
+    let nn = n as usize;
+    struct TF {
+        dist: Vec<f64>,
+        zbed: Vec<f64>,
+        terraced: Vec<bool>,
+    }
+    let mut tfs: Vec<TF> = Vec::with_capacity(geoms.len());
+    for g in &geoms {
+        let mut dist = vec![0.0f64; nn * nn];
+        let mut zbed = vec![0.0f64; nn * nn];
+        let mut terr = vec![false; nn * nn];
+        for gy in 0..nn {
+            for gx in 0..nn {
+                let p = spec.world_of(gx as u32, gy as u32);
+                let hit = g.spine.project_with(&g.ix, p);
+                dist[gy * nn + gx] = hit.d;
+                let arc = hit.u * g.spine.length();
+                // binary search the cum table, interp z by arc
+                let i = match g.cum.binary_search_by(|c| c.partial_cmp(&arc).unwrap()) {
+                    Ok(i) => i.min(g.z.len() - 2),
+                    Err(i) => i.saturating_sub(1).min(g.z.len() - 2),
+                };
+                let seg = (g.cum[i + 1] - g.cum[i]).max(1e-9);
+                let f = ((arc - g.cum[i]) / seg).clamp(0.0, 1.0);
+                zbed[gy * nn + gx] = g.z[i] + (g.z[i + 1] - g.z[i]) * f;
+                terr[gy * nn + gx] =
+                    steps > 0.0 && (hit.side * g.terrace_side > 0.0 || g.both_sides);
+            }
+        }
+        // Smooth ONLY the distance. Smoothing the bed reference mixed the
+        // downstream limb's lower z into cells near a bend and pulled the
+        // surface 1.3 m BELOW the bed at a trunk head (bed-preservation
+        // test). The creases live in dist's gradient; zbed is already smooth
+        // along the channel, and its jump across the medial axis is a small
+        // Δz the softmin knee absorbs.
+        gauss(&mut dist, nn, 2);
+        tfs.push(TF { dist, zbed, terraced: terr });
+    }
+
+    // ---- pass 2: compose the envelope + interfluve + benches
     let mut height = Grid::filled(spec, 0.0);
     let mut d_trunk = Grid::filled(spec, f64::MAX);
+    for gy in 0..nn {
+        for gx in 0..nn {
+            let p = spec.world_of(gx as u32, gy as u32);
+            let li = gy * nn + gx;
 
-    for gy in 0..n {
-        for gx in 0..n {
-            let p = spec.world_of(gx, gy);
-
-            // ---- envelope over trunks: SOFT min, so the crossover between
-            // two candidates is a smooth col rather than a crease (hard min
-            // printed faint straight seams where candidates switch)
-            let mut z_env = f64::MAX;
-            let mut soft_acc = 0.0f64;
-            let mut soft_n = 0u32;
+            let mut cands: [f64; 4] = [f64::MAX; 4];
             let mut dmin = f64::MAX;
-            for g in &geoms {
-                let hit = g.spine.project_with(&g.ix, p);
-                let dist = hit.d;
+            for (ti, tf) in tfs.iter().enumerate() {
+                let dist = tf.dist[li];
                 if dist < dmin {
                     dmin = dist;
                 }
-                // bed z at the projection, interpolated along the polyline
-                let zi = {
-                    let f = hit.u * (g.z.len() - 1) as f64;
-                    let i = (f.floor() as usize).min(g.z.len() - 2);
-                    g.z[i] + (g.z[i + 1] - g.z[i]) * (f - i as f64)
-                };
-                let terraced = steps > 0.0
-                    && (hit.side * g.terrace_side > 0.0 || g.both_sides);
-
                 let u = u_of(dist, fhw);
                 let rise = if dist <= fhw {
                     0.0
-                } else if terraced {
-                    // the stair: soft risers between flat treads
+                } else if tf.terraced[li] {
                     let k = (u / tread_w).floor().min(steps);
                     let frac = ((u / tread_w) - k).clamp(0.0, 1.0);
                     let soft = math::smoothstep(0.72, 1.0, frac);
                     let stair = (k + soft) * riser_h;
                     if k >= steps {
-                        // above the flight: resume the catena from its top
                         stair + catena(u - steps * tread_w, r400, cexp, fhw, cap_m)
                     } else {
                         stair
@@ -156,89 +193,89 @@ pub fn build(
                 } else {
                     catena(u, r400, cexp, fhw, cap_m)
                 };
-                let cand = zi + rise;
-                if cand < z_env {
-                    z_env = cand;
-                }
-                soft_acc += cand;
-                soft_n += 1;
+                cands[ti.min(3)] = tf.zbed[li] + rise;
             }
-            if soft_n > 1 {
-                // softmin with a 6 m knee: exact away from crossovers
+            // softmin envelope with a 6 m knee
+            let hard = cands.iter().cloned().fold(f64::MAX, f64::min);
+            let mut z_env = if hard == f64::MAX { 0.0 } else {
                 const K: f64 = 6.0;
                 let mut num = 0.0;
                 let mut den = 0.0;
-                // recompute weights against the hard min (numerically tame)
-                // NOTE: two-pass over trunks is fine — trunk count <= 3
-                let _ = soft_acc;
-                for g in &geoms {
-                    let hit = g.spine.project_with(&g.ix, p);
-                    let zi = {
-                        let f = hit.u * (g.z.len() - 1) as f64;
-                        let i = (f.floor() as usize).min(g.z.len() - 2);
-                        g.z[i] + (g.z[i + 1] - g.z[i]) * (f - i as f64)
-                    };
-                    let u = u_of(hit.d, fhw);
-                    let terraced = steps > 0.0 && (hit.side * g.terrace_side > 0.0 || g.both_sides);
-                    let rise = if hit.d <= fhw {
-                        0.0
-                    } else if terraced {
-                        let k = (u / tread_w).floor().min(steps);
-                        let frac = ((u / tread_w) - k).clamp(0.0, 1.0);
-                        let soft = math::smoothstep(0.72, 1.0, frac);
-                        let stair = (k + soft) * riser_h;
-                        if k >= steps { stair + catena(u - steps * tread_w, r400, cexp, fhw, cap_m) } else { stair }
-                    } else {
-                        catena(u, r400, cexp, fhw, cap_m)
-                    };
-                    let cand = zi + rise;
-                    let w = math::exp(-(cand - z_env) / K);
-                    num += cand * w;
+                for c in cands.iter().take(tfs.len()) {
+                    let w = math::exp(-(c - hard) / K);
+                    num += c * w;
                     den += w;
                 }
-                z_env = num / den.max(1e-12);
-            }
-            if !z_env.is_finite() {
-                // no trunks (heathland's 55% zero-trunk draw): the macro is
-                // the relief field alone, subdued; kettles arrive at T4
-                z_env = 0.0;
+                num / den.max(1e-12)
+            };
+            if tfs.is_empty() {
                 dmin = EXTENT_M;
             }
 
-            // ---- interfluve: relief_pred shapes the high ground only; the
-            // ramp keeps the valley floor and walls untouched near the trunk
+            // interfluve: high ground between valleys; on a ZERO-TRUNK tile
+            // (heathland's 45% draw) this IS the macro
             let ramp = math::smoothstep(fhw + 40.0, fhw + 320.0, dmin);
-            let mut z = z_env
-                + W_INTERFLUVE
-                    * d.relief_budget_m
-                    * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5)
-                    * ramp;
+            z_env += W_INTERFLUVE
+                * d.relief_budget_m
+                * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5)
+                * ramp;
+            let mut z = z_env;
 
-            // ---- benching: soft-quantize the slope into treads and risers
-            // where the record calls for it. Strength scales with the
-            // hardness CONTRAST at this elevation, so the bench pattern is
-            // the strata column expressed on real heights (the M1 lesson:
-            // the true map pattern needs real elevations).
             if bench_k > 0.05 && dmin > fhw {
-                let hard = t.fields.strata.hardness_at(p, z);
+                let hard_here = t.fields.strata.hardness_at(p, z);
                 let cell_f = z / bench_period;
                 let k = cell_f.floor();
                 let frac = cell_f - k;
-                // riser confined to the top ~28% of the period, so treads
-                // are genuinely flat and risers genuinely steep — at the
-                // first render benches read as faint banding, not bluffs
                 let soft = math::smoothstep(0.72, 0.97, frac);
                 let quant = (k + soft) * bench_period;
-                let w = (bench_k * 1.25).min(0.95) * hard * ramp;
+                let w = (bench_k * 1.25).min(0.95) * hard_here * ramp;
                 z = z * (1.0 - w) + quant * w;
             }
 
-            height.set(gx, gy, z);
-            d_trunk.set(gx, gy, dmin);
+            if std::env::var("T1_DEBUG").is_ok() {
+                let px = std::env::var("T1_DEBUG").unwrap();
+                let parts: Vec<usize> = px.split(',').filter_map(|v| v.parse().ok()).collect();
+                if parts.len() == 2 && gx == parts[0] && gy == parts[1] {
+                    eprintln!("cell ({gx},{gy}) world ({:.0},{:.0}): dist_sm {:.2} zbed {:.2} dmin {:.2} ramp {:.3} z {:.3}",
+                        p.x, p.y, tfs[0].dist[li], tfs[0].zbed[li], dmin,
+                        math::smoothstep(fhw + 40.0, fhw + 320.0, dmin), z);
+                }
+            }
+            height.set(gx as u32, gy as u32, z);
+            d_trunk.set(gx as u32, gy as u32, dmin);
         }
     }
 
     MacroSurface { height, d_trunk }
+}
+
+/// Separable 5-tap Gaussian, `passes` iterations. Restores C1 to the
+/// projected distance field before profiles are applied to it.
+fn gauss(v: &mut [f64], nn: usize, passes: usize) {
+    const K: [f64; 5] = [0.0625, 0.25, 0.375, 0.25, 0.0625];
+    let mut tmp = vec![0.0f64; v.len()];
+    for _ in 0..passes {
+        for y in 0..nn {
+            for x in 0..nn {
+                let mut acc = 0.0;
+                for (o, k) in K.iter().enumerate() {
+                    let xx = (x as i64 + o as i64 - 2).clamp(0, nn as i64 - 1) as usize;
+                    acc += v[y * nn + xx] * k;
+                }
+                tmp[y * nn + x] = acc;
+            }
+        }
+        for y in 0..nn {
+            for x in 0..nn {
+                let mut acc = 0.0;
+                for (o, k) in K.iter().enumerate() {
+                    let yy = (y as i64 + o as i64 - 2).clamp(0, nn as i64 - 1) as usize;
+                    acc += tmp[yy * nn + x] * k;
+                }
+                v[y * nn + x] = acc;
+            }
+        }
+    }
 }
 
 fn u_of(dist: f64, fhw: f64) -> f64 {
@@ -246,14 +283,10 @@ fn u_of(dist: f64, fhw: f64) -> f64 {
 }
 
 /// The measured catena: rise = R400 · (u / (400 − fhw))^exp, extrapolated
-/// past 400 m on the same power, then SOFT-CAPPED near the relief budget —
-/// unbounded extrapolation ran hill country to 200 m of relief against a
-/// 60–110 m budget (measured on the first T1 render).
+/// past 400 m on the same power, then SOFT-CAPPED near the relief budget.
 fn catena(u: f64, r400: f64, cexp: f64, fhw: f64, cap: f64) -> f64 {
     let denom = (400.0 - fhw).max(60.0);
     let r = r400 * math::pow((u / denom).max(0.0), cexp);
-    // smooth min against the cap: exact for r << cap, asymptotic to cap
     let k = cap.max(1.0);
-    k * (r / k) / (1.0 + r / k)
-        * (1.0 + r / k / (1.0 + r / k)) // ~r for small r, -> k for large
+    k * (r / k) / (1.0 + r / k) * (1.0 + r / k / (1.0 + r / k))
 }

@@ -37,3 +37,64 @@ pub fn build_macro(id: &RunIdentity, forced: Option<course_draw::Archetype>) -> 
     let ms = macro_surface::build(&mut rng, &t, &draw.d, &net.trunks);
     (t, net.trunks, ms, draw.d)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use course_draw::Archetype;
+
+    #[test]
+    fn deterministic() {
+        let id = RunIdentity::from_seed(7);
+        let (_, _, a, _) = build_macro(&id, Some(Archetype::HillCountry));
+        let (_, _, b, _) = build_macro(&id, Some(Archetype::HillCountry));
+        assert_eq!(a.height.data, b.height.data);
+    }
+
+    #[test]
+    fn trunk_beds_are_preserved() {
+        // The surface along a trunk must sit ON the trunk's long profile:
+        // the floor is flat (rise 0 inside floor_hw), the interfluve ramp is
+        // zero there, and the bed smoothing is gentle. Tolerance covers the
+        // 8 m grid + the C1 smoothing of the bed reference.
+        for seed in [1u64, 2, 5, 9] {
+            for a in [Archetype::Piedmont, Archetype::RiverValley, Archetype::HillCountry] {
+                let id = RunIdentity::from_seed(seed);
+                let (_, trunks, ms, _) = build_macro(&id, Some(a));
+                for tk in &trunks {
+                    for (i, p) in tk.pts.iter().enumerate().step_by(8) {
+                        let zs = ms.height.bilinear(*p);
+                        let zb = tk.z[i];
+                        assert!(
+                            (zs - zb).abs() < 2.5,
+                            "{a} seed {seed}: surface {zs:.2} vs bed {zb:.2} at ({:.0},{:.0})",
+                            p.x, p.y
+                        );
+                        assert!(zs >= zb - 1.0, "{a} seed {seed}: surface below bed");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zero_trunk_tiles_still_roll() {
+        // heathland draws 0 trunks ~55% of the time; the macro must fall
+        // back to the relief field, not a plane (measured: 0.0 m before).
+        let mut any = false;
+        for seed in 0..20u64 {
+            let id = RunIdentity::from_seed(seed);
+            let (_, trunks, ms, _) = build_macro(&id, Some(Archetype::Heathland));
+            if trunks.is_empty() {
+                any = true;
+                let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+                for v in &ms.height.data {
+                    lo = lo.min(*v);
+                    hi = hi.max(*v);
+                }
+                assert!(hi - lo > 1.0, "seed {seed}: flat zero-trunk tile");
+            }
+        }
+        assert!(any, "no zero-trunk heathland seed in 0..20");
+    }
+}
