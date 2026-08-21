@@ -32,9 +32,11 @@ pub const TEMPLATE_SCARP: &str = "n4/template/scarp/v1";
 pub const NETWORK_TRUNKPATH: &str = "n4/network/trunkpath/v1";
 /// Step 4, phases N2-N3: tributary tiers.
 pub const NETWORK_TRIBS: &str = "n4/network/tribs/v1";
+/// T1: the macro surface (terrace sides, tread widths, bench phases).
+pub const RELIEF_MACRO: &str = "n4/relief/macro/v1";
 // RETIRED: "n4/network/grow/v1" (the M2 headward maze). Never reuse the name.
 
-pub const REGISTRY: [&str; 7] = [
+pub const REGISTRY: [&str; 8] = [
     DRAW_SELECT,
     DRAW_PARAMS,
     TEMPLATE_TRUNK,
@@ -42,6 +44,7 @@ pub const REGISTRY: [&str; 7] = [
     TEMPLATE_SCARP,
     NETWORK_TRUNKPATH,
     NETWORK_TRIBS,
+    RELIEF_MACRO,
 ];
 
 /// THE way an attempt-4 step obtains randomness. Panics on an unregistered

@@ -7,3 +7,9 @@ license.workspace = true
 [dependencies]
 course-world = { workspace = true }
 course-seed = { workspace = true }
+course-draw = { workspace = true }
+course-template = { workspace = true }
+course-network = { workspace = true }
+
+[dev-dependencies]
+course-lab = { workspace = true }

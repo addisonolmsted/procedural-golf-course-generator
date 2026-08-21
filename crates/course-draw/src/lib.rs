@@ -46,6 +46,9 @@ pub struct Descriptors {
     pub resistance_response: f64,
     pub riser_m: f64,
     pub trib_spacing_scale: f64,
+    pub catena_exp: f64,
+    pub rise_400_m: f64,
+    pub floor_hw_m: f64,
 }
 
 fn draw(rng: &mut DetRng, r: Range) -> f64 {
@@ -108,6 +111,9 @@ pub fn generate(id: &RunIdentity, forced: Option<Archetype>) -> SiteDraw {
         riser_m: draw(&mut p, rec.riser_m),
         // appended last so every earlier descriptor keeps its per-seed value
         trib_spacing_scale: draw(&mut p, rec.trib_spacing),
+        catena_exp: draw(&mut p, rec.catena_exp),
+        rise_400_m: draw(&mut p, rec.rise_400_m),
+        floor_hw_m: draw(&mut p, rec.floor_hw_m),
     };
     SiteDraw { archetype, structure: archetype.structure(), d }
 }

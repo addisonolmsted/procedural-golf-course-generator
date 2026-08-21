@@ -239,3 +239,58 @@ pub const TABS: [Rgb; 6] = [
     [185, 130, 220],
     [235, 190, 150],
 ];
+
+/// Hillshade × hypsometric render of a heightfield — the view every terrain
+/// gate uses from T1 on. Deterministic; light from the NW at 45°.
+pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
+    let span = (z_hi - z_lo).max(1e-9);
+    let light = {
+        let az = 315.0_f64.to_radians();
+        let alt = 45.0_f64.to_radians();
+        [
+            az.cos() * alt.cos(),
+            az.sin() * alt.cos(),
+            alt.sin(),
+        ]
+    };
+    // hypsometric ramp: valley green -> tan -> brown -> pale crest
+    let ramp = |t: f64| -> Rgb {
+        let stops: [(f64, Rgb); 4] = [
+            (0.0, [86, 128, 74]),
+            (0.35, [168, 158, 96]),
+            (0.7, [150, 110, 74]),
+            (1.0, [235, 228, 214]),
+        ];
+        let t = t.clamp(0.0, 1.0);
+        for w in stops.windows(2) {
+            if t <= w[1].0 {
+                let u = (t - w[0].0) / (w[1].0 - w[0].0).max(1e-9);
+                return [0, 1, 2].map(|i| {
+                    (w[0].1[i] as f64 + (w[1].1[i] as f64 - w[0].1[i] as f64) * u).round() as u8
+                });
+            }
+        }
+        stops[3].1
+    };
+    let s = c.extent_m / c.px as f64;
+    for py in 0..c.px {
+        for px in 0..c.px {
+            let w = Vec2::new((px as f64 + 0.5) * s, c.extent_m - (py as f64 + 0.5) * s);
+            let h = 8.0;
+            let zx = g.bilinear(Vec2::new(w.x + h, w.y)) - g.bilinear(Vec2::new(w.x - h, w.y));
+            let zy = g.bilinear(Vec2::new(w.x, w.y + h)) - g.bilinear(Vec2::new(w.x, w.y - h));
+            let (nx, ny, nz) = {
+                let dx = zx / (2.0 * h);
+                let dy = zy / (2.0 * h);
+                let l = (dx * dx + dy * dy + 1.0).sqrt();
+                (-dx / l, -dy / l, 1.0 / l)
+            };
+            let lam = (nx * light[0] + ny * light[1] + nz * light[2]).max(0.0);
+            let shade = 0.35 + 0.65 * lam;
+            let z = g.bilinear(w);
+            let col = ramp((z - z_lo) / span);
+            let px_col = [0, 1, 2].map(|i| ((col[i] as f64) * shade).round().min(255.0) as u8);
+            c.img.put_pixel(px, py, image::Rgba([px_col[0], px_col[1], px_col[2], 255]));
+        }
+    }
+}
