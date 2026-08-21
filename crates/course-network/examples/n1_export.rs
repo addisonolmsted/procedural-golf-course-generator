@@ -32,18 +32,46 @@ fn main() {
             let mut c = Canvas::new(PX, EXTENT_M);
             c.field(&t.fields.relief_pred, -1.0, 1.0, diverging);
             c.core_box(CORE_MIN_M, CORE_MAX_M, course_lab::INK, 0.4);
+            let zmax = net.trunks.iter().map(|k| *k.z.last().unwrap_or(&1.0)).fold(1e-6, f64::max);
             for tk in &net.trunks {
-                let zmax = tk.z.last().copied().unwrap_or(1.0).max(1e-6);
                 let w = 2.4 + 1.1 * tk.external_km2.sqrt().min(9.0);
                 for i in 0..tk.pts.len() - 1 {
-                    // elevation colour: white (base level) -> deep blue (head)
+                    // Elevation colour: near-white (base level) -> deep violet
+                    // (upstream). Violet, NOT blue: the terrain field already
+                    // uses blue for LOW, and the first render coloured the
+                    // line's HIGH end blue — one hue meaning opposite things
+                    // in one image, which read as a river splitting at low
+                    // ground (user report).
                     let f = (tk.z[i] / zmax).clamp(0.0, 1.0);
                     let col = [
-                        (235.0 - 165.0 * f) as u8,
-                        (240.0 - 90.0 * f) as u8,
-                        255u8,
+                        (242.0 - 132.0 * f) as u8,
+                        (242.0 - 187.0 * f) as u8,
+                        (238.0 - 68.0 * f) as u8,
                     ];
                     c.line(tk.pts[i], tk.pts[i + 1], col, w, 0.95);
+                }
+                // Flow arrows every ~500 m, pointing DOWNSTREAM (toward the
+                // mouth — pts are mouth-first, so toward decreasing index).
+                // Direction is what makes a Y legible as a merge, not a split.
+                let step = 25usize; // 25 pts * 20 m
+                let mut i = step;
+                while i + 1 < tk.pts.len() {
+                    let dirv = course_world::math::Vec2::new(
+                        tk.pts[i - 1].x - tk.pts[i + 1].x,
+                        tk.pts[i - 1].y - tk.pts[i + 1].y,
+                    )
+                    .normalized();
+                    let perp = dirv.perp();
+                    let tip = tk.pts[i];
+                    let l = 46.0;
+                    for sgn in [1.0, -1.0] {
+                        let tail = course_world::math::Vec2::new(
+                            tip.x - dirv.x * l + perp.x * l * 0.55 * sgn,
+                            tip.y - dirv.y * l + perp.y * l * 0.55 * sgn,
+                        );
+                        c.line(tip, tail, [20, 24, 30], 1.6, 0.85);
+                    }
+                    i += step;
                 }
                 c.disc(tk.pts[0], 5.0, course_lab::MOUTH, 1.0);
                 let head = *tk.pts.last().unwrap();

@@ -85,7 +85,8 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
   may <strong>converge at an in-tile confluence</strong> — very rarely three. A 400 m corridor floor keeps separate
   trunks apart along their whole length, not just at the mouths.</p>
   <div class="legend">
-    <span><i class="grad"></i> elevation along the line: pale = base level → blue = head</span>
+    <span><i class="grad" style="background:linear-gradient(90deg,#F2F2EE,#6E37AA)"></i> elevation along the line: pale = base level → violet = upstream</span>
+    <span>▸ chevrons point DOWNSTREAM — a Y is two rivers merging, not one splitting</span>
     <span><i class="sw" style="background:#E8B93E"></i> mouth</span>
     <span><i class="sw" style="background:#78EBAA"></i> entry on a far edge</span>
     <span><i class="sw" style="background:#4B5AC8;border:2px solid #FFF"></i> confluence junction</span>
@@ -101,6 +102,7 @@ dialog::backdrop{{background:rgba(8,9,12,.66)}}
       <tr><td>min curvature radius (asserted in tests)</td><td>150 m — enforced by iterated smoothing, not hoped for</td></tr>
       <tr><td>long profile</td><td>strictly monotone, zero at the mouth; all trunks drop gently (4–12 % of relief budget — mature rivers, not headwater streams); a joining trunk's profile starts at the junction elevation</td></tr>
       <tr><td>trunk–trunk crossings</td><td>0 — disjoint far-end sectors + a 400 m whole-path corridor floor + rebuild ladder; an unplaceable trunk is dropped, never overlapped</td></tr>
+      <tr><td>flow legibility</td><td>arrows every 500 m point downstream; the line's elevation ramp is violet, not blue — the first render used blue for the line's HIGH end while the terrain uses blue for LOW, one hue meaning opposite things (user caught it as an apparent downstream split)</td></tr>
       <tr><td>convergence</td><td>a secondary joins the primary at 45 % probability — junction chosen where the primary's local tangent faces the entry (mid-bend junctions hairpinned; measured 2 m radius before the fix), approach at 35–50° off the downstream tangent</td></tr>
       <tr><td>600 m window sinuosity</td><td>1.03–1.04 (corpus pooled band 1.06–1.10 — trunks are deliberately the straightest members; the pooled band becomes binding at N3 when tributaries dominate)</td></tr>
       <tr><td>1500 m window sinuosity</td><td>1.07–1.14 — the long-wave meander lives here</td></tr>
