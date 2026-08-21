@@ -61,6 +61,24 @@ pub struct Record {
     pub external_inflow_km2: Range,
     /// 1 = every branch reaches base level, 0 = every branch ends in a pit.
     pub integration: Range,
+    // ---- T1 macro catena (corpus provenance: valley_profile.py, 12 tiles
+    // per biome, transects at trunk-class channels; see
+    // docs/network-first/valley_profile.txt). Measured rise-above-channel
+    // and its power exponent differ sharply per biome, so these are real
+    // discriminants, not style knobs.
+    /// Catena power exponent: rise(d) ∝ d^this. corpus: piedmont 0.96
+    /// (near-linear rolling), hc 0.62 (fast rise then benched), rv 0.47.
+    pub catena_exp: Range,
+    /// Rise above the trunk at 400 m, metres — the valley-wall scale.
+    /// corpus: hc 55, piedmont 14, plains 6, sand 8, rv 1.8, heath 1.5.
+    /// GOLF override on rv: the corpus floor is flat because the corpus is
+    /// floodplain-only; rv's macro relief comes from the TERRACES instead.
+    pub rise_400_m: Range,
+    /// Valley-floor half-width, metres. corpus floor_hw: pied/hc 24,
+    /// plains 48, sand 100, rv 160, heath 240. `floor_widen` multiplies
+    /// this (the hc routability lever).
+    pub floor_hw_m: Range,
+
     /// Scale on major-tributary spacing (and claim). >1 = sparser tribs.
     ///
     /// DESIGN-GOVERNED (03-macro-is-designed), user direction 2026-08-21:
@@ -96,6 +114,9 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.62, 0.33, 0.05],
             external_inflow_km2: Range::new(3.0, 12.0),
             integration: Range::fixed(1.0),
+            catena_exp: Range::new(0.85, 1.05),
+            rise_400_m: Range::new(10.0, 18.0),
+            floor_hw_m: Range::new(20.0, 32.0),
             trib_spacing: Range::new(0.70, 0.85),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
@@ -113,6 +134,9 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.55, 0.38, 0.07],
             external_inflow_km2: Range::new(2.0, 9.0),
             integration: Range::fixed(1.0),
+            catena_exp: Range::new(0.60, 0.78),
+            rise_400_m: Range::new(4.5, 8.5),
+            floor_hw_m: Range::new(40.0, 60.0),
             trib_spacing: Range::new(1.10, 1.40),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
@@ -133,6 +157,11 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 1.0, 0.0, 0.0],
             external_inflow_km2: Range::new(40.0, 160.0),
             integration: Range::fixed(1.0),
+            catena_exp: Range::new(0.42, 0.55),
+            // corpus says 1.8 m -- floodplain-only corpus; terraces carry
+            // the relief instead (golf, 03-macro-is-designed)
+            rise_400_m: Range::new(1.5, 3.0),
+            floor_hw_m: Range::new(130.0, 200.0),
             trib_spacing: Range::new(1.70, 2.20),
             anisotropy: Range::new(0.08, 0.20),
             resistance_response: Range::new(0.1, 0.3),
@@ -150,6 +179,9 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.0, 0.65, 0.30, 0.05],
             external_inflow_km2: Range::new(3.0, 14.0),
             integration: Range::fixed(1.0),
+            catena_exp: Range::new(0.55, 0.70),
+            rise_400_m: Range::new(40.0, 62.0),
+            floor_hw_m: Range::new(20.0, 32.0),
             trib_spacing: Range::new(0.62, 0.80),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
@@ -168,6 +200,9 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [0.55, 0.45, 0.0, 0.0],
             external_inflow_km2: Range::new(0.8, 3.0),
             integration: Range::new(0.02, 0.12),
+            catena_exp: Range::new(0.68, 0.85),
+            rise_400_m: Range::new(1.2, 2.2),
+            floor_hw_m: Range::new(190.0, 280.0),
             trib_spacing: Range::new(1.20, 1.50),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
@@ -185,6 +220,9 @@ pub fn record(a: Archetype) -> Record {
             trunk_weights: [1.0, 0.0, 0.0, 0.0],
             external_inflow_km2: Range::fixed(0.0),
             integration: Range::fixed(0.0),
+            catena_exp: Range::new(0.82, 1.00),
+            rise_400_m: Range::new(6.0, 10.0),
+            floor_hw_m: Range::new(80.0, 130.0),
             trib_spacing: Range::fixed(1.0),
             // the ONE archetype with real anisotropy -- dune trains
             anisotropy: Range::new(0.55, 0.85),
