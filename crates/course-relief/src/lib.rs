@@ -48,7 +48,7 @@ pub fn build_macro(id: &RunIdentity, forced: Option<course_draw::Archetype>) -> 
     // tiles have no trunks, so grow_tribs_on is a no-op there.
     let (tribs, _, _, _) =
         course_network::grow_tribs_on(id, &t, &net.trunks, &ms.height, None);
-    trib_cut::carve(&mut ms.height, &tribs, t.relief_budget_m);
+    trib_cut::carve(&mut ms.height, &tribs, &draw.d);
     (t, net.trunks, tribs, ms, draw.d)
 }
 

@@ -53,6 +53,8 @@ pub struct Descriptors {
     pub kettle_depth_m: f64,
     pub dune_relief_m: f64,
     pub ridge_elong: f64,
+    pub trib_depth_frac: f64,
+    pub trib_wall_m: f64,
 }
 
 fn draw(rng: &mut DetRng, r: Range) -> f64 {
@@ -122,6 +124,8 @@ pub fn generate(id: &RunIdentity, forced: Option<Archetype>) -> SiteDraw {
         kettle_depth_m: draw(&mut p, rec.kettle_depth_m),
         dune_relief_m: draw(&mut p, rec.dune_relief_m),
         ridge_elong: draw(&mut p, rec.ridge_elong),
+        trib_depth_frac: draw(&mut p, rec.trib_depth_frac),
+        trib_wall_m: draw(&mut p, rec.trib_wall_m),
     };
     SiteDraw { archetype, structure: archetype.structure(), d }
 }

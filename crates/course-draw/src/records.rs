@@ -141,6 +141,19 @@ pub struct Record {
     /// the corpus band. This dial governs the MAJOR tier only.
     pub trib_spacing: Range,
 
+    // ---- T2 tier-cut section (corpus provenance: trib_profile.py —
+    // transects at TRIBUTARY-class channels, 6e4-6e5 m² accumulation,
+    // ~1900 transects/biome). Measured trib valleys run 0.24-0.47 of the
+    // trunk valley's depth with walls easing over 180-360 m — far wider
+    // than a ditch. Depth is expressed as a fraction of rise_400_m so the
+    // golf bounding of the trunk carries through to its tribs.
+    /// Notch depth cap = this × rise_400_m. corpus depth ratios: pied
+    /// 0.47, gp 0.29, rv 0.24, hc 0.45.
+    pub trib_depth_frac: Range,
+    /// Wall half-width of the notch, metres. corpus wall_end: pied/hc
+    /// ~180, gp ~300+, rv wide-and-barely-there.
+    pub trib_wall_m: Range,
+
     // ---- steering fields (step 3) ----
     /// How strongly the grain axis biases growth. All six measured isotropic.
     pub anisotropy: Range,
@@ -229,6 +242,8 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::fixed(0.0),
             ridge_elong: Range::fixed(1.0),
             trib_spacing: Range::new(0.70, 0.85),
+            trib_depth_frac: Range::new(0.40, 0.52),
+            trib_wall_m: Range::new(140.0, 200.0),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
             riser_m: Range::new(0.0, 1.5),
@@ -255,6 +270,10 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::fixed(0.0),
             ridge_elong: Range::fixed(1.0),
             trib_spacing: Range::new(1.10, 1.40),
+            trib_depth_frac: Range::new(0.24, 0.34),
+            // corpus swale wall_end is ~300+ m, but at that width the mouth
+            // embayment scallops half the trunk wall away — golf-tempered
+            trib_wall_m: Range::new(160.0, 240.0),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
             resistance_response: Range::new(0.3, 0.6),
@@ -290,6 +309,8 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::fixed(0.0),
             ridge_elong: Range::fixed(1.0),
             trib_spacing: Range::new(1.70, 2.20),
+            trib_depth_frac: Range::new(0.50, 0.80),
+            trib_wall_m: Range::new(160.0, 260.0),
             anisotropy: Range::new(0.08, 0.20),
             resistance_response: Range::new(0.1, 0.3),
             riser_m: Range::new(1.0, 3.0),
@@ -323,6 +344,8 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::fixed(0.0),
             ridge_elong: Range::fixed(1.0),
             trib_spacing: Range::new(0.62, 0.80),
+            trib_depth_frac: Range::new(0.38, 0.48),
+            trib_wall_m: Range::new(120.0, 190.0),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
             resistance_response: Range::new(0.4, 0.8),
@@ -352,6 +375,8 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::fixed(0.0),
             ridge_elong: Range::new(1.4, 2.1),
             trib_spacing: Range::new(1.20, 1.50),
+            trib_depth_frac: Range::new(0.30, 0.50),
+            trib_wall_m: Range::new(180.0, 280.0),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
             riser_m: Range::fixed(0.0),
@@ -379,6 +404,8 @@ pub fn record(a: Archetype) -> Record {
             dune_relief_m: Range::new(12.0, 30.0),
             ridge_elong: Range::fixed(1.0),
             trib_spacing: Range::fixed(1.0),
+            trib_depth_frac: Range::fixed(0.0),
+            trib_wall_m: Range::fixed(200.0),
             // the ONE archetype with real anisotropy -- dune trains
             anisotropy: Range::new(0.55, 0.85),
             resistance_response: Range::fixed(0.0),
