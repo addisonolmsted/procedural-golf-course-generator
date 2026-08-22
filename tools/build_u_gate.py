@@ -2,13 +2,14 @@ import base64, json, pathlib
 SRC = pathlib.Path("out/u_gate")
 OUT = pathlib.Path("/private/tmp/claude-501/-Users-davisolmsted-Documents-GitHub-GolfProceduralGenerator/7b548523-556f-42a3-ab16-a073d3d23991/scratchpad/u_gate.html")
 stats = json.loads((SRC/"stats.json").read_text())
-ARCHES=["piedmont","great_plains","river_valley","hill_country","heathland"]
-LABEL={"piedmont":"Piedmont","great_plains":"Great Plains","river_valley":"River Valley","hill_country":"Hill Country","heathland":"Heathland"}
+ARCHES=["piedmont","great_plains","river_valley","hill_country","heathland","sandhills"]
+LABEL={"piedmont":"Piedmont","great_plains":"Great Plains","river_valley":"River Valley","hill_country":"Hill Country","heathland":"Heathland","sandhills":"Sandhills"}
 NOTE={"piedmont":"rolling: one long gentle slope zone; interfluves from the relief field",
 "great_plains":"flat with edges: low caprock scarp, wide flat crown",
 "river_valley":"wide varying floor; per-side terrace program, arc-gated risers and treads",
 "hill_country":"bimodal: hardness-gated bluffs over widened floors; benches between",
-"heathland":"broad and subdued; kettles arrive at T4"}
+"heathland":"kame-and-kettle: hummock band + closed kettle depressions (2-12 m deep, 40-190 m radius)",
+"sandhills":"parallel dune trains along the grain axis: barchanoid segmentation, asymmetric profile, golf-bounded relief"}
 seeds=sorted({r["seed"] for r in stats})
 by={(r["arch"],r["seed"]):r for r in stats}
 def uri(p):
@@ -53,7 +54,7 @@ mechanism, closing the whole seam family including the inside-of-bend creases. E
 </header>
 {"".join(rows)}
 <p class="note"><strong>Open:</strong> rv treads still read soft at render scale (explorer-tunable); tint/shade
-balance iterates with your explorer verdicts. Sandhills absent by design until T4.</p>
+balance iterates with your explorer verdicts. All six archetypes now render.</p>
 </div>'''
 OUT.write_text(DOC)
 print("wrote", OUT, f"{OUT.stat().st_size/1e6:.1f} MB")

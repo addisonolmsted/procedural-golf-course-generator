@@ -23,6 +23,7 @@ use course_seed::DetRng;
 use course_template::Template;
 use course_world::grid::{Grid, GridSpec};
 use course_world::math::{self, Vec2};
+use course_world::noise;
 use course_world::spline::{SegIndex, Spine};
 use course_world::world::EXTENT_M;
 
@@ -257,14 +258,18 @@ pub fn build(
                 let rise = k * a / (1.0 + a) * (1.0 + a / (1.0 + a));
                 cands[ti.min(3)] = tf.zbed[li] + rise;
             }
-            // softmin envelope with a 6 m knee
+            // Softmin envelope with an ADAPTIVE knee: 6 m read as two
+            // valleys stamped on top of each other at junctions (user
+            // report) — the col between candidates blended over only ~6 m.
+            // The knee grows with distance-to-trunk, so junction floors
+            // merge broadly while distinct far walls still cross cleanly.
             let hard = cands.iter().cloned().fold(f64::MAX, f64::min);
             let mut z_env = if hard == f64::MAX { 0.0 } else {
-                const K: f64 = 6.0;
+                let k = 4.0 + 0.13 * dmin.min(700.0);
                 let mut num = 0.0;
                 let mut den = 0.0;
                 for c in cands.iter().take(tfs.len()) {
-                    let w = math::exp(-(c - hard) / K);
+                    let w = math::exp(-(c - hard) / k);
                     num += c * w;
                     den += w;
                 }
@@ -288,6 +293,99 @@ pub fn build(
         }
     }
 
+    // ---- heathland kettles: closed depressions ARE the identity landform
+    // (literature 40-400 m diameter, 2-12 m deep), plus a hummock band so
+    // the ground between them reads kame-and-kettle rather than noise.
+    if d.kettle_count > 0 {
+        let s_hum = rng.next_u32();
+        for gy in 0..nn {
+            for gx in 0..nn {
+                let p = spec.world_of(gx as u32, gy as u32);
+                let hum = 0.14
+                    * d.relief_budget_m
+                    * (0.6 * noise::perlin2(p.x / 260.0, p.y / 260.0, s_hum)
+                        + 0.4 * noise::perlin2(p.x / 140.0, p.y / 140.0, s_hum.wrapping_add(9)));
+                let z = height.get(gx as u32, gy as u32) + hum;
+                height.set(gx as u32, gy as u32, z);
+            }
+        }
+        for _ in 0..d.kettle_count {
+            let cx = rng.range_f64(200.0, EXTENT_M - 200.0);
+            let cy = rng.range_f64(200.0, EXTENT_M - 200.0);
+            let c = Vec2::new(cx, cy);
+            // keep kettles off the trunk floor
+            if d_trunk.bilinear(c) < d.floor_hw_m + 60.0 {
+                continue;
+            }
+            let r = rng.range_f64(40.0, 190.0);
+            let depth = rng.range_f64(d.kettle_depth_m * 0.4, d.kettle_depth_m).max(1.0);
+            let (glo, ghi) = (
+                (((cx - r - 16.0) / RES_M).floor().max(0.0) as u32, ((cy - r - 16.0) / RES_M).floor().max(0.0) as u32),
+                (((cx + r + 16.0) / RES_M).ceil().min(nn as f64 - 1.0) as u32, ((cy + r + 16.0) / RES_M).ceil().min(nn as f64 - 1.0) as u32),
+            );
+            for gy in glo.1..=ghi.1 {
+                for gx in glo.0..=ghi.0 {
+                    let p = spec.world_of(gx, gy);
+                    let t = (p.distance(c) / r).min(1.0);
+                    // smooth bowl: deepest at centre, C1 rim
+                    let bowl = depth * (1.0 - math::smoothstep(0.0, 1.0, t));
+                    let z = height.get(gx, gy) - bowl;
+                    height.set(gx, gy, z);
+                }
+            }
+        }
+    }
+
+    MacroSurface { height, d_trunk }
+}
+
+/// Sandhills: large parallel dune trains. Crests run along the template's
+/// grain axis, wobbling at kilometre scale; amplitude modulates ALONG the
+/// crest so ridges segment into barchanoid hummocks where it dips; the
+/// profile is asymmetric (gentle stoss, steeper lee) and interdune ground
+/// is broad and flat. Literature scale, golf-bounded relief
+/// (04-landform-literature).
+pub fn build_aeolian(
+    rng: &mut DetRng,
+    t: &Template,
+    d: &Descriptors,
+) -> MacroSurface {
+    let n = (EXTENT_M / RES_M).round() as u32 + 1;
+    let spec = GridSpec::new(Vec2::new(0.0, 0.0), RES_M, n, n);
+    let axis = t.fields.grain_axis_rad;
+    let (tx, ty) = (math::cos(axis), math::sin(axis));
+    let (nx_, ny_) = (-ty, tx);
+    let lam = d.dune_lam_m.max(400.0);
+    let amp = d.dune_relief_m * 0.5;
+    let s_wob = rng.next_u32();
+    let s_amp = rng.next_u32();
+    let s_base = rng.next_u32();
+    let phase0 = rng.range_f64(0.0, core::f64::consts::TAU);
+
+    let mut height = Grid::filled(spec, 0.0);
+    let d_trunk = Grid::filled(spec, f64::MAX);
+    for gy in 0..n {
+        for gx in 0..n {
+            let p = spec.world_of(gx, gy);
+            let along = p.x * tx + p.y * ty;
+            let across = p.x * nx_ + p.y * ny_;
+            // crest wobble at km scale keeps ridges parallel but alive
+            let wob = 0.22 * lam * noise::perlin2(along / 1900.0, across / 2600.0, s_wob);
+            let ph = (across + wob) / lam * core::f64::consts::TAU + phase0;
+            // asymmetric profile: skewed sine (gentle stoss, steep lee)
+            let sk = math::sin(ph + 0.62 * math::cos(ph));
+            // dune body above broad flat interdune ground
+            let body = math::pow(sk.max(0.0), 1.9);
+            // amplitude modulates along-crest: ridges break into hummocks
+            let am: f64 = 0.55
+                + 0.45 * noise::perlin2(along / 1500.0, across / 3000.0, s_amp);
+            let base = 0.18
+                * d.relief_budget_m
+                * noise::perlin2(p.x / 900.0, p.y / 900.0, s_base);
+            height.set(gx, gy, amp * 2.0 * body * am.max(0.15) + base
+                + 0.15 * d.relief_budget_m * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5));
+        }
+    }
     MacroSurface { height, d_trunk }
 }
 

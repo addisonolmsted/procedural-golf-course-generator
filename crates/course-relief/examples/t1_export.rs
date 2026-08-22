@@ -21,9 +21,6 @@ fn main() {
     let mut rows = Vec::new();
 
     for arch in Archetype::ALL {
-        if arch == Archetype::Sandhills {
-            continue; // aeolian generator is T4; no fluvial macro yet
-        }
         for &seed in &seeds {
             let id = RunIdentity::from_seed(seed);
             let t0 = std::time::Instant::now();

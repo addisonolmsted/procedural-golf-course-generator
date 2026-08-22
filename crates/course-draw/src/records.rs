@@ -117,6 +117,16 @@ pub struct Record {
     /// Arc-modulation amplitude on floor and zone widths (±fraction).
     pub width_var: f64,
 
+    /// Kettle field: count and depth (heathland's identity landform;
+    /// literature 40-400 m diameter, 2-12 m deep — 04-landform-literature).
+    /// Zero everywhere else.
+    pub kettle_count: Range,
+    pub kettle_depth_m: Range,
+    /// Dune field (sandhills): crest wavelength and relief. Literature says
+    /// 41-150 m ridges at km spacing; golf bounds relief to 10-35 m.
+    pub dune_lam_m: Range,
+    pub dune_relief_m: Range,
+
     /// Scale on major-tributary spacing (and claim). >1 = sparser tribs.
     ///
     /// DESIGN-GOVERNED (03-macro-is-designed), user direction 2026-08-21:
@@ -211,6 +221,10 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(24.0, 40.0),
             section: SEC_PIEDMONT,
             width_var: 0.3,
+            kettle_count: Range::fixed(0.0),
+            kettle_depth_m: Range::fixed(0.0),
+            dune_lam_m: Range::fixed(0.0),
+            dune_relief_m: Range::fixed(0.0),
             trib_spacing: Range::new(0.70, 0.85),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
@@ -233,6 +247,10 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(40.0, 60.0),
             section: SEC_PLAINS,
             width_var: 0.25,
+            kettle_count: Range::fixed(0.0),
+            kettle_depth_m: Range::fixed(0.0),
+            dune_lam_m: Range::fixed(0.0),
+            dune_relief_m: Range::fixed(0.0),
             trib_spacing: Range::new(1.10, 1.40),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
@@ -264,6 +282,10 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(130.0, 200.0),
             section: SEC_RV,
             width_var: 0.4,
+            kettle_count: Range::fixed(0.0),
+            kettle_depth_m: Range::fixed(0.0),
+            dune_lam_m: Range::fixed(0.0),
+            dune_relief_m: Range::fixed(0.0),
             trib_spacing: Range::new(1.70, 2.20),
             anisotropy: Range::new(0.08, 0.20),
             resistance_response: Range::new(0.1, 0.3),
@@ -293,6 +315,10 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(20.0, 32.0),
             section: SEC_HC,
             width_var: 0.35,
+            kettle_count: Range::fixed(0.0),
+            kettle_depth_m: Range::fixed(0.0),
+            dune_lam_m: Range::fixed(0.0),
+            dune_relief_m: Range::fixed(0.0),
             trib_spacing: Range::new(0.62, 0.80),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
@@ -318,6 +344,10 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(190.0, 280.0),
             section: SEC_HEATH,
             width_var: 0.3,
+            kettle_count: Range::new(8.0, 22.0),
+            kettle_depth_m: Range::new(2.0, 12.0),
+            dune_lam_m: Range::fixed(0.0),
+            dune_relief_m: Range::fixed(0.0),
             trib_spacing: Range::new(1.20, 1.50),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
@@ -340,6 +370,11 @@ pub fn record(a: Archetype) -> Record {
             floor_hw_m: Range::new(80.0, 130.0),
             section: SEC_SAND,
             width_var: 0.3,
+            kettle_count: Range::fixed(0.0),
+            kettle_depth_m: Range::fixed(0.0),
+            // golf-bounded literature (04): ridges at km spacing, playable relief
+            dune_lam_m: Range::new(700.0, 1400.0),
+            dune_relief_m: Range::new(12.0, 30.0),
             trib_spacing: Range::fixed(1.0),
             // the ONE archetype with real anisotropy -- dune trains
             anisotropy: Range::new(0.55, 0.85),
