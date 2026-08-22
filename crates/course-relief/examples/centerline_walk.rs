@@ -11,7 +11,7 @@ fn main() {
         (Archetype::HillCountry, 2),
     ] {
         let id = RunIdentity::from_seed(seed);
-        let (_, trunks, ms, _) = course_relief::build_macro(&id, Some(a));
+        let (_, trunks, _, ms, _) = course_relief::build_macro(&id, Some(a));
         println!("== {a} seed {seed}: {} trunks", trunks.len());
         for (ti, tk) in trunks.iter().enumerate() {
             let mut worst = (0.0f64, 0usize);

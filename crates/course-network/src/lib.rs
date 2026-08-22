@@ -269,6 +269,75 @@ pub fn grow_tribs(
     grow_tribs_with(id, t, trunks, None)
 }
 
+/// T2: grow the tier-2 tributaries ON THE MACRO SURFACE. Same attach-and-
+/// climb machinery and the same stream as `grow_tribs_with`, but the field
+/// the climbers read is the real terrain: `e = z_chan + small·d^0.6 +
+/// height(p)`. The surface term dominates — climbers follow actual valley
+/// walls, benches and interfluves; the residual channel-rise term only keeps
+/// them moving outward across genuinely flat floors and treads, where the
+/// surface alone offers no gradient.
+///
+/// This is the pipeline path from T2 on; `grow_tribs_with` (the proto radial
+/// field) remains for the N2 structural tests and the hold-distance ladder.
+pub fn grow_tribs_on(
+    id: &RunIdentity,
+    t: &Template,
+    trunks: &[TrunkPath],
+    surface: &course_world::grid::Grid<f64>,
+    hold_override: Option<(f64, f64)>,
+) -> (Vec<Trib>, u32, u32, u32) {
+    let relief_budget = t.relief_budget_m;
+    let mut tribs: Vec<Trib> = Vec::new();
+    let (mut n_stub, mut n_edge, mut n_claimed) = (0u32, 0u32, 0u32);
+    if !trunks.is_empty() {
+        let mut chans = proto::ChannelSet::new();
+        for tk in trunks {
+            chans.add_polyline(&tk.pts, &tk.z);
+        }
+        let mut trng = stream(id, course_draw::rng::NETWORK_TRIBS);
+        let mut tier = tribs::tier2();
+        let sc = t.trib_spacing_scale.max(0.2);
+        tier.attach_spacing_m = (tier.attach_spacing_m.0 * sc, tier.attach_spacing_m.1 * sc);
+        tier.claim_m *= sc.sqrt();
+        if let Some(h) = hold_override {
+            tier.hold_m = h;
+        }
+        // ~0.15 of the proto rise: a tiebreaker on flats, not the terrain
+        let k_rise = 0.15 * 0.55 * relief_budget / math_pow(800.0, 0.6);
+        let sites = tribs::attach_points(&mut trng, &chans, &tier);
+        for site in sites {
+            let proto_f = proto::Proto {
+                chans: &chans,
+                relief: surface,
+                k_rise,
+                w_macro: 1.0,
+                budget_m: 1.0,
+            };
+            let mut placed = false;
+            for _attempt in 0..2 {
+                match tribs::climb(&mut trng, site, &proto_f, &tier) {
+                    Ok((tb, end)) => {
+                        match end {
+                            tribs::End::Edge => n_edge += 1,
+                            tribs::End::Claimed => n_claimed += 1,
+                            _ => {}
+                        }
+                        chans.add_polyline(&tb.pts, &tb.z);
+                        tribs.push(tb);
+                        placed = true;
+                        break;
+                    }
+                    Err(_) => {}
+                }
+            }
+            if !placed {
+                n_stub += 1;
+            }
+        }
+    }
+    (tribs, n_stub, n_edge, n_claimed)
+}
+
 fn math_pow(x: f64, y: f64) -> f64 {
     course_world::math::pow(x, y)
 }

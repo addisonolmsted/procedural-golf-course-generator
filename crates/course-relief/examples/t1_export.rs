@@ -24,7 +24,7 @@ fn main() {
         for &seed in &seeds {
             let id = RunIdentity::from_seed(seed);
             let t0 = std::time::Instant::now();
-            let (_t, trunks, ms, d) = build_macro(&id, Some(arch));
+            let (_t, trunks, tribs, ms, d) = build_macro(&id, Some(arch));
             let ms_t = t0.elapsed().as_secs_f64() * 1000.0;
 
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
@@ -37,6 +37,10 @@ fn main() {
             // trunk beds as a thin line so the valley alignment is checkable
             for tk in &trunks {
                 c.polyline(&tk.pts, [40, 90, 200], 1.2, 0.65);
+            }
+            // tribs thinner and lighter, so tier structure reads at a glance
+            for tb in &tribs {
+                if std::env::var("NO_TRIB_LINES").is_err() { c.polyline(&tb.pts, [70, 120, 210], 0.8, 0.45); }
             }
             c.save_jpeg(&format!("{out}/{}_{seed}_terrain.jpg", arch.key()), 88).unwrap();
 

@@ -10,7 +10,7 @@ fn main() {
         let mut all: Vec<f64> = Vec::new();
         for seed in [11u64, 23, 37, 58, 71, 90] {
             let id = RunIdentity::from_seed(seed);
-            let (_, _, ms, _) = course_relief::build_macro(&id, Some(a));
+            let (_, _, _, ms, _) = course_relief::build_macro(&id, Some(a));
             let g = &ms.height;
             let n = g.spec.nx as usize;
             for y in 1..n - 1 {
