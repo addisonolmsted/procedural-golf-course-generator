@@ -240,34 +240,29 @@ pub const TABS: [Rgb; 6] = [
     [235, 190, 150],
 ];
 
-/// Hillshade × hypsometric render of a heightfield — the view every terrain
-/// gate uses from T1 on. Deterministic; light from the NW at 45°.
+/// TINTED HILLSHADE — the canonical height view from the U gate on (user
+/// direction): shading carries the form, a desaturated hypsometric tint
+/// carries the elevation. Light NW at 45°, slope-darkened.
 pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
     let span = (z_hi - z_lo).max(1e-9);
     let light = {
         let az = 315.0_f64.to_radians();
         let alt = 45.0_f64.to_radians();
-        [
-            az.cos() * alt.cos(),
-            az.sin() * alt.cos(),
-            alt.sin(),
-        ]
+        [az.cos() * alt.cos(), az.sin() * alt.cos(), alt.sin()]
     };
-    // hypsometric ramp: valley green -> tan -> brown -> pale crest
-    let ramp = |t: f64| -> Rgb {
-        let stops: [(f64, Rgb); 4] = [
-            (0.0, [86, 128, 74]),
-            (0.35, [168, 158, 96]),
-            (0.7, [150, 110, 74]),
-            (1.0, [235, 228, 214]),
+    // desaturated tint ramp: sage -> straw -> umber -> chalk
+    let ramp = |t: f64| -> [f64; 3] {
+        let stops: [(f64, [f64; 3]); 4] = [
+            (0.0, [0.62, 0.70, 0.58]),
+            (0.35, [0.78, 0.74, 0.58]),
+            (0.7, [0.72, 0.62, 0.50]),
+            (1.0, [0.93, 0.91, 0.86]),
         ];
         let t = t.clamp(0.0, 1.0);
         for w in stops.windows(2) {
             if t <= w[1].0 {
                 let u = (t - w[0].0) / (w[1].0 - w[0].0).max(1e-9);
-                return [0, 1, 2].map(|i| {
-                    (w[0].1[i] as f64 + (w[1].1[i] as f64 - w[0].1[i] as f64) * u).round() as u8
-                });
+                return [0, 1, 2].map(|i| w[0].1[i] + (w[1].1[i] - w[0].1[i]) * u);
             }
         }
         stops[3].1
@@ -277,19 +272,17 @@ pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
         for px in 0..c.px {
             let w = Vec2::new((px as f64 + 0.5) * s, c.extent_m - (py as f64 + 0.5) * s);
             let h = 8.0;
-            let zx = g.bilinear(Vec2::new(w.x + h, w.y)) - g.bilinear(Vec2::new(w.x - h, w.y));
-            let zy = g.bilinear(Vec2::new(w.x, w.y + h)) - g.bilinear(Vec2::new(w.x, w.y - h));
-            let (nx, ny, nz) = {
-                let dx = zx / (2.0 * h);
-                let dy = zy / (2.0 * h);
-                let l = (dx * dx + dy * dy + 1.0).sqrt();
-                (-dx / l, -dy / l, 1.0 / l)
-            };
-            let lam = (nx * light[0] + ny * light[1] + nz * light[2]).max(0.0);
-            let shade = 0.35 + 0.65 * lam;
+            let dx = (g.bilinear(Vec2::new(w.x + h, w.y)) - g.bilinear(Vec2::new(w.x - h, w.y))) / (2.0 * h);
+            let dy = (g.bilinear(Vec2::new(w.x, w.y + h)) - g.bilinear(Vec2::new(w.x, w.y - h))) / (2.0 * h);
+            let l = (dx * dx + dy * dy + 1.0).sqrt();
+            let lam = ((-dx) * light[0] + (-dy) * light[1] + light[2]) / l;
+            // SHADE dominates: full lambert range plus slope darkening
+            let shade = lam.max(0.0).powf(1.15) * (1.0 - 0.30 * (dx.hypot(dy)).min(0.7));
             let z = g.bilinear(w);
-            let col = ramp((z - z_lo) / span);
-            let px_col = [0, 1, 2].map(|i| ((col[i] as f64) * shade).round().min(255.0) as u8);
+            let tint = ramp((z - z_lo) / span);
+            let px_col = [0, 1, 2].map(|i| {
+                ((tint[i] * 0.85 + 0.15) * (0.25 + 0.95 * shade) * 235.0).min(255.0) as u8
+            });
             c.img.put_pixel(px, py, image::Rgba([px_col[0], px_col[1], px_col[2], 255]));
         }
     }

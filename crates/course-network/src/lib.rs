@@ -554,6 +554,35 @@ mod tests {
     }
 
     #[test]
+    fn every_trunk_crosses_the_playable_core() {
+        // Holes sit 500 m off the border; the trunk's landforms must reach
+        // them. At least CORE_MIN_ARC_M of every trunk's arc lies inside the
+        // central 2x2 km square.
+        use course_world::world::EXTENT_M;
+        for seed in 0..40u64 {
+            for a in [Archetype::Piedmont, Archetype::GreatPlains,
+                      Archetype::RiverValley, Archetype::HillCountry] {
+                let n = net(seed, a);
+                for (ti, tk) in n.trunks.iter().enumerate() {
+                    let inside: f64 = tk.pts.windows(2)
+                        .filter(|w| {
+                            let mx = (w[0].x + w[1].x) * 0.5;
+                            let my = (w[0].y + w[1].y) * 0.5;
+                            mx >= 500.0 && mx <= EXTENT_M - 500.0
+                                && my >= 500.0 && my <= EXTENT_M - 500.0
+                        })
+                        .map(|w| w[0].distance(w[1]))
+                        .sum();
+                    assert!(
+                        inside >= trunk_path::CORE_MIN_ARC_M - 1.0,
+                        "{a} seed {seed} trunk {ti}: only {inside:.0} m in core"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn sandhills_has_no_trunks() {
         for seed in 0..10u64 {
             let n = net(seed, Archetype::Sandhills);

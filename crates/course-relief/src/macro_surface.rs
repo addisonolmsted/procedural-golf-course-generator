@@ -146,34 +146,76 @@ pub fn build(
         let mut zbed = vec![0.0f64; nn * nn];
         let mut arcv = vec![0.0f64; nn * nn];
         let mut latv = vec![0.0f64; nn * nn];
+        // Segment table for the SOFT-MIN frame. The exact projection frame
+        // is only C0: dist, arc and side all jump across the medial axis,
+        // and each jump printed its own artifact (radial creases, the
+        // diagonal cliff, the gouged notch — and the user still saw creases
+        // on the inside of bends). A log-sum-exp soft-min over segments,
+        // with the same weights carried onto arc and side, makes the WHOLE
+        // frame C1 in one mechanism instead of three patches.
+        const SOFT_K: f64 = 45.0;
+        let segs: Vec<(Vec2, Vec2, f64, f64)> = g
+            .spine
+            .pts
+            .windows(2)
+            .zip(g.cum.windows(2))
+            .map(|(w, c)| (w[0], w[1], c[0], c[1] - c[0]))
+            .collect();
         for gy in 0..nn {
             for gx in 0..nn {
                 let p = spec.world_of(gx as u32, gy as u32);
+                // exact nearest first (cheap reject threshold)
                 let hit = g.spine.project_with(&g.ix, p);
-                dist[gy * nn + gx] = hit.d;
-                let arc = hit.u * g.spine.length();
-                // binary search the cum table, interp z by arc
+                let dmin = hit.d;
+                let mut wsum = 0.0;
+                let mut dacc = 0.0;
+                let mut aacc = 0.0;
+                let mut lacc = 0.0;
+                for (a, b, arc0, len) in &segs {
+                    // coarse reject: segment cannot beat dmin + 5k
+                    let mid = Vec2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+                    if p.distance(mid) - len * 0.5 > dmin + 5.0 * SOFT_K {
+                        continue;
+                    }
+                    let v = Vec2::new(b.x - a.x, b.y - a.y);
+                    let l2 = v.x * v.x + v.y * v.y;
+                    let t = if l2 > 0.0 {
+                        (((p.x - a.x) * v.x + (p.y - a.y) * v.y) / l2).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let q = Vec2::new(a.x + v.x * t, a.y + v.y * t);
+                    let d = p.distance(q);
+                    let side = if v.x * (p.y - q.y) - v.y * (p.x - q.x) >= 0.0 { 1.0 } else { -1.0 };
+                    let w = math::exp((dmin - d) / SOFT_K);
+                    wsum += w;
+                    dacc += w * d;
+                    aacc += w * (arc0 + len * t);
+                    lacc += w * side * d;
+                }
+                let li = gy * nn + gx;
+                if wsum > 0.0 {
+                    dist[li] = dacc / wsum;
+                    arcv[li] = aacc / wsum;
+                    latv[li] = lacc / wsum;
+                } else {
+                    dist[li] = dmin;
+                    arcv[li] = hit.u * g.spine.length();
+                    latv[li] = hit.side * dmin;
+                }
+                // bed z from the SOFT arc, through the cum table
+                let arc = arcv[li];
                 let i = match g.cum.binary_search_by(|c| c.partial_cmp(&arc).unwrap()) {
                     Ok(i) => i.min(g.z.len() - 2),
                     Err(i) => i.saturating_sub(1).min(g.z.len() - 2),
                 };
                 let seg = (g.cum[i + 1] - g.cum[i]).max(1e-9);
                 let f = ((arc - g.cum[i]) / seg).clamp(0.0, 1.0);
-                zbed[gy * nn + gx] = g.z[i] + (g.z[i + 1] - g.z[i]) * f;
-                arcv[gy * nn + gx] = arc;
-                latv[gy * nn + gx] = hit.side * hit.d;
+                zbed[li] = g.z[i] + (g.z[i + 1] - g.z[i]) * f;
             }
         }
-        // Smooth ONLY the distance. Smoothing the bed reference mixed the
-        // downstream limb's lower z into cells near a bend and pulled the
-        // surface 1.3 m BELOW the bed at a trunk head (bed-preservation
-        // test). The creases live in dist's gradient; zbed is already smooth
-        // along the channel, and its jump across the medial axis is a small
-        // Δz the softmin knee absorbs.
-        // 2 passes: the gentle trunks removed the tight-curvature creases
-        // this blur existed for, and 3 passes were smearing 40-60 m scarps
-        // into undulations. The signed-lateral blend handles the side seam.
-        gauss(&mut dist, nn, 2);
+        // one light pass for grid smoothing only
+        gauss(&mut dist, nn, 1);
         tfs.push(TF { dist, zbed, arc: arcv, lat: latv });
     }
 

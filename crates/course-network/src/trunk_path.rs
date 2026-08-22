@@ -102,6 +102,25 @@ fn low_controls(relief: &Grid<f64>, a: Vec2, b: Vec2, n: usize, rng: &mut DetRng
     out
 }
 
+/// Golf holes must sit 500 m off the border, so the trunk's landforms must
+/// reach the playable middle: a trunk is REQUIRED to spend at least this
+/// much arc inside the central 2×2 km square (user rule). Enforced by
+/// bowing the baseline controls toward the centre until it holds — the
+/// endpoints stay anchored on their edges.
+pub const CORE_MIN_ARC_M: f64 = 500.0;
+
+fn arc_inside_core(pts: &[Vec2]) -> f64 {
+    let lo = 500.0;
+    let hi = EXTENT_M - 500.0;
+    pts.windows(2)
+        .filter(|w| {
+            let m = Vec2::new((w[0].x + w[1].x) * 0.5, (w[0].y + w[1].y) * 0.5);
+            m.x >= lo && m.x <= hi && m.y >= lo && m.y <= hi
+        })
+        .map(|w| w[0].distance(w[1]))
+        .sum()
+}
+
 /// Build one trunk path from mouth to far end.
 ///
 /// The meander is applied in the heading domain and then RE-ANCHORED: after
@@ -164,77 +183,97 @@ pub fn build_trunk(
             break;
         }
     }
-    let base = Spine::new(catmull_rom(&base_pts, 20.0));
+    // CORE RULE: the FINAL wound path must spend CORE_MIN_ARC_M inside the
+    // central 2x2 km square (holes sit 500 m off the border, and the trunk's
+    // landforms must reach them). Enforced by bowing the interior baseline
+    // controls toward the centre and REBUILDING with the same draws — the
+    // first version checked a baseline probe, and the meander wind then
+    // shifted the built path 48 m short of the requirement.
+    let centre = Vec2::new(EXTENT_M * 0.5, EXTENT_M * 0.5);
+    let mut pts: Vec<Vec2>;
+    let mut attempts = 0;
+    loop {
+        let base = Spine::new(catmull_rom(&base_pts, 20.0));
 
-    // --- long-wave meander in the heading domain
-    let lam = rng.range_f64(p.lam_m.0, p.lam_m.1);
-    // swing scales with lambda: the curvature bound is radius ~ lam/(2pi*swing*1.68),
-    // so a fixed swing wastes the long wavelengths' headroom. Bound to the
-    // radius floor with 15% margin.
-    let swing_cap = lam / (p.min_radius_m * core::f64::consts::TAU * 1.68) * 0.85;
-    let swing = rng.range_f64(p.swing_rad.0, p.swing_rad.1.min(swing_cap.max(p.swing_rad.0)));
-    let phase = rng.range_f64(0.0, core::f64::consts::TAU);
-    let phase2 = rng.range_f64(0.0, core::f64::consts::TAU);
-    let total = base.length();
-    let step = 20.0;
-    let n = (total / step).ceil() as usize;
+        // --- long-wave meander in the heading domain
+        let lam = rng.range_f64(p.lam_m.0, p.lam_m.1);
+        // swing scales with lambda: the curvature bound is radius ~ lam/(2pi*swing*1.68),
+        // so a fixed swing wastes the long wavelengths' headroom. Bound to the
+        // radius floor with 15% margin.
+        let swing_cap = lam / (p.min_radius_m * core::f64::consts::TAU * 1.68) * 0.85;
+        let swing = rng.range_f64(p.swing_rad.0, p.swing_rad.1.min(swing_cap.max(p.swing_rad.0)));
+        let phase = rng.range_f64(0.0, core::f64::consts::TAU);
+        let phase2 = rng.range_f64(0.0, core::f64::consts::TAU);
+        let total = base.length();
+        let step = 20.0;
+        let n = (total / step).ceil() as usize;
 
-    let mut pts = Vec::with_capacity(n + 1);
-    let mut cur = mouth;
-    pts.push(cur);
-    let mut arc = 0.0;
-    for _ in 0..n {
-        let s = (arc / total).min(1.0);
-        let tan = base.tangent_at(s);
-        let base_th = math::atan2(tan.y, tan.x);
-        // fundamental + weak second harmonic so it does not read as a
-        // regular scallop (the heartland lesson, reused as knowledge).
-        let wob = swing
-            * (math::sin(core::f64::consts::TAU * arc / lam + phase)
-                + 0.28 * math::sin(core::f64::consts::TAU * arc / (0.41 * lam) + phase2));
-        // taper the wind near both ENDS so terminals stay honest, and near
-        // the BORDERS so a bend is never pushed off the tile. The border
-        // taper replaces a hard clamp, which creased bends into 36-43 m
-        // curvature corners (measured) that a single smoothing pass could
-        // not heal.
-        let d_border = cur.x.min(cur.y).min(EXTENT_M - cur.x).min(EXTENT_M - cur.y);
-        let taper = (arc / 400.0).min(1.0)
-            * (((total - arc) / 400.0).clamp(0.0, 1.0))
-            * (d_border / 300.0).clamp(0.0, 1.0);
-        let th = base_th + wob * taper;
-        cur = Vec2::new(cur.x + math::cos(th) * step, cur.y + math::sin(th) * step);
-        arc += step;
-        pts.push(cur);
-    }
-    // --- re-anchor: winding drifts the endpoint; pull it back linearly
-    let drift = far - *pts.last().unwrap();
-    let m = (pts.len() - 1) as f64;
-    for (i, q) in pts.iter_mut().enumerate() {
-        let t = i as f64 / m;
-        *q = Vec2::new(q.x + drift.x * t, q.y + drift.y * t);
-    }
-    // The border taper keeps bends inside the tile; the drift re-anchor can
-    // still leave a whisker outside, so clamp — and then ENFORCE the radius
-    // floor by iterated 1-2-1 smoothing (endpoints pinned). Smoothing only
-    // straightens, so it converges; the assert in the tests is what keeps
-    // this honest rather than cosmetic.
-    for q in pts.iter_mut() {
-        q.x = q.x.clamp(0.0, EXTENT_M);
-        q.y = q.y.clamp(0.0, EXTENT_M);
-    }
-    for _ in 0..240 {
-        if Spine::new(pts.clone()).min_curvature_radius() >= p.min_radius_m {
+        let mut wpts: Vec<Vec2> = Vec::with_capacity(n + 1);
+        let mut cur = mouth;
+        wpts.push(cur);
+        let mut arc = 0.0;
+        for _ in 0..n {
+            let s = (arc / total).min(1.0);
+            let tan = base.tangent_at(s);
+            let base_th = math::atan2(tan.y, tan.x);
+            // fundamental + weak second harmonic so it does not read as a
+            // regular scallop (the heartland lesson, reused as knowledge).
+            let wob = swing
+                * (math::sin(core::f64::consts::TAU * arc / lam + phase)
+                    + 0.28 * math::sin(core::f64::consts::TAU * arc / (0.41 * lam) + phase2));
+            // taper the wind near both ENDS so terminals stay honest, and near
+            // the BORDERS so a bend is never pushed off the tile. The border
+            // taper replaces a hard clamp, which creased bends into 36-43 m
+            // curvature corners (measured) that a single smoothing pass could
+            // not heal.
+            let d_border = cur.x.min(cur.y).min(EXTENT_M - cur.x).min(EXTENT_M - cur.y);
+            let taper = (arc / 400.0).min(1.0)
+                * (((total - arc) / 400.0).clamp(0.0, 1.0))
+                * (d_border / 300.0).clamp(0.0, 1.0);
+            let th = base_th + wob * taper;
+            cur = Vec2::new(cur.x + math::cos(th) * step, cur.y + math::sin(th) * step);
+            arc += step;
+            wpts.push(cur);
+        }
+        // --- re-anchor: winding drifts the endpoint; pull it back linearly
+        let drift = far - *wpts.last().unwrap();
+        let m = (wpts.len() - 1) as f64;
+        for (i, q) in wpts.iter_mut().enumerate() {
+            let t = i as f64 / m;
+            *q = Vec2::new(q.x + drift.x * t, q.y + drift.y * t);
+        }
+        // The border taper keeps bends inside the tile; the drift re-anchor can
+        // still leave a whisker outside, so clamp — and then ENFORCE the radius
+        // floor by iterated 1-2-1 smoothing (endpoints pinned). Smoothing only
+        // straightens, so it converges; the assert in the tests is what keeps
+        // this honest rather than cosmetic.
+        for q in wpts.iter_mut() {
+            q.x = q.x.clamp(0.0, EXTENT_M);
+            q.y = q.y.clamp(0.0, EXTENT_M);
+        }
+        for _ in 0..240 {
+            if Spine::new(wpts.clone()).min_curvature_radius() >= p.min_radius_m {
+                break;
+            }
+            let prev = wpts.clone();
+            for i in 1..wpts.len() - 1 {
+                wpts[i] = Vec2::new(
+                    0.25 * prev[i - 1].x + 0.5 * prev[i].x + 0.25 * prev[i + 1].x,
+                    0.25 * prev[i - 1].y + 0.5 * prev[i].y + 0.25 * prev[i + 1].y,
+                );
+            }
+        }
+        pts = wpts;
+
+        if arc_inside_core(&pts) >= CORE_MIN_ARC_M || attempts >= 8 {
             break;
         }
-        let prev = pts.clone();
-        for i in 1..pts.len() - 1 {
-            pts[i] = Vec2::new(
-                0.25 * prev[i - 1].x + 0.5 * prev[i].x + 0.25 * prev[i + 1].x,
-                0.25 * prev[i - 1].y + 0.5 * prev[i].y + 0.25 * prev[i + 1].y,
-            );
+        attempts += 1;
+        let n_ctrl_pts = base_pts.len();
+        for q in base_pts.iter_mut().skip(1).take(n_ctrl_pts.saturating_sub(2)) {
+            *q = q.lerp(centre, 0.22);
         }
     }
-
     // --- long profile: concave, zero at the mouth, monotone by construction
     let spine = Spine::new(pts.clone());
     let total = spine.length();
