@@ -233,6 +233,25 @@ pub fn build(
     for (ti, tk) in trunks.iter().enumerate() {
         tfs[ti].joins = tk.joins.map(|j| j as usize);
     }
+    // Per-arc SEPARATION of each joining trunk from its primary's axis. The
+    // handoff must be geometric, not arc-based: a convergent pair can run
+    // parallel inside ONE shared valley far past any arc threshold, and
+    // with both sections active every wall carried two offset copies of the
+    // step lines (gp seed 37). The secondary defers wherever it is still
+    // inside the primary's valley, and comes into its own only as it
+    // genuinely diverges.
+    let seps: Vec<Option<Vec<f64>>> = trunks
+        .iter()
+        .map(|tk| {
+            tk.joins.map(|pj| {
+                let pg = &geoms[pj as usize];
+                tk.pts
+                    .iter()
+                    .map(|p| pg.spine.project_with(&pg.ix, *p).d)
+                    .collect()
+            })
+        })
+        .collect();
 
     // ---- pass 2: compose the envelope + interfluve + benches
     let mut height = Grid::filled(spec, 0.0);
@@ -266,11 +285,13 @@ pub fn build(
             // its own, and its valley grows out of the primary's over the
             // first ~700 m. This merges the FRAMES; the stamped-overlay
             // look came from blending only the outputs.
-            const HANDOFF_M: f64 = 700.0;
             for ti in 0..tfs.len().min(4) {
-                if let Some(pj) = tfs[ti].joins {
+                if let (Some(pj), Some(sep)) = (tfs[ti].joins, seps[ti].as_ref()) {
                     if pj < 4 {
-                        let h = math::smoothstep(0.0, HANDOFF_M, tfs[ti].arc[li]);
+                        // separation of the secondary's axis from the
+                        // primary's, at this arc position (pts are ~20 m)
+                        let idx = ((tfs[ti].arc[li] / 20.0) as usize).min(sep.len() - 1);
+                        let h = math::smoothstep(220.0, 620.0, sep[idx]);
                         raws[ti] = raws[pj] * (1.0 - h) + raws[ti] * h;
                     }
                 }

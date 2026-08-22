@@ -283,7 +283,9 @@ pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
             let l = (dx * dx + dy * dy + 1.0).sqrt();
             let lam = ((-dx) * light[0] + (-dy) * light[1] + light[2]) / l;
             // SHADE dominates: full lambert range plus slope darkening
-            let shade = lam.max(0.0).powf(1.15) * (1.0 - 0.30 * (dx.hypot(dy)).min(0.7));
+            // pure lambert — the slope-darkening term double-marked every steep
+            // face (read as a bluff highlight pass; user: hillshade only)
+            let shade = lam.max(0.0).powf(1.15);
             let z = g.bilinear(w);
             let tint = ramp((z - z_lo) / span);
             let px_col = [0, 1, 2].map(|i| {
