@@ -72,9 +72,17 @@ pub fn build(
             let mut zs = tk.z.clone();
             let ext = 1600.0;
             if pts.len() >= 2 {
-                let d0 = (pts[0] - pts[1]).normalized();
-                pts.insert(0, pts[0] + d0 * ext);
-                zs.insert(0, zs[0]);
+                // Mouth-side extension ONLY for trunks whose mouth is a tile
+                // edge. A JOINING trunk's mouth is a junction inside the
+                // primary's valley — extending it carved a 1.6 km PHANTOM
+                // valley straight across the primary (the X on hc seed 58).
+                // No bullseye risk there either: the junction sits in the
+                // primary's floor, where the envelope is already low.
+                if tk.joins.is_none() {
+                    let d0 = (pts[0] - pts[1]).normalized();
+                    pts.insert(0, pts[0] + d0 * ext);
+                    zs.insert(0, zs[0]);
+                }
                 let m = pts.len();
                 let d1 = (pts[m - 1] - pts[m - 2]).normalized();
                 pts.push(pts[m - 1] + d1 * ext);
