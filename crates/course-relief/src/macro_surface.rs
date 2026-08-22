@@ -170,7 +170,10 @@ pub fn build(
         // test). The creases live in dist's gradient; zbed is already smooth
         // along the channel, and its jump across the medial axis is a small
         // Δz the softmin knee absorbs.
-        gauss(&mut dist, nn, 3);
+        // 2 passes: the gentle trunks removed the tight-curvature creases
+        // this blur existed for, and 3 passes were smearing 40-60 m scarps
+        // into undulations. The signed-lateral blend handles the side seam.
+        gauss(&mut dist, nn, 2);
         tfs.push(TF { dist, zbed, arc: arcv, lat: latv });
     }
 
@@ -228,7 +231,7 @@ pub fn build(
                 * d.relief_budget_m
                 * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5)
                 * ramp;
-            let mut z = z_env;
+            let z = z_env;
 
             height.set(gx as u32, gy as u32, z);
             d_trunk.set(gx as u32, gy as u32, dmin);
@@ -267,15 +270,3 @@ fn gauss(v: &mut [f64], nn: usize, passes: usize) {
     }
 }
 
-fn u_of(dist: f64, fhw: f64) -> f64 {
-    (dist - fhw).max(0.0)
-}
-
-/// The measured catena: rise = R400 · (u / (400 − fhw))^exp, extrapolated
-/// past 400 m on the same power, then SOFT-CAPPED near the relief budget.
-fn catena(u: f64, r400: f64, cexp: f64, fhw: f64, cap: f64) -> f64 {
-    let denom = (400.0 - fhw).max(60.0);
-    let r = r400 * math::pow((u / denom).max(0.0), cexp);
-    let k = cap.max(1.0);
-    k * (r / k) / (1.0 + r / k) * (1.0 + r / k / (1.0 + r / k))
-}

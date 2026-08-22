@@ -27,6 +27,8 @@ pub struct SideProgram {
     wmod: Vec<Vec<f64>>,
     /// Floor half-width per station (arc-varying, per side).
     pub floor_hw: Vec<f64>,
+    /// Per-zone mean gate over all stations (the far-field value).
+    gate_mean: Vec<f64>,
     n_stations: usize,
     total_arc: f64,
 }
@@ -95,7 +97,11 @@ impl SideProgram {
             })
             .collect();
 
-        SideProgram { w, r, kind, gate, wmod, floor_hw, n_stations: n_st, total_arc }
+        let gate_mean = gate
+            .iter()
+            .map(|g| g.iter().sum::<f64>() / g.len().max(1) as f64)
+            .collect();
+        SideProgram { w, r, kind, gate, wmod, floor_hw, gate_mean, n_stations: n_st, total_arc }
     }
 
     fn station(&self, arc: f64) -> (usize, usize, f64) {
@@ -113,20 +119,30 @@ impl SideProgram {
 
     /// Rise above the bed at cross-distance `dist`, arc `arc`. Monotone in
     /// dist by construction: every zone climbs or holds.
+    ///
+    /// ARC-SENSITIVITY FADES WITH DISTANCE: the arc coordinate jumps across
+    /// the medial axis (behind bends and ends), and any arc-varying
+    /// parameter prints that jump as a cliff — the third member of the seam
+    /// family after distance (Gaussian) and side (signed-lateral blend).
+    /// Beyond ~1400 m the gates and widths hold their arc-means, so the
+    /// jump has nothing to print.
     pub fn rise(&self, arc: f64, dist: f64) -> f64 {
         let fhw = self.floor_hw_at(arc);
         let mut u = dist - fhw;
         if u <= 0.0 {
             return 0.0;
         }
+        let fade = (1.0 - (dist - 350.0).max(0.0) / 650.0).clamp(0.0, 1.0);
         let (i, j, t) = self.station(arc);
         let mut acc = 0.0;
         for zi in 0..self.w.len() {
-            let g = self.gate[zi][i] * (1.0 - t) + self.gate[zi][j] * t;
+            let g_arc = self.gate[zi][i] * (1.0 - t) + self.gate[zi][j] * t;
+            let g = self.gate_mean[zi] * (1.0 - fade) + g_arc * fade;
             if g <= 0.01 {
                 continue;
             }
-            let wm = self.wmod[zi][i] * (1.0 - t) + self.wmod[zi][j] * t;
+            let wm_arc = self.wmod[zi][i] * (1.0 - t) + self.wmod[zi][j] * t;
+            let wm = 1.0 * (1.0 - fade) + wm_arc * fade;
             let zw = (self.w[zi] * wm * g).max(4.0);
             let zr = self.r[zi] * g;
             if u <= zw {
@@ -135,7 +151,7 @@ impl SideProgram {
                     // slope: smooth ramp
                     ZoneKind::Slope => math::smoothstep(0.0, 1.0, f),
                     // scarp: the climb concentrated mid-face
-                    ZoneKind::Scarp => math::smoothstep(0.32, 0.68, f),
+                    ZoneKind::Scarp => math::smoothstep(0.36, 0.64, f),
                     // bench: near-flat with its small tilt spread evenly
                     ZoneKind::Bench => f,
                 };
