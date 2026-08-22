@@ -158,10 +158,14 @@ const SEC_RV: &[ZoneSpec] = &[
                 // corpus (zone_stats): real terrace risers 5.2/7.2/7.9 m -- tightly
                 // clustered near 7 m; heights tightened toward it
                 ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 110.0), rise_m: Range::new(4.0, 9.0), gate_p: 0.85, hard_gate: 0.15 },
-                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 400.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.9, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 500.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.9, hard_gate: 0.0 },
                 ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 120.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.6, hard_gate: 0.15 },
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 380.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.6, hard_gate: 0.0 },
                 ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(50.0, 130.0), rise_m: Range::new(5.0, 12.0), gate_p: 0.45, hard_gate: 0.15 },
+                // literature (04-landform-literature): terrace risers run
+                // 5-50 m; the corpus's clean-tile screen kept only the low
+                // young ones. A RARE tall riser, mostly gated off.
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(60.0, 150.0), rise_m: Range::new(12.0, 22.0), gate_p: 0.22, hard_gate: 0.2 },
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(250.0, 600.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.8, hard_gate: 0.0 },
             ];
 const SEC_HC: &[ZoneSpec] = &[
