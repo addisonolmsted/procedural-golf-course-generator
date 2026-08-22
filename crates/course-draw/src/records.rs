@@ -146,24 +146,32 @@ const SEC_PIEDMONT: &[ZoneSpec] = &[
 const SEC_PLAINS: &[ZoneSpec] = &[
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(140.0, 300.0), rise_m: Range::new(2.0, 5.0), gate_p: 1.0, hard_gate: 0.0 },
                 // the caprock edge
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(30.0, 70.0), rise_m: Range::new(3.0, 8.0), gate_p: 0.75, hard_gate: 0.6 },
+                // corpus (zone_stats): plains risers 4.9/12.4/36.4 m -- the caprock
+                // edge is BIGGER than first guessed
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(30.0, 80.0), rise_m: Range::new(5.0, 15.0), gate_p: 0.75, hard_gate: 0.6 },
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(250.0, 600.0), rise_m: Range::new(0.0, 1.0), gate_p: 1.0, hard_gate: 0.0 },
             ];
 const SEC_RV: &[ZoneSpec] = &[
                 // the terrace flight: riser+tread pairs, each independently
                 // gated along the trunk and per side -- "sometimes an
                 // in-between step for a stretch, blending into a lower one"
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 110.0), rise_m: Range::new(4.0, 12.0), gate_p: 0.85, hard_gate: 0.15 },
+                // corpus (zone_stats): real terrace risers 5.2/7.2/7.9 m -- tightly
+                // clustered near 7 m; heights tightened toward it
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 110.0), rise_m: Range::new(4.0, 9.0), gate_p: 0.85, hard_gate: 0.15 },
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 400.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.9, hard_gate: 0.0 },
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 120.0), rise_m: Range::new(4.0, 14.0), gate_p: 0.6, hard_gate: 0.15 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 120.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.6, hard_gate: 0.15 },
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 380.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.6, hard_gate: 0.0 },
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(50.0, 130.0), rise_m: Range::new(5.0, 16.0), gate_p: 0.45, hard_gate: 0.15 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(50.0, 130.0), rise_m: Range::new(5.0, 12.0), gate_p: 0.45, hard_gate: 0.15 },
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(250.0, 600.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.8, hard_gate: 0.0 },
             ];
 const SEC_HC: &[ZoneSpec] = &[
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(150.0, 320.0), rise_m: Range::new(8.0, 18.0), gate_p: 1.0, hard_gate: 0.0 },
                 // the BLUFF: 45-deg-plus where the hard bed crops out
                 ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 60.0), rise_m: Range::new(12.0, 26.0), gate_p: 0.8, hard_gate: 0.8 },
+                // corpus (zone_stats): real hc benches are 24/32/88 m and the
+                // land is 0% routable; ours are wider BY DESIGN (golf,
+                // 03 section 8) -- riser heights though match the measured
+                // 5.6/19.6/85.8 distribution
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(130.0, 300.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.8, hard_gate: 0.4 },
                 ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 70.0), rise_m: Range::new(8.0, 20.0), gate_p: 0.6, hard_gate: 0.8 },
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(200.0, 450.0), rise_m: Range::new(8.0, 18.0), gate_p: 0.9, hard_gate: 0.0 },

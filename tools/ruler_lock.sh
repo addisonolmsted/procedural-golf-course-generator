@@ -31,6 +31,7 @@ FILES=(
   tools/macro_campaign/pattern_survey.py
   tools/macro_campaign/trunk_probe.py
   tools/macro_campaign/valley_profile.py
+  tools/macro_campaign/zone_stats.py
   tools/macro_campaign/junction_real.py
   tools/macro_campaign/real_planform.py
   tools/golf_proxy/proxy.py

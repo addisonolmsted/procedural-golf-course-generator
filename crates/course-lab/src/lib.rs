@@ -250,13 +250,13 @@ pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
         let alt = 45.0_f64.to_radians();
         [az.cos() * alt.cos(), az.sin() * alt.cos(), alt.sin()]
     };
-    // desaturated tint ramp: sage -> straw -> umber -> chalk
+    // the preferred ramp (user): GREEN lows -> TAN highs
     let ramp = |t: f64| -> [f64; 3] {
         let stops: [(f64, [f64; 3]); 4] = [
-            (0.0, [0.62, 0.70, 0.58]),
-            (0.35, [0.78, 0.74, 0.58]),
-            (0.7, [0.72, 0.62, 0.50]),
-            (1.0, [0.93, 0.91, 0.86]),
+            (0.0, [0.34, 0.50, 0.29]),
+            (0.40, [0.62, 0.62, 0.38]),
+            (0.75, [0.78, 0.68, 0.44]),
+            (1.0, [0.87, 0.79, 0.60]),
         ];
         let t = t.clamp(0.0, 1.0);
         for w in stops.windows(2) {
