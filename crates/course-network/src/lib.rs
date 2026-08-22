@@ -383,7 +383,7 @@ mod tests {
             for a in [Archetype::Piedmont, Archetype::RiverValley] {
                 for t in net(seed, a).trunks {
                     let r = Spine::new(t.pts.clone()).min_curvature_radius();
-                    assert!(r >= 60.0, "{a} seed {seed}: min radius {r:.0} m");
+                    assert!(r >= 320.0, "{a} seed {seed}: min radius {r:.0} m");
                 }
             }
         }

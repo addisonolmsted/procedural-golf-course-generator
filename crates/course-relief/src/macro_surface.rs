@@ -16,6 +16,7 @@
 //! (corpus), terraces and bluffs and floor widening (golf — the macro is
 //! designed for gameplay, 03-macro-is-designed §8).
 
+use crate::section::SideProgram;
 use course_draw::Descriptors;
 use course_network::TrunkPath;
 use course_seed::DetRng;
@@ -45,9 +46,6 @@ struct TrunkGeom {
     /// skewed every bed lookup (measured: bed 4.18 m read as 2.87 at a
     /// trunk head, surface 1.31 m below its own bed).
     cum: Vec<f64>,
-    /// Which side (sign of cross product) carries the terrace flight.
-    terrace_side: f64,
-    both_sides: bool,
 }
 
 /// The interfluve weight on `relief_pred`, as a fraction of the relief
@@ -91,30 +89,34 @@ pub fn build(
             }
             let spine = Spine::new(pts);
             let ix = SegIndex::for_spine(&spine);
-            TrunkGeom {
-                ix,
-                z: zs,
-                cum,
-                spine,
-                terrace_side: if rng.next_f64() < 0.5 { 1.0 } else { -1.0 },
-                both_sides: rng.next_f64() > d.terrace_asymmetry,
-            }
+            TrunkGeom { ix, z: zs, cum, spine }
         })
         .collect();
 
-    let steps = d.terrace_steps as f64;
-    let tread_w = if steps > 0.0 { rng.range_f64(90.0, 150.0) } else { 0.0 };
-    let riser_h = if steps > 0.0 {
-        (d.relief_budget_m * 0.55 / steps).clamp(4.0, 20.0)
-    } else {
-        0.0
-    };
-    let bench_period = (d.riser_m * 3.2).max(1.0);
-    let bench_k = d.resistance_response;
+    // ---- per-trunk, per-SIDE section programs (the U2 engine). Drawn
+    // independently per side: asymmetry everywhere, not just rv terraces.
+    let rec = course_draw::records::record(t.archetype);
+    let programs: Vec<[SideProgram; 2]> = geoms
+        .iter()
+        .map(|g| {
+            let bed = |arc: f64| -> f64 {
+                let i = match g.cum.binary_search_by(|c| c.partial_cmp(&arc).unwrap()) {
+                    Ok(i) => i.min(g.z.len() - 2),
+                    Err(i) => i.saturating_sub(1).min(g.z.len() - 2),
+                };
+                let seg = (g.cum[i + 1] - g.cum[i]).max(1e-9);
+                g.z[i] + (g.z[i + 1] - g.z[i]) * ((arc - g.cum[i]) / seg).clamp(0.0, 1.0)
+            };
+            let pos = |arc: f64| g.spine.point_at(arc / g.spine.length().max(1e-9));
+            [
+                SideProgram::draw(rng, rec.section, d, &t.fields.strata, &bed, &pos, g.spine.length(), rec.width_var),
+                SideProgram::draw(rng, rec.section, d, &t.fields.strata, &bed, &pos, g.spine.length(), rec.width_var),
+            ]
+        })
+        .collect();
+
     let fhw = d.floor_hw_m * d.floor_widen;
     let cap_m = d.relief_budget_m * 0.80;
-    let r400 = d.rise_400_m;
-    let cexp = d.catena_exp;
 
     // ---- pass 1: per-trunk projection fields, then SMOOTH the distance.
     // Projecting to a polyline leaves the distance field C0 across the
@@ -127,13 +129,23 @@ pub fn build(
     struct TF {
         dist: Vec<f64>,
         zbed: Vec<f64>,
-        terraced: Vec<bool>,
+        arc: Vec<f64>,
+        /// SIGNED lateral offset (side × distance). The blend weight derives
+        /// from it at eval: within ±140 m of the trunk the two side programs
+        /// cross-fade, so the floor seam is a col; farther out the sign only
+        /// flips across the medial axis — which the 500 m trunk-radius floor
+        /// pushes into cap-flattened ground where both sides already agree.
+        /// (A blurred binary side was tried first: a Gaussian wide enough to
+        /// hide a 20 m program difference needs a ~300 m band, and 24 blur
+        /// passes buy ~40 m.)
+        lat: Vec<f64>,
     }
     let mut tfs: Vec<TF> = Vec::with_capacity(geoms.len());
     for g in &geoms {
         let mut dist = vec![0.0f64; nn * nn];
         let mut zbed = vec![0.0f64; nn * nn];
-        let mut terr = vec![false; nn * nn];
+        let mut arcv = vec![0.0f64; nn * nn];
+        let mut latv = vec![0.0f64; nn * nn];
         for gy in 0..nn {
             for gx in 0..nn {
                 let p = spec.world_of(gx as u32, gy as u32);
@@ -148,8 +160,8 @@ pub fn build(
                 let seg = (g.cum[i + 1] - g.cum[i]).max(1e-9);
                 let f = ((arc - g.cum[i]) / seg).clamp(0.0, 1.0);
                 zbed[gy * nn + gx] = g.z[i] + (g.z[i + 1] - g.z[i]) * f;
-                terr[gy * nn + gx] =
-                    steps > 0.0 && (hit.side * g.terrace_side > 0.0 || g.both_sides);
+                arcv[gy * nn + gx] = arc;
+                latv[gy * nn + gx] = hit.side * hit.d;
             }
         }
         // Smooth ONLY the distance. Smoothing the bed reference mixed the
@@ -158,8 +170,8 @@ pub fn build(
         // test). The creases live in dist's gradient; zbed is already smooth
         // along the channel, and its jump across the medial axis is a small
         // Δz the softmin knee absorbs.
-        gauss(&mut dist, nn, 2);
-        tfs.push(TF { dist, zbed, terraced: terr });
+        gauss(&mut dist, nn, 3);
+        tfs.push(TF { dist, zbed, arc: arcv, lat: latv });
     }
 
     // ---- pass 2: compose the envelope + interfluve + benches
@@ -177,22 +189,19 @@ pub fn build(
                 if dist < dmin {
                     dmin = dist;
                 }
-                let u = u_of(dist, fhw);
-                let rise = if dist <= fhw {
-                    0.0
-                } else if tf.terraced[li] {
-                    let k = (u / tread_w).floor().min(steps);
-                    let frac = ((u / tread_w) - k).clamp(0.0, 1.0);
-                    let soft = math::smoothstep(0.72, 1.0, frac);
-                    let stair = (k + soft) * riser_h;
-                    if k >= steps {
-                        stair + catena(u - steps * tread_w, r400, cexp, fhw, cap_m)
-                    } else {
-                        stair
-                    }
+                let sw = math::smoothstep(-140.0, 140.0, tf.lat[li]);
+                let raw = if sw < 0.02 {
+                    programs[ti][0].rise(tf.arc[li], dist)
+                } else if sw > 0.98 {
+                    programs[ti][1].rise(tf.arc[li], dist)
                 } else {
-                    catena(u, r400, cexp, fhw, cap_m)
+                    programs[ti][0].rise(tf.arc[li], dist) * (1.0 - sw)
+                        + programs[ti][1].rise(tf.arc[li], dist) * sw
                 };
+                // soft budget cap, as before
+                let k = cap_m.max(1.0);
+                let a = raw / k;
+                let rise = k * a / (1.0 + a) * (1.0 + a / (1.0 + a));
                 cands[ti.min(3)] = tf.zbed[li] + rise;
             }
             // softmin envelope with a 6 m knee
@@ -221,26 +230,6 @@ pub fn build(
                 * ramp;
             let mut z = z_env;
 
-            if bench_k > 0.05 && dmin > fhw {
-                let hard_here = t.fields.strata.hardness_at(p, z);
-                let cell_f = z / bench_period;
-                let k = cell_f.floor();
-                let frac = cell_f - k;
-                let soft = math::smoothstep(0.72, 0.97, frac);
-                let quant = (k + soft) * bench_period;
-                let w = (bench_k * 1.25).min(0.95) * hard_here * ramp;
-                z = z * (1.0 - w) + quant * w;
-            }
-
-            if std::env::var("T1_DEBUG").is_ok() {
-                let px = std::env::var("T1_DEBUG").unwrap();
-                let parts: Vec<usize> = px.split(',').filter_map(|v| v.parse().ok()).collect();
-                if parts.len() == 2 && gx == parts[0] && gy == parts[1] {
-                    eprintln!("cell ({gx},{gy}) world ({:.0},{:.0}): dist_sm {:.2} zbed {:.2} dmin {:.2} ramp {:.3} z {:.3}",
-                        p.x, p.y, tfs[0].dist[li], tfs[0].zbed[li], dmin,
-                        math::smoothstep(fhw + 40.0, fhw + 320.0, dmin), z);
-                }
-            }
             height.set(gx as u32, gy as u32, z);
             d_trunk.set(gx as u32, gy as u32, dmin);
         }

@@ -17,6 +17,7 @@
 //! `tools/no_old_deps.sh`.
 
 pub mod macro_surface;
+pub mod section;
 
 pub use macro_surface::{MacroSurface, RES_M};
 

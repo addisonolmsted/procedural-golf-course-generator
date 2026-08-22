@@ -10,6 +10,38 @@
 
 use crate::archetype::Archetype;
 
+/// One cross-valley zone template — the section program's vocabulary, which
+/// is the old WindowClass family reborn as drainage-consistent segments:
+/// Slope = the piedmont slope, Scarp = the escarpment face, Bench = a
+/// terrace tread. A record's `section` lists the zones from the valley floor
+/// outward; each is drawn PER SIDE and modulated ALONG the trunk, and its
+/// presence can be gated by arc noise and by the strata's hardness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZoneKind {
+    /// Climbs `rise_m` over `w_m`, smoothly.
+    Slope,
+    /// Climbs `rise_m` over a SHORT run (steep face). `w_m` is the face width.
+    Scarp,
+    /// Near-flat tread of width `w_m` (rise_m ~ 0-2 for drainage tilt).
+    Bench,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ZoneSpec {
+    pub kind: ZoneKind,
+    /// Zone width across the valley, metres.
+    pub w_m: Range,
+    /// Total climb across the zone, metres.
+    pub rise_m: Range,
+    /// Probability the zone is present at a given arc station (smoothly
+    /// gated along the trunk — a partial gate is "an in-between step for a
+    /// stretch of the trunk").
+    pub gate_p: f64,
+    /// 0 = presence ignores geology; 1 = presence follows hardness at this
+    /// elevation (scarps crop out where the rock is hard).
+    pub hard_gate: f64,
+}
+
 /// A closed range a descriptor is drawn from.
 #[derive(Clone, Copy, Debug)]
 pub struct Range {
@@ -79,6 +111,12 @@ pub struct Record {
     /// this (the hc routability lever).
     pub floor_hw_m: Range,
 
+    /// The cross-valley SECTION PROGRAM, floor outward. Crown (interfluve)
+    /// is implicit after the last zone.
+    pub section: &'static [ZoneSpec],
+    /// Arc-modulation amplitude on floor and zone widths (±fraction).
+    pub width_var: f64,
+
     /// Scale on major-tributary spacing (and claim). >1 = sparser tribs.
     ///
     /// DESIGN-GOVERNED (03-macro-is-designed), user direction 2026-08-21:
@@ -98,6 +136,44 @@ pub struct Record {
     /// Riser height at a resistance contact, metres. The benching lever.
     pub riser_m: Range,
 }
+
+const SEC_PIEDMONT: &[ZoneSpec] = &[
+                // the PIEDMONT SLOPE itself: one long gentle climb
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(500.0, 1100.0), rise_m: Range::new(12.0, 26.0), gate_p: 1.0, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(120.0, 260.0), rise_m: Range::new(0.0, 1.5), gate_p: 0.30, hard_gate: 0.3 },
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(300.0, 700.0), rise_m: Range::new(6.0, 14.0), gate_p: 0.8, hard_gate: 0.0 },
+            ];
+const SEC_PLAINS: &[ZoneSpec] = &[
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(140.0, 300.0), rise_m: Range::new(2.0, 5.0), gate_p: 1.0, hard_gate: 0.0 },
+                // the caprock edge
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(30.0, 70.0), rise_m: Range::new(3.0, 8.0), gate_p: 0.75, hard_gate: 0.6 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(250.0, 600.0), rise_m: Range::new(0.0, 1.0), gate_p: 1.0, hard_gate: 0.0 },
+            ];
+const SEC_RV: &[ZoneSpec] = &[
+                // the terrace flight: riser+tread pairs, each independently
+                // gated along the trunk and per side -- "sometimes an
+                // in-between step for a stretch, blending into a lower one"
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 110.0), rise_m: Range::new(4.0, 12.0), gate_p: 0.85, hard_gate: 0.15 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 400.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.9, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(40.0, 120.0), rise_m: Range::new(4.0, 14.0), gate_p: 0.6, hard_gate: 0.15 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(150.0, 380.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.6, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(50.0, 130.0), rise_m: Range::new(5.0, 16.0), gate_p: 0.45, hard_gate: 0.15 },
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(250.0, 600.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.8, hard_gate: 0.0 },
+            ];
+const SEC_HC: &[ZoneSpec] = &[
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(150.0, 320.0), rise_m: Range::new(8.0, 18.0), gate_p: 1.0, hard_gate: 0.0 },
+                // the BLUFF: 45-deg-plus where the hard bed crops out
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 60.0), rise_m: Range::new(12.0, 26.0), gate_p: 0.8, hard_gate: 0.8 },
+                ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(130.0, 300.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.8, hard_gate: 0.4 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 70.0), rise_m: Range::new(8.0, 20.0), gate_p: 0.6, hard_gate: 0.8 },
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(200.0, 450.0), rise_m: Range::new(8.0, 18.0), gate_p: 0.9, hard_gate: 0.0 },
+            ];
+const SEC_HEATH: &[ZoneSpec] = &[
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(400.0, 900.0), rise_m: Range::new(2.0, 6.0), gate_p: 1.0, hard_gate: 0.0 },
+            ];
+const SEC_SAND: &[ZoneSpec] = &[
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(300.0, 700.0), rise_m: Range::new(5.0, 10.0), gate_p: 1.0, hard_gate: 0.0 },
+            ];
 
 pub fn record(a: Archetype) -> Record {
     use Archetype::*;
@@ -121,6 +197,8 @@ pub fn record(a: Archetype) -> Record {
             catena_exp: Range::new(0.85, 1.05),
             rise_400_m: Range::new(10.0, 18.0),
             floor_hw_m: Range::new(24.0, 40.0),
+            section: SEC_PIEDMONT,
+            width_var: 0.3,
             trib_spacing: Range::new(0.70, 0.85),
             anisotropy: Range::new(0.05, 0.15),
             resistance_response: Range::new(0.0, 0.2),
@@ -141,6 +219,8 @@ pub fn record(a: Archetype) -> Record {
             catena_exp: Range::new(0.60, 0.78),
             rise_400_m: Range::new(4.5, 8.5),
             floor_hw_m: Range::new(40.0, 60.0),
+            section: SEC_PLAINS,
+            width_var: 0.25,
             trib_spacing: Range::new(1.10, 1.40),
             anisotropy: Range::new(0.05, 0.18),
             // the caprock: strong contact, shallow riser
@@ -170,6 +250,8 @@ pub fn record(a: Archetype) -> Record {
             // the relief instead (golf, 03-macro-is-designed)
             rise_400_m: Range::new(1.5, 3.0),
             floor_hw_m: Range::new(130.0, 200.0),
+            section: SEC_RV,
+            width_var: 0.4,
             trib_spacing: Range::new(1.70, 2.20),
             anisotropy: Range::new(0.08, 0.20),
             resistance_response: Range::new(0.1, 0.3),
@@ -197,6 +279,8 @@ pub fn record(a: Archetype) -> Record {
             // routable. The corpus median (24 m floors, 0% routable) is
             // exactly what this is designed AWAY from.
             floor_hw_m: Range::new(20.0, 32.0),
+            section: SEC_HC,
+            width_var: 0.35,
             trib_spacing: Range::new(0.62, 0.80),
             anisotropy: Range::new(0.05, 0.15),
             // the identity: every slope a staircase
@@ -220,6 +304,8 @@ pub fn record(a: Archetype) -> Record {
             catena_exp: Range::new(0.68, 0.85),
             rise_400_m: Range::new(1.2, 2.2),
             floor_hw_m: Range::new(190.0, 280.0),
+            section: SEC_HEATH,
+            width_var: 0.3,
             trib_spacing: Range::new(1.20, 1.50),
             anisotropy: Range::new(0.05, 0.18),
             resistance_response: Range::fixed(0.0),
@@ -240,6 +326,8 @@ pub fn record(a: Archetype) -> Record {
             catena_exp: Range::new(0.82, 1.00),
             rise_400_m: Range::new(6.0, 10.0),
             floor_hw_m: Range::new(80.0, 130.0),
+            section: SEC_SAND,
+            width_var: 0.3,
             trib_spacing: Range::fixed(1.0),
             // the ONE archetype with real anisotropy -- dune trains
             anisotropy: Range::new(0.55, 0.85),

@@ -50,11 +50,17 @@ pub struct TrunkPathParams {
 impl Default for TrunkPathParams {
     fn default() -> Self {
         TrunkPathParams {
-            lam_m: (900.0, 1800.0),
-            swing_rad: (0.45, 0.62),
+            // VALLEY-AXIS scale (user direction, U-series): a trunk is the
+            // valley spine, not the watercourse. lambda >= 2 km, often much
+            // higher — gently curving lines. The river's own 400-900 m
+            // meander returns at hydrology, drawn INSIDE the valley floor.
+            lam_m: (2000.0, 6000.0),
+            swing_rad: (0.30, 0.85),
             head_relief_frac: 0.55,
             concavity: 1.45,
-            min_radius_m: 150.0,
+            // Raised 150 -> 500: creases live where the medial axis comes
+            // close, and medial-axis distance scales with curvature radius.
+            min_radius_m: 500.0,
         }
     }
 }
@@ -72,7 +78,11 @@ fn low_controls(relief: &Grid<f64>, a: Vec2, b: Vec2, n: usize, rng: &mut DetRng
         let t0 = (i as f64 + 0.5) / n as f64;
         let centre = a.lerp(b, t0);
         // search across the corridor for the lowest relief_pred
-        let half_w = (len * 0.22).min(900.0);
+        // Narrow corridor: at 0.22·len the low-controls could sit 900 m
+        // off-axis, and the catmull baseline through them carried 70 m-radius
+        // bends that no amount of point smoothing repairs (diffusion barely
+        // touches low-frequency curvature). The valley axis wants gentle.
+        let half_w = (len * 0.10).min(350.0);
         let mut best = (f64::MAX, centre);
         let steps = 15;
         for k in 0..=steps {
@@ -129,11 +139,40 @@ pub fn build_trunk(
     }
     base_pts.extend(ctrl);
     base_pts.push(far);
+    // Relax the control polygon: pull any control whose turn angle exceeds
+    // ~22 deg toward its neighbours' midpoint. The radius floor must be in
+    // the BASELINE; enforcement smoothing is only a belt.
+    for _ in 0..24 {
+        let mut worst = 0.0f64;
+        for i in 1..base_pts.len() - 1 {
+            let a = base_pts[i - 1];
+            let b = base_pts[i];
+            let c = base_pts[i + 1];
+            let v1 = (b - a).normalized();
+            let v2 = (c - b).normalized();
+            let dot = v1.dot(v2).clamp(-1.0, 1.0);
+            let ang = math::acos(dot);
+            if ang > worst {
+                worst = ang;
+            }
+            if ang > 0.38 {
+                let mid = Vec2::new((a.x + c.x) * 0.5, (a.y + c.y) * 0.5);
+                base_pts[i] = base_pts[i].lerp(mid, 0.35);
+            }
+        }
+        if worst <= 0.38 {
+            break;
+        }
+    }
     let base = Spine::new(catmull_rom(&base_pts, 20.0));
 
     // --- long-wave meander in the heading domain
     let lam = rng.range_f64(p.lam_m.0, p.lam_m.1);
-    let swing = rng.range_f64(p.swing_rad.0, p.swing_rad.1);
+    // swing scales with lambda: the curvature bound is radius ~ lam/(2pi*swing*1.68),
+    // so a fixed swing wastes the long wavelengths' headroom. Bound to the
+    // radius floor with 15% margin.
+    let swing_cap = lam / (p.min_radius_m * core::f64::consts::TAU * 1.68) * 0.85;
+    let swing = rng.range_f64(p.swing_rad.0, p.swing_rad.1.min(swing_cap.max(p.swing_rad.0)));
     let phase = rng.range_f64(0.0, core::f64::consts::TAU);
     let phase2 = rng.range_f64(0.0, core::f64::consts::TAU);
     let total = base.length();
