@@ -136,6 +136,8 @@ pub fn build(
     // any profile touches it.
     let nn = n as usize;
     struct TF {
+        /// Index of the TF this trunk joins (a confluence secondary), if any.
+        joins: Option<usize>,
         dist: Vec<f64>,
         zbed: Vec<f64>,
         arc: Vec<f64>,
@@ -225,7 +227,11 @@ pub fn build(
         }
         // one light pass for grid smoothing only
         gauss(&mut dist, nn, 1);
-        tfs.push(TF { dist, zbed, arc: arcv, lat: latv });
+        tfs.push(TF { joins: None, dist, zbed, arc: arcv, lat: latv });
+    }
+
+    for (ti, tk) in trunks.iter().enumerate() {
+        tfs[ti].joins = tk.joins.map(|j| j as usize);
     }
 
     // ---- pass 2: compose the envelope + interfluve + benches
@@ -237,6 +243,7 @@ pub fn build(
             let li = gy * nn + gx;
 
             let mut cands: [f64; 4] = [f64::MAX; 4];
+            let mut raws: [f64; 4] = [0.0; 4];
             let mut dmin = f64::MAX;
             for (ti, tf) in tfs.iter().enumerate() {
                 let dist = tf.dist[li];
@@ -252,9 +259,25 @@ pub fn build(
                     programs[ti][0].rise(tf.arc[li], dist) * (1.0 - sw)
                         + programs[ti][1].rise(tf.arc[li], dist) * sw
                 };
-                // soft budget cap, as before
+                raws[ti.min(3)] = raw;
+            }
+            // CONFLUENCE HANDOFF (U5): a joining trunk's section FADES IN
+            // with its own arc — at the junction it contributes nothing of
+            // its own, and its valley grows out of the primary's over the
+            // first ~700 m. This merges the FRAMES; the stamped-overlay
+            // look came from blending only the outputs.
+            const HANDOFF_M: f64 = 700.0;
+            for ti in 0..tfs.len().min(4) {
+                if let Some(pj) = tfs[ti].joins {
+                    if pj < 4 {
+                        let h = math::smoothstep(0.0, HANDOFF_M, tfs[ti].arc[li]);
+                        raws[ti] = raws[pj] * (1.0 - h) + raws[ti] * h;
+                    }
+                }
+            }
+            for (ti, tf) in tfs.iter().enumerate() {
                 let k = cap_m.max(1.0);
-                let a = raw / k;
+                let a = raws[ti.min(3)] / k;
                 let rise = k * a / (1.0 + a) * (1.0 + a / (1.0 + a));
                 cands[ti.min(3)] = tf.zbed[li] + rise;
             }
@@ -280,11 +303,24 @@ pub fn build(
             }
 
             // interfluve: high ground between valleys; on a ZERO-TRUNK tile
-            // (heathland's 45% draw) this IS the macro
+            // (heathland's 45% draw) this IS the macro. `ridge_elong` > 1
+            // stretches the sampling frame along the grain axis, turning
+            // isotropic swells into gentle 600-1500 m RIDGES (U6: heathland
+            // is macro-only for now, and ridges are its macro form).
             let ramp = math::smoothstep(fhw + 40.0, fhw + 320.0, dmin);
+            let p_rel = if d.ridge_elong > 1.01 {
+                let (gc, gs) = (math::cos(t.fields.grain_axis_rad), math::sin(t.fields.grain_axis_rad));
+                let al = p.x * gc + p.y * gs;
+                let ac = -p.x * gs + p.y * gc;
+                let half = EXTENT_M * 0.5;
+                let alc = (al - half) / d.ridge_elong + half;
+                Vec2::new(alc * gc - ac * gs, alc * gs + ac * gc)
+            } else {
+                p
+            };
             z_env += W_INTERFLUVE
                 * d.relief_budget_m
-                * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5)
+                * (t.fields.relief_pred.bilinear(p_rel) * 0.5 + 0.5)
                 * ramp;
             let z = z_env;
 
@@ -293,58 +329,18 @@ pub fn build(
         }
     }
 
-    // ---- heathland kettles: closed depressions ARE the identity landform
-    // (literature 40-400 m diameter, 2-12 m deep), plus a hummock band so
-    // the ground between them reads kame-and-kettle rather than noise.
-    if d.kettle_count > 0 {
-        let s_hum = rng.next_u32();
-        for gy in 0..nn {
-            for gx in 0..nn {
-                let p = spec.world_of(gx as u32, gy as u32);
-                let hum = 0.14
-                    * d.relief_budget_m
-                    * (0.6 * noise::perlin2(p.x / 260.0, p.y / 260.0, s_hum)
-                        + 0.4 * noise::perlin2(p.x / 140.0, p.y / 140.0, s_hum.wrapping_add(9)));
-                let z = height.get(gx as u32, gy as u32) + hum;
-                height.set(gx as u32, gy as u32, z);
-            }
-        }
-        for _ in 0..d.kettle_count {
-            let cx = rng.range_f64(200.0, EXTENT_M - 200.0);
-            let cy = rng.range_f64(200.0, EXTENT_M - 200.0);
-            let c = Vec2::new(cx, cy);
-            // keep kettles off the trunk floor
-            if d_trunk.bilinear(c) < d.floor_hw_m + 60.0 {
-                continue;
-            }
-            let r = rng.range_f64(40.0, 190.0);
-            let depth = rng.range_f64(d.kettle_depth_m * 0.4, d.kettle_depth_m).max(1.0);
-            let (glo, ghi) = (
-                (((cx - r - 16.0) / RES_M).floor().max(0.0) as u32, ((cy - r - 16.0) / RES_M).floor().max(0.0) as u32),
-                (((cx + r + 16.0) / RES_M).ceil().min(nn as f64 - 1.0) as u32, ((cy + r + 16.0) / RES_M).ceil().min(nn as f64 - 1.0) as u32),
-            );
-            for gy in glo.1..=ghi.1 {
-                for gx in glo.0..=ghi.0 {
-                    let p = spec.world_of(gx, gy);
-                    let t = (p.distance(c) / r).min(1.0);
-                    // smooth bowl: deepest at centre, C1 rim
-                    let bowl = depth * (1.0 - math::smoothstep(0.0, 1.0, t));
-                    let z = height.get(gx, gy) - bowl;
-                    height.set(gx, gy, z);
-                }
-            }
-        }
-    }
-
     MacroSurface { height, d_trunk }
 }
 
-/// Sandhills: large parallel dune trains. Crests run along the template's
-/// grain axis, wobbling at kilometre scale; amplitude modulates ALONG the
-/// crest so ridges segment into barchanoid hummocks where it dips; the
-/// profile is asymmetric (gentle stoss, steeper lee) and interdune ground
-/// is broad and flat. Literature scale, golf-bounded relief
-/// (04-landform-literature).
+/// Sandhills: the TWO FORMS of the previous generator, ported as knowledge
+/// (course-primitives/src/generate.rs:165-290). A per-tile continuum scalar
+/// spans strongly-oriented dune TRAINS (two beating sinusoids at 1100-1500 m
+/// — two to three major ridges per tile — second component ×0.6 at λ×1.18
+/// rotated ~5°, sinuous crests) to weakly-oriented MOUND FIELDS (ten
+/// isotropic waves, λ log-uniform 1050-1550 m, variance-normalized). The
+/// corpus split the old version was fit to: ⅓ strong trains, ~40% mounds,
+/// the rest mixed. Relief golf-bounded; a slow cross-wind envelope waxes
+/// and wanes the field.
 pub fn build_aeolian(
     rng: &mut DetRng,
     t: &Template,
@@ -352,45 +348,67 @@ pub fn build_aeolian(
 ) -> MacroSurface {
     let n = (EXTENT_M / RES_M).round() as u32 + 1;
     let spec = GridSpec::new(Vec2::new(0.0, 0.0), RES_M, n, n);
-    let axis = t.fields.grain_axis_rad;
-    let (tx, ty) = (math::cos(axis), math::sin(axis));
-    let (nx_, ny_) = (-ty, tx);
-    let lam = d.dune_lam_m.max(400.0);
-    let amp = d.dune_relief_m * 0.5;
-    let s_wob = rng.next_u32();
-    let s_amp = rng.next_u32();
+    let tau = core::f64::consts::TAU;
+    let wind = t.fields.grain_axis_rad;
+    let (wnx, wny) = (math::cos(wind), math::sin(wind));
+    let (wcx, wcy) = (-wny, wnx);
+    let wind2 = wind + 0.09;
+    let (w2x, w2y) = (math::cos(wind2), math::sin(wind2));
+
+    // the continuum: ~1/3 trains, ~40% mounds, rest mixed
+    let u_cont = rng.next_f64();
+    let w_train = u_cont * u_cont * (3.0 - 2.0 * u_cont);
+
+    let lam = rng.range_f64(1100.0, 1500.0);
+    let ph1 = rng.range_f64(0.0, tau);
+    let ph2 = rng.range_f64(0.0, tau);
+    let ph_swing = rng.range_f64(0.0, tau);
+    let ph_env = rng.range_f64(0.0, tau);
+    let mut mounds: Vec<(f64, f64, f64, f64)> = Vec::with_capacity(10);
+    for _ in 0..10 {
+        let ml = 1050.0 * math::exp(rng.next_f64() * math::ln(1550.0 / 1050.0));
+        let dir = rng.range_f64(0.0, core::f64::consts::PI);
+        let ph = rng.range_f64(0.0, tau);
+        let a = 0.6 + 0.8 * rng.next_f64();
+        mounds.push((ml, dir, ph, a));
+    }
+    let mound_var: f64 = mounds.iter().map(|(_, _, _, a)| a * a * 0.5).sum();
+    let mound_norm = 1.0 / mound_var.sqrt().max(1e-9);
+    let train_norm = 1.0 / math::pow((1.0 + 0.36) * 0.5, 0.5);
+    let amp = d.dune_relief_m * 0.62;
     let s_base = rng.next_u32();
-    let phase0 = rng.range_f64(0.0, core::f64::consts::TAU);
 
     let mut height = Grid::filled(spec, 0.0);
     let d_trunk = Grid::filled(spec, f64::MAX);
     for gy in 0..n {
         for gx in 0..n {
             let p = spec.world_of(gx, gy);
-            let along = p.x * tx + p.y * ty;
-            let across = p.x * nx_ + p.y * ny_;
-            // crest wobble at km scale keeps ridges parallel but alive
-            let wob = 0.22 * lam * noise::perlin2(along / 1900.0, across / 2600.0, s_wob);
-            let ph = (across + wob) / lam * core::f64::consts::TAU + phase0;
-            // asymmetric profile: skewed sine (gentle stoss, steep lee)
-            let sk = math::sin(ph + 0.62 * math::cos(ph));
-            // dune body above broad flat interdune ground
-            let body = math::pow(sk.max(0.0), 1.9);
-            // amplitude modulates along-crest: ridges break into hummocks
-            let am: f64 = 0.55
-                + 0.45 * noise::perlin2(along / 1500.0, across / 3000.0, s_amp);
-            let base = 0.18
-                * d.relief_budget_m
-                * noise::perlin2(p.x / 900.0, p.y / 900.0, s_base);
-            height.set(gx, gy, amp * 2.0 * body * am.max(0.15) + base
-                + 0.15 * d.relief_budget_m * (t.fields.relief_pred.bilinear(p) * 0.5 + 0.5));
+            let u1 = p.x * wnx + p.y * wny;
+            let v = p.x * wcx + p.y * wcy;
+            let u2 = p.x * w2x + p.y * w2y;
+            let swing = 0.45 * math::sin(v / 1400.0 * tau + ph_swing);
+            let train = train_norm
+                * (math::sin(u1 / lam * tau + ph1 + swing)
+                    + 0.6 * math::sin(u2 / (lam * 1.18) * tau + ph2));
+            let mut mf = 0.0;
+            for (ml, dir, ph, a) in &mounds {
+                let m = p.x * math::cos(*dir) + p.y * math::sin(*dir);
+                mf += a * math::sin(m / ml * tau + ph);
+            }
+            mf *= mound_norm;
+            // no short envelope at macro — that was the MID-BAND recipe's
+            // trick, and here it chopped the trains into segments. The S1
+            // macro ran the beat + swing bare.
+            let _ = ph_env;
+            let field = w_train * train + (1.0 - w_train) * mf;
+            let base = 0.10 * d.relief_budget_m * noise::perlin2(p.x / 1100.0, p.y / 1100.0, s_base);
+            height.set(gx, gy, amp * field + base);
         }
     }
     MacroSurface { height, d_trunk }
 }
 
-/// Separable 5-tap Gaussian, `passes` iterations. Restores C1 to the
-/// projected distance field before profiles are applied to it.
+/// Separable 5-tap Gaussian, `passes` iterations.
 fn gauss(v: &mut [f64], nn: usize, passes: usize) {
     const K: [f64; 5] = [0.0625, 0.25, 0.375, 0.25, 0.0625];
     let mut tmp = vec![0.0f64; v.len()];
@@ -417,4 +435,3 @@ fn gauss(v: &mut [f64], nn: usize, passes: usize) {
         }
     }
 }
-

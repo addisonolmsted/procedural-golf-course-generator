@@ -77,7 +77,15 @@ mod tests {
                     .map(|t| t.pts[0])
                     .collect();
                 for tk in &trunks {
+                    // a joining trunk's first ~900 m is the CONFLUENCE
+                    // HANDOFF: its section fades in from the primary's, so
+                    // its independently-built bed is not yet authoritative
+                    // there (hydrology re-cuts the channel later)
+                    let skip_arc = if tk.joins.is_some() { 45 } else { 0 };
                     for (i, p) in tk.pts.iter().enumerate().step_by(8) {
+                        if i < skip_arc {
+                            continue;
+                        }
                         if junctions.iter().any(|j| j.distance(*p) < 400.0) {
                             continue;
                         }

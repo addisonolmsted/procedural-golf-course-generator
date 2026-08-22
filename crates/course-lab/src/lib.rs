@@ -272,8 +272,14 @@ pub fn render_terrain(c: &mut Canvas, g: &Grid<f64>, z_lo: f64, z_hi: f64) {
         for px in 0..c.px {
             let w = Vec2::new((px as f64 + 0.5) * s, c.extent_m - (py as f64 + 0.5) * s);
             let h = 8.0;
-            let dx = (g.bilinear(Vec2::new(w.x + h, w.y)) - g.bilinear(Vec2::new(w.x - h, w.y))) / (2.0 * h);
-            let dy = (g.bilinear(Vec2::new(w.x, w.y + h)) - g.bilinear(Vec2::new(w.x, w.y - h))) / (2.0 * h);
+            // z-exaggeration for the SHADING NORMALS only (standard tinted-
+            // hillshade practice): gentle landforms — dune trains at 4-7%
+            // slope, heath ridges — carry real form the eye cannot see at
+            // honest gain. The transect proved seed 201's dune trains were
+            // IN the surface while the render showed blobs.
+            const Z_EXAG: f64 = 2.4;
+            let dx = Z_EXAG * (g.bilinear(Vec2::new(w.x + h, w.y)) - g.bilinear(Vec2::new(w.x - h, w.y))) / (2.0 * h);
+            let dy = Z_EXAG * (g.bilinear(Vec2::new(w.x, w.y + h)) - g.bilinear(Vec2::new(w.x, w.y - h))) / (2.0 * h);
             let l = (dx * dx + dy * dy + 1.0).sqrt();
             let lam = ((-dx) * light[0] + (-dy) * light[1] + light[2]) / l;
             // SHADE dominates: full lambert range plus slope darkening

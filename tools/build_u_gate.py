@@ -8,8 +8,8 @@ NOTE={"piedmont":"rolling: one long gentle slope zone; interfluves from the reli
 "great_plains":"flat with edges: low caprock scarp, wide flat crown",
 "river_valley":"wide varying floor; per-side terrace program, arc-gated risers and treads",
 "hill_country":"bimodal: hardness-gated bluffs over widened floors; benches between",
-"heathland":"kame-and-kettle: hummock band + closed kettle depressions (2-12 m deep, 40-190 m radius)",
-"sandhills":"parallel dune trains along the grain axis: barchanoid segmentation, asymmetric profile, golf-bounded relief"}
+"heathland":"macro-only: high-wavelength relief with gentle ridges elongated along the grain (kettles deferred to texture)",
+"sandhills":"the two forms of the previous generator: sinuous mega-ridge TRAINS (2-3 per tile, beating pair) ⟷ flatter MOUND fields, one continuum draw per tile"}
 seeds=sorted({r["seed"] for r in stats})
 by={(r["arch"],r["seed"]):r for r in stats}
 def uri(p):
@@ -54,7 +54,7 @@ mechanism, closing the whole seam family including the inside-of-bend creases. E
 </header>
 {"".join(rows)}
 <p class="note"><strong>Open:</strong> rv treads still read soft at render scale (explorer-tunable); tint/shade
-balance iterates with your explorer verdicts. All six archetypes now render.</p>
+balance iterates with your explorer verdicts. Confluences now HAND OFF (a joining valley grows out of its primary over ~700 m); sandhills spans train and mound forms; heathland is macro-only. Shading normals carry 2.4× z-exaggeration so gentle landforms read.</p>
 </div>'''
 OUT.write_text(DOC)
 print("wrote", OUT, f"{OUT.stat().st_size/1e6:.1f} MB")
