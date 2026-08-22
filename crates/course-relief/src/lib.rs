@@ -111,6 +111,33 @@ mod tests {
     }
 
     #[test]
+    fn centerlines_are_smooth() {
+        // The user's own diagnostic, made permanent: walk every trunk
+        // centerline; no surface step over 1.2 m per 20 m point. The
+        // convergent-handoff bug printed 10.16 m here before the
+        // wrapped-section fix.
+        for seed in [2u64, 11, 23, 37, 58, 71, 90] {
+            for a in [Archetype::Piedmont, Archetype::GreatPlains,
+                      Archetype::RiverValley, Archetype::HillCountry] {
+                let id = RunIdentity::from_seed(seed);
+                let (_, trunks, ms, _) = build_macro(&id, Some(a));
+                for (ti, tk) in trunks.iter().enumerate() {
+                    let mut prev = ms.height.bilinear(tk.pts[0]);
+                    for (i, p) in tk.pts.iter().enumerate().skip(1) {
+                        let z = ms.height.bilinear(*p);
+                        assert!(
+                            (z - prev).abs() < 1.2,
+                            "{a} seed {seed} trunk {ti}: {:.2} m step at pt {i}",
+                            (z - prev).abs()
+                        );
+                        prev = z;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn zero_trunk_tiles_still_roll() {
         // heathland draws 0 trunks ~55% of the time; the macro must fall
         // back to the relief field, not a plane (measured: 0.0 m before).

@@ -263,6 +263,8 @@ pub fn build(
 
             let mut cands: [f64; 4] = [f64::MAX; 4];
             let mut raws: [f64; 4] = [0.0; 4];
+            let mut sws: [f64; 4] = [0.5; 4];
+            let mut zbase: [f64; 4] = [0.0; 4];
             let mut dmin = f64::MAX;
             for (ti, tf) in tfs.iter().enumerate() {
                 let dist = tf.dist[li];
@@ -270,6 +272,7 @@ pub fn build(
                     dmin = dist;
                 }
                 let sw = math::smoothstep(-140.0, 140.0, tf.lat[li]);
+                sws[ti.min(3)] = sw;
                 let raw = if sw < 0.02 {
                     programs[ti][0].rise(tf.arc[li], dist)
                 } else if sw > 0.98 {
@@ -279,6 +282,7 @@ pub fn build(
                         + programs[ti][1].rise(tf.arc[li], dist) * sw
                 };
                 raws[ti.min(3)] = raw;
+                zbase[ti.min(3)] = tf.zbed[li];
             }
             // CONFLUENCE HANDOFF (U5): a joining trunk's section FADES IN
             // with its own arc — at the junction it contributes nothing of
@@ -288,19 +292,77 @@ pub fn build(
             for ti in 0..tfs.len().min(4) {
                 if let (Some(pj), Some(sep)) = (tfs[ti].joins, seps[ti].as_ref()) {
                     if pj < 4 {
-                        // separation of the secondary's axis from the
-                        // primary's, at this arc position (pts are ~20 m)
-                        let idx = ((tfs[ti].arc[li] / 20.0) as usize).min(sep.len() - 1);
-                        let h = math::smoothstep(220.0, 620.0, sep[idx]);
-                        raws[ti] = raws[pj] * (1.0 - h) + raws[ti] * h;
+                        // interpolated lookup: the raw 20 m table quantized
+                        // h itself into small steps along the bed
+                        let x = (tfs[ti].arc[li] / 20.0).max(0.0);
+                        let i0 = (x as usize).min(sep.len() - 1);
+                        let i1 = (i0 + 1).min(sep.len() - 1);
+                        let sv = sep[i0] + (sep[i1] - sep[i0]) * (x - i0 as f64).clamp(0.0, 1.0);
+                        let h = math::smoothstep(220.0, 620.0, sv);
+                        if h < 0.999 {
+                            // Defer to the primary's SECTION SHAPE WRAPPED
+                            // AROUND THE SECONDARY'S AXIS: primary program,
+                            // primary arc, but the SECONDARY'S distance.
+                            // Deferring to raws[pj] at this position let the
+                            // primary's bluff contour print a 10 m step into
+                            // the secondary's bed where the centerline
+                            // crossed it (found by the centerline walk).
+                            // With the secondary's own distance, the target
+                            // along its bed is always floor. Side selection
+                            // uses the PRIMARY'S side weight: the secondary's
+                            // own lat field pivots around its endpoint at the
+                            // junction and its flip printed a 1.4 m step into
+                            // the primary's bed via the wrapped target.
+                            let sw = sws[pj];
+                            // Evaluate the wrapped section at the SOFT-MIN of
+                            // the two distances: floor along EITHER bed. The
+                            // secondary's own distance alone put wall shape
+                            // onto the primary's floor near the junction
+                            // (1-2 m bumps on the primary's centerline).
+                            let d_sec = tfs[ti].dist[li];
+                            let d_pri = tfs[pj].dist[li];
+                            let dk = 45.0;
+                            let dm = if (d_sec - d_pri).abs() > 300.0 {
+                                d_sec.min(d_pri)
+                            } else {
+                                -dk * (math::exp(-d_sec / dk)
+                                    + math::exp(-d_pri / dk))
+                                    .ln()
+                            };
+                            let d_sec = dm.max(0.0);
+                            let a_pri = tfs[pj].arc[li];
+                            let target = if sw < 0.02 {
+                                programs[pj][0].rise(a_pri, d_sec)
+                            } else if sw > 0.98 {
+                                programs[pj][1].rise(a_pri, d_sec)
+                            } else {
+                                programs[pj][0].rise(a_pri, d_sec) * (1.0 - sw)
+                                    + programs[pj][1].rise(a_pri, d_sec) * sw
+                            };
+                            raws[ti] = target * (1.0 - h) + raws[ti] * h;
+                            // The base level defers too: the secondary's
+                            // zbed pins at junction height near its mouth,
+                            // riding above the primary's falling bed.
+                            zbase[ti] =
+                                tfs[pj].zbed[li] * (1.0 - h) + zbase[ti] * h;
+                            // And the PRIMARY converges to the same shared
+                            // section: its wall (evaluated at its own
+                            // distance) was bleeding onto the secondary's
+                            // floor through the partition weights — the
+                            // junction carves that wall away. Both members
+                            // of the pair now present IDENTICAL candidates
+                            // at h=0, so the envelope cannot print either
+                            // one's wall into the other's bed.
+                            raws[pj] = target * (1.0 - h) + raws[pj] * h;
+                        }
                     }
                 }
             }
-            for (ti, tf) in tfs.iter().enumerate() {
+            for ti in 0..tfs.len() {
                 let k = cap_m.max(1.0);
                 let a = raws[ti.min(3)] / k;
                 let rise = k * a / (1.0 + a) * (1.0 + a / (1.0 + a));
-                cands[ti.min(3)] = tf.zbed[li] + rise;
+                cands[ti.min(3)] = zbase[ti.min(3)] + rise;
             }
             // DISTANCE-partition envelope (replaces the value-softmin).
             // Value-based weights let a far trunk's candidate contribute
@@ -375,7 +437,13 @@ pub fn build(
                     if dj > 320.0 {
                         continue;
                     }
-                    let w = 1.0 - math::smoothstep(120.0, 320.0, dj);
+
+                    // fade with junction distance AND with floor proximity —
+                    // a hard floor cutoff printed its own 1.4 m edge at the
+                    // floor margin; the blur weight must go to zero smoothly
+                    // both toward the floor and outward
+                    let w = (1.0 - math::smoothstep(120.0, 320.0, dj))
+                        * math::smoothstep(35.0, 130.0, *d_trunk.get(gx as u32, gy as u32));
                     let mut acc = 0.0;
                     for oy in -2i64..=2 {
                         for ox in -2i64..=2 {

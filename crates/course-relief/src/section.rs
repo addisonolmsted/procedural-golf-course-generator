@@ -61,8 +61,13 @@ impl SideProgram {
             let zr = rng.range_f64(z.rise_m.lo, z.rise_m.hi);
             let s_gate = rng.next_u32();
             let s_wmod = rng.next_u32();
-            // gate threshold: noise > (1 - gate_p) keeps ~gate_p of the arc
-            let thr = 1.0 - z.gate_p;
+            // PER-SIDE PREVALENCE draw: some seeds are nearly bluff-free,
+            // some carry long runs — review: "the entire valley edge is a
+            // bluff on nearly every seed" was gate_p acting uniformly.
+            let prevalence = 0.30 + 0.75 * rng.next_f64();
+            let thr = 1.0 - (z.gate_p * prevalence).min(0.95);
+            // scarps gate over LONG stretches; other zones vary faster
+            let gate_lam = if z.kind == ZoneKind::Scarp { 1700.0 } else { 900.0 };
             let mut g_st = Vec::with_capacity(n_st);
             let mut w_st = Vec::with_capacity(n_st);
             // running elevation guess for the hardness probe: half the
@@ -72,7 +77,7 @@ impl SideProgram {
             for si in 0..n_st {
                 let arc = si as f64 * STATION_M;
                 // smooth gate noise, ~900 m wavelength along the trunk
-                let nv = noise::perlin1(arc / 900.0, s_gate) * 0.5 + 0.5;
+                let nv = noise::perlin1(arc / gate_lam, s_gate) * 0.5 + 0.5;
                 let mut input = nv;
                 if z.hard_gate > 0.0 {
                     let p = pos_at(arc.min(total_arc));

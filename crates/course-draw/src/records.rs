@@ -161,7 +161,7 @@ const SEC_PLAINS: &[ZoneSpec] = &[
                 // the caprock edge
                 // corpus (zone_stats): plains risers 4.9/12.4/36.4 m -- the caprock
                 // edge is BIGGER than first guessed
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(30.0, 80.0), rise_m: Range::new(5.0, 15.0), gate_p: 0.75, hard_gate: 0.6 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(30.0, 80.0), rise_m: Range::new(5.0, 15.0), gate_p: 0.45, hard_gate: 0.6 },
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(250.0, 600.0), rise_m: Range::new(0.0, 1.0), gate_p: 1.0, hard_gate: 0.0 },
             ];
 const SEC_RV: &[ZoneSpec] = &[
@@ -182,16 +182,16 @@ const SEC_RV: &[ZoneSpec] = &[
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(250.0, 600.0), rise_m: Range::new(4.0, 10.0), gate_p: 0.8, hard_gate: 0.0 },
             ];
 const SEC_HC: &[ZoneSpec] = &[
-                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(150.0, 320.0), rise_m: Range::new(8.0, 18.0), gate_p: 1.0, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(150.0, 320.0), rise_m: Range::new(7.0, 15.0), gate_p: 1.0, hard_gate: 0.0 },
                 // the BLUFF: 45-deg-plus where the hard bed crops out
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 60.0), rise_m: Range::new(12.0, 26.0), gate_p: 0.8, hard_gate: 0.8 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 60.0), rise_m: Range::new(12.0, 26.0), gate_p: 0.5, hard_gate: 0.8 },
                 // corpus (zone_stats): real hc benches are 24/32/88 m and the
                 // land is 0% routable; ours are wider BY DESIGN (golf,
                 // 03 section 8) -- riser heights though match the measured
                 // 5.6/19.6/85.8 distribution
                 ZoneSpec { kind: ZoneKind::Bench, w_m: Range::new(130.0, 300.0), rise_m: Range::new(0.0, 2.0), gate_p: 0.8, hard_gate: 0.4 },
-                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 70.0), rise_m: Range::new(8.0, 20.0), gate_p: 0.6, hard_gate: 0.8 },
-                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(200.0, 450.0), rise_m: Range::new(8.0, 18.0), gate_p: 0.9, hard_gate: 0.0 },
+                ZoneSpec { kind: ZoneKind::Scarp, w_m: Range::new(25.0, 70.0), rise_m: Range::new(8.0, 20.0), gate_p: 0.35, hard_gate: 0.8 },
+                ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(200.0, 450.0), rise_m: Range::new(7.0, 15.0), gate_p: 0.9, hard_gate: 0.0 },
             ];
 const SEC_HEATH: &[ZoneSpec] = &[
                 ZoneSpec { kind: ZoneKind::Slope, w_m: Range::new(400.0, 900.0), rise_m: Range::new(2.0, 6.0), gate_p: 1.0, hard_gate: 0.0 },
