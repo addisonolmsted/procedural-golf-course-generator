@@ -59,7 +59,10 @@ pub struct TierParams {
     /// deterministically. Interpolated by the junction's arc position:
     /// (at the mouth, at the head).
     pub hold_m: (f64, f64),
-    /// Meander: swing (radians, scaled DOWN per the review) and wavelength.
+    /// Meander: swing (radians) and wavelength. Scaled down twice by
+    /// review: once at N2, again at T2 — the tier cut prints the path
+    /// directly into the surface, so planform wiggle becomes carved
+    /// gully wiggle at full amplitude.
     pub swing_rad: f64,
     pub lam_m: (f64, f64),
     /// A climber stops on coming this close to another channel.
@@ -84,7 +87,7 @@ pub fn tier2() -> TierParams {
         // straight uphill and live. 0.05 drawn lands ~9-13% measured.
         junc_tail_p: 0.10,
         hold_m: (500.0, 120.0),
-        swing_rad: 0.22,
+        swing_rad: 0.09,
         lam_m: (250.0, 550.0),
         claim_m: 180.0,
         min_len_m: 150.0,
