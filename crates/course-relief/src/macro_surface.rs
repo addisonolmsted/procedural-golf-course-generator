@@ -281,19 +281,24 @@ pub fn build(
                 let rise = k * a / (1.0 + a) * (1.0 + a / (1.0 + a));
                 cands[ti.min(3)] = tf.zbed[li] + rise;
             }
-            // Softmin envelope with an ADAPTIVE knee: 6 m read as two
-            // valleys stamped on top of each other at junctions (user
-            // report) — the col between candidates blended over only ~6 m.
-            // The knee grows with distance-to-trunk, so junction floors
-            // merge broadly while distinct far walls still cross cleanly.
-            let hard = cands.iter().cloned().fold(f64::MAX, f64::min);
-            let mut z_env = if hard == f64::MAX { 0.0 } else {
-                let k = 4.0 + 0.13 * dmin.min(700.0);
+            // DISTANCE-partition envelope (replaces the value-softmin).
+            // Value-based weights let a far trunk's candidate contribute
+            // wherever its HEIGHT was close — so trunk A's scarps printed
+            // creases across trunk B's valley walls (user report). Weights
+            // now depend only on each trunk's own distance field: a trunk
+            // that is not nearby CANNOT contribute structure, whatever its
+            // value. Each trunk owns its region; cols between valleys blend
+            // where the distances tie, over a band that widens with height
+            // up the walls.
+            let mut z_env = if tfs.is_empty() {
+                0.0
+            } else {
+                let k_d = 60.0 + 0.18 * dmin.min(900.0);
                 let mut num = 0.0;
                 let mut den = 0.0;
-                for c in cands.iter().take(tfs.len()) {
-                    let w = math::exp(-(c - hard) / k);
-                    num += c * w;
+                for (ti, tf) in tfs.iter().enumerate() {
+                    let w = math::exp(-(tf.dist[li] - dmin) / k_d);
+                    num += cands[ti.min(3)] * w;
                     den += w;
                 }
                 num / den.max(1e-12)
@@ -326,6 +331,41 @@ pub fn build(
 
             height.set(gx as u32, gy as u32, z);
             d_trunk.set(gx as u32, gy as u32, dmin);
+        }
+    }
+
+    // CONFLUENCE SPUR ROUNDING: the wedge between two arms upstream of a
+    // junction comes to a sharp point where the inner walls meet. A local
+    // blur within ~320 m of each junction rounds the tip; the rest of the
+    // tile is untouched. (User: acceptable if texture handles it — this is
+    // cheaper and the tip is a macro form.)
+    {
+        let junctions: Vec<Vec2> = trunks
+            .iter()
+            .filter(|t| t.joins.is_some())
+            .map(|t| t.pts[0])
+            .collect();
+        if !junctions.is_empty() {
+            let src: Vec<f64> = height.data.clone();
+            for gy in 2..nn - 2 {
+                for gx in 2..nn - 2 {
+                    let p = spec.world_of(gx as u32, gy as u32);
+                    let dj = junctions.iter().fold(f64::MAX, |m, j| m.min(j.distance(p)));
+                    if dj > 320.0 {
+                        continue;
+                    }
+                    let w = 1.0 - math::smoothstep(120.0, 320.0, dj);
+                    let mut acc = 0.0;
+                    for oy in -2i64..=2 {
+                        for ox in -2i64..=2 {
+                            acc += src[(gy as i64 + oy) as usize * nn + (gx as i64 + ox) as usize];
+                        }
+                    }
+                    let blurred = acc / 25.0;
+                    let z0 = src[gy * nn + gx];
+                    height.set(gx as u32, gy as u32, z0 * (1.0 - w) + blurred * w);
+                }
+            }
         }
     }
 
