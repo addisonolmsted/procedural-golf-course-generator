@@ -178,16 +178,16 @@ pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     }
 
     // --- A4: the dune bodies ------------------------------------------------
-    let nw = w.n_waves() as f64;
+    let ww = wave_weights(&w.ks);
     let mut raw = vec![0.0f64; spec.len()];
     for y in 0..ny {
         for x in 0..nx {
             // SYMMETRIC per wave -- the asymmetry is applied once, below.
             let mut a = 0.0;
             for i in 0..w.n_waves() {
-                a += profile(w.cycle(i, x, y), 0.5);
+                a += ww[i] * profile(w.cycle(i, x, y), 0.5);
             }
-            raw[spec.index(x, y)] = a / nw;
+            raw[spec.index(x, y)] = a;
         }
     }
     let (lo, hi) = pct(&raw, 0.05, 0.95);
@@ -214,15 +214,15 @@ pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     // floors between them are the ground a course is routed on. Ungated, this
     // tier would fill the valleys and take the archetype's routable ground
     // with it -- the corpus passes the golf proxy on those floors.
-    let nhw = hw.n_waves() as f64;
+    let hww = wave_weights(&hw.ks);
     let mut hraw = vec![0.0f64; spec.len()];
     for y in 0..ny {
         for x in 0..nx {
             let mut a = 0.0;
             for i in 0..hw.n_waves() {
-                a += profile(hw.cycle(i, x, y), 0.5);
+                a += hww[i] * profile(hw.cycle(i, x, y), 0.5);
             }
-            hraw[spec.index(x, y)] = a / nhw;
+            hraw[spec.index(x, y)] = a;
         }
     }
     let (hlo, hhi) = pct(&hraw, 0.05, 0.95);
@@ -279,6 +279,21 @@ pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     Surface { height: height2, datum, belts: belts_a, hummock_gate: gate_a }
 }
 
+/// Per-wave amplitude weights, proportional to wavelength.
+///
+/// BIGGER DUNES ARE TALLER. With equal amplitudes the short waves dominate
+/// visually, because a hillshade reads SLOPE and slope goes as amplitude times
+/// wavenumber: at a 0.35x wavelength a wave carries 2.9x the slope for the same
+/// height. Once `lambda_spread` gave the waves a 4.7x range of sizes, the
+/// shortest ones printed a regular corduroy over everything. Weighting by
+/// wavelength makes every wave contribute comparable SLOPE instead, which is
+/// both what the render needs and what dune geometry says.
+fn wave_weights(ks: &[f64]) -> Vec<f64> {
+    let w: Vec<f64> = ks.iter().map(|k| 1.0 / k.max(1e-9)).collect();
+    let s: f64 = w.iter().sum();
+    w.iter().map(|v| v / s.max(1e-9)).collect()
+}
+
 fn pct(v: &[f64], a: f64, b: f64) -> (f64, f64) {
     let mut s: Vec<f64> = v.iter().copied().filter(|z| z.is_finite()).collect();
     s.sort_by(|p, q| p.partial_cmp(q).unwrap());
@@ -305,10 +320,10 @@ mod tests {
         let d = draw::site(&id, Some(Mode::Aeolian), form);
         let mut r = rng::stream(&id, rng::WIND);
         let w = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad,
-                            d.wind_wander_m, d.kappa);
+                            d.wind_wander_m, d.kappa, 0.0);
         let mut hr = rng::stream(&id, rng::HUMMOCK);
         let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
-                             d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+                             d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
         let s = build(&w, &hw, &d);
         (d, s)
     }
@@ -413,10 +428,10 @@ mod tests {
             let d = draw::site(&id, Some(Mode::Aeolian), Some(crate::FormClass::Train));
             let mut r = rng::stream(&id, rng::WIND);
             let f = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad,
-                                d.wind_wander_m, d.kappa);
+                                d.wind_wander_m, d.kappa, 0.0);
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
-                                 d.wind_wander_m * 0.45, d.hummock_kappa);
+                                 d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
             let mut off = d;
             off.hummock_relief_m = 0.0;
             let a = build(&f, &hw, &off);

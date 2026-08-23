@@ -28,10 +28,10 @@ fn main() {
             let d = draw::site(&id, Some(Mode::Aeolian), Some(form));
             let mut r = rng::stream(&id, rng::WIND);
             let w = wind::build(&mut r, d.wind_rad, d.wavelength_m,
-                                d.wind_wander_rad, d.wind_wander_m, d.kappa);
+                                d.wind_wander_rad, d.wind_wander_m, d.kappa, 0.0);
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
-                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
             let sf = surface::build(&w, &hw, &d);
             let (stoss, lee) = surface::derived_angles(&d);
             gridio::write_grid_f32(&out.join(format!("{tag}_{seed}.cgrid")), &sf.height).unwrap();

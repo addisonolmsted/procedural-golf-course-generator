@@ -16,10 +16,10 @@ fn main() {
             let d = draw::site(&id, Some(Mode::Aeolian), Some(FormClass::Train));
             let mut r = rng::stream(&id, rng::WIND);
             let f = wind::build(&mut r, d.wind_rad, d.wavelength_m,
-                                d.wind_wander_rad, d.wind_wander_m, kap);
+                                d.wind_wander_rad, d.wind_wander_m, kap, 0.0);
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
-                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
             let sf = surface::build(&f, &hw, &d);
             gridio::write_grid_f32(
                 &out.join(format!("k{:05.0}_{seed}.cgrid", kap * 100.0)), &sf.height).unwrap();

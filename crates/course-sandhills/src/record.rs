@@ -123,7 +123,19 @@ pub struct FormSpec {
     // it -- orientation order, dominant wavelength and band relief all
     // measure 400-1600 m.
     /// Individual dune spacing, metres.
+    ///
+    /// Set from a DUNE INVENTORY, not from band energy. Counting summits on
+    /// the band-passed field and segmenting one basin per summit gives real
+    /// sandhills 14.3 dunes/km2, 149 m between nearest summits and a 174 m
+    /// median diameter. The spectral centroid had reported our spacing 10%
+    /// high when the counted separation was 59% high (237 m against 149) --
+    /// a power-weighted mean over a 64-400 m band cannot see feature size.
     pub hummock_lambda_m: Range,
+    /// Spread of individual dune SIZES, as a fraction of the wavelength.
+    /// Nonzero for two reasons: real dune fields carry a range of sizes, and
+    /// waves sharing one wavenumber interfere into a fixed beat that reads as
+    /// a crosshatch wherever the megaform is not there to mask it.
+    pub hummock_spread: Range,
     /// Individual dune height, metres — peak to trough.
     pub hummock_relief_m: Range,
     /// Directional concentration of the hummock field. Lower than the
@@ -217,8 +229,14 @@ pub const SANDHILLS: Record = Record {
         // hummock dials are the same for both classes -- individual dunes do
         // not care whether the belt under them is a train or a mound field.
         // The form class distinguishes the BELTS, not the dunes on them.
-        hummock_lambda_m: Range::new(190.0, 290.0), // corpus: lambda p50 216-228
-        hummock_relief_m: Range::new(12.0, 21.0),   // 16-seed sweep -> band relief ~11
+        hummock_lambda_m: Range::new(160.0, 230.0), // inventory: nn 149 m, diam 174
+        // Wide, because real footprints OVERLAP -- summits sit 149 m apart
+        // with a 174 m median diameter, so a big dune laps over its smaller
+        // neighbours. A single wavelength cannot do that at any scale.
+        hummock_spread: Range::new(0.50, 0.80),
+        // Scaled WITH lambda: slope goes as relief/lambda, and shrinking
+        // lambda alone took the golf proxy from 20/24 to 3/20.
+        hummock_relief_m: Range::new(8.0, 14.0),
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
         hummock_floor: Range::new(0.30, 0.50),      // corpus: floors run ~0.5x belt
@@ -249,8 +267,9 @@ pub const SANDHILLS: Record = Record {
         // COMPOUND: a mound belt is itself built from spread waves, so
         // hummocks at the train's kappa inherited that disorder on top of
         // their own and measured A 0.127 against a 0.291 target.
-        hummock_lambda_m: Range::new(190.0, 290.0),
-        hummock_relief_m: Range::new(11.0, 19.0),
+        hummock_lambda_m: Range::new(160.0, 230.0),
+        hummock_spread: Range::new(0.50, 0.80),
+        hummock_relief_m: Range::new(7.5, 13.0),
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
         hummock_floor: Range::new(0.30, 0.50),
@@ -296,6 +315,7 @@ mod tests {
                 ("stoss_share", g.stoss_share),
                 ("blowout_km2", g.blowout_km2),
                 ("hummock_lambda_m", g.hummock_lambda_m),
+                ("hummock_spread", g.hummock_spread),
                 ("hummock_relief_m", g.hummock_relief_m),
                 ("hummock_kappa", g.hummock_kappa),
                 ("hummock_gate", g.hummock_gate),

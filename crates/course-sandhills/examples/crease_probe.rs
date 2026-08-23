@@ -12,10 +12,10 @@ fn main() {
             let d = draw::site(&id, Some(Mode::Aeolian), Some(form));
             let mut r = rng::stream(&id, rng::WIND);
             let f = wind::build(&mut r, d.wind_rad, d.wavelength_m,
-                                d.wind_wander_rad, d.wind_wander_m, d.kappa);
+                                d.wind_wander_rad, d.wind_wander_m, d.kappa, 0.0);
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
-                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
             println!("{seed:>6} {tag:>6} {:>7.2} {:>7.3} {:>7.2} {:>7.0} {:>7.0} {:>7.1} {:>7.2}",
                      d.kappa, f.spread_rad, d.wind_wander_rad, d.wind_wander_m,
                      d.wavelength_m, d.dune_relief_m, d.stoss_share);

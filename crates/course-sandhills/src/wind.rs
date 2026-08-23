@@ -76,6 +76,8 @@ pub struct WindField {
     /// The drawn wave directions (unit). Each wave carries `|k| = TAU/lambda`
     /// along its own axis.
     pub dirs: Vec<Vec2>,
+    /// Per-wave wavenumber — spread, not shared. See `lambda_spread`.
+    pub ks: Vec<f64>,
     /// Magnitude of the CURL part of the target gradient field, in units of
     /// the base wavenumber. This is the defect budget: at zero the pattern is
     /// a wallpaper and no defect can exist; near and above 1 the level sets
@@ -178,7 +180,8 @@ fn von_mises(rng: &mut DetRng, mu: f64, kappa: f64) -> f64 {
 /// other). Here they are independent by construction: `wander_rad` sets the
 /// disorder, `lambda_m` sets the spacing.
 pub fn build(rng: &mut DetRng, wind_rad: f64, lambda_m: f64,
-             wander_rad: f64, wander_m: f64, kappa: f64) -> WindField {
+             wander_rad: f64, wander_m: f64, kappa: f64,
+             lambda_spread: f64) -> WindField {
     let spec = macro_spec();
     let (nx, ny) = (spec.nx, spec.ny);
     let k = std::f64::consts::TAU / lambda_m;
@@ -234,11 +237,21 @@ pub fn build(rng: &mut DetRng, wind_rad: f64, lambda_m: f64,
     // makes this one construction instead of two.
     let phi0 = rng.range_f64(0.0, std::f64::consts::TAU);
     let mut waves_dir = [Vec2::ZERO; N_WAVES];
+    let mut waves_k = [0.0f64; N_WAVES];
     let mut sum = Vec2::ZERO;
-    for w in waves_dir.iter_mut() {
+    for i in 0..N_WAVES {
         let th = von_mises(rng, wind_rad, kappa);
-        *w = Vec2::new(math::cos(th), math::sin(th));
-        sum = sum + *w;
+        waves_dir[i] = Vec2::new(math::cos(th), math::sin(th));
+        // WAVELENGTH SPREAD. Eight waves sharing one |k| is the recipe for
+        // coherent interference -- a fixed beat pattern, which on the belts is
+        // masked by the megaform relief and on the flat interdune floors is
+        // naked, and reads as a crosshatch. Real dune fields carry a RANGE of
+        // dune sizes, so spreading |k| both kills the beat and gives the size
+        // variety a single wavelength cannot.
+        let j = if N_WAVES > 1 { i as f64 / (N_WAVES - 1) as f64 } else { 0.5 };
+        let f = 1.0 + lambda_spread * (2.0 * j - 1.0) * rng.range_f64(0.55, 1.0);
+        waves_k[i] = k / f.max(0.25);
+        sum = sum + waves_dir[i];
     }
     // Circular standard deviation of what was actually drawn.
     let rbar = (sum.length() / N_WAVES as f64).clamp(1e-9, 1.0);
@@ -261,22 +274,24 @@ pub fn build(rng: &mut DetRng, wind_rad: f64, lambda_m: f64,
             }
             dir.set(x, y, wind_rad + dtheta);
             for (wi, wd) in waves_dir.iter().enumerate() {
-                // Each wave bends with the SAME wind, about its own axis.
+                // Each wave bends with the SAME wind, about its own axis, and
+                // carries its OWN wavenumber.
+                let kw = waves_k[wi];
                 let wp = wd.perp();
                 let mut psi = 0.0;
                 for (mi, m) in modes.iter().enumerate() {
                     let qm = m.q.length();
                     if qm > 0.0 {
                         let qh = Vec2::new(m.q.x / qm, m.q.y / qm);
-                        psi += -(m.a * k * wp.dot(qh)) / qm * cosarg[mi];
+                        psi += -(m.a * kw * wp.dot(qh)) / qm * cosarg[mi];
                     }
                 }
-                waves[wi].set(x, y, k * (p.x * wd.x + p.y * wd.y) + psi + phi0);
+                waves[wi].set(x, y, kw * (p.x * wd.x + p.y * wd.y) + psi + phi0);
             }
         }
     }
 
-    WindField { dir, waves, lambda_m, spread_rad, dirs: waves_dir.to_vec(), curl_mag }
+    WindField { dir, waves, lambda_m, spread_rad, dirs: waves_dir.to_vec(), ks: waves_k.to_vec(), curl_mag }
 }
 
 #[cfg(test)]
@@ -292,8 +307,8 @@ mod tests {
 
     #[test]
     fn deterministic() {
-        let a = build(&mut rng(1), 0.7, 1300.0, 0.3, 2400.0, TRAIN_K);
-        let b = build(&mut rng(1), 0.7, 1300.0, 0.3, 2400.0, TRAIN_K);
+        let a = build(&mut rng(1), 0.7, 1300.0, 0.3, 2400.0, TRAIN_K, 0.0);
+        let b = build(&mut rng(1), 0.7, 1300.0, 0.3, 2400.0, TRAIN_K, 0.0);
         assert_eq!(a.n_waves(), b.n_waves());
         for i in 0..a.n_waves() {
             assert_eq!(a.waves[i].data, b.waves[i].data);
@@ -305,7 +320,7 @@ mod tests {
         // Spacing is true BY CONSTRUCTION, not by tuning: every wave carries
         // |k| = TAU/lambda regardless of which way it points, so neither the
         // wander nor the concentration can move it.
-        let f = build(&mut rng(3), 0.0, 1200.0, 0.0, 2000.0, MOUND_K);
+        let f = build(&mut rng(3), 0.0, 1200.0, 0.0, 2000.0, MOUND_K, 0.0);
         let spec = macro_spec();
         for i in 0..f.n_waves() {
             let mut gmax: f64 = 0.0;
@@ -327,7 +342,7 @@ mod tests {
         // Documents what the wander exists to prevent. With no wander every
         // wave has an exactly constant gradient, so its crests are straight
         // parallel lines and no defect can exist at any amplitude.
-        let f = build(&mut rng(5), 0.4, 1300.0, 0.0, 2000.0, TRAIN_K);
+        let f = build(&mut rng(5), 0.4, 1300.0, 0.0, 2000.0, TRAIN_K, 0.0);
         let spec = macro_spec();
         let mut g = Vec::new();
         for y in (2..spec.ny - 2).step_by(17) {
@@ -345,9 +360,9 @@ mod tests {
         // curl_mag is the defect budget, and it must SCALE with the dial --
         // the property its first (ratio) version lacked, which read a constant
         // 0.703 across an entire ladder.
-        assert_eq!(build(&mut rng(21), 0.5, 1300.0, 0.0, 2400.0, TRAIN_K).curl_mag, 0.0);
-        let a = build(&mut rng(21), 0.5, 1300.0, 0.30, 2400.0, TRAIN_K).curl_mag;
-        let b = build(&mut rng(21), 0.5, 1300.0, 0.90, 2400.0, TRAIN_K).curl_mag;
+        assert_eq!(build(&mut rng(21), 0.5, 1300.0, 0.0, 2400.0, TRAIN_K, 0.0).curl_mag, 0.0);
+        let a = build(&mut rng(21), 0.5, 1300.0, 0.30, 2400.0, TRAIN_K, 0.0).curl_mag;
+        let b = build(&mut rng(21), 0.5, 1300.0, 0.90, 2400.0, TRAIN_K, 0.0).curl_mag;
         assert!(b > a * 2.5, "curl_mag did not scale with wander ({a:.3} -> {b:.3})");
     }
 
@@ -358,8 +373,8 @@ mod tests {
         let mut tr = Vec::new();
         let mut mo = Vec::new();
         for s in 0..24u64 {
-            tr.push(build(&mut rng(s), 0.6, 1300.0, 0.3, 2400.0, TRAIN_K).spread_rad);
-            mo.push(build(&mut rng(s), 0.6, 1300.0, 0.3, 2400.0, MOUND_K).spread_rad);
+            tr.push(build(&mut rng(s), 0.6, 1300.0, 0.3, 2400.0, TRAIN_K, 0.0).spread_rad);
+            mo.push(build(&mut rng(s), 0.6, 1300.0, 0.3, 2400.0, MOUND_K, 0.0).spread_rad);
         }
         let med = |v: &mut Vec<f64>| {
             v.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -379,7 +394,7 @@ mod tests {
         let spec = macro_spec();
         let k = std::f64::consts::TAU / 1300.0;
         for (w, kap) in [(0.0, 20.0), (0.8, 20.0), (0.0, 0.4), (0.8, 0.4), (1.4, 0.15)] {
-            let f = build(&mut rng(23), 0.0, 1300.0, w, 2400.0, kap);
+            let f = build(&mut rng(23), 0.0, 1300.0, w, 2400.0, kap, 0.0);
             for i in 0..f.n_waves() {
                 // Project onto the wave's OWN axis. The mean of |grad| is
                 // biased high whenever the gradient direction fluctuates
@@ -417,7 +432,7 @@ mod tests {
         // DIRECTIONS, which is the actual claim -- an earlier version compared
         // mean cycle values over sparse samples and was measuring its own
         // sampling noise.
-        let f = build(&mut rng(31), 0.9, 1300.0, 0.25, 2400.0, 400.0);
+        let f = build(&mut rng(31), 0.9, 1300.0, 0.25, 2400.0, 400.0, 0.0);
         assert!(f.spread_rad < 0.12, "spread {:.4} at kappa 400", f.spread_rad);
         let mut worst: f64 = 0.0;
         for a in &f.dirs {
@@ -428,7 +443,7 @@ mod tests {
         assert!(worst < 0.30,
                 "widest angle between waves {worst:.3} rad at kappa 400 -- not one axis");
         // And the opposite end must genuinely spread.
-        let lo = build(&mut rng(31), 0.9, 1300.0, 0.25, 2400.0, 0.2);
+        let lo = build(&mut rng(31), 0.9, 1300.0, 0.25, 2400.0, 0.2, 0.0);
         assert!(lo.spread_rad > f.spread_rad * 4.0,
                 "low concentration did not disperse ({:.3} vs {:.3})", lo.spread_rad, f.spread_rad);
     }
@@ -443,7 +458,7 @@ mod tests {
             let d = crate::draw::site(&RunIdentity::from_seed(seed),
                                       Some(crate::Mode::Aeolian), None);
             let f = build(&mut rng(seed), d.wind_rad, d.wavelength_m,
-                          d.wind_wander_rad, d.wind_wander_m, d.kappa);
+                          d.wind_wander_rad, d.wind_wander_m, d.kappa, 0.0);
             let spec = macro_spec();
             let mut v = Vec::new();
             for y in (0..spec.ny).step_by(7) {
@@ -491,7 +506,7 @@ mod tests {
 
     #[test]
     fn cycle_is_a_unit_interval() {
-        let f = build(&mut rng(13), 0.9, 1250.0, 0.3, 2200.0, MOUND_K);
+        let f = build(&mut rng(13), 0.9, 1250.0, 0.3, 2200.0, MOUND_K, 0.0);
         let spec = macro_spec();
         for i in 0..f.n_waves() {
             for y in (0..spec.ny).step_by(31) {

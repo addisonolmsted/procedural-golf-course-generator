@@ -16,10 +16,10 @@ fn tile(seed: u64, form: FormClass, kappa: Option<f64>, wander: Option<f64>, hum
     let kap = kappa.unwrap_or(d.kappa);
     let wan = wander.unwrap_or(d.wind_wander_rad);
     let mut r = rng::stream(&id, rng::WIND);
-    let f = wind::build(&mut r, d.wind_rad, d.wavelength_m, wan, d.wind_wander_m, kap);
+    let f = wind::build(&mut r, d.wind_rad, d.wavelength_m, wan, d.wind_wander_m, kap, 0.0);
     let mut hr = rng::stream(&id, rng::HUMMOCK);
     let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
-                         wan, d.wind_wander_m * 0.45, d.hummock_kappa);
+                         wan, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
     let mut dd = d;
     if !hummocks {
         dd.hummock_relief_m = 0.0;

@@ -538,3 +538,65 @@ the dial 0.0 / 0.5 / 0.9 and reading the gate grid found it in one run —
 identical output at all three settings. **A dial that is measured only through
 its downstream effect can be dead without looking dead**; sweep it and read the
 field it writes.
+
+---
+
+## 13. A better texture instrument: count the dunes
+
+Reviewer: the real dunes look smaller than ours, and the valley texture brought
+the crosshatch back. Both were right, and the first was invisible to every
+instrument in use.
+
+**Band RMS measures energy in a wavelength band, not feature size.** A few large
+dunes and many small ones can score identically. `λ_dom` is worse for this — a
+power-weighted centroid over a 64–400 m band, which saturates.
+
+**`dune_inventory`** band-passes to dune scale, finds summits, and segments one
+watershed basin per summit. It reports dunes/km², nearest-summit separation,
+median footprint and median diameter — none of which a spectral statistic can.
+
+| | dunes/km² | nn sep | diameter | footprint | prominence |
+|---|---:|---:|---:|---:|---:|
+| **REAL** (n=20) | **14.3** | **149 m** | **174 m** | **2.38 ha** | **4.80 m** |
+| before | 11.6 | 237 m | 211 m | 3.50 ha | 5.36 m |
+
+**The spectral measure reported the spacing 10 % high when the counted
+separation was 59 % high** (237 m against 149). That is the size of the blind
+spot, and it is why the reviewer's eye beat the battery.
+
+### Three rounds, each caught by a render
+
+**Round 1 — shrink λ.** Nearest-neighbour landed (139 vs 149) but dunes came out
+too small and too many, and **the golf proxy collapsed to 3/20**, below real
+sandhills' own 23 %. Slope goes as relief/λ, so shrinking λ at constant relief
+made everything 1.6× steeper. Relief must scale WITH λ.
+
+**Round 2 — scale both, and spread the wavelengths.** Waves sharing one
+wavenumber interfere into a fixed beat; on the belts the megaform masks it, on
+the flat floors it is naked — which is exactly why adding floor texture brought
+the crosshatch back. A per-wave `lambda_spread` kills the beat and gives the
+size variety a single wavelength cannot. Sizes landed (nn 154, diam 165,
+footprint 2.14) — and the render came back as **regular parallel corduroy**.
+
+**Round 3 — weight waves by wavelength.** A hillshade reads SLOPE, and slope
+goes as amplitude × wavenumber, so at 0.35× the wavelength a wave carries 2.9×
+the slope for the same height. With equal amplitudes the shortest waves printed
+corduroy over everything. Weighting amplitude by wavelength makes every wave
+contribute comparable slope — which is also what dune geometry says, since
+bigger dunes are taller.
+
+### Shipped
+
+| | dunes/km² | nn sep | diameter | footprint | prominence | proxy |
+|---|---:|---:|---:|---:|---:|---:|
+| REAL | 14.3 | 149 m | 174 m | 2.38 ha | 4.80 m | *23 % of tiles* |
+| train | **13.8** | 183 m | 192 m | 2.89 ha | 3.85 m | 20/20 |
+| mound | 12.9 | 184 m | 197 m | 3.06 ha | 3.78 m | 19/20 |
+
+Dune count is within 4 %. **Tracked residuals:** separation runs ~23 % wide and
+prominence ~20 % shallow — the wavelength weighting pushed sizes back up as it
+removed the corduroy, and closing prominence trades directly against the proxy,
+which round 1 showed is a cliff and not a slope.
+
+**`dune_inventory` is now the texture instrument**; band RMS stays as a
+cross-check. Any future claim about dune size is measured by counting.
