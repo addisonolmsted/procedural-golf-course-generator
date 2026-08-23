@@ -23,7 +23,7 @@ fn main() {
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
                                  d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
-            let sf = surface::build(&f, &hw, &d);
+            let sf = surface::build(&mut rng::stream(&id, rng::PATCHY), &f, &hw, &d);
             gridio::write_grid_f32(&out.join(format!("{tag}_{seed}.cgrid")), &sf.height).unwrap();
         }
     }

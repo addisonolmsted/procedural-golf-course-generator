@@ -11,7 +11,7 @@ fn main() {
         let mut hr = rng::stream(&id, rng::HUMMOCK);
         let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
                              d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
-        let sf = surface::build(&f, &hw, &d);
+        let sf = surface::build(&mut rng::stream(&id, rng::PATCHY), &f, &hw, &d);
         let g = &sf.hummock_gate;
         let mut v: Vec<f64> = g.data.clone();
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());

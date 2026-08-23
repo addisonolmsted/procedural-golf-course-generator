@@ -7,7 +7,7 @@ fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let out = std::path::Path::new(&a[0]);
     std::fs::create_dir_all(out).unwrap();
-    let pack = texture::PatchPack::load(std::path::Path::new("assets/sandhills_patches.bin"))
+    let pack = texture::PatchPack::load(std::path::Path::new("assets/sandhills_patches_aeolian.bin"))
         .expect("assets/sandhills_patches.bin (build_patchpack.py)");
     println!("pack: {}x{} patches", pack.patch, pack.patch);
     for s in &a[1..] {
@@ -21,7 +21,7 @@ fn main() {
             let mut hr = rng::stream(&id, rng::HUMMOCK);
             let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
                                  d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
-            let sf = surface::build(&f, &hw, &d);
+            let sf = surface::build(&mut rng::stream(&id, rng::PATCHY), &f, &hw, &d);
             let mut tr = rng::stream(&id, rng::TEXTURE);
             let tex = texture::quilt(&mut tr, &pack, &sf.height, &d);
             gridio::write_grid_f32(&out.join(format!("{tag}_{seed}.cgrid")), &tex).unwrap();

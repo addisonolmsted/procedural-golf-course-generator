@@ -30,6 +30,7 @@
 //! at their own much shorter scale. `derived_angles` reports the macro
 //! numbers so a drift is visible.
 
+use course_seed::DetRng;
 use course_world::grid::Grid;
 use course_world::math::{self, Vec2};
 
@@ -158,7 +159,30 @@ pub fn derived_angles(d: &Descriptors) -> (f64, f64) {
     )
 }
 
-pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
+/// Coherent sand-supply field in `[0, 1]`. Where it is low the belt fades to
+/// the interdune floor, which is what makes belts terminate and fray.
+fn supply(rng: &mut DetRng, spec: course_world::grid::GridSpec,
+          patchiness: f64, corr_m: f64) -> Vec<f64> {
+    let s = rng.next_u32();
+    let mut v = vec![0.0f64; spec.len()];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let p = spec.world_of(x, y);
+            // Two octaves: the long one carves whole pods, the short one
+            // roughens the edge of each.
+            let n = 0.72 * course_world::noise::perlin2(p.x / corr_m, p.y / corr_m, s)
+                + 0.28 * course_world::noise::perlin2(p.x / (corr_m * 0.38),
+                                                      p.y / (corr_m * 0.38), s ^ 0x9E37);
+            // Threshold with a soft knee. `patchiness` moves the threshold up,
+            // so more of the tile falls below it and more belt is erased.
+            let t = math::smoothstep(-0.30 + 0.55 * patchiness, 0.28, n);
+            v[spec.index(x, y)] = 1.0 - patchiness + patchiness * t;
+        }
+    }
+    v
+}
+
+pub fn build(rng: &mut DetRng, w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     let spec = macro_spec();
     let (nx, ny) = (spec.nx, spec.ny);
 
@@ -190,6 +214,13 @@ pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
             raw[spec.index(x, y)] = a;
         }
     }
+    // --- sand supply: belts do not exist everywhere ------------------------
+    let sup = supply(rng, spec, d.belt_patchiness, d.belt_patch_m);
+    let base = pct(&raw, 0.02, 0.98).0;
+    for i in 0..raw.len() {
+        raw[i] = base + (raw[i] - base) * sup[i];
+    }
+
     let (lo, hi) = pct(&raw, 0.05, 0.95);
     let span = (hi - lo).max(1e-9);
 
@@ -324,7 +355,8 @@ mod tests {
         let mut hr = rng::stream(&id, rng::HUMMOCK);
         let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
                              d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
-        let s = build(&w, &hw, &d);
+        let mut br = rng::stream(&id, rng::PATCHY);
+        let s = build(&mut br, &w, &hw, &d);
         (d, s)
     }
 
@@ -434,8 +466,10 @@ mod tests {
                                  d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
             let mut off = d;
             off.hummock_relief_m = 0.0;
-            let a = build(&f, &hw, &off);
-            let b = build(&f, &hw, &d);
+            let mut br = rng::stream(&id, rng::PATCHY);
+            let a = build(&mut br, &f, &hw, &off);
+            let mut br2 = rng::stream(&id, rng::PATCHY);
+            let b = build(&mut br2, &f, &hw, &d);
             let rough = |g: &Grid<f64>| {
                 // short-scale energy: rms of the 3x3 Laplacian
                 let sp = g.spec;

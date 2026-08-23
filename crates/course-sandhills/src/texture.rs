@@ -249,9 +249,9 @@ mod tests {
     use course_seed::RunIdentity;
 
     fn pack() -> Option<PatchPack> {
-        PatchPack::load(std::path::Path::new("../../assets/sandhills_patches.bin"))
+        PatchPack::load(std::path::Path::new("../../assets/sandhills_patches_aeolian.bin"))
             .ok()
-            .or_else(|| PatchPack::load(std::path::Path::new("assets/sandhills_patches.bin")).ok())
+            .or_else(|| PatchPack::load(std::path::Path::new("assets/sandhills_patches_aeolian.bin")).ok())
     }
 
     fn build(seed: u64) -> Option<(Grid<f64>, Grid<f64>, Descriptors)> {
@@ -264,7 +264,8 @@ mod tests {
         let mut hr = rng::stream(&id, rng::HUMMOCK);
         let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
                              d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
-        let sf = surface::build(&f, &hw, &d);
+        let mut br = rng::stream(&id, rng::PATCHY);
+        let sf = surface::build(&mut br, &f, &hw, &d);
         let mut tr = rng::stream(&id, rng::TEXTURE);
         let tex = quilt(&mut tr, &p, &sf.height, &d);
         Some((sf.height, tex, d))

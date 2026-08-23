@@ -718,3 +718,60 @@ up where it was always going to.
 (`docs/biomes/sandhills.md` open question 2). The megaform brink is rounded by
 design, so the sharp break belongs to the hummock tier, and the test for it
 belongs with A5 when blowout walls give a second sharp feature to check.
+
+---
+
+## 16. Belts do not exist everywhere
+
+Reviewer, on the textured sheet: the texture reads well and a few gouges are
+acceptable since real ground has them too — but at macro scale our **trains are
+too regular**, running on with smooth edges where real belts have organic edges
+and terminate at different points; and the **mound fields read as wavy**, which
+no reference tile shows.
+
+Both are one cause, and it is the same one the hummock tier had to solve a scale
+down: **a superposition of smooth waves has smooth level sets**, which run right
+across the tile. Belts built that way never terminate and never fray, and at low
+concentration the same field reads as an undulating wave rather than as discrete
+mounds.
+
+**The metric missed it, again.** Belt-segment statistics put our trains only 33 %
+longer than real (2006 m against 1512) with an edge-raggedness ratio identical to
+real's. The eye was right and the statistic was not — the third time this has
+happened, after the dune-size blind spot and the `fine/band` gap.
+
+**The fix is physical.** Real dune fields sit on a varying sand supply; where it
+thins the belt fades to the interdune floor. `belt_patchiness` modulates the
+megaform by a coherent two-octave supply field — the long octave carves whole
+pods, the short one roughens each pod's edge. Terminations and ragged edges from
+one mechanism, at both form classes, and it breaks the mound waviness because
+the wave field is no longer continuous.
+
+| | segs/km² | belt length p50 | fine/band |
+|---|---:|---:|---:|
+| REAL train | 0.44 | 1512 m | 0.340 |
+| **gen train** | **0.50** | **1339 m** | **0.333** |
+| REAL mound | 0.67 | 914 m | 0.364 |
+| **gen mound** | **0.55** | **990 m** | **0.370** |
+
+Everything inside ~15 %, and `fine/band` within 2 %.
+
+### Two texture corrections from the same review
+
+**The packs are split per mode.** The plan said "Nebraska tiles for the aeolian
+mode, the new Carolina tiles for the fluvial mode" and the first build pooled
+them, putting Carolina blackwater-creek gullies into the aeolian pack. A dune
+flank and a creek bank are different fabrics at the same slope, TPI and aspect,
+because what separates them is the process and not the local geometry.
+
+**Patches are cut in the metric's own band.** They had been cut from
+`extract_v2`'s `fine`, a half-amplitude Gaussian split reading 1.68× weaker than
+the `fine/band` metric, so hitting the metric needed `texture_gain` 2.8 — which
+does not scale a statistic, it makes every real blowout 2.8× deeper, and the
+renders came back gouged. Cutting in the metric's band puts the gain at 1.10–1.35,
+covering only the variance lost to overlap-adding uncorrelated patches.
+
+**Accepted residual:** some gouging remains, and the reviewer has accepted it as
+within what real ground shows. The leading explanation is a real blowout cut at a
+patch edge and pasted against unrelated ground; overlap-add softens the seam but
+does not restore the truncated feature. Revisit only if it grows.

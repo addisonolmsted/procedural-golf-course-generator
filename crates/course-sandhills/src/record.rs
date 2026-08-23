@@ -131,6 +131,24 @@ pub struct FormSpec {
     /// high when the counted separation was 59% high (237 m against 149) --
     /// a power-weighted mean over a 64-400 m band cannot see feature size.
     pub hummock_lambda_m: Range,
+    /// How patchy the sand supply is: 0 leaves belts running unbroken across
+    /// the tile, 1 breaks them into isolated pods.
+    ///
+    /// **Belts should not exist everywhere.** A superposition of smooth waves
+    /// has smooth level sets that run right across the tile, so its belts
+    /// never terminate and never fray — reviewed as "ours continue pretty
+    /// regularly with smooth edges" against real belts that "terminate at
+    /// different points" and have organic edges. The same smoothness is what
+    /// makes a low-concentration draw read as WAVY rather than as discrete
+    /// mounds.
+    ///
+    /// Real dune fields sit on a varying sand supply: where it thins, the
+    /// belt fades to the interdune floor. Modulating the megaform by a
+    /// coherent supply field gives terminations and ragged edges from one
+    /// mechanism, at both form classes.
+    pub belt_patchiness: Range,
+    /// Correlation length of that supply field, metres.
+    pub belt_patch_m: Range,
     /// Spread of individual dune SIZES, as a fraction of the wavelength.
     /// Nonzero for two reasons: real dune fields carry a range of sizes, and
     /// waves sharing one wavenumber interfere into a fixed beat that reads as
@@ -162,20 +180,17 @@ pub struct FormSpec {
     pub hummock_floor: Range,
     /// Gain on the quilted texture residual.
     ///
-    /// **Not 1.0, for two measurable reasons**, and worth stating because a
-    /// gain above unity on real lidar patches looks like fudging otherwise:
+    /// **Near 1.0, and it took a wrong turn to get there.** The first pack was
+    /// cut from `extract_v2`'s `fine`, a half-amplitude Gaussian band-split
+    /// that reads 1.68x weaker than the `fine/band` metric's plain 64 m lowpass
+    /// residual. Hitting the metric then needed a gain of 2.8 -- which does not
+    /// merely scale a statistic, it makes every real blowout in every patch
+    /// 2.8x deeper, and the renders came back with elongated gouges no real
+    /// tile carries.
     ///
-    /// 1. The patches are cut from `extract_v2`'s `fine`, which is a
-    ///    half-amplitude Gaussian band-split. The `fine/band` metric this is
-    ///    calibrated against uses a plain 64 m lowpass residual, which reads
-    ///    **1.68x stronger** on the same tile. Different band definitions,
-    ///    same physical content.
-    /// 2. Overlap-adding independent patches reduces variance, since they are
-    ///    uncorrelated where they overlap.
-    ///
-    /// Measured at 2 m on a common filter: real fine 1.176 m, untextured
-    /// macro 0.631, textured-at-gain-1.0 0.703. Reaching 1.176 in quadrature
-    /// needs a residual of 0.99 against the 0.358 that gain 1.0 delivers.
+    /// Patches are now cut in the metric's own band, so pasted lidar keeps the
+    /// amplitude it was measured at and the gain only covers the variance lost
+    /// to overlap-adding uncorrelated patches.
     pub texture_gain: Range,
 }
 
@@ -250,6 +265,8 @@ pub const SANDHILLS: Record = Record {
         // Wide, because real footprints OVERLAP -- summits sit 149 m apart
         // with a 174 m median diameter, so a big dune laps over its smaller
         // neighbours. A single wavelength cannot do that at any scale.
+        belt_patchiness: Range::new(0.24, 0.52),
+        belt_patch_m: Range::new(900.0, 1900.0),
         hummock_spread: Range::new(0.50, 0.80),
         // Scaled WITH lambda: slope goes as relief/lambda, and shrinking
         // lambda alone took the golf proxy from 20/24 to 3/20.
@@ -257,7 +274,7 @@ pub const SANDHILLS: Record = Record {
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
         hummock_floor: Range::new(0.30, 0.50),      // corpus: floors run ~0.5x belt
-        texture_gain: Range::new(2.5, 3.1),         // -> real fine 1.176 m
+        texture_gain: Range::new(1.10, 1.35),       // overlap-add loss only
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
@@ -296,12 +313,14 @@ pub const SANDHILLS: Record = Record {
         // hummocks at the train's kappa inherited that disorder on top of
         // their own and measured A 0.127 against a 0.291 target.
         hummock_lambda_m: Range::new(160.0, 230.0),
+        belt_patchiness: Range::new(0.45, 0.85),
+        belt_patch_m: Range::new(700.0, 1500.0),
         hummock_spread: Range::new(0.50, 0.80),
         hummock_relief_m: Range::new(7.5, 13.0),
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
         hummock_floor: Range::new(0.30, 0.50),
-        texture_gain: Range::new(2.5, 3.1),
+        texture_gain: Range::new(1.10, 1.35),
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
@@ -345,6 +364,8 @@ mod tests {
                 ("blowout_km2", g.blowout_km2),
                 ("hummock_lambda_m", g.hummock_lambda_m),
                 ("hummock_spread", g.hummock_spread),
+                ("belt_patchiness", g.belt_patchiness),
+                ("belt_patch_m", g.belt_patch_m),
                 ("hummock_relief_m", g.hummock_relief_m),
                 ("hummock_kappa", g.hummock_kappa),
                 ("hummock_gate", g.hummock_gate),

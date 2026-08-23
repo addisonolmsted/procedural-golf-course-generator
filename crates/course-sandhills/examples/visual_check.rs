@@ -24,7 +24,7 @@ fn tile(seed: u64, form: FormClass, kappa: Option<f64>, wander: Option<f64>, hum
     if !hummocks {
         dd.hummock_relief_m = 0.0;
     }
-    let sf = surface::build(&f, &hw, &dd);
+    let sf = surface::build(&mut rng::stream(&id, rng::PATCHY), &f, &hw, &dd);
     (d, sf, f.spread_rad)
 }
 

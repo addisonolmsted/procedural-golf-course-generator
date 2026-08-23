@@ -24,6 +24,7 @@ import pathlib
 import sys
 
 import numpy as np
+from scipy import ndimage
 
 _TOOLS = pathlib.Path(__file__).resolve().parent.parent
 for _p in ("macro_campaign", "metrics", "aeolian"):
@@ -34,7 +35,13 @@ from macro_campaign.cgrid import read_f32                 # noqa: E402
 import dune_stats as ds                                   # noqa: E402
 
 OUT = _TOOLS / "macro_campaign" / "out"
-BIOMES = ("sandhills", "sandhills_nc")
+# ONE PACK PER MODE. The plan said so and the first build ignored it: pooling
+# both put Carolina blackwater-creek gullies into the aeolian pack, and they
+# pasted onto Nebraska dune ground as elongated dark gouges that no real dune
+# tile carries. A dune flank and a creek bank are different fabrics even at the
+# same slope, TPI and aspect -- the conditioning cannot tell them apart because
+# the thing that separates them is the process, not the local geometry.
+MODES = {"aeolian": ("sandhills",), "fluvial": ("sandhills_nc",)}
 
 # --- patch geometry -----------------------------------------------------
 # 96 m at 2 m. Comfortably larger than the 64 m band edge, so a patch carries
@@ -76,9 +83,14 @@ def tile_wind(tile_path):
 
 
 def main():
-    dst = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else
-                       _TOOLS.parent / "assets" / "sandhills_patches.npz")
-    dst.parent.mkdir(parents=True, exist_ok=True)
+    for mode, biomes in MODES.items():
+        dst = _TOOLS.parent / "assets" / f"sandhills_patches_{mode}.npz"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        print(f"\n=== {mode} ({', '.join(biomes)}) ===")
+        build_one(dst, biomes)
+
+
+def build_one(dst, BIOMES):
 
     buckets = [[] for _ in range(N_BUCKET)]
     seen = [0] * N_BUCKET
@@ -91,8 +103,21 @@ def main():
             if not npz.exists():
                 continue
             d = np.load(npz)
-            fine = d["fine"].astype(np.float32)
             clean = d["clean"]
+            # The residual is recomputed HERE, with the same band definition the
+            # `fine/band` metric uses (a plain 64 m lowpass residual), rather
+            # than reusing extract_v2's `fine`, which is a half-amplitude
+            # Gaussian split and reads 1.68x weaker on the same tile.
+            #
+            # That mismatch is why the first pack needed a gain of 2.8 to hit
+            # the metric -- and a gain of 2.8 does not just scale a statistic,
+            # it makes every real blowout 2.8x deeper. The renders came back
+            # with elongated gouges no real tile carries. Cutting patches in the
+            # metric's own band puts the gain back at 1.0, where pasted lidar
+            # keeps the amplitude it was measured at.
+            zt, (_, _, tcell) = read_f32(str(OUT / "tiles" / biome / f"{t}.cgrid"))
+            zt = zt.astype(np.float32)
+            fine = zt - ndimage.gaussian_filter(zt, (64.0 / np.pi) / tcell)
             cond = d["cond8"].astype(np.float32)     # slope, tpi, relief_pos, aspect, dist
             wind = tile_wind(OUT / "tiles" / biome / f"{t}.cgrid")
             n_before = sum(len(b) for b in buckets)
@@ -140,7 +165,7 @@ def main():
                         patch=PATCH, n_slope=N_SLOPE, n_tpi=N_TPI,
                         n_aspect=ASPECT_BINS,
                         slope_edges=np.array(SLOPE_EDGES), tpi_edges=np.array(TPI_EDGES))
-    print(f"\nwrote {dst}  ({dst.stat().st_size/1e6:.1f} MB, {len(packed)} patches)")
+    print(f"wrote {dst.name}  ({dst.stat().st_size/1e6:.1f} MB, {len(packed)} patches)")
     write_bin(dst.with_suffix(".bin"), arr, index)
 
 

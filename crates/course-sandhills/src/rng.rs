@@ -20,6 +20,8 @@ pub const DRAW: &str = "n5/sand/draw/v1";
 pub const WIND: &str = "n5/sand/wind/v1";
 /// A2 — the crest network.
 pub const CREST: &str = "n5/sand/crest/v1";
+/// A4a — sand-supply patchiness: where belts exist at all.
+pub const PATCHY: &str = "n5/sand/patchy/v1";
 /// A4b — the hummock tier: individual dunes on the ridge belts.
 pub const HUMMOCK: &str = "n5/sand/hummock/v1";
 /// A5 — blowouts and deflation hollows.
@@ -31,7 +33,8 @@ pub const WATER: &str = "n5/sand/water/v1";
 /// T — fabric.
 pub const TEXTURE: &str = "n5/sand/texture/v1";
 
-pub const REGISTRY: [&str; 8] = [DRAW, WIND, CREST, HUMMOCK, BLOWOUT, CHANNEL, WATER, TEXTURE];
+pub const REGISTRY: [&str; 9] =
+    [DRAW, WIND, CREST, PATCHY, HUMMOCK, BLOWOUT, CHANNEL, WATER, TEXTURE];
 
 /// THE way an attempt-5 stage obtains randomness. Panics on an unregistered
 /// name, exactly as `RunIdentity::stream` does.
