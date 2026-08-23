@@ -103,7 +103,11 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         relief_budget_m: draw(&mut p, rec.relief_budget_m),
         floor_tilt_m_km: draw(&mut p, rec.floor_tilt_m_km),
         floor_tilt_rad: draw(&mut p, Range::new(0.0, std::f64::consts::TAU)),
-        water_table_m: draw(&mut p, rec.water_table_m),
+        water_table_m: {
+            // squared ramp: shallow tables (lake country) get more mass
+            let u = p.next_f64();
+            rec.water_table_m.lo + (rec.water_table_m.hi - rec.water_table_m.lo) * u * u
+        },
         allogenic_river: {
             let c = p.next_f64();
             c < rec.p_allogenic_river

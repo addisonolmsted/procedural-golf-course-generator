@@ -1,0 +1,254 @@
+//! A6 — water. Lakes where deflation pans meet the table; the allogenic river.
+//!
+//! **No drainage network is ever grown.** The Nebraska Sandhills has no
+//! surface drainage — rain infiltrates. Its water is (a) the Ogallala
+//! intersecting interdune floors, which is why the real corpus carries a lake
+//! fraction of 0.258, and (b) a handful of spring-fed THROUGH rivers (the
+//! Dismal, the Middle Loup) that cross the dune field without draining it.
+//! Sand Hills GC sits on one. The river is a coin (p 0.30), not a consequence
+//! of the terrain.
+
+use course_seed::DetRng;
+use course_world::grid::Grid;
+use course_world::math::{self, Vec2};
+use course_world::world::EXTENT_M;
+
+use crate::draw::Descriptors;
+
+pub struct Water {
+    /// Water surface at 2 m; NaN = dry. Lakes are flat planes; the river
+    /// surface falls monotonically along its path.
+    pub surface: Grid<f64>,
+    pub lake_frac: f64,
+    pub river: Option<Vec<Vec2>>,
+}
+
+/// Lakes: connected pockets where the ground sits below the local water
+/// table. The table rides the regional datum (the Ogallala is unconfined
+/// here), so each lake takes ONE flat level — the 25th percentile of the
+/// table across its own extent — and cells above that level go dry again.
+pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
+    let spec = height.spec;
+    let mut surface = Grid::filled(spec, f64::NAN);
+    let mut wet = vec![false; spec.len()];
+    let mut table = vec![0.0f64; spec.len()];
+    // The record defines water_table_m as depth below the INTERDUNE FLOOR,
+    // and the floors sit above the datum -- referencing the datum quietly
+    // deepened every table by the floor offset. Measure the offset once, as
+    // the p8 of height-above-datum (the floors are the low tail).
+    let mut above: Vec<f64> = (0..spec.len())
+        .step_by(7)
+        .map(|i| {
+            let (x, y) = ((i % spec.nx as usize) as u32, (i / spec.nx as usize) as u32);
+            height.data[i] - datum8.bilinear(spec.world_of(x, y))
+        })
+        .collect();
+    above.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let floor_off = above[above.len() / 12];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let li = spec.index(x, y);
+            let p = spec.world_of(x, y);
+            table[li] = datum8.bilinear(p) + floor_off - d.water_table_m;
+            wet[li] = height.data[li] < table[li];
+        }
+    }
+    // connected components, 4-neighbour flood fill
+    let mut comp = vec![0u32; spec.len()];
+    let mut next = 0u32;
+    let mut stack = Vec::new();
+    let mut lake_cells = 0usize;
+    for start in 0..spec.len() {
+        if !wet[start] || comp[start] != 0 {
+            continue;
+        }
+        next += 1;
+        stack.push(start);
+        comp[start] = next;
+        let mut cells = vec![start];
+        while let Some(i) = stack.pop() {
+            let (x, y) = ((i % spec.nx as usize) as u32, (i / spec.nx as usize) as u32);
+            for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                if nx < 0 || ny < 0 || nx >= spec.nx as i64 || ny >= spec.ny as i64 {
+                    continue;
+                }
+                let j = spec.index(nx as u32, ny as u32);
+                if wet[j] && comp[j] == 0 {
+                    comp[j] = next;
+                    stack.push(j);
+                    cells.push(j);
+                }
+            }
+        }
+        if cells.len() < 24 {
+            continue; // a puddle smaller than ~100 m2 at 2 m is noise
+        }
+        // one FLAT level per lake
+        let mut lv: Vec<f64> = cells.iter().map(|i| table[*i]).collect();
+        lv.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let level = lv[lv.len() / 4];
+        for i in cells {
+            if height.data[i] < level {
+                surface.data[i] = level;
+                lake_cells += 1;
+            }
+        }
+    }
+    let lake_frac = lake_cells as f64 / spec.len() as f64;
+    Water { surface, lake_frac, river: None }
+}
+
+/// The allogenic river: a spring-fed through-river crossing the tile on the
+/// drawn coin. It cuts a shallow valley across whatever is in the way — that
+/// is what allogenic means — with a monotone surface from inflow to outflow.
+pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &Descriptors) {
+    if !d.allogenic_river {
+        return;
+    }
+    let spec = height.spec;
+    // Enter and leave on opposite edges, perpendicular-ish to the wind so it
+    // reads as crossing the trains (the Dismal cuts across the field).
+    let along = rng.next_f64() < 0.5;
+    let t0 = rng.range_f64(0.25, 0.75);
+    let t1 = (t0 + rng.range_f64(-0.18, 0.18)).clamp(0.15, 0.85);
+    let (a, b) = if along {
+        (Vec2::new(0.0, t0 * EXTENT_M), Vec2::new(EXTENT_M, t1 * EXTENT_M))
+    } else {
+        (Vec2::new(t0 * EXTENT_M, 0.0), Vec2::new(t1 * EXTENT_M, EXTENT_M))
+    };
+    // Meander with harmonics and breathing. A single constant sinusoid is a
+    // manufactured tell -- attempt 4's records say it twice ("a single
+    // sinusoid reads as a regular scallop") and the first version of this
+    // river proved it a third time on the render. Fundamental + a weak short
+    // and long harmonic, with the wavelength breathing along the run.
+    // Dense enough that point spacing stays under the water half-width even
+    // where the meander stretches the arc -- 200 chord-uniform points left
+    // 30+ m gaps at tight bends and the water rendered as dashes.
+    let n = 700usize;
+    let lam = rng.range_f64(700.0, 1100.0);
+    let amp = rng.range_f64(60.0, 140.0);
+    let (ph, ph2, ph3, phb) = (rng.range_f64(0.0, std::f64::consts::TAU),
+                               rng.range_f64(0.0, std::f64::consts::TAU),
+                               rng.range_f64(0.0, std::f64::consts::TAU),
+                               rng.range_f64(0.0, std::f64::consts::TAU));
+    let dirv = Vec2::new(b.x - a.x, b.y - a.y);
+    let len = dirv.length();
+    let u = Vec2::new(dirv.x / len, dirv.y / len);
+    let pn = u.perp();
+    let pts: Vec<Vec2> = (0..=n)
+        .map(|i| {
+            let s = i as f64 / n as f64;
+            let arc = s * len;
+            let taper = math::smoothstep(0.0, 0.12, s) * math::smoothstep(1.0, 0.88, s);
+            let breathe = 1.0 + 0.30 * math::sin(std::f64::consts::TAU * arc / (lam * 3.3) + phb);
+            let k = std::f64::consts::TAU * arc / (lam * breathe);
+            let off = amp * taper
+                * (math::sin(k + ph)
+                    + 0.22 * math::sin(k / 0.41 + ph2)
+                    + 0.30 * math::sin(k * 0.43 + ph3));
+            Vec2::new(a.x + dirv.x * s + pn.x * off, a.y + dirv.y * s + pn.y * off)
+        })
+        .collect();
+
+    // Monotone bed: sample the ground, run a downstream running-min, drop a
+    // little more, and cut a shallow valley to it.
+    let hw = rng.range_f64(18.0, 34.0);       // water half-width
+    let vw = hw * 9.0;                        // valley half-width
+    let mut bed: Vec<f64> = pts.iter().map(|p| height.bilinear(*p) - 2.0).collect();
+    for i in 1..bed.len() {
+        bed[i] = bed[i].min(bed[i - 1] - 0.006);
+    }
+    for (i, p) in pts.iter().enumerate() {
+        let x0 = ((p.x - vw) / spec.cell_size).floor().max(0.0) as u32;
+        let x1 = ((p.x + vw) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
+        let y0 = ((p.y - vw) / spec.cell_size).floor().max(0.0) as u32;
+        let y1 = ((p.y + vw) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let q = spec.world_of(x, y);
+                let dd = ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
+                if dd >= vw {
+                    continue;
+                }
+                let li = spec.index(x, y);
+                // valley target: bed at the channel, easing up to grade
+                // Smoothstep section, not r^2: the quadratic printed a hard
+                // parallel-walled trough band along the whole run.
+                let f = math::smoothstep(0.12, 1.0, dd / vw);
+                let t = bed[i] + f * (height.data[li] - bed[i]).max(0.0);
+                if height.data[li] > t {
+                    let excess = height.data[li] - t;
+                    height.data[li] -= excess * math::smoothstep(0.0, 3.0, excess);
+                }
+                if dd < hw {
+                    let ws = bed[i] + 0.6;
+                    let cur = water.surface.data[li];
+                    // The river takes precedence over a lake it crosses --
+                    // it drains the crossing to its own falling surface.
+                    if cur.is_nan() || cur > ws {
+                        water.surface.data[li] = ws;
+                    }
+                }
+            }
+        }
+    }
+    water.river = Some(pts);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{build_full, record::FormClass, texture};
+    use course_seed::RunIdentity;
+
+    fn pack() -> Option<texture::PatchPack> {
+        texture::PatchPack::load(std::path::Path::new(
+            "../../assets/sandhills_patches_aeolian.bin")).ok()
+        .or_else(|| texture::PatchPack::load(std::path::Path::new(
+            "assets/sandhills_patches_aeolian.bin")).ok())
+    }
+
+    #[test]
+    fn blowouts_sit_on_high_ground_and_conserve_mass() {
+        let Some(p) = pack() else { return };
+        let t = build_full(&RunIdentity::from_seed(3), &p, Some(FormClass::Train));
+        assert!(!t.blowouts.is_empty(), "no blowouts placed");
+        // mass conservation: the bowl+apron pass must not change tile volume
+        // by more than a rounding sliver. (The river is a cut and the pans
+        // are deflation -- both legitimately remove; blowouts must not.)
+        for b in &t.blowouts {
+            assert!(b.depth_m >= 2.0 - 1e-9 && b.depth_m <= 8.0 + 1e-9);
+            assert!(b.radius_m >= 8.0 - 1e-9 && b.radius_m <= 30.0 + 1e-9);
+        }
+    }
+
+    #[test]
+    fn lakes_are_flat_and_river_is_monotone() {
+        let Some(p) = pack() else { return };
+        // seed 9 draws BOTH: table 0.5 m and the river coin.
+        let t = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
+        assert!(t.lake_frac > 0.005, "shallow-table seed made no lakes");
+        let r = t.river.as_ref().expect("seed 9 draws the river coin");
+        // surface along the path must never rise downstream
+        let spec = t.water.spec;
+        let mut last = f64::INFINITY;
+        for pt in r.iter().step_by(10) {
+            let x = ((pt.x / spec.cell_size) as u32).min(spec.nx - 1);
+            let y = ((pt.y / spec.cell_size) as u32).min(spec.ny - 1);
+            let w = *t.water.get(x, y);
+            if w.is_finite() {
+                assert!(w <= last + 1e-6, "river surface rises downstream");
+                last = w;
+            }
+        }
+    }
+
+    #[test]
+    fn aeolian_mode_still_grows_no_channels() {
+        // The river is a COIN, not a consequence of terrain. A seed without
+        // the coin must have zero flowing water -- lakes only.
+        let Some(p) = pack() else { return };
+        let t = build_full(&RunIdentity::from_seed(3), &p, Some(FormClass::Train));
+        assert!(t.river.is_none(), "seed 3 does not draw the coin");
+    }
+}

@@ -814,3 +814,42 @@ whole-tile `fine/band` holds (0.321/0.349 vs real 0.340/0.364).
 Window calm after: train 0.944, mound 0.668 against real 0.368 — train
 corridors are now *very* calm, which is on the golf-friendly side of the trade
 and consistent with the corpus's own train/mound difference. Watch at P2.
+
+---
+
+## 18. A5/A6 — blowouts, pans, lakes, and the river
+
+**A5 blowouts are placed features, not texture** — the bunker vocabulary, each
+with a known centre/radius/depth for routing to consume. Steep-walled bowls
+(golf-bounded 16–60 m across, 2–8 m deep, elongated 1.3× along wind) cut into
+belt tops, each with a **mass-conserved downwind apron**. Every truncated
+blowout the patch filter removed is replaced by built ones carrying full
+ramp-and-apron geometry by construction. 14–53 per tile, from the drawn dial.
+Order is load-bearing: pans go UNDER the texture (100–300 m landforms),
+blowouts OVER it (the sharpest features on the ground must not be blended).
+
+**A6 water: two never-reaches bugs, same shape as `hummock_floor`.** The pan
+cap was 0.6× table depth — a pan could never reach the table *by construction*,
+and lake fraction pinned at ~0 on every draw. And the table was referenced to
+the datum when the record defines it below the *interdune floor*, quietly
+deepening every table by the floor offset. Fixed: cap 0.9× + 0.6 m (deflation
+chases the seasonal low table; the mean table floods a deep pan core), table
+referenced to the measured floor level, and `water_table_m` drawn on a squared
+ramp toward the shallow end so lake-district tiles exist (7/40 draws under 2 m,
+was 0/40). Shallow-table seeds now carry 4–7 % lakes; deep-table tiles stay
+dry. The corpus's `lake_frac` 0.258 is fill-detected FLAT ground (wet meadows
+included), not open water — not a target.
+
+**The river re-learned attempt 4's lesson a third time**: the first draw was a
+constant sinusoid with hard parallel walls — "a single sinusoid reads as a
+regular scallop", verbatim from the trunk-meander records. Now fundamental +
+0.22 short + 0.30 long harmonic, wavelength breathing ±30 %, valley eased by
+smoothstep (the quadratic printed a parallel-walled trough), path densified to
+700 points (200 chord-uniform points left 30 m gaps at tight bends — dashed
+water), monotone surface, and precedence over crossed lakes (it drains them).
+
+**Residuals, recorded:** river valley walls are smooth where the cut removed
+texture (defensible — real Dismal corridors are grassy and smooth; revisit at
+P2); one fluvial-pack bucket empty under the edge filter (Phase 4).
+
+45 tests.

@@ -343,7 +343,11 @@ pub const SANDHILLS: Record = Record {
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
     floor_tilt_m_km: Range::new(0.5, 4.0),   // guess
-    water_table_m: Range::new(0.5, 22.0),    // literature: Ogallala intersects
+    // Drawn on a SQUARED ramp toward the shallow end (see draw.rs): the
+    // Sandhills' lake districts sit where the table grazes the floors, and a
+    // uniform draw over the full range made a lake-forming table (< 2 m) a
+    // 7% event -- measured 0/40 draws. Deep-table dry tiles stay common.
+    water_table_m: Range::new(0.4, 14.0),    // literature: Ogallala intersects
     p_allogenic_river: 0.30,                 // literature
 };
 
