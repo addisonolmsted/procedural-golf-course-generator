@@ -174,6 +174,30 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
             lake_cells -= 1;
         }
     }
+    // SMALL-POND CAP (review, 2026-08-23): small ponds (< 2500 m2) may be at
+    // most 2/3 of the body count. Measured tiles already sit at 9-24%, so
+    // this is an invariant against a bad draw rather than a correction --
+    // a tile whose water reads as pond-speckle rather than as lakes with
+    // pond accents would be wrong even if every pond passed its own gates.
+    // Cull order is smallest first: the least feature-worthy go first.
+    let small_limit = (2500.0 / (spec.cell_size * spec.cell_size)) as usize;
+    let mut small: Vec<(usize, u32)> = (1..=nid as usize)
+        .filter(|k| counts[*k] >= 125 && counts[*k] < small_limit)
+        .map(|k| (counts[k], k as u32))
+        .collect();
+    let total = (1..=nid as usize).filter(|k| counts[*k] >= 125).count();
+    let keep_max = total * 2 / 3;
+    if small.len() > keep_max {
+        small.sort(); // smallest first
+        let drop: std::collections::HashSet<u32> =
+            small[..small.len() - keep_max].iter().map(|(_, k)| *k).collect();
+        for i in 0..spec.len() {
+            if final_lab[i] != 0 && drop.contains(&final_lab[i]) {
+                surface.data[i] = f64::NAN;
+                lake_cells -= 1;
+            }
+        }
+    }
     let lake_frac = lake_cells as f64 / spec.len() as f64;
     Water { surface, lake_frac, river: None }
 }
@@ -298,6 +322,51 @@ mod tests {
         for b in &t.blowouts {
             assert!(b.depth_m >= 2.0 - 1e-9 && b.depth_m <= 8.0 + 1e-9);
             assert!(b.radius_m >= 8.0 - 1e-9 && b.radius_m <= 30.0 + 1e-9);
+        }
+    }
+
+    #[test]
+    fn small_ponds_never_dominate_the_count() {
+        let Some(p) = pack() else { return };
+        for seed in [3u64, 9, 18] {
+            let t = build_full(&RunIdentity::from_seed(seed), &p, Some(FormClass::Train));
+            let spec = t.water.spec;
+            // count bodies by flood fill
+            let mut lab = vec![false; spec.len()];
+            let mut small = 0usize;
+            let mut total = 0usize;
+            let mut stack = Vec::new();
+            for st in 0..spec.len() {
+                if !t.water.data[st].is_finite() || lab[st] {
+                    continue;
+                }
+                let mut n = 0usize;
+                stack.push(st);
+                lab[st] = true;
+                while let Some(i) = stack.pop() {
+                    n += 1;
+                    let (x, y) = ((i % spec.nx as usize) as u32, (i / spec.nx as usize) as u32);
+                    for (dx, dy) in [(1i64, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (a, b) = (x as i64 + dx, y as i64 + dy);
+                        if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
+                            continue;
+                        }
+                        let j = spec.index(a as u32, b as u32);
+                        if t.water.data[j].is_finite() && !lab[j] {
+                            lab[j] = true;
+                            stack.push(j);
+                        }
+                    }
+                }
+                total += 1;
+                if (n as f64) * spec.cell_size * spec.cell_size < 2500.0 {
+                    small += 1;
+                }
+            }
+            if total > 0 {
+                assert!(small * 3 <= total * 2,
+                        "seed {seed}: {small}/{total} bodies are small ponds");
+            }
         }
     }
 

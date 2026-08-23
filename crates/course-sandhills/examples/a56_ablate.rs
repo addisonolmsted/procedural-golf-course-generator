@@ -58,11 +58,9 @@ fn main() {
         b.center.x, b.center.y, b.radius_m, b.depth_m)).collect();
     std::fs::write(out.join("blowouts.txt"), s).unwrap();
 
-    // +WATER (lakes then the coin river)
-    let mut full = with_b;
-    let mut wat = water::find(&full, &sf.datum, &d);
-    let mut rr = rng::stream(&id, rng::WATER);
-    water::river(&mut rr, &mut full, &mut wat, &d);
+    // +WATER (lakes only -- the river is removed pending redesign)
+    let full = with_b;
+    let wat = water::find(&full, &sf.datum, &d);
     gridio::write_grid_f32(&out.join("3_full.cgrid"), &full).unwrap();
     gridio::write_grid_f32(&out.join("3_water.cgrid"), &wat.surface).unwrap();
     println!("lake_frac {:.3}, {} blowouts", wat.lake_frac, bl.len());
