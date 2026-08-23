@@ -25,6 +25,10 @@ pub struct Blowout {
     /// Across-wind radius, metres. The bowl is elongated ~1.3x along wind.
     pub radius_m: f64,
     pub depth_m: f64,
+    /// Boundary irregularity: r(theta) = r * (1 + sum a_k sin(k theta + ph_k)).
+    /// A perfect ellipse is a manufactured tell -- real blowout rims are
+    /// scalloped where vegetation held and bitten where it failed.
+    pub lobes: [(f64, f64); 3],
 }
 
 /// Golf bounds on the bowl. 15–60 m across and 2–8 m deep is a playable
@@ -69,7 +73,12 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
         }) {
             continue;
         }
-        placed.push(Blowout { center: p, radius_m: r, depth_m: depth });
+        let lobes = [
+            (rng.range_f64(0.06, 0.16), rng.range_f64(0.0, std::f64::consts::TAU)),
+            (rng.range_f64(0.05, 0.14), rng.range_f64(0.0, std::f64::consts::TAU)),
+            (rng.range_f64(0.03, 0.10), rng.range_f64(0.0, std::f64::consts::TAU)),
+        ];
+        placed.push(Blowout { center: p, radius_m: r, depth_m: depth, lobes });
     }
 
     // --- carve: bowl + mass-conserved apron --------------------------------
@@ -98,7 +107,16 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
                 // rotate into wind frame
                 let u = dp.x * w.x + dp.y * w.y;
                 let v = -dp.x * w.y + dp.y * w.x;
-                let rr = ((u / rx).powi(2) + (v / ry).powi(2)).sqrt();
+                let mut rr = ((u / rx).powi(2) + (v / ry).powi(2)).sqrt();
+                // scallop the rim: modulate the effective radius by angle
+                if rr < 1.35 {
+                    let th = math::atan2(v, u);
+                    let m = 1.0
+                        + b.lobes[0].0 * math::sin(2.0 * th + b.lobes[0].1)
+                        + b.lobes[1].0 * math::sin(3.0 * th + b.lobes[1].1)
+                        + b.lobes[2].0 * math::sin(5.0 * th + b.lobes[2].1);
+                    rr /= m.max(0.55);
+                }
                 if rr < 1.0 {
                     // steep wall, flat-ish floor: the cut deepens fast inside
                     // the rim and levels off — a waste bunker, not a cone.

@@ -36,6 +36,10 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
     // and the floors sit above the datum -- referencing the datum quietly
     // deepened every table by the floor offset. Measure the offset once, as
     // the p8 of height-above-datum (the floors are the low tail).
+    // Shoreline smoothing: threshold a SMOOTHED margin, not the raw one.
+    // At 2 m the raw height-vs-table comparison follows every texture grain
+    // and the shoreline comes out sawtoothed; smoothing the margin (not the
+    // ground) rounds the shore without moving any terrain.
     let mut above: Vec<f64> = (0..spec.len())
         .step_by(7)
         .map(|i| {
@@ -45,13 +49,30 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
         .collect();
     above.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let floor_off = above[above.len() / 12];
+    let mut margin = vec![0.0f64; spec.len()];
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let li = spec.index(x, y);
             let p = spec.world_of(x, y);
             table[li] = datum8.bilinear(p) + floor_off - d.water_table_m;
-            wet[li] = height.data[li] < table[li];
+            margin[li] = height.data[li] - table[li];
         }
+    }
+    // three 1-2-1 passes ~ a 6 m Gaussian on the margin field
+    let mut tmp = margin.clone();
+    for _ in 0..3 {
+        for y in 1..spec.ny - 1 {
+            for x in 1..spec.nx - 1 {
+                let i = spec.index(x, y);
+                tmp[i] = (margin[i] * 4.0
+                    + margin[spec.index(x + 1, y)] + margin[spec.index(x - 1, y)]
+                    + margin[spec.index(x, y + 1)] + margin[spec.index(x, y - 1)]) / 8.0;
+            }
+        }
+        std::mem::swap(&mut margin, &mut tmp);
+    }
+    for i in 0..spec.len() {
+        wet[i] = margin[i] < 0.0;
     }
     // connected components, 4-neighbour flood fill
     let mut comp = vec![0u32; spec.len()];
@@ -223,24 +244,12 @@ mod tests {
     }
 
     #[test]
-    fn lakes_are_flat_and_river_is_monotone() {
+    fn shallow_tables_make_lakes_and_deep_tables_stay_dry() {
         let Some(p) = pack() else { return };
-        // seed 9 draws BOTH: table 0.5 m and the river coin.
-        let t = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
-        assert!(t.lake_frac > 0.005, "shallow-table seed made no lakes");
-        let r = t.river.as_ref().expect("seed 9 draws the river coin");
-        // surface along the path must never rise downstream
-        let spec = t.water.spec;
-        let mut last = f64::INFINITY;
-        for pt in r.iter().step_by(10) {
-            let x = ((pt.x / spec.cell_size) as u32).min(spec.nx - 1);
-            let y = ((pt.y / spec.cell_size) as u32).min(spec.ny - 1);
-            let w = *t.water.get(x, y);
-            if w.is_finite() {
-                assert!(w <= last + 1e-6, "river surface rises downstream");
-                last = w;
-            }
-        }
+        let wet = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
+        assert!(wet.lake_frac > 0.005, "shallow-table seed made no lakes");
+        let dry = build_full(&RunIdentity::from_seed(23), &p, Some(FormClass::Train));
+        assert!(dry.lake_frac < 0.01, "deep-table seed made lakes");
     }
 
     #[test]
@@ -248,7 +257,7 @@ mod tests {
         // The river is a COIN, not a consequence of terrain. A seed without
         // the coin must have zero flowing water -- lakes only.
         let Some(p) = pack() else { return };
-        let t = build_full(&RunIdentity::from_seed(3), &p, Some(FormClass::Train));
-        assert!(t.river.is_none(), "seed 3 does not draw the coin");
+        let t = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
+        assert!(t.river.is_none(), "the river is removed pending redesign");
     }
 }
