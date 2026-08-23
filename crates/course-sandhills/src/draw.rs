@@ -35,6 +35,7 @@ pub struct Descriptors {
     pub hummock_relief_m: f64,
     pub hummock_kappa: f64,
     pub hummock_gate: f64,
+    pub hummock_floor: f64,
 
     // ---- shared ----
     pub relief_budget_m: f64,
@@ -88,6 +89,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         hummock_relief_m: draw(&mut p, f.hummock_relief_m),
         hummock_kappa: draw(&mut p, f.hummock_kappa),
         hummock_gate: draw(&mut p, f.hummock_gate),
+        hummock_floor: draw(&mut p, f.hummock_floor),
         relief_budget_m: draw(&mut p, rec.relief_budget_m),
         floor_tilt_m_km: draw(&mut p, rec.floor_tilt_m_km),
         floor_tilt_rad: draw(&mut p, Range::new(0.0, std::f64::consts::TAU)),

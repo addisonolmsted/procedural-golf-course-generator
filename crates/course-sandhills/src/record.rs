@@ -130,11 +130,24 @@ pub struct FormSpec {
     /// megaform's: individual dunes in a barchanoid belt are transverse to
     /// the same wind but far more disordered than the belt they sit on.
     pub hummock_kappa: Range,
-    /// Where on the belt the hummocks start, as a fraction of megaform
-    /// height. **This is what keeps the interdune floors flat** — sand piles
-    /// on the belts, and the flat floors between them are the ground a course
-    /// is routed on. Gate below this, full above `gate + 0.30`.
+    /// Where on the belt the hummocks reach full strength, as a fraction of
+    /// megaform height. Sand piles on the belts, so the tier is strongest
+    /// there and quietest in the hollows between them.
     pub hummock_gate: Range,
+    /// How much of the hummock tier survives on the interdune FLOORS.
+    ///
+    /// **Not zero.** Real floors are quieter than the belts, not empty:
+    /// measured over 24 kept tiles, floor band RMS runs 0.48x the belt's at
+    /// 30-64 m, 0.53x at 64-150 m and 0.75x at 150-400 m. A hard gate made
+    /// them 0.44/0.40/0.53 -- too clean, and it showed in the golf readout,
+    /// where generated floors sat at 0.895 calm against a real 0.680.
+    ///
+    /// This is a deliberate trade against routability, and the policy
+    /// licenses it: real sandhills clears the proxy on only 23% of tiles
+    /// while we clear it on all of them, so there is headroom, and "calm is a
+    /// FLOOR, not a maximand -- otherwise generated courses will
+    /// systematically sit on duller ground than real ones."
+    pub hummock_floor: Range,
 }
 
 /// One archetype record. Sandhills only, for now: attempt 5 builds ONE
@@ -207,7 +220,8 @@ pub const SANDHILLS: Record = Record {
         hummock_lambda_m: Range::new(190.0, 290.0), // corpus: lambda p50 216-228
         hummock_relief_m: Range::new(12.0, 21.0),   // 16-seed sweep -> band relief ~11
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
-        hummock_gate: Range::new(0.30, 0.48),       // golf: floors stay flat
+        hummock_gate: Range::new(0.30, 0.48),
+        hummock_floor: Range::new(0.30, 0.50),      // corpus: floors run ~0.5x belt
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
@@ -239,6 +253,7 @@ pub const SANDHILLS: Record = Record {
         hummock_relief_m: Range::new(11.0, 19.0),
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
+        hummock_floor: Range::new(0.30, 0.50),
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
@@ -284,6 +299,7 @@ mod tests {
                 ("hummock_relief_m", g.hummock_relief_m),
                 ("hummock_kappa", g.hummock_kappa),
                 ("hummock_gate", g.hummock_gate),
+                ("hummock_floor", g.hummock_floor),
             ] {
                 assert!(v.lo <= v.hi, "{name}.{k}: lo {} > hi {}", v.lo, v.hi);
                 assert!(v.lo >= 0.0, "{name}.{k}: negative lo");

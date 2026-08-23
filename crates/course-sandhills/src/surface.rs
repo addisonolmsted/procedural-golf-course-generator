@@ -233,7 +233,14 @@ pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     for y in 0..ny {
         for x in 0..nx {
             let li = spec.index(x, y);
-            let g = math::smoothstep(d.hummock_gate, d.hummock_gate + 0.30, tnorm[li]);
+            // The gate never reaches zero. Real interdune floors carry
+            // roughly half the belt's texture (measured 0.48x/0.53x/0.75x
+            // across the 30-64, 64-150 and 150-400 m bands over 24 tiles);
+            // a hard gate made ours 0.44/0.40/0.53 and left the floors at
+            // 0.895 calm against a real 0.680.
+            let g = d.hummock_floor
+                + (1.0 - d.hummock_floor)
+                    * math::smoothstep(d.hummock_gate, d.hummock_gate + 0.30, tnorm[li]);
             let h = (hraw[li] - hlo) / hspan - 0.5;
             gate.set(x, y, g);
             height.set(x, y, belts.get(x, y) + d.hummock_relief_m * g * h);
@@ -387,8 +394,13 @@ mod tests {
             for i in 0..n {
                 worst = worst.max(lowest[i].1);
             }
-            assert!(worst < 0.25,
-                    "seed {s}: hummock gate reached {worst:.2} on the interdune floor");
+            // The floors are QUIETER than the belts, not empty -- see
+            // record.rs::hummock_floor. What must hold is that the tier is
+            // clearly weaker down there, not that it is absent.
+            let (d, _) = built(s, None);
+            assert!(worst < d.hummock_floor + 0.30,
+                    "seed {s}: hummock gate reached {worst:.2} on the interdune floor \
+                     (floor dial {:.2})", d.hummock_floor);
         }
     }
 

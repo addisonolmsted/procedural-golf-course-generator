@@ -487,3 +487,54 @@ Three passes went into it and further iteration at n=24 would be fitting noise.
 **Method note carried forward:** the first pass read A 0.249 for trains on n=4
 and 0.312 on n=16 — the same lattice-subsample error as §7, in a different
 costume. Hummock dials are calibrated at n≥16.
+
+---
+
+## 12. The interdune floors are not smooth
+
+Reviewer question: does the corpus show texture in the valleys between the
+dunes? It does, and ours did not carry enough.
+
+Measured over 24 kept tiles, splitting each by the upper/lower tercile of its
+own 400–1600 m megaform field:
+
+| band | real belt | real floor | floor/belt |
+|---|---:|---:|---:|
+| 30–64 m | 0.81 | 0.39 | 0.48× |
+| 64–150 m | 1.38 | 0.73 | 0.53× |
+| 150–400 m | 2.00 | 1.51 | **0.76×** |
+| slope p50 | 0.142 | 0.045 | 0.32× |
+| calm frac | 0.205 | **0.680** | |
+
+**Real interdune floors carry about half the belt's texture in the short bands
+and three-quarters at 150–400 m.** They are quieter, not empty. The hard gate
+made ours 0.44 / 0.40 / 0.53, and it showed up where it matters: generated
+floors sat at **0.895 calm against a real 0.680** — we had made the archetype's
+routable ground unrealistically smooth.
+
+New dial `hummock_floor`: the gate's minimum, so the tier never switches off.
+
+| | real | before | after |
+|---|---:|---:|---:|
+| floor band RMS, 30–64 m | 0.39 | 0.23 | **0.33** |
+| floor band RMS, 64–150 m | 0.73 | 0.68 | 1.07 |
+| floor band RMS, 150–400 m | 1.51 | 1.19 | **1.46** |
+| **interdune calm** | **0.680** | 0.895 | **0.735** |
+| golf proxy | 23 % of real tiles | 24/24 | **20/24** |
+
+**The proxy cost is the point, not a regression.** Real sandhills clears the
+proxy on 23 % of tiles and we clear it on 83 %, so the headroom was there, and
+`d6w-siting-baseline.md` is explicit: *"calm is a FLOOR, not a maximand —
+otherwise generated courses will systematically sit on duller ground than real
+ones."* Flat interdune ground is still what a course is routed on; it is now
+flat the way real interdune ground is flat.
+
+**One instrument note.** The dial had no effect on its first run — ratios moved
+0.44/0.40/0.53 → 0.42/0.41/0.52 and interdune calm went the wrong way, 0.895 →
+0.905. It was not connected: the edit had targeted a version of the gate line
+that did not exist, so `hummock_floor` was drawn, stored, documented and
+threaded through the record while `build()` ignored it. A `gate_probe` sweeping
+the dial 0.0 / 0.5 / 0.9 and reading the gate grid found it in one run —
+identical output at all three settings. **A dial that is measured only through
+its downstream effect can be dead without looking dead**; sweep it and read the
+field it writes.
