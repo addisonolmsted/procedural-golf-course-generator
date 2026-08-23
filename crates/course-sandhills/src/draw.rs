@@ -31,6 +31,10 @@ pub struct Descriptors {
     pub lee_deg: f64,
     pub stoss_share: f64,
     pub blowout_km2: f64,
+    pub hummock_lambda_m: f64,
+    pub hummock_relief_m: f64,
+    pub hummock_kappa: f64,
+    pub hummock_gate: f64,
 
     // ---- shared ----
     pub relief_budget_m: f64,
@@ -80,6 +84,10 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         lee_deg: draw(&mut p, f.lee_deg),
         stoss_share: draw(&mut p, f.stoss_share),
         blowout_km2: draw(&mut p, f.blowout_km2),
+        hummock_lambda_m: draw(&mut p, f.hummock_lambda_m),
+        hummock_relief_m: draw(&mut p, f.hummock_relief_m),
+        hummock_kappa: draw(&mut p, f.hummock_kappa),
+        hummock_gate: draw(&mut p, f.hummock_gate),
         relief_budget_m: draw(&mut p, rec.relief_budget_m),
         floor_tilt_m_km: draw(&mut p, rec.floor_tilt_m_km),
         floor_tilt_rad: draw(&mut p, Range::new(0.0, std::f64::consts::TAU)),

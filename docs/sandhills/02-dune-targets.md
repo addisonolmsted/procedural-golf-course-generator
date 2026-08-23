@@ -355,3 +355,84 @@ Two test corrections the change forced, both cases of measuring the wrong thing:
 - `high_concentration_recovers_the_single_axis_field` compared mean cycle values
   over sparse samples and was reading its own sampling noise. It now asserts on
   the **widest angle between wave directions**, which is the actual claim.
+
+---
+
+## 10. The hummock tier, and three wrong diagnoses of one weave
+
+The visual check (rule 4, and the first render of this generator) found the
+macro sound — right spacing, right topology, flat interdunes, no moiré — and
+**missing a whole scale**. Real Nebraska is two-scale: ~1.3 km ridge belts
+separated by flat interdune valleys, with the belts **packed with individual
+50–150 m dunes**. The megaform alone reads as smooth swells.
+
+None of the gate statistics could see it. Orientation order, dominant
+wavelength and band relief all measure **400–1600 m**; the missing landform sits
+below that band, and the texture stage works below 64 m, so 64–400 m belonged to
+nobody.
+
+### The weave: three fixes, two of them wrong
+
+A visible crosshatch of dark streaks ran across every tile. Each diagnosis was
+plausible, each was measured, and the first two were wrong:
+
+1. **The crest kink.** The profile was C0-but-not-C1 at the crest, slope jump
+   5.17. Fixed by rounding (jump → 0.016). **The weave did not move**, and the
+   measurement that should have caught it was already on the page: `max|d²|`
+   read **3082 before and after**, so the dominant curvature was never at the
+   crest.
+2. **The toe singularity.** `u^1.15` has second derivative `0.17·u^-0.85`,
+   infinite at the trough — a genuine curvature singularity on every wave's toe
+   line. Fixed by evaluating on a shifted variable (`max|d²|` 2327 → **1.8**,
+   shape and bounded peak slope intact). **The weave still did not move.**
+3. **The real cause — per-wave asymmetry.** Every wave carried its own stoss/lee
+   profile, so eight waves at spread orientations gave **eight crossing families
+   of slip faces**. A real dune field has one wind and therefore one family.
+   ABLATION: rebuilding the same seeds with a symmetric profile erased the weave
+   completely and dropped `|∇²|` mean 0.00337 → 0.00199. That is what named it.
+
+Fixes 1 and 2 are kept — both were real defects, and both were found honestly
+even though neither was the one that mattered. This is the fourth time on this
+project that a visual defect survived two confident diagnoses and fell to an
+ablation.
+
+### The asymmetry is applied once, and it is physical
+
+Waves compose **symmetrically**; the composite is then sheared downwind by an
+amount proportional to its own height — `z'(p) = z(p − offset·t(p)·ŵ)`, with
+`offset = (share − 0.5)·λ`. That is what wind does: it carries sand up the
+windward slope and drops it over the brink, displacing the crest downwind in
+proportion to how high it stands. Belts and hummocks are advected by their own
+wavelengths.
+
+### Also fixed
+
+**Clipping plateaus.** Normalising on p5/p95 and then clamping flattened the top
+and bottom 5% into hard-edged polygonal flats, clearly visible in the render.
+The clamps are gone; the scale still makes p95−p5 the drawn relief and the tails
+run past it, which is what a real crest does.
+
+**Train κ floor 5 → 8.** The old range admitted direction spreads to 0.605 rad,
+which is mound territory, and seed 19 measured 11.3 orientation families against
+6.6–8.2 for a well-drawn train. One change fixed two things: trains read as
+trains, and the train orientation order rose from 0.714 to **0.759** against the
+0.767 target, closing the tracked residual from §9.
+
+### Result
+
+| band | real train | before | after | short by |
+|---|---:|---:|---:|---:|
+| 30–64 m | 0.61 | 0.10 | **0.44** | 1.4× *(was 6.1×)* |
+| 64–150 m | 1.09 | 0.38 | **1.24** | **0.9×** *(was 2.9×)* |
+| 150–400 m | 2.80 | 1.65 | 1.83 | 1.5× |
+| 400–900 m | 6.51 | 3.56 | 3.28 | 2.0× |
+| 900–1600 m | 6.69 | 2.74 | 2.55 | 2.6× |
+
+The dune band is closed. The three long bands stay short by design — golf bounds
+playable dune relief to 10–35 m against real tiles at 55–74 m.
+
+Orientation order **0.759** (target 0.767); golf proxy 4/4; 39 tests. The
+hummock tier is gated to the belt tops so the interdune floors stay flat, which
+is the archetype's routable ground — `hummocks_stay_off_the_interdune_floors`
+pins it, and its first version failed because it ranked the tile's downhill
+corner as "floor" by sorting a grid that carries the regional datum tilt.

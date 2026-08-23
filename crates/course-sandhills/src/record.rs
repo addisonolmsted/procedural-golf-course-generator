@@ -111,6 +111,30 @@ pub struct FormSpec {
     pub stoss_share: Range,
     /// Blowouts per km². `golf` — these are the bunkers.
     pub blowout_km2: Range,
+
+    // ---- the hummock tier: individual dunes riding on the ridge belts ----
+    //
+    // MEASURED GAP (docs/sandhills/02-dune-targets.md §10). Real Nebraska is
+    // two-scale: broad ~1.3 km ridge belts separated by flat interdune
+    // valleys, and the belts are PACKED with individual 50-150 m dunes. The
+    // megaform alone reads as smooth swells. Band RMS, real against
+    // megaform-only generated: 64-150 m 1.10 vs 0.48 (2.3x short),
+    // 150-400 m 2.80 vs 1.99 (1.4x). None of the gate statistics could see
+    // it -- orientation order, dominant wavelength and band relief all
+    // measure 400-1600 m.
+    /// Individual dune spacing, metres.
+    pub hummock_lambda_m: Range,
+    /// Individual dune height, metres — peak to trough.
+    pub hummock_relief_m: Range,
+    /// Directional concentration of the hummock field. Lower than the
+    /// megaform's: individual dunes in a barchanoid belt are transverse to
+    /// the same wind but far more disordered than the belt they sit on.
+    pub hummock_kappa: Range,
+    /// Where on the belt the hummocks start, as a fraction of megaform
+    /// height. **This is what keeps the interdune floors flat** — sand piles
+    /// on the belts, and the flat floors between them are the ground a course
+    /// is routed on. Gate below this, full above `gate + 0.30`.
+    pub hummock_gate: Range,
 }
 
 /// One archetype record. Sandhills only, for now: attempt 5 builds ONE
@@ -162,11 +186,21 @@ pub const SANDHILLS: Record = Record {
         dune_relief_m: Range::new(14.0, 35.0),     // golf-bounded (lit: 41-150 m)
         wind_wander_rad: Range::new(0.20, 0.40),   // guess
         wind_wander_m: Range::new(1800.0, 3200.0), // guess
-        kappa: Range::new(5.0, 12.0),              // 30-seed sweep -> A p50 ~.77
+        // 8-20, raised from 5-12. The old floor admitted direction spreads
+        // up to 0.605 rad, which is MOUND territory (mounds run 0.8-1.9) and
+        // produced a visible crosshatch weave -- seed 19 measured 11.3
+        // orientation families against 6.6-8.2 for a well-drawn train. One
+        // change fixes two things: it keeps trains reading as trains, and it
+        // lifts the train orientation order, which was the tracked residual.
+        kappa: Range::new(8.0, 20.0),
         stoss_deg: Range::new(5.0, 12.0),          // literature
         lee_deg: Range::new(16.0, 26.0),           // literature, golf-capped
         stoss_share: Range::new(0.66, 0.80),       // literature
         blowout_km2: Range::new(1.5, 5.0),         // golf
+        hummock_lambda_m: Range::new(140.0, 320.0), // corpus band 64-400
+        hummock_relief_m: Range::new(7.0, 16.0),    // corpus band RMS
+        hummock_kappa: Range::new(1.2, 4.0),        // looser than the belt
+        hummock_gate: Range::new(0.30, 0.48),       // golf: floors stay flat
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
@@ -188,6 +222,10 @@ pub const SANDHILLS: Record = Record {
         // near-equal share puts the stoss peak slope above the lee's, which
         // inverts the slip face. Found by `the_profile_is_asymmetric...`.
         blowout_km2: Range::new(2.0, 6.5),         // golf
+        hummock_lambda_m: Range::new(120.0, 280.0),
+        hummock_relief_m: Range::new(5.0, 12.0),
+        hummock_kappa: Range::new(0.8, 3.0),
+        hummock_gate: Range::new(0.26, 0.44),
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
@@ -229,6 +267,10 @@ mod tests {
                 ("lee_deg", g.lee_deg),
                 ("stoss_share", g.stoss_share),
                 ("blowout_km2", g.blowout_km2),
+                ("hummock_lambda_m", g.hummock_lambda_m),
+                ("hummock_relief_m", g.hummock_relief_m),
+                ("hummock_kappa", g.hummock_kappa),
+                ("hummock_gate", g.hummock_gate),
             ] {
                 assert!(v.lo <= v.hi, "{name}.{k}: lo {} > hi {}", v.lo, v.hi);
                 assert!(v.lo >= 0.0, "{name}.{k}: negative lo");

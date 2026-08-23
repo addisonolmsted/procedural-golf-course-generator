@@ -31,13 +31,18 @@
 //! numbers so a drift is visible.
 
 use course_world::grid::Grid;
-use course_world::math;
+use course_world::math::{self, Vec2};
 
 use crate::draw::Descriptors;
 use crate::wind::{macro_spec, WindField, RES_M};
 
 pub struct Surface {
     pub height: Grid<f64>,
+    /// The megaform alone, before the hummock tier. Kept so an ablation is one
+    /// line rather than a rebuild — discipline rule 3.
+    pub belts: Grid<f64>,
+    /// Where hummocks were allowed, in `[0, 1]`. Zero on the interdune floors.
+    pub hummock_gate: Grid<f64>,
     /// Interdune datum, kept for A5/A6: blowouts deflate toward it and the
     /// water table is measured from it.
     pub datum: Grid<f64>,
@@ -50,14 +55,12 @@ pub struct Surface {
 /// back to the next crest. Returns `[0, 1]`, 1 at the crest.
 pub fn profile(t: f64, stoss_share: f64) -> f64 {
     let lee = (1.0 - stoss_share).max(1e-6);
-    if t < lee {
+    let raw = if t < lee {
         // Lee face. Near-planar -- a slip face is a plane, not a cosine --
         // with a small ease at the toe so the join to the stoss ramp is C1
         // and does not print a crease along every trough.
         let u = t / lee;
-        let planar = 1.0 - u;
-        let ease = math::smoothstep(0.82, 1.0, u);
-        planar * (1.0 - ease)
+        (1.0 - u) * (1.0 - math::smoothstep(0.82, 1.0, u))
     } else {
         // Stoss ramp. Mildly convex -- flat at the toe, steepening toward the
         // crest -- but with a BOUNDED peak slope.
@@ -68,10 +71,81 @@ pub fn profile(t: f64, stoss_share: f64) -> f64 {
         // STOSS steeper than the lee, which is backwards -- a slip face is
         // the steep side of a dune by definition. `u^1.15` caps the peak at
         // 1.15x, so lee/stoss stays above 1 across the whole share range.
+        // The exponent is evaluated on a SHIFTED variable. Raw `u^1.15` has
+        // second derivative `0.17 * u^-0.85`, which is INFINITE at the toe, so
+        // every wave printed a curvature singularity along its own trough line
+        // and eight of them wove a visible crosshatch. Rounding the crest did
+        // not touch it -- measured, max|d2| stayed at 3082 before and after,
+        // which is what identified the toe as the real source. The shift makes
+        // the curvature finite while leaving the shape and the bounded peak
+        // slope intact (h(1) = 1, max slope 1.08).
+        const TOE: f64 = 0.06;
         let u = (t - lee) / stoss_share.max(1e-6);
-        u.powf(1.15)
+        let n = (1.0 + TOE).powf(1.15) - TOE.powf(1.15);
+        ((u + TOE).powf(1.15) - TOE.powf(1.15)) / n
+    };
+    // ---- the crest is ROUNDED, and that is a scale argument -------------
+    //
+    // Raw, the two branches meet at the crest with a slope JUMP of
+    // `1.15/share + 1/(1-share)` -- 4.4 to 5.8 across the shipped share
+    // range. Each wave then prints that kink along its own crest lines, and
+    // eight waves at spread orientations weave them into a visible
+    // crosshatch. MEASURED on seed 19 (the worst draw: share 0.77, spread
+    // 0.605 rad): 11.3 effective orientation families, creases over 5 cm
+    // across 25.6% of the tile, against 2.4-6.8% for a typical draw.
+    //
+    // A real dune crest IS a slope break -- the brink where the stoss meets
+    // the slip face -- but that sharpness belongs to an INDIVIDUAL dune at
+    // tens of metres, not to a 1300 m ridge belt, which is a belt OF dunes
+    // and has no single brink. So the megaform crest is rounded here and the
+    // sharp brinks arrive with the hummock tier, at the scale where they are
+    // physically right.
+    let d = t.min(1.0 - t);                 // wrapped distance to the crest
+    if d >= CREST_ROUND {
+        return raw;
     }
+    let w = math::smoothstep(0.0, 1.0, d / CREST_ROUND);
+    let cap = 1.0 - (d / CREST_ROUND).powi(2) * (1.0 - PEAK_EDGE);
+    cap * (1.0 - w) + raw * w
 }
+
+/// Shear the surface downwind by an amount proportional to its own height.
+///
+/// THE ASYMMETRY IS APPLIED ONCE, TO THE COMPOSITE. Giving every wave its own
+/// stoss/lee profile gave eight crossing families of slip faces, and they wove
+/// a visible crosshatch across the tile. ABLATION (2026-08-22): rebuilding the
+/// same seeds with a symmetric profile erased the weave completely and dropped
+/// |lap| mean from 0.00337 to 0.00199 -- which is what identified it, after a
+/// C1 crest fix and a toe-singularity fix had each been measured and each left
+/// the weave untouched.
+///
+/// A real dune field has ONE wind, so it has ONE family of slip faces. This is
+/// what wind actually does: it carries sand up the windward slope and drops it
+/// over the brink, which displaces the crest downwind in proportion to how
+/// high it stands. Sampling the symmetric field at `p - offset(p) * w_hat`
+/// steepens every lee face and lengthens every stoss ramp, at one orientation,
+/// for free.
+fn advect(z: &Grid<f64>, tnorm: &[f64], wind_rad: f64, offset_m: f64) -> Grid<f64> {
+    let spec = z.spec;
+    let w = Vec2::new(math::cos(wind_rad), math::sin(wind_rad));
+    let mut out = Grid::filled(spec, 0.0f64);
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let p = spec.world_of(x, y);
+            let t = tnorm[spec.index(x, y)].clamp(0.0, 1.0);
+            let src = Vec2::new(p.x - w.x * offset_m * t, p.y - w.y * offset_m * t);
+            out.set(x, y, z.bilinear(src));
+        }
+    }
+    out
+}
+
+/// Half-width of the crest rounding, as a fraction of the dune cycle.
+/// Slope jump at the crest falls from ~5.2 to ~0.02 at this value.
+const CREST_ROUND: f64 = 0.10;
+/// Profile height at the edge of the rounding band, used to blend the cap in
+/// without moving the peak.
+const PEAK_EDGE: f64 = 0.86;
 
 /// Macro stoss and lee angles in degrees, implied by relief, wavelength and
 /// the share split. Reported, not drawn -- see the module doc.
@@ -84,7 +158,7 @@ pub fn derived_angles(d: &Descriptors) -> (f64, f64) {
     )
 }
 
-pub fn build(w: &WindField, d: &Descriptors) -> Surface {
+pub fn build(w: &WindField, hw: &WindField, d: &Descriptors) -> Surface {
     let spec = macro_spec();
     let (nx, ny) = (spec.nx, spec.ny);
 
@@ -108,9 +182,10 @@ pub fn build(w: &WindField, d: &Descriptors) -> Surface {
     let mut raw = vec![0.0f64; spec.len()];
     for y in 0..ny {
         for x in 0..nx {
+            // SYMMETRIC per wave -- the asymmetry is applied once, below.
             let mut a = 0.0;
             for i in 0..w.n_waves() {
-                a += profile(w.cycle(i, x, y), d.stoss_share);
+                a += profile(w.cycle(i, x, y), 0.5);
             }
             raw[spec.index(x, y)] = a / nw;
         }
@@ -118,15 +193,83 @@ pub fn build(w: &WindField, d: &Descriptors) -> Surface {
     let (lo, hi) = pct(&raw, 0.05, 0.95);
     let span = (hi - lo).max(1e-9);
 
-    let mut height = Grid::filled(spec, 0.0f64);
+    let mut belts = Grid::filled(spec, 0.0f64);
+    let mut tnorm = vec![0.0f64; spec.len()];
     for y in 0..ny {
         for x in 0..nx {
+            // NOT clamped. Normalising on p5/p95 and then clamping flattens
+            // the top and bottom 5% of the field into plateaus with hard
+            // polygonal edges -- visible as straight-sided flats in the
+            // render. The scale still makes p95-p5 equal the drawn relief;
+            // the tails simply run past it, which is what a real crest does.
             let t = (raw[spec.index(x, y)] - lo) / span;
-            height.set(x, y, datum.get(x, y) + d.dune_relief_m * t);
+            tnorm[spec.index(x, y)] = t;
+            belts.set(x, y, datum.get(x, y) + d.dune_relief_m * t);
         }
     }
 
-    Surface { height, datum }
+    // --- A4b: the hummock tier ---------------------------------------------
+    // The same phase machinery at dune scale, GATED to the belt tops. The gate
+    // is the whole point: sand piles on the ridges, and the flat interdune
+    // floors between them are the ground a course is routed on. Ungated, this
+    // tier would fill the valleys and take the archetype's routable ground
+    // with it -- the corpus passes the golf proxy on those floors.
+    let nhw = hw.n_waves() as f64;
+    let mut hraw = vec![0.0f64; spec.len()];
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut a = 0.0;
+            for i in 0..hw.n_waves() {
+                a += profile(hw.cycle(i, x, y), 0.5);
+            }
+            hraw[spec.index(x, y)] = a / nhw;
+        }
+    }
+    let (hlo, hhi) = pct(&hraw, 0.05, 0.95);
+    let hspan = (hhi - hlo).max(1e-9);
+
+    let mut height = Grid::filled(spec, 0.0f64);
+    let mut gate = Grid::filled(spec, 0.0f64);
+    for y in 0..ny {
+        for x in 0..nx {
+            let li = spec.index(x, y);
+            let g = math::smoothstep(d.hummock_gate, d.hummock_gate + 0.30, tnorm[li]);
+            let h = (hraw[li] - hlo) / hspan - 0.5;
+            gate.set(x, y, g);
+            height.set(x, y, belts.get(x, y) + d.hummock_relief_m * g * h);
+        }
+    }
+
+    // --- the single asymmetry pass ----------------------------------------
+    // Offset is what the share asks for: a crest displaced downwind by
+    // (share - 0.5) of its own wavelength has that share's stoss/lee split.
+    // The belts and the hummocks are advected by their OWN wavelengths, since
+    // a hummock rides on the belt and is shaped by the same wind at its own
+    // scale.
+    let belt_off = (d.stoss_share - 0.5) * d.wavelength_m;
+    let hum_off = (d.stoss_share - 0.5) * d.hummock_lambda_m;
+    let belts_a = advect(&belts, &tnorm, d.wind_rad, belt_off);
+    let mut hum = Grid::filled(spec, 0.0f64);
+    for y in 0..ny {
+        for x in 0..nx {
+            let li = spec.index(x, y);
+            hum.set(x, y, height.get(x, y) - belts.get(x, y));
+        }
+    }
+    let hnorm: Vec<f64> = (0..spec.len()).map(|i| hraw[i]).collect();
+    let hum_a = advect(&hum, &hnorm, d.wind_rad, hum_off);
+    let mut height2 = Grid::filled(spec, 0.0f64);
+    for y in 0..ny {
+        for x in 0..nx {
+            height2.set(x, y, belts_a.get(x, y) + hum_a.get(x, y));
+        }
+    }
+
+    // The gate is advected with the belts it keys on -- otherwise the exported
+    // gate describes the PRE-shear surface and the two disagree by the offset.
+    let gate_a = advect(&gate, &tnorm, d.wind_rad, belt_off);
+
+    Surface { height: height2, datum, belts: belts_a, hummock_gate: gate_a }
 }
 
 fn pct(v: &[f64], a: f64, b: f64) -> (f64, f64) {
@@ -156,7 +299,10 @@ mod tests {
         let mut r = rng::stream(&id, rng::WIND);
         let w = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad,
                             d.wind_wander_m, d.kappa);
-        let s = build(&w, &d);
+        let mut hr = rng::stream(&id, rng::HUMMOCK);
+        let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
+                             d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+        let s = build(&w, &hw, &d);
         (d, s)
     }
 
@@ -189,6 +335,99 @@ mod tests {
             assert!(steepest_fall > steepest_rise * 1.15,
                     "share {share}: lee {steepest_fall:.5} is not clearly steeper \
                      than stoss {steepest_rise:.5}");
+        }
+    }
+
+    #[test]
+    fn the_crest_is_c1() {
+        // The kink at the crest wove a visible crosshatch across the tile:
+        // each of the eight waves printed its own crest line, and on the worst
+        // draw (seed 19, share 0.77, spread 0.605 rad) creases over 5 cm
+        // covered 25.6% of the tile against 2.4-6.8% typical. A megaform ridge
+        // belt is a belt OF dunes and has no single brink; the sharp break
+        // belongs to the hummock tier.
+        for share in [0.58, 0.66, 0.72, 0.80] {
+            let n = 20000;
+            let h = 1.0 / n as f64;
+            let at = |t: f64| profile(t.rem_euclid(1.0), share);
+            let slope = |t: f64| (at(t + h) - at(t - h)) / (2.0 * h);
+            let jump = (slope(1.0 - 3.0 * h) - slope(3.0 * h)).abs();
+            assert!(jump < 0.6,
+                    "share {share}: slope jump at the crest is {jump:.3} -- raw is ~5");
+            assert!(at(0.0) > 0.985, "share {share}: rounding moved the peak");
+        }
+    }
+
+    #[test]
+    fn hummocks_stay_off_the_interdune_floors() {
+        // THE golf-critical invariant. The archetype's routable ground is the
+        // flat floor between ridge belts -- real Nebraska passes the proxy on
+        // those floors and nowhere else. A hummock tier that filled them would
+        // take the playable ground with it.
+        for s in 0..12 {
+            let (_, sf) = built(s, None);
+            let spec = sf.height.spec;
+            let mut lowest = Vec::new();
+            for y in 0..spec.ny {
+                for x in 0..spec.nx {
+                    // DATUM-FREE dune height. Ranking on `belts` alone would
+                    // rank the tile's downhill CORNER as floor, because that
+                    // grid carries the regional tilt -- and the gate keys on
+                    // dune form, not on absolute elevation. (Measured: the
+                    // first version of this test failed at gate 0.66 for
+                    // exactly that reason.)
+                    lowest.push((*sf.belts.get(x, y) - *sf.datum.get(x, y),
+                                 *sf.hummock_gate.get(x, y)));
+                }
+            }
+            lowest.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            // over the lowest fifth of the belt surface, the gate must be shut
+            let n = lowest.len() / 5;
+            let mut worst = 0.0f64;
+            for i in 0..n {
+                worst = worst.max(lowest[i].1);
+            }
+            assert!(worst < 0.25,
+                    "seed {s}: hummock gate reached {worst:.2} on the interdune floor");
+        }
+    }
+
+    #[test]
+    fn the_hummock_tier_adds_the_band_it_was_built_for() {
+        // Ablation as a test: the tier must move 64-400 m energy and must not
+        // be doing its work at megaform scale.
+        for s in [3u64, 7, 19] {
+            let id = course_seed::RunIdentity::from_seed(s);
+            let d = draw::site(&id, Some(Mode::Aeolian), Some(crate::FormClass::Train));
+            let mut r = rng::stream(&id, rng::WIND);
+            let f = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad,
+                                d.wind_wander_m, d.kappa);
+            let mut hr = rng::stream(&id, rng::HUMMOCK);
+            let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
+                                 d.wind_wander_m * 0.45, d.hummock_kappa);
+            let mut off = d;
+            off.hummock_relief_m = 0.0;
+            let a = build(&f, &hw, &off);
+            let b = build(&f, &hw, &d);
+            let rough = |g: &Grid<f64>| {
+                // short-scale energy: rms of the 3x3 Laplacian
+                let sp = g.spec;
+                let mut acc = 0.0;
+                let mut n = 0.0;
+                for y in 1..sp.ny - 1 {
+                    for x in 1..sp.nx - 1 {
+                        let l = g.get(x + 1, y) + g.get(x - 1, y) + g.get(x, y + 1)
+                            + g.get(x, y - 1) - 4.0 * g.get(x, y);
+                        acc += l * l;
+                        n += 1.0;
+                    }
+                }
+                (acc / n).sqrt()
+            };
+            assert!(rough(&b.height) > rough(&a.height) * 1.5,
+                    "seed {s}: the hummock tier added no short-scale energy");
+            assert!(relief(&b.height) < relief(&a.height) * 1.9,
+                    "seed {s}: the hummock tier is doing megaform work");
         }
     }
 

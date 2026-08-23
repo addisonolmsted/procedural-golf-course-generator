@@ -17,7 +17,10 @@ fn main() {
             let mut r = rng::stream(&id, rng::WIND);
             let f = wind::build(&mut r, d.wind_rad, d.wavelength_m,
                                 d.wind_wander_rad, d.wind_wander_m, kap);
-            let sf = surface::build(&f, &d);
+            let mut hr = rng::stream(&id, rng::HUMMOCK);
+            let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m,
+                                 d.wind_wander_rad, d.wind_wander_m * 0.45, d.hummock_kappa);
+            let sf = surface::build(&f, &hw, &d);
             gridio::write_grid_f32(
                 &out.join(format!("k{:05.0}_{seed}.cgrid", kap * 100.0)), &sf.height).unwrap();
             if seed == 1 { spread = f.spread_rad; }
