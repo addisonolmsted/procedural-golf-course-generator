@@ -93,7 +93,8 @@ negotiated with; here it is a tautology that either holds or reveals a defect.
 ## 3. The ruler is frozen
 
 `tools/ruler_lock.sh` digest-locks the measurement stack
-(`docs/network-first/ruler.lock`, 16 files: the metrics battery, the corpus-side
+(`docs/ruler.lock` — moved out of this folder by attempt 5, since the ruler
+outlives any one attempt; 28 files: the metrics battery, the corpus-side
 flow/structure/netstats/planform scripts, the golf proxy and its thresholds, and
 the corpus cull lists).
 

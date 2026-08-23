@@ -1,0 +1,12 @@
+[package]
+name = "course-sandhills"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# DEPENDENCY RULE (attempt 5): only the shared substrate. Enforced by
+# tools/no_old_deps.sh, which gives this crate a STRICTER forbidden list than
+# the attempt-4 crates -- the attempt-4 generator crates are forbidden too.
+[dependencies]
+course-world = { workspace = true }
+course-seed = { workspace = true }

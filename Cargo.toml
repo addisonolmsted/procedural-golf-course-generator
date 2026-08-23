@@ -34,6 +34,11 @@ members = [
     "crates/course-fabric",
     "crates/course-water",
     "crates/course-lab",
+    # --- ATTEMPT 5: the Sandhills archetype, built alone (branch `sandhills`).
+    # May depend on course-world + course-seed ONLY -- not the retired pipeline
+    # crates and not attempt 4's generator crates. Enforced by
+    # tools/no_old_deps.sh. See docs/sandhills/README.md.
+    "crates/course-sandhills",
     # Superseded by S1/S2; retained until the skeleton kernel lands.
     # See MIGRATION.md.
     "crates/course-framing",
@@ -70,6 +75,7 @@ course-relief = { path = "crates/course-relief" }
 course-fabric = { path = "crates/course-fabric" }
 course-water = { path = "crates/course-water" }
 course-lab = { path = "crates/course-lab" }
+course-sandhills = { path = "crates/course-sandhills" }
 libm = "0.2"
 eframe = { version = "0.31", features = ["wgpu"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

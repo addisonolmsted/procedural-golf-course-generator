@@ -845,6 +845,14 @@ name = "course-routing"
 version = "0.0.0"
 
 [[package]]
+name = "course-sandhills"
+version = "0.0.0"
+dependencies = [
+ "course-seed",
+ "course-world",
+]
+
+[[package]]
 name = "course-seed"
 version = "0.0.0"
 dependencies = [
