@@ -69,6 +69,11 @@ EXTRACT_V2_VERSION = 2
 V2_BIOMES = (
     "piedmont", "sandhills", "great_plains",
     "river_valley", "hill_country", "heathland",
+    # Attempt 5: the CAROLINA Sandhills mode. Same game archetype as
+    # "sandhills" (Nebraska), different structural mode -- fluvially dissected
+    # sand cap vs constructional dune field. Kept as a separate corpus key so
+    # the two are measured and gated separately; see docs/sandhills/README.md.
+    "sandhills_nc",
 )
 
 # The spike's band split (tools/spike/spike.py): half-amplitude Gaussian

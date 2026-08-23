@@ -15,7 +15,8 @@ sys.path.insert(0, str(ROOT / "tools" / "macro_campaign"))
 from macro_campaign import cgrid, extract_v2  # noqa: E402
 
 GEN_DIR = pathlib.Path(sys.argv[1])
-BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]
+BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills",
+          "sandhills_nc"]  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
 
 
 def metrics(z8, cell8=8.0):

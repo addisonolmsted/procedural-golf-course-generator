@@ -93,7 +93,8 @@ def main():
     print(f"REAL corpus junction angles at threshold {THRESH:.1e} m2")
     print(f"  {'biome':14s} {'n':>5s} | {'2-cell baseline':>22s} | {'6-cell baseline':>22s}")
     print(f"  {'':14s} {'':5s} | {'p50':>6s} {'>80deg':>7s} {'>=88':>6s} | {'p50':>6s} {'>80deg':>7s} {'>=88':>6s}")
-    for b in ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]:
+    for b in ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills",
+              "sandhills_nc"]:  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
         a2, a6 = [], []
         for tid in [t for a, t in extract_v2.kept_tiles() if a == b][:8]:
             z, (_, _, cell) = cgrid.read_f32(extract_v2.OUT / "tiles" / b / f"{tid}.cgrid")

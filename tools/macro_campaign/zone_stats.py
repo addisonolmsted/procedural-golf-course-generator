@@ -17,7 +17,7 @@ from macro_campaign import cgrid, extract_v2, flow
 from metrics import core as mcore
 
 CELL=8.0; TRUNK=1.0e6; OUT_M=1000.0
-BIOMES=["piedmont","great_plains","river_valley","hill_country","heathland","sandhills"]
+BIOMES=["piedmont","great_plains","river_valley","hill_country","heathland","sandhills","sandhills_nc"]  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
 NT=int(sys.argv[1]) if len(sys.argv)>1 else 12
 
 def runs_of(prof):

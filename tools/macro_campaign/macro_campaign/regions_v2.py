@@ -68,6 +68,45 @@ REGIONS_V2 = {
                                                    # dropped: it sits west of
                                                    # 102W, in zone 13)
     },
+    # --------------------------------------------------------- sandhills_nc
+    # CAROLINA Sandhills — attempt 5 (docs/sandhills/README.md §2). The SAME
+    # game archetype as `sandhills`, a DIFFERENT structural mode: an old sand
+    # cap on the Fall Line dissected by low-gradient blackwater creeks, where
+    # Nebraska is constructional dune topography with no drainage at all.
+    #
+    # It gets its own corpus key rather than joining `sandhills` because the
+    # two modes are measured and gated separately -- pooling them would hide
+    # exactly the per-mode failure that pooled ED hid for two rounds in
+    # heartland. `sandhills` is NOT renamed: that would move every published
+    # 203-tile band and every proxy_thresholds.json row.
+    #
+    # Course grids already exist -- courses.py's `sandhills` box (35.2,
+    # -79.45, 0.5) is the NC golf province and 12 Pinehurst-area grids are on
+    # disk. What was missing is NATURAL (non-course) Carolina terrain.
+    #
+    # All four blocks are zone 17. The NC blocks sit east of 79.8W, clear of
+    # the Uwharrie piedmont lattice at (35.385, -80.015); the SC blocks share
+    # piedmont's longitudes but are a full degree of latitude south of
+    # Uwharrie and 1.4 deg east of Sumter/Enoree, so nothing overlaps.
+    "sandhills_nc": {
+        "epsg": 26917,
+        "utm_zone": 17,
+        "tiles": _grid(35.05, -79.55, 4, 4)        # Sandhills Game Land (NC)
+        + _grid(35.17, -79.22, 3, 4)               # Fort Bragg NW impact area --
+                                                   # unbuilt longleaf; the OSM
+                                                   # screen culls the cantonment
+                                                   # side, which is east of 79.1W
+        + _grid(34.54, -80.22, 4, 4)               # Carolina Sandhills NWR (SC)
+        + _grid(34.66, -80.06, 3, 4)               # Sand Hills State Forest (SC)
+        # Top-up (2026-08-22): the OSM screen kept 23/45, a 51% cull against
+        # the recorded v1 ~40% -- Carolina longleaf ground carries firebreaks
+        # and forest roads that Nebraska refuge ground does not. Per-block pass
+        # rate: Fort Bragg NW 70%, Carolina Sandhills NWR 54%, Sandhills Game
+        # Land 46%, Sand Hills State Forest 33%. Topping up the two best rather
+        # than the two worst.
+        + _grid(35.23, -79.30, 3, 4)               # Fort Bragg northern training areas
+        + _grid(34.61, -80.19, 2, 4),              # Carolina Sandhills NWR, north end
+    },
     # --------------------------------------------------------- great_plains
     # Caprock-held flat: national grasslands on the high plains (zone 13).
     "great_plains": {

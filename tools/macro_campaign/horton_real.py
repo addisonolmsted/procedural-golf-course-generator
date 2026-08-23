@@ -101,7 +101,8 @@ def ratios(rs):
 def main():
     print(f"REAL corpus Horton ratios at threshold {THRESH:.1e} m2")
     print(f"  {'biome':14s} {'n':>2s} {'Rb med':>7s} {'Rb p10-p90':>14s} {'Rl med':>7s} {'Omega':>6s}")
-    for b in ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]:
+    for b in ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills",
+              "sandhills_nc"]:  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
         rbs, rls, omegas = [], [], []
         for tid in [t for a, t in extract_v2.kept_tiles() if a == b][:10]:
             z, (_, _, cell) = cgrid.read_f32(extract_v2.OUT / "tiles" / b / f"{tid}.cgrid")

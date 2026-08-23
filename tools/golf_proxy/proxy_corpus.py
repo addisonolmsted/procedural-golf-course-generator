@@ -18,7 +18,7 @@ RB = th["relief_p95_p5"]["band"]
 print(f"floors from 64 real courses: cap>={CAPF:.3f} steep>={STEEPF:.3f} contig>={CONTF:.0f}ha relief {RB[0]:.1f}-{RB[1]:.1f}m\n")
 print(f"{'biome':14s} {'n':>3s} {'cap p50':>8s} {'steep p50':>10s} {'contig_ha p50':>14s} {'relief p50':>11s} {'PASS all':>9s}")
 rows={}
-for b in ["piedmont","great_plains","river_valley","hill_country","heathland","sandhills"]:
+for b in ["piedmont","great_plains","river_valley","hill_country","heathland","sandhills","sandhills_nc"]:
     C,S,H,R,ok = [],[],[],[],0
     tids=[t for a,t in extract_v2.kept_tiles() if a==b]
     for tid in tids:

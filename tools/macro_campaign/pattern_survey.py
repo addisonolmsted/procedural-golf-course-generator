@@ -31,7 +31,8 @@ def _load(name, path):
 rp = _load("rp", ROOT / "tools/macro_campaign/real_planform.py")
 jr = _load("jr", ROOT / "tools/macro_campaign/junction_real.py")
 
-BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]
+BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills",
+          "sandhills_nc"]  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
 CELL = 8.0
 THRESH = extract_v2.CHANNEL_AREA_M2      # 6e4 -- Policy A's threshold
 NTILE = int(sys.argv[1]) if len(sys.argv) > 1 else 99

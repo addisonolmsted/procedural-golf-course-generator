@@ -25,7 +25,8 @@ import importlib.util
 spec = importlib.util.spec_from_file_location("hreal", ROOT / "horton_real.py")
 hreal = importlib.util.module_from_spec(spec); spec.loader.exec_module(hreal)
 
-BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills"]
+BIOMES = ["piedmont", "great_plains", "river_valley", "hill_country", "heathland", "sandhills",
+          "sandhills_nc"]  # + attempt 5: Carolina Sandhills (docs/sandhills/README.md)
 NTILE = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 
 def policy_b(z8):
