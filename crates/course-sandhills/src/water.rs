@@ -102,18 +102,76 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
                 }
             }
         }
-        if cells.len() < 24 {
-            continue; // a puddle smaller than ~100 m2 at 2 m is noise
+        // MEASURED CULL (2026-08-23): bodies under 500 m2 were 29% of all
+        // water bodies and 0.3% of the water area, at a median 0.18 m deep --
+        // ankle-deep specks that flicker at render distance and complicate
+        // every routing mask, worth nothing as hazards. The 500-2500 m2 class
+        // stays: 0.62 m deep, the pond-by-the-green vocabulary. (Real ground
+        // does carry sub-500 m2 dead-flat speckle, but that is WET MEADOW,
+        // which is a texture question, not open water.)
+        if cells.len() < 125 {
+            continue; // < 500 m2 at 2 m
         }
         // one FLAT level per lake
         let mut lv: Vec<f64> = cells.iter().map(|i| table[*i]).collect();
         lv.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let level = lv[lv.len() / 4];
-        for i in cells {
-            if height.data[i] < level {
-                surface.data[i] = level;
-                lake_cells += 1;
+        // depth gate: a pond whose DEEPEST point is under 0.3 m is a sheen,
+        // not a water body.
+        let deepest = cells.iter()
+            .map(|i| level - height.data[*i])
+            .fold(f64::MIN, f64::max);
+        if deepest < 0.3 {
+            continue;
+        }
+        // Gate on the FINAL footprint: setting one flat level per lake
+        // shrinks the component (cells above the level go dry again), and the
+        // first version gated before the shrink -- 28 m2 fragments survived.
+        let final_cells: Vec<usize> =
+            cells.into_iter().filter(|i| height.data[*i] < level).collect();
+        if final_cells.len() < 125 {
+            continue;
+        }
+        for i in final_cells {
+            surface.data[i] = level;
+            lake_cells += 1;
+        }
+    }
+    // FINAL sweep: the level cut can SPLIT a component -- cells above the
+    // level in its middle go dry and disconnect it -- so gating per source
+    // component still let 28 m2 slivers through. Relabel the finished wet
+    // grid and drop small pieces wholesale.
+    let mut final_lab = vec![0u32; spec.len()];
+    let mut nid = 0u32;
+    let mut counts: Vec<usize> = vec![0];
+    for start in 0..spec.len() {
+        if !surface.data[start].is_finite() || final_lab[start] != 0 {
+            continue;
+        }
+        nid += 1;
+        counts.push(0);
+        stack.push(start);
+        final_lab[start] = nid;
+        while let Some(i) = stack.pop() {
+            counts[nid as usize] += 1;
+            let (x, y) = ((i % spec.nx as usize) as u32, (i / spec.nx as usize) as u32);
+            for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (nx2, ny2) = (x as i64 + dx, y as i64 + dy);
+                if nx2 < 0 || ny2 < 0 || nx2 >= spec.nx as i64 || ny2 >= spec.ny as i64 {
+                    continue;
+                }
+                let j = spec.index(nx2 as u32, ny2 as u32);
+                if surface.data[j].is_finite() && final_lab[j] == 0 {
+                    final_lab[j] = nid;
+                    stack.push(j);
+                }
             }
+        }
+    }
+    for i in 0..spec.len() {
+        if final_lab[i] != 0 && counts[final_lab[i] as usize] < 125 {
+            surface.data[i] = f64::NAN;
+            lake_cells -= 1;
         }
     }
     let lake_frac = lake_cells as f64 / spec.len() as f64;
