@@ -110,7 +110,24 @@ impl PatchPack {
 
     /// One patch's sample, in metres. `k` selects within the bucket.
     fn sample(&self, bucket: usize, k: usize, y: usize, x: usize) -> f64 {
-        let (start, count) = self.index[bucket];
+        let (start, count) = {
+            let mut b = bucket;
+            // The edge-truncation filter can empty a rare bucket (measured:
+            // fluvial steep-crest bins, where Carolina's steep ground is all
+            // creek bank). Fall back across the aspect ring rather than
+            // pasting silence -- an untextured band is worse than an
+            // aspect-mismatched patch.
+            if self.index[b].1 == 0 {
+                let ring = b - b % self.n_aspect;
+                for a in 0..self.n_aspect {
+                    if self.index[ring + a].1 > 0 {
+                        b = ring + a;
+                        break;
+                    }
+                }
+            }
+            self.index[b]
+        };
         if count == 0 {
             return 0.0;
         }
@@ -152,6 +169,21 @@ pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descri
     let (mut slope, mut tpi, mut aspect) =
         (vec![0.0f64; mspec.len()], vec![0.0f64; mspec.len()], vec![0.0f64; mspec.len()]);
     let lp = lowpass(macro_h, 3);
+    // Megaform position for the floor gate: percentile-normalised height, the
+    // same axis the hummock gate keys on. Texture fades toward
+    // `texture_floor` in the interdune lows -- real train corridors are
+    // deflation surfaces and carry 0.277x the belt's fine texture.
+    let mut mpos = vec![0.0f64; mspec.len()];
+    {
+        let mut sorted: Vec<f64> = macro_h.data.iter().copied().collect();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = sorted.len();
+        for i in 0..mspec.len() {
+            let z = macro_h.data[i];
+            let r = sorted.partition_point(|v| *v < z);
+            mpos[i] = r as f64 / n as f64;
+        }
+    }
     for y in 1..mspec.ny - 1 {
         for x in 1..mspec.nx - 1 {
             let i = mspec.index(x, y);
@@ -205,9 +237,19 @@ pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descri
         y0 += step as i64;
     }
 
-    for i in 0..spec.len() {
-        if wsum[i] > 1e-9 {
-            out.data[i] += d.texture_gain * acc[i] / wsum[i];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            if wsum[i] <= 1e-9 {
+                continue;
+            }
+            let w = spec.world_of(x, y);
+            let mx = ((w.x / RES_M).round() as i64).clamp(0, mspec.nx as i64 - 1) as u32;
+            let my = ((w.y / RES_M).round() as i64).clamp(0, mspec.ny as i64 - 1) as u32;
+            let g = d.texture_floor
+                + (1.0 - d.texture_floor)
+                    * math::smoothstep(0.30, 0.62, mpos[mspec.index(mx, my)]);
+            out.data[i] += d.texture_gain * g * acc[i] / wsum[i];
         }
     }
     out

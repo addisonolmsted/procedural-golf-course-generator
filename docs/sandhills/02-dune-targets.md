@@ -775,3 +775,42 @@ covering only the variance lost to overlap-adding uncorrelated patches.
 within what real ground shows. The leading explanation is a real blowout cut at a
 patch edge and pasted against unrelated ground; overlap-add softens the seam but
 does not restore the truncated feature. Revisit only if it grows.
+
+---
+
+## 17. The gouges traced, and quiet train corridors
+
+**The gouges, diagnosed at last — after three wrong hypotheses.** The gouge
+instrument (elongated negative fine-band components, elong > 2.6, len > 40 m)
+found 70 in generated train_19 and **71 in a real tile — the count was never
+wrong.** Three facts named the actual defect:
+
+1. ours were 55–58 m long inside 96 m patches; real run 99–195 m;
+2. their centres sat 6.3 m from the patch-stride grid (random expectation 12 m);
+3. a zoom showed an isolated pit with no upwind ramp and no downwind apron.
+
+A 96 m patch cuts through a 100–200 m blowout, and the fragment gets pasted
+with its context amputated. **The material was always real; the truncation was
+the artifact.** Fix: the pack builder rejects any patch whose deep features
+(< −2σ) touch the patch edge. Gouges 70 → 56 and 32 on the two checked seeds,
+`fine/band` held at 0.334. Runtime falls back across the aspect ring when the
+filter empties a rare bucket — one fluvial bucket, tracked for Phase 4.
+
+**Quiet train corridors.** Reviewer: the corpus reduces texturing and mounding
+in the low regions of train tiles. Measured per class, and they differ by 2×:
+
+| fine floor/belt | real | before | after |
+|---|---:|---:|---:|
+| train | **0.277** | 0.771 | **0.333** |
+| mound | **0.566** | 0.732 | **0.562** |
+
+Real train corridors are deflation surfaces swept by the channelised wind that
+builds the belts; mound hollows are sheltered. Both §12's `hummock_floor` and
+the quilt had been calibrated **pooled**, which averaged the two regimes into
+neither. Now per-class: `texture_floor` (new, gates the quilt by megaform
+position) and `hummock_floor` split per class, with the gain compensated so the
+whole-tile `fine/band` holds (0.321/0.349 vs real 0.340/0.364).
+
+Window calm after: train 0.944, mound 0.668 against real 0.368 — train
+corridors are now *very* calm, which is on the golf-friendly side of the trade
+and consistent with the corpus's own train/mound difference. Watch at P2.

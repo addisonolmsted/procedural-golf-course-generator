@@ -134,6 +134,27 @@ def build_one(dst, BIOMES):
                     p = fine[y:y + PATCH, x:x + PATCH]
                     if not np.isfinite(p).all():
                         continue
+                    # REJECT patches whose deep features touch the edge.
+                    #
+                    # Measured on train_19 (2026-08-23): the pasted surface
+                    # carried 70 elongated cuts by the gouge instrument --
+                    # about the REAL count of 71 -- but ours were 55-58 m long
+                    # against real 99-195 m, and their centres sat 6.3 m from
+                    # the patch-stride grid against a random-expectation 12 m.
+                    # A 96 m patch cuts through a 100-200 m blowout and the
+                    # fragment is pasted with its upwind ramp and downwind
+                    # apron amputated: an isolated black gash. The material
+                    # was always real; the truncation was the artifact.
+                    lo_thresh = -2.0 * max(float(p.std()), 0.05)
+                    deep = p < lo_thresh
+                    if deep.any():
+                        edge = np.zeros_like(deep)
+                        edge[0, :] = edge[-1, :] = True
+                        edge[:, 0] = edge[:, -1] = True
+                        edge[1, :] |= True; edge[-2, :] |= True
+                        edge[:, 1] |= True; edge[:, -2] |= True
+                        if (deep & edge).any():
+                            continue
                     bi = bucket(sl, tp, float(asp) - wind)
                     # Reservoir-cap during collection: holding every candidate
                     # would be ~0.5 GB before the cap is applied.

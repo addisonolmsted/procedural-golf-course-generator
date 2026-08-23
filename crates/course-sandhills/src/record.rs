@@ -192,6 +192,17 @@ pub struct FormSpec {
     /// amplitude it was measured at and the gain only covers the variance lost
     /// to overlap-adding uncorrelated patches.
     pub texture_gain: Range,
+    /// How much of the texture survives on the interdune FLOORS, as a
+    /// fraction of its belt amplitude.
+    ///
+    /// MEASURED per form class, and they differ by 2x: real train tiles
+    /// drop fine texture to 0.277x on the floors (p50, n=9) while mound
+    /// tiles hold 0.566x (n=35). Physically: a train's interdune corridors
+    /// are deflation surfaces swept by the same channelised wind that
+    /// builds the belts; a mound field's hollows are sheltered. The quilt
+    /// pasted at full amplitude everywhere (measured 0.771) because only
+    /// the hummock tier was gated.
+    pub texture_floor: Range,
 }
 
 /// One archetype record. Sandhills only, for now: attempt 5 builds ONE
@@ -273,8 +284,14 @@ pub const SANDHILLS: Record = Record {
         hummock_relief_m: Range::new(8.0, 14.0),
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
-        hummock_floor: Range::new(0.30, 0.50),      // corpus: floors run ~0.5x belt
-        texture_gain: Range::new(1.10, 1.35),       // overlap-add loss only
+        // Per-class, like texture_floor: the SS12 0.30-0.50 was calibrated on
+        // the POOLED corpus, but train corridors are deflation surfaces --
+        // fine floor/belt 0.277 against the mound's 0.566.
+        hummock_floor: Range::new(0.14, 0.26),
+        texture_gain: Range::new(1.30, 1.55),       // overlap-add + floor-gate loss
+        texture_floor: Range::new(0.16, 0.26),      // corpus: train floors 0.277
+        // (drawn low: the smoothstep transition band adds partial-gain area,
+        //  measured +0.15 on the floor/belt readout at equal floor values)
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
@@ -319,8 +336,9 @@ pub const SANDHILLS: Record = Record {
         hummock_relief_m: Range::new(7.5, 13.0),
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
-        hummock_floor: Range::new(0.30, 0.50),
+        hummock_floor: Range::new(0.38, 0.55),
         texture_gain: Range::new(1.10, 1.35),
+        texture_floor: Range::new(0.48, 0.65),      // corpus: mound floors 0.566
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
@@ -371,6 +389,7 @@ mod tests {
                 ("hummock_gate", g.hummock_gate),
                 ("hummock_floor", g.hummock_floor),
                 ("texture_gain", g.texture_gain),
+                ("texture_floor", g.texture_floor),
             ] {
                 assert!(v.lo <= v.hi, "{name}.{k}: lo {} > hi {}", v.lo, v.hi);
                 assert!(v.lo >= 0.0, "{name}.{k}: negative lo");
