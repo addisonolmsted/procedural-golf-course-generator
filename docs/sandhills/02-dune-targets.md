@@ -1,0 +1,271 @@
+# Dune targets, and the instrument that produced them
+
+**Phase 2 deliverable** (`docs/sandhills/README.md`). Instrument:
+`tools/aeolian/dune_stats.py`. Corpus: all 44 kept Nebraska tiles, measured
+2026-08-22.
+
+---
+
+## 1. Why a new instrument was needed
+
+Two things the Sandhills archetype is declared to need did not exist.
+
+`docs/biomes/sandhills.md` names the **directional variogram along the wind
+azimuth** as its primary discriminant. `metrics.core.anisotropy` computes eight
+directional variograms internally and discards the curves — at 22.5° resolution
+with `max_lag_m` clamped to 400 m. Nebraska's dominant wavelength measures
+~1190 m, so **the existing instrument saturates before the signal starts.**
+
+And nothing measures **crest defect density** — terminations and Y-junctions per
+km². That is what separates a real dune field (chains of coalesced crescents)
+from parallel stripes, and a generator can hit spacing, relief and orientation
+while failing it completely.
+
+The instrument ships with its own falsification harness because a dune metric has
+already died here: `fit_knobs.QUARANTINED["dune_wavelength_m"]` records that
+orientation coherence over the Nebraska tiles (R=0.41) came out *lower* than over
+the Cumberland Plateau tiles (R=0.75) — *"it ranks structural grain above a real
+dune field."*
+
+## 2. The instrument failed first, three times, and each failure was real
+
+Recorded because rule 5 is that an instrument which has never been seen to fail is
+not evidence — and this one failed on its first run, reproducing the retired
+metric's exact signature (dunes 0.327 against Cumberland 0.470).
+
+1. **Crest-tangent coherence is biased high at low crest count.**
+   `corr(n_crest, coherence) = −0.61`; tiles with one traced crest read 0.470,
+   tiles with four or more read 0.261. A single crest is trivially coherent with
+   itself, so on ground where the tracer finds little, the metric reports
+   "strongly oriented" for the wrong reason. **Demoted to descriptive**;
+   `spectral_order` is the gate metric.
+
+2. **A stride subsample of a lattice is a place, not a sample.** Tile ids sort
+   geographically, so `[:limit]` took one corner of one block. The first ten
+   Nebraska tiles gave spectral A p50 0.298 against 0.400 for the full 44 —
+   enough to flip the verdict on its own. `sweep` now strides evenly, and the
+   gate sweeps the corpus in full.
+
+3. **The corpus is a mixture** — §3, which is the finding that mattered.
+
+A methodological note that follows from `02-drainage-patterns.md` §2:
+`fill_depressions` runs before routing, so sandhills' network is a **phantom the
+real ground does not carry** — and `ridgepipe` traces crests with that same
+inverted-network machinery. A spectral statistic does not inherit that problem,
+which is the deeper reason the gate metric is spectral and the crest metrics are
+descriptive.
+
+## 3. The Nebraska corpus is two dune populations, not one
+
+Orientation order over the 44 kept tiles is cleanly **bimodal: Ashman D = 3.96**,
+modes at A 0.339 and 0.756. Hill country over the same instrument is **unimodal**
+(D = 1.88), so this is a property of the dune corpus, not of the statistic.
+
+| | n | spectral A | λ_dom m | band relief m | crest len p50 m |
+|---|---:|---:|---:|---:|---:|
+| **sandhills : train** | 8 | **0.767** | 1301 | 29.2 | 796 |
+| **sandhills : mound** | 36 | 0.356 | 1184 | 19.1 | 1023 |
+| mountain_bench (Cumberland Plateau) | 8 | 0.345 | 1065 | 35.0 | 1293 |
+| hill_country (Ozark) | 20 | 0.377 | 992 | 30.3 | 842 |
+| *(heathland, for reference)* | 37 | 0.410 | 1066 | 8.4 | — |
+
+Pooled, sandhills reads 0.400 against hill country's 0.390 — **a margin smaller
+than the sampling noise**, which is why a pooled median-vs-median test on this
+corpus is unpassable in either direction and why the first two gate attempts
+flip-flopped.
+
+This independently reproduces the train/mound continuum the previous generator
+already carried ("⅓ strong trains, ~40 % mounds"), found by a different route
+from a different instrument.
+
+**Train exemplars** (the F2 pool for train-mode texture):
+
+| tile | A | λ_dom | band relief |
+|---|---:|---:|---:|
+| `t04235_10160` | 0.843 | 1320 m | 45.9 m |
+| `t04259_10092` | 0.779 | 1349 m | 29.3 m |
+| `t04252_10068` | 0.776 | 1099 m | 29.2 m |
+| `t04251_10069` | 0.774 | 1298 m | 31.2 m |
+| `t04268_10042` | 0.759 | 1268 m | 15.1 m |
+
+## 4. The gate, as it now stands — PASSING
+
+The **train** subpopulation must outrank every structural-grain control on
+orientation order, and the form-class split must itself be real (Ashman
+D ≥ 2.0) or "trains" is just the top half of noise. The split boundary is the
+GMM decision point, not a chosen percentile, so it moves with the data.
+
+```
+PASS  spectral orientation order  sandhills:train 0.767 > mountain_bench 0.345
+PASS  spectral orientation order  sandhills:train 0.767 > hill_country   0.377
+PASS  form-class separation       Ashman D 3.96 >= 2.0
+```
+
+Verification that the code path is the declared one: over all 44 kept tiles
+`spectral_order` returns A p10/p50/p90 = **.186/.400/.755**, λ **1190 m**, band
+relief **20.3 m** — reproducing `docs/calibration/variety-audit.md` to three
+decimals.
+
+## 5. Generator targets
+
+Per the user decision of 2026-08-22, the form class is drawn as a **bimodal
+mixture**, not a uniform continuum dial, and the two classes keep **separate
+texture exemplar pools**.
+
+| dial | train | mound |
+|---|---|---|
+| spectral orientation order A | 0.767 | 0.356 |
+| dominant wavelength λ | 1301 m | 1184 m |
+| macro band relief (400–1600 m, p95−p5) | 29.2 m | 19.1 m |
+| mixture weight (measured) | 8/44 = 0.18 | 36/44 = 0.82 |
+
+Two cautions carried forward.
+
+**The corpus is censored toward gentle ground and does not govern amplitude.**
+`04-landform-literature.md` already established this: measured risers 7.4 m
+against barchans averaging 41 m and barchanoid ridges 90–150 m — *"the corpus's
+clean-tile screen kept the gentle tiles, and trunk-transects are the wrong
+instrument for dunes. Literature governs the aeolian generator."* Band relief
+above is a *plausibility band*, not an amplitude target; golf bounds playable
+dune relief to 10–35 m.
+
+**The measured mixture weight is not the draw weight.** 0.18/0.82 describes the
+protected land the screen kept, not the dune country a player should see. The
+draw weight is a design decision, and trains are the archetype's signature.
+
+## 6. What is descriptive, not gated
+
+`coherence` (crest-tangent), `crest_len_p50`, `ridge_spacing_m`,
+`prominence_p50`, `defect_km2`, `flank_asym`, `hole_depth`. The crest tracer is
+unreliable at the ~1 crest/tile it returns on this corpus at dune scale; these
+are reported so a drift is visible, and none is a gate. **Crest defect density
+becomes a real gate at Phase 3**, measured on the constructed crest network
+before any surface exists — where the count is ours and known, not traced.
+
+---
+
+## 7. Phase 3 calibration — the disorder ladder, and a design defect it found
+
+**Ladder** (`course-sandhills --example disorder_ladder`, 6 seeds per rung,
+measured with `spectral_order`):
+
+| disorder | spectral A | λ_dom m | band relief m |
+|---:|---:|---:|---:|
+| 0.00 | 0.898 | 1148 | 18.6 |
+| 0.50 | 0.885 | 1166 | 18.2 |
+| 1.00 | 0.851 | 1056 | 17.6 |
+| **1.50** | **0.798** | 949 | 17.0 |
+| **2.00** | **0.736** | 888 | 16.2 |
+| 3.00 | 0.621 | 809 | 15.1 |
+| 4.00 | 0.528 | 697 | 12.3 |
+| 6.00 | 0.484 | 546 | 9.0 |
+
+**Train lands at disorder 1.5–2.0** (A 0.74–0.80 against the 0.767 target).
+
+**Mound does not land at any rung**, and that is a design finding rather than a
+missing dial:
+
+1. **A asymptotes near 0.48.** Extrapolating the ladder, phase disorder alone
+   cannot reach the mound target of 0.356.
+2. **Wavelength collapses as disorder rises** — 1148 m → 546 m. Cranking
+   disorder toward the mound's orientation order destroys its wavelength, which
+   is supposed to stay at 1184 m. One dial is driving two targets in opposite
+   directions.
+
+**Root cause, found by reading the code the ladder implicated:** the phase is
+built from the *global* paleowind (`k · (p · w0)`) and never reads the local
+direction field at all. So `wind_wander_rad` — the dial that is supposed to
+distinguish the two form classes, drawn at 0.20–0.40 for trains and 0.55–1.10
+for mounds — **is currently inert**, and `disorder` is doing all the work
+through a mechanism that shortens the wavelength as a side effect.
+
+**The fix** is to make the phase follow the local direction: solve
+`∇²φ = ∇·(k ŵ)` (a Poisson problem, FFT or Jacobi) rather than evaluating a
+closed form along the mean wind. This is the physically correct construction —
+it is what makes `grad φ` track the wind field — and it is well-posed with no
+preferred origin, which was the reason the closed form was chosen in the first
+place. Defects then appear exactly where the wind field has curl, at whatever
+wavelength the field specifies, so orientation order and wavelength stop
+fighting each other.
+
+Prior art worth reading first, NOT copying (Tier D): attempt 4's
+`build_aeolian` reached the same split by different means — trains as two
+beating sinusoids on one axis, mounds as ten isotropic waves at log-uniform λ.
+That decomposition preserves wavelength while dropping orientation order, which
+is the property this ladder shows is needed.
+
+### Also measured, and tracked
+
+Generated tiles pass the golf proxy **16/16**, at `frac_under_cap` 0.89 (train)
+and 0.99 (mound) against real Nebraska's 0.386. Generated dune country is far
+calmer than the real thing. This is expected before texture and blowouts exist,
+and it reproduces the standing pattern that generated land is more sitable than
+real land (`G-SKELETON.md`: generated cores 100/80/40/40/20/20 % against real
+53/51/0/7/9/5 %). It becomes a real question at Phase 5, not before — and the
+answer is never to flatten less, since calm is a floor and not a maximand.
+
+---
+
+## 8. The Helmholtz phase — what it fixed, and what it did not
+
+The Poisson fix of §7 landed as a **closed-form modal construction** rather than
+a relaxation: the direction perturbation is an explicit sum of sinusoidal modes,
+so the phase has an exact Helmholtz gradient-projection and needs no iteration,
+no FFT and no preferred origin. The discarded curl is returned as `curl_mag` —
+the defect budget, in units of the base wavenumber.
+
+**Wander ladder** (6 seeds/rung, `--example wander_ladder`):
+
+| wander_rad | curl_mag | spectral A | λ_dom m | band relief m |
+|---:|---:|---:|---:|---:|
+| 0.00 | 0.000 | 0.900 | 1153 | 18.8 |
+| 0.30 | 0.298 | 0.881 | 1136 | 18.4 |
+| 0.60 | 0.596 | 0.835 | 1122 | 17.8 |
+| **0.80** | 0.795 | **0.784** | 1112 | 17.3 |
+| **1.00** | 0.994 | **0.738** | 1097 | 16.9 |
+| 1.30 | 1.29 | 0.690 | 1064 | 16.6 |
+| 1.70 | 1.69 | 0.622 | 998 | 15.8 |
+
+**FIXED — orientation order and spacing are now independent.** λ drifts 1153 →
+998 m (13 %) across the entire dial, against the previous construction's
+1148 → 546 m (**52 % collapse**). `wind_wander_rad` is a live dial rather than
+an inert one, and **trains land at wander 0.80–1.00** (A 0.784–0.738 against the
+0.767 target).
+
+**NOT FIXED — the mound class is out of reach.** A bottoms out at 0.622 even at
+wander 1.70, which is ±97° of direction swing; the target is 0.356.
+
+The reason is structural, not a missing dial. **A mound field is not a
+disordered train.** However much a single plane wave wobbles, the term
+`k · (p · w0)` still imposes one global axis, and that axis is what the spectral
+orientation order measures. Reaching 0.356 requires the dominant axis to be
+genuinely weak — a **superposition of wave directions**, not one direction that
+wanders.
+
+This is the same conclusion attempt 4 reached from the other end: its
+`build_aeolian` used two beating sinusoids on one axis for trains and **ten
+isotropic waves** for mounds (Tier D prior art, read not copied).
+
+### The proposed generalisation — one construction, not two
+
+Two plainly different constructions would contradict this crate's own claim that
+both classes run the same generator with different numbers. The unification is a
+**directional concentration** parameter κ:
+
+- draw *K* wavevectors from a von Mises distribution about the paleowind, all at
+  |k| = 2π/λ, concentration κ;
+- high κ collapses to a single axis — the train, and the current behaviour is
+  its κ → ∞ limit;
+- low κ spreads them — the mound field, at unchanged wavelength.
+
+κ becomes the dial that separates the classes, replacing `wind_wander_rad` in
+that role (wander survives as the within-axis bend). It also predicts the
+asymmetry the record already carries independently: superposing profiles at
+spread orientations partially cancels the stoss/lee asymmetry, and the corpus
+says mounds *are* the less asymmetric form (stoss_share 0.58–0.70 against the
+train's 0.66–0.80).
+
+**Cost:** the surface stops being one profile of one phase and becomes a
+weighted sum over K phases, so the "no envelope to compose" property of §7
+weakens — though it stays a sum rather than a min/max envelope, which is the
+part that caused seam trouble in earlier attempts.
