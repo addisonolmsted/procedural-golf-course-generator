@@ -1,15 +1,20 @@
 //! A3 + A4 — the interdune datum, and the dune bodies hung off the phase.
 //!
-//! There is no N-way envelope here, and that is the payoff of the phase
-//! formulation. `heartland` and attempt 4 both had to compose overlapping
-//! valley frames with a soft-min and fight the seams; a phase field has
-//! exactly ONE dune body per cycle by construction, so the surface is
+//! The surface is the MEAN of one dune profile per wave, rescaled to the drawn
+//! relief:
 //!
 //! ```text
-//! z(p) = datum(p) + relief * profile(cycle(p))
+//! raw(p) = mean over waves[ profile(cycle_i(p)) ]
+//! z(p)   = datum(p) + relief * (raw - raw_p5) / (raw_p95 - raw_p5)
 //! ```
 //!
-//! and there is nothing to blend.
+//! Still a SUM, never a min/max envelope. `heartland` and attempt 4 both had
+//! to compose overlapping valley frames with a soft-min and spent rounds
+//! fighting the seams; a sum of smooth periodic fields has no seam to fight.
+//! The rescale is what keeps amplitude honest: superposing K profiles shrinks
+//! the variance (they are not in phase), so a fixed gain would make a mound
+//! field silently flatter than a train. Normalising on the measured p95-p5
+//! makes the drawn relief mean what it says for any concentration.
 //!
 //! THE PROFILE IS ASYMMETRIC, and that asymmetry IS the dune: a gentle
 //! windward ramp rising to the crest, then a short steep lee face. A
@@ -99,15 +104,36 @@ pub fn build(w: &WindField, d: &Descriptors) -> Surface {
     }
 
     // --- A4: the dune bodies ------------------------------------------------
+    let nw = w.n_waves() as f64;
+    let mut raw = vec![0.0f64; spec.len()];
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut a = 0.0;
+            for i in 0..w.n_waves() {
+                a += profile(w.cycle(i, x, y), d.stoss_share);
+            }
+            raw[spec.index(x, y)] = a / nw;
+        }
+    }
+    let (lo, hi) = pct(&raw, 0.05, 0.95);
+    let span = (hi - lo).max(1e-9);
+
     let mut height = Grid::filled(spec, 0.0f64);
     for y in 0..ny {
         for x in 0..nx {
-            let z = datum.get(x, y) + d.dune_relief_m * profile(w.cycle(x, y), d.stoss_share);
-            height.set(x, y, z);
+            let t = (raw[spec.index(x, y)] - lo) / span;
+            height.set(x, y, datum.get(x, y) + d.dune_relief_m * t);
         }
     }
 
     Surface { height, datum }
+}
+
+fn pct(v: &[f64], a: f64, b: f64) -> (f64, f64) {
+    let mut s: Vec<f64> = v.iter().copied().filter(|z| z.is_finite()).collect();
+    s.sort_by(|p, q| p.partial_cmp(q).unwrap());
+    let q = |f: f64| s[((s.len() - 1) as f64 * f).round() as usize];
+    (q(a), q(b))
 }
 
 /// Peak-to-trough relief of the built surface, p95 - p5.
@@ -128,7 +154,8 @@ mod tests {
         let id = RunIdentity::from_seed(seed);
         let d = draw::site(&id, Some(Mode::Aeolian), form);
         let mut r = rng::stream(&id, rng::WIND);
-        let w = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad, d.wind_wander_m);
+        let w = wind::build(&mut r, d.wind_rad, d.wavelength_m, d.wind_wander_rad,
+                            d.wind_wander_m, d.kappa);
         let s = build(&w, &d);
         (d, s)
     }

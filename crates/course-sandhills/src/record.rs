@@ -54,8 +54,14 @@ pub struct FormSpec {
     /// Target spectral orientation order over the 400–1600 m band.
     /// `corpus`: train 0.767, mound 0.356 (02-dune-targets.md §3).
     pub orientation_order: Range,
-    /// Crest spacing — the dominant wavelength. `corpus`: train 1301 m,
-    /// mound 1184 m. Literature agrees at km scale for barchanoid ridges.
+    /// Crest spacing. `corpus`: train 1301 m, mound 1184 m; literature agrees
+    /// at km scale for barchanoid ridges.
+    ///
+    /// Drawn ~10% ABOVE the target because the ruler is a power-weighted mean
+    /// over the 400-1600 m band, which biases toward the short end: a field
+    /// built at a drawn 1250 m measured 1146 m through `spectral_order`. The
+    /// range is set so the MEASURED number lands on the corpus, since that is
+    /// the number the gate reads.
     pub wavelength_m: Range,
     /// Peak-to-trough dune relief.
     ///
@@ -77,6 +83,21 @@ pub struct FormSpec {
     pub wind_wander_rad: Range,
     /// Correlation length of that wander. `guess`.
     pub wind_wander_m: Range,
+    /// Directional CONCENTRATION of the wave superposition (von Mises kappa).
+    ///
+    /// **This is the dial that separates the two form classes.** High kappa
+    /// pulls every wave onto one axis — a train, and a single-wave field is
+    /// its limit. Low kappa spreads them and the dominant axis dissolves — a
+    /// mound field, at unchanged wavelength.
+    ///
+    /// It replaces `wind_wander_rad` in that role, which could not do it:
+    /// however much ONE plane wave wobbles it still has one axis, and
+    /// orientation order measures exactly that axis. Measured cap for the
+    /// single-wave field was A 0.622 against the 0.356 mound target, and
+    /// pushing past it collapsed the wavelength instead. `wind_wander_rad`
+    /// survives as the WITHIN-axis bend, which is what makes crests terminate
+    /// and merge. Calibrated by `--example kappa_ladder`.
+    pub kappa: Range,
     /// Windward ramp angle, degrees. `literature`: stabilized dune stoss
     /// slopes run 5–15°.
     pub stoss_deg: Range,
@@ -137,10 +158,11 @@ pub const SANDHILLS: Record = Record {
 
     train: FormSpec {
         orientation_order: Range::new(0.62, 0.86), // corpus: p50 .767, best tile .843
-        wavelength_m: Range::new(1100.0, 1400.0),  // corpus: p50 1301
+        wavelength_m: Range::new(1200.0, 1520.0),  // corpus lam_dom p50 1301
         dune_relief_m: Range::new(14.0, 35.0),     // golf-bounded (lit: 41-150 m)
         wind_wander_rad: Range::new(0.20, 0.40),   // guess
         wind_wander_m: Range::new(1800.0, 3200.0), // guess
+        kappa: Range::new(5.0, 12.0),              // 30-seed sweep -> A p50 ~.77
         stoss_deg: Range::new(5.0, 12.0),          // literature
         lee_deg: Range::new(16.0, 26.0),           // literature, golf-capped
         stoss_share: Range::new(0.66, 0.80),       // literature
@@ -148,10 +170,17 @@ pub const SANDHILLS: Record = Record {
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
-        wavelength_m: Range::new(900.0, 1350.0),   // corpus: p50 1184
+        wavelength_m: Range::new(1000.0, 1480.0),  // corpus lam_dom p50 1184
         dune_relief_m: Range::new(10.0, 24.0),     // golf-bounded
         wind_wander_rad: Range::new(0.55, 1.10),   // guess — the low-A mode
         wind_wander_m: Range::new(700.0, 1500.0),  // guess
+        kappa: Range::new(0.45, 1.40),             // near the 1/sqrt(8)
+        // isotropic floor of 0.354, which IS the mound target -- N_WAVES was
+        // chosen to put the floor there (wind.rs::N_WAVES). Sits ABOVE the
+        // ladder's own optimum because the two dials COMPOUND: the mound class
+        // also draws the high wander (0.55-1.10 rad), and within-axis bending
+        // suppresses orientation order further. At the ladder's kappa the
+        // measured A came out 0.234, well under target.
         stoss_deg: Range::new(4.0, 10.0),          // literature
         lee_deg: Range::new(12.0, 20.0),           // literature, golf-capped
         stoss_share: Range::new(0.58, 0.70),       // literature — less asymmetric,
@@ -195,6 +224,7 @@ mod tests {
                 ("dune_relief_m", g.dune_relief_m),
                 ("wind_wander_rad", g.wind_wander_rad),
                 ("wind_wander_m", g.wind_wander_m),
+                ("kappa", g.kappa),
                 ("stoss_deg", g.stoss_deg),
                 ("lee_deg", g.lee_deg),
                 ("stoss_share", g.stoss_share),
@@ -208,6 +238,16 @@ mod tests {
                     "{name}: the lee face must be steeper than the stoss ramp — \
                      that asymmetry IS the dune");
         }
+    }
+
+    #[test]
+    fn the_concentration_ranges_do_not_overlap() {
+        // kappa IS the form class. If a future edit lets the ranges overlap,
+        // a "train" seed can draw a mound field and the mixture stops meaning
+        // anything.
+        assert!(SANDHILLS.train.kappa.lo > SANDHILLS.mound.kappa.hi,
+                "train kappa {:?} overlaps mound {:?}",
+                SANDHILLS.train.kappa, SANDHILLS.mound.kappa);
     }
 
     #[test]

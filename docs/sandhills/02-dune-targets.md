@@ -269,3 +269,89 @@ train's 0.66–0.80).
 weighted sum over K phases, so the "no envelope to compose" property of §7
 weakens — though it stays a sum rather than a min/max envelope, which is the
 part that caused seam trouble in earlier attempts.
+
+---
+
+## 9. The κ superposition — both form classes reached
+
+**User decision, 2026-08-22**: option A, one construction spanning both classes.
+
+The phase field becomes a **superposition of K waves** whose directions are
+drawn from a von Mises distribution about the paleowind with concentration κ,
+all at `|k| = 2π/λ`. High κ pulls them onto one axis — a train, and the previous
+single-wave field is its κ→∞ limit. Low κ spreads them and the dominant axis
+dissolves — a mound field, at unchanged wavelength. One code path, one dial.
+
+Sampling is Best & Fisher (1979) rejection, exact, no special functions. All
+waves share ONE phase offset rather than one each: independent offsets would
+stop them aligning at high κ, and the train limit is the property that makes
+this one construction instead of two.
+
+### N_WAVES = 8 is not arbitrary
+
+K unit vectors with uniform directions have an expected resultant of `1/√K`, so
+**the isotropic floor of the measured orientation order is 1/√K** — no
+concentration, however low, gets beneath it. The mound target is 0.356 and
+`1/√8` = 0.354.
+
+This was found rather than assumed: at K=6 the ladder bottomed out at 0.397
+against a predicted `1/√6` = 0.408, which identified the relationship. K was
+then set to put the floor exactly on the mound target.
+
+### κ ladder (6 seeds/rung, K=8)
+
+| κ | spread rad | spectral A | λ_dom m | band relief m |
+|---:|---:|---:|---:|---:|
+| 0.10 | 1.38 | 0.438 | 1112 | 20.8 |
+| 0.40 | 1.34 | 0.323 | 1139 | 21.6 |
+| 1.20 | 1.04 | 0.465 | 1096 | 21.3 |
+| 2.50 | 0.78 | 0.469 | 1126 | 21.5 |
+| 5.00 | 0.65 | 0.681 | 1132 | 21.5 |
+| 10.0 | 0.45 | 0.810 | 1131 | 21.6 |
+| 60.0 | 0.19 | 0.860 | 1186 | 21.2 |
+
+**λ and band relief are flat across the entire dial** — 1096–1186 m and
+20.8–21.6 m. Orientation order, spacing and amplitude are now three independent
+quantities, which is what the single-wave construction could not deliver.
+
+### Shipped, measured over 30 seeds per class
+
+| | A p50 | *real* | A p10 | *real* | A p90 | *real* | λ_dom | *real* | golf proxy |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **mound** | **0.361** | *0.356* | **0.188** | *0.19* | **0.500** | *0.50* | 1138 | *1184* | 30/30 |
+| **train** | 0.714 | *0.767* | 0.537 | *0.62* | 0.850 | *0.86* | 1191 | *1301* | 30/30 |
+
+**Mound matches on all three quantiles.** Train matches at p90 and reads ~7 %
+low at the median and p10 — a **tracked residual, not a pass**. Four calibration
+rounds went into this dial and the remaining gap is inside the seed-to-seed
+noise at n=30, so it stops here rather than being fitted further; it is a
+plausibility band, and `03-macro-is-designed` treats it as one.
+
+Dials: train κ 5–12, mound κ 0.45–1.40. The mound range sits **above** the
+ladder's own optimum because the two dials compound — the mound class also draws
+the high wander (0.55–1.10 rad), and within-axis bending suppresses orientation
+order further. At the ladder's κ the measured A came out 0.234, well under
+target.
+
+λ is drawn ~10 % **above** the corpus target: the ruler is a power-weighted mean
+over the 400–1600 m band and biases toward the short end, so a field built at a
+drawn 1250 m measures 1146 m. The range is set so the MEASURED number lands on
+the corpus, because that is the number the gate reads.
+
+### What it cost
+
+The surface is now the mean of one dune profile per wave, rescaled to the drawn
+relief on its own p95−p5. Still a **sum**, never a min/max envelope — there is
+no seam to fight, which was the point of §7's formulation. The rescale is
+load-bearing: superposing K profiles that are not in phase shrinks the variance,
+so a fixed gain would make a mound field silently flatter than a train.
+
+Two test corrections the change forced, both cases of measuring the wrong thing:
+
+- `wavelength_is_independent_of_both_dials` first asserted on the **mean of
+  |grad φ|**, which is biased high whenever the gradient direction fluctuates
+  (Jensen: `E|k+δ| > |E(k+δ)|`) — 15.7 % at wander 0.8. It now projects onto
+  each wave's own axis, where the perturbation is zero-mean.
+- `high_concentration_recovers_the_single_axis_field` compared mean cycle values
+  over sparse samples and was reading its own sampling noise. It now asserts on
+  the **widest angle between wave directions**, which is the actual claim.
