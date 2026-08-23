@@ -25,7 +25,13 @@
 //! be added to the allowlist in `docs/sandhills/README.md` §3 first, then
 //! COPIED with a provenance comment naming its source commit.
 
+pub mod draw;
 pub mod mode;
+pub mod record;
 pub mod rng;
+pub mod surface;
+pub mod wind;
 
+pub use draw::Descriptors;
 pub use mode::Mode;
+pub use record::FormClass;
