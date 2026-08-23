@@ -202,93 +202,110 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
     Water { surface, lake_frac, river: None }
 }
 
-/// The allogenic river: a spring-fed through-river crossing the tile on the
-/// drawn coin. It cuts a shallow valley across whatever is in the way — that
-/// is what allogenic means — with a monotone surface from inflow to outflow.
+/// The allogenic river, redesigned to review spec (2026-08-23): "quite
+/// narrow, maybe a max of 20 feet across, and wander/switchback but with a
+/// finer and more organic cut."
+///
+/// Three consequences. (1) The water is ~6 m wide — a 3-cell ribbon at 2 m —
+/// so the cut is a CREEK SLOT, not a valley: ~1.2 m deep, shoulders easing
+/// over a few metres, no broad regrade. (2) The planform is built by a
+/// HEADING INTEGRATOR, not offsets from a chord: heading = progress direction
+/// + swing·sin(2π·arc/λ) with drawn harmonics, which is what makes true
+/// switchbacks possible (an offset line cannot fold past its chord — attempt
+/// 4 learned this on its serpentine round). (3) Organic wander comes from
+/// low-frequency heading noise, so no two bends repeat.
 pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &Descriptors) {
     if !d.allogenic_river {
         return;
     }
     let spec = height.spec;
-    // Enter and leave on opposite edges, perpendicular-ish to the wind so it
-    // reads as crossing the trains (the Dismal cuts across the field).
+    let step = 4.0;
+    // Cross the tile roughly perpendicular to the wind, like the Dismal.
     let along = rng.next_f64() < 0.5;
     let t0 = rng.range_f64(0.25, 0.75);
-    let t1 = (t0 + rng.range_f64(-0.18, 0.18)).clamp(0.15, 0.85);
-    let (a, b) = if along {
-        (Vec2::new(0.0, t0 * EXTENT_M), Vec2::new(EXTENT_M, t1 * EXTENT_M))
+    let (start, base_heading) = if along {
+        (Vec2::new(2.0, t0 * EXTENT_M), 0.0)
     } else {
-        (Vec2::new(t0 * EXTENT_M, 0.0), Vec2::new(t1 * EXTENT_M, EXTENT_M))
+        (Vec2::new(t0 * EXTENT_M, 2.0), std::f64::consts::FRAC_PI_2)
     };
-    // Meander with harmonics and breathing. A single constant sinusoid is a
-    // manufactured tell -- attempt 4's records say it twice ("a single
-    // sinusoid reads as a regular scallop") and the first version of this
-    // river proved it a third time on the render. Fundamental + a weak short
-    // and long harmonic, with the wavelength breathing along the run.
-    // Dense enough that point spacing stays under the water half-width even
-    // where the meander stretches the arc -- 200 chord-uniform points left
-    // 30+ m gaps at tight bends and the water rendered as dashes.
-    let n = 700usize;
-    let lam = rng.range_f64(700.0, 1100.0);
-    let amp = rng.range_f64(60.0, 140.0);
-    let (ph, ph2, ph3, phb) = (rng.range_f64(0.0, std::f64::consts::TAU),
-                               rng.range_f64(0.0, std::f64::consts::TAU),
-                               rng.range_f64(0.0, std::f64::consts::TAU),
-                               rng.range_f64(0.0, std::f64::consts::TAU));
-    let dirv = Vec2::new(b.x - a.x, b.y - a.y);
-    let len = dirv.length();
-    let u = Vec2::new(dirv.x / len, dirv.y / len);
-    let pn = u.perp();
-    let pts: Vec<Vec2> = (0..=n)
-        .map(|i| {
-            let s = i as f64 / n as f64;
-            let arc = s * len;
-            let taper = math::smoothstep(0.0, 0.12, s) * math::smoothstep(1.0, 0.88, s);
-            let breathe = 1.0 + 0.30 * math::sin(std::f64::consts::TAU * arc / (lam * 3.3) + phb);
-            let k = std::f64::consts::TAU * arc / (lam * breathe);
-            let off = amp * taper
-                * (math::sin(k + ph)
-                    + 0.22 * math::sin(k / 0.41 + ph2)
-                    + 0.30 * math::sin(k * 0.43 + ph3));
-            Vec2::new(a.x + dirv.x * s + pn.x * off, a.y + dirv.y * s + pn.y * off)
-        })
-        .collect();
+    let lam = rng.range_f64(90.0, 180.0);          // tight: switchback scale
+    let swing = rng.range_f64(0.85, 1.25);         // radians of heading swing
+    let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
+                      rng.range_f64(0.0, std::f64::consts::TAU));
+    let s_noise = rng.next_u32();
+    let s_lam = rng.next_u32();
+    let s_swing = rng.next_u32();
 
-    // Monotone bed: sample the ground, run a downstream running-min, drop a
-    // little more, and cut a shallow valley to it.
-    let hw = rng.range_f64(18.0, 34.0);       // water half-width
-    let vw = hw * 9.0;                        // valley half-width
-    let mut bed: Vec<f64> = pts.iter().map(|p| height.bilinear(*p) - 2.0).collect();
-    for i in 1..bed.len() {
-        bed[i] = bed[i].min(bed[i - 1] - 0.006);
+    let mut pts: Vec<Vec2> = vec![start];
+    let mut p = start;
+    let mut arc = 0.0;
+    let lim = EXTENT_M - 2.0;
+    for _ in 0..6000 {
+        // heading: forward progress + periodic swing + slow organic wander.
+        // BOTH the wavelength and the swing breathe along the run -- a
+        // constant-parameter serpentine is exactly as manufactured as a
+        // constant sinusoid, just curlier (measured on the first render of
+        // this redesign, and twice before on this project).
+        let lam_e = lam * (1.0 + 0.45 * course_world::noise::perlin1(arc / 640.0, s_lam));
+        let sw_e = swing
+            * (0.45 + 0.75 * (0.5 + 0.5 * course_world::noise::perlin1(arc / 480.0, s_swing)));
+        let wob = sw_e
+            * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1)
+                + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2));
+        let wander = 0.80 * course_world::noise::perlin1(arc / 900.0, s_noise);
+        let h = base_heading + wob + wander;
+        p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
+        // soft reflect off the side borders so the creek stays on-tile
+        if along {
+            p.y = p.y.clamp(60.0, lim - 60.0);
+            if p.x >= lim { break; }
+            p.x = p.x.max(2.0);
+        } else {
+            p.x = p.x.clamp(60.0, lim - 60.0);
+            if p.y >= lim { break; }
+            p.y = p.y.max(2.0);
+        }
+        arc += step;
+        pts.push(p);
     }
-    for (i, p) in pts.iter().enumerate() {
-        let x0 = ((p.x - vw) / spec.cell_size).floor().max(0.0) as u32;
-        let x1 = ((p.x + vw) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
-        let y0 = ((p.y - vw) / spec.cell_size).floor().max(0.0) as u32;
-        let y1 = ((p.y + vw) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
+
+    // Monotone bed, shallow: a creek slot, not a canyon.
+    let depth = 1.2;
+    let hw_water = 3.0;                            // ~6 m wet width
+    let hw_cut = 7.0;                              // slot + easing shoulder
+    let mut bed: Vec<f64> = pts.iter().map(|q| height.bilinear(*q) - depth).collect();
+    // two smoothing passes so the bed does not chase every dune it crosses
+    for _ in 0..2 {
+        for i in 1..bed.len() - 1 {
+            bed[i] = (bed[i - 1] + bed[i] * 2.0 + bed[i + 1]) / 4.0;
+        }
+    }
+    for i in 1..bed.len() {
+        bed[i] = bed[i].min(bed[i - 1] - 0.004);
+    }
+    for (i, q) in pts.iter().enumerate() {
+        let x0 = ((q.x - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
+        let x1 = ((q.x + hw_cut) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
+        let y0 = ((q.y - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
+        let y1 = ((q.y + hw_cut) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
         for y in y0..=y1 {
             for x in x0..=x1 {
-                let q = spec.world_of(x, y);
-                let dd = ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
-                if dd >= vw {
+                let w = spec.world_of(x, y);
+                let dd = ((w.x - q.x).powi(2) + (w.y - q.y).powi(2)).sqrt();
+                if dd >= hw_cut {
                     continue;
                 }
                 let li = spec.index(x, y);
-                // valley target: bed at the channel, easing up to grade
-                // Smoothstep section, not r^2: the quadratic printed a hard
-                // parallel-walled trough band along the whole run.
-                let f = math::smoothstep(0.12, 1.0, dd / vw);
+                // slot floor near the line, easing to grade at hw_cut
+                let f = math::smoothstep(0.35, 1.0, dd / hw_cut);
                 let t = bed[i] + f * (height.data[li] - bed[i]).max(0.0);
                 if height.data[li] > t {
-                    let excess = height.data[li] - t;
-                    height.data[li] -= excess * math::smoothstep(0.0, 3.0, excess);
+                    let ex = height.data[li] - t;
+                    height.data[li] -= ex * math::smoothstep(0.0, 1.2, ex);
                 }
-                if dd < hw {
-                    let ws = bed[i] + 0.6;
+                if dd < hw_water {
+                    let ws = bed[i] + 0.4;
                     let cur = water.surface.data[li];
-                    // The river takes precedence over a lake it crosses --
-                    // it drains the crossing to its own falling surface.
                     if cur.is_nan() || cur > ws {
                         water.surface.data[li] = ws;
                     }
@@ -384,7 +401,18 @@ mod tests {
         // The river is a COIN, not a consequence of terrain. A seed without
         // the coin must have zero flowing water -- lakes only.
         let Some(p) = pack() else { return };
-        let t = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
-        assert!(t.river.is_none(), "the river is removed pending redesign");
+        let no = build_full(&RunIdentity::from_seed(3), &p, Some(FormClass::Train));
+        assert!(no.river.is_none(), "seed 3 does not draw the coin");
+        // Seed 5 draws the coin with a 10.5 m table -- no lakes, so the wet
+        // set is the river alone and the width proxy is honest. (The first
+        // version used lake-country seed 9 and measured the lakes.)
+        let yes = build_full(&RunIdentity::from_seed(5), &p, Some(FormClass::Train));
+        let r = yes.river.expect("seed 5 draws the coin");
+        let spec = yes.water.spec;
+        let wet = (0..spec.len()).filter(|i| yes.water.data[*i].is_finite()).count();
+        let len_m = r.len() as f64 * 4.0;
+        let mean_width = wet as f64 * spec.cell_size * spec.cell_size / len_m;
+        assert!(mean_width < 9.0,
+                "river wet width proxy {mean_width:.1} m -- creek spec is ~6 m");
     }
 }

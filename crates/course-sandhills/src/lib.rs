@@ -94,13 +94,11 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     // A5b: blowouts over the texture
     let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d);
 
-    // A6: lakes. The RIVER IS REMOVED pending redesign (review 2026-08-23:
-    // "the stream looks very artificial... rivers should be quite narrow,
-    // maybe a max of 20 feet, and wander/switchback with a finer cut").
-    // The coin is still FLIPPED in A0 -- removing the draw would rekey every
-    // descriptor after it -- but nothing consumes it yet.
-    let water = water::find(&height, &sf.datum, &d);
+    // A6: lakes, then the redesigned creek-scale river on the coin.
+    let mut water = water::find(&height, &sf.datum, &d);
+    let mut rr = rng::stream(id, rng::WATER);
+    water::river(&mut rr, &mut height, &mut water, &d);
 
     Tile { d, height, water: water.surface, lake_frac: water.lake_frac,
-           blowouts, river: None }
+           blowouts, river: water.river }
 }
