@@ -256,7 +256,17 @@ pub const SANDHILLS: Record = Record {
         // measured A came out 0.234, well under target.
         stoss_deg: Range::new(4.0, 10.0),          // literature
         lee_deg: Range::new(12.0, 20.0),           // literature, golf-capped
-        stoss_share: Range::new(0.58, 0.70),       // literature — less asymmetric,
+        // Real mound fields are nearly SYMMETRIC -- height skew 0.136 against
+        // the train belts' 0.497 -- and a parabolic mound field does have far
+        // less of a slip face than a barchanoid train, so this range is
+        // narrowed on that ground.
+        //
+        // It does NOT fix the skew, and was tried for that: 0.463 -> 0.510,
+        // no movement. Skew comes from the PROFILE SHAPE, which is peaked at
+        // the crest with a broad low region and is positively skewed at any
+        // share. Closing it needs a rounder profile for the mound class, not
+        // a different split. Tracked, not fixed.
+        stoss_share: Range::new(0.52, 0.60),       // literature — less asymmetric,
         // but floored at 0.58: below that the profile stops being a dune. A
         // near-equal share puts the stoss peak slope above the lee's, which
         // inverts the slip face. Found by `the_profile_is_asymmetric...`.

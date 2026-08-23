@@ -600,3 +600,46 @@ which round 1 showed is a cliff and not a slope.
 
 **`dune_inventory` is now the texture instrument**; band RMS stays as a
 cross-check. Any future claim about dune size is measured by counting.
+
+---
+
+## 14. "Crumpled paper" — the crumple is the texture stage
+
+Reviewer, on the confirmation sheet: high/low layout, ridge spacing and shape
+all read well; the texture does not. Real dunes look like crumpled paper — finer
+and more detailed. Ours look regular, and the mound fields read as *wavy*, where
+real fields read as *mounds along semi-regular lines*.
+
+The obvious hypothesis was that a sum of sinusoids is a Gaussian random field
+and Gaussian random fields look wavy. **Measured, and false:**
+
+| | skew | kurtosis | **fine/band** |
+|---|---:|---:|---:|
+| REAL train | 0.497 | 3.598 | **0.340** |
+| REAL mound | 0.136 | 3.140 | **0.364** |
+| gen train | 0.547 | 4.400 | 0.205 |
+| gen mound | 0.463 | 3.702 | 0.256 |
+
+Our field is **already non-Gaussian, more so than real** — the advection pass
+broke the Gaussianity. A sum of waves is Gaussian only before it is sheared.
+
+The real gap is the last column: `fine/band` is the sub-64 m detail riding on
+the dune band, and **real carries 40–70 % more of it than we do**. That is the
+crumple, and it sits *below* the dune band entirely — it belongs to the texture
+stage, which has not been built. No dune-tier dial reaches it.
+
+**One genuine dune-tier finding, and one failed fix.** Real mound fields are
+nearly symmetric (skew 0.136) against the train belts' 0.497, and the same
+asymmetry was being applied to both classes. Narrowing the mound `stoss_share`
+to 0.52–0.60 is right on those grounds — but it was tried *as a skew fix* and
+did not work (0.463 → 0.510). Skew comes from the **profile shape**: a
+crest-peaked profile with a broad low region is positively skewed at any share.
+A rounder profile for the mound class would close it. Tracked, not fixed.
+
+**Consequence for the plan.** The reviewer's standing objection across three
+rounds has been texture, and texture is the one stage of the aeolian mode that
+does not exist. `fine/band` 0.205–0.256 against 0.340–0.364 is the number to
+close, the dictionary and its conditioning axes are already an admitted asset,
+and `docs/biomes/README.md` holds that identity lives in texture rather than
+structure. Building it before A5/A6 also means blowouts are judged on ground
+that reads correctly, rather than on a surface everyone already knows is wrong.
