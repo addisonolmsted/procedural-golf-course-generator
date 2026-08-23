@@ -30,6 +30,7 @@ pub mod mode;
 pub mod record;
 pub mod rng;
 pub mod surface;
+pub mod texture;
 pub mod wind;
 
 pub use draw::Descriptors;

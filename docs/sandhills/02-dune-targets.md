@@ -643,3 +643,78 @@ close, the dictionary and its conditioning axes are already an admitted asset,
 and `docs/biomes/README.md` holds that identity lives in texture rather than
 structure. Building it before A5/A6 also means blowouts are judged on ground
 that reads correctly, rather than on a surface everyone already knows is wrong.
+
+---
+
+## 15. Phase 5 — texture, and the whole-tile proxy stops being the right readout
+
+The crumple gap of §14 is closed by a patch pack built from the corpus.
+
+**A fresh pack, not `dictionary_v2.bin`.** Two reasons, both conditioning: the
+v2 dictionary keys partly on `dist_channel_m`, meaningless on ground with no
+drainage, and on ABSOLUTE aspect where an aeolian surface needs aspect
+**relative to wind** — a windward ramp and a lee face are different fabrics and
+the compass bearing is not the point. It also predates the Carolina tiles. The
+raw material was already on disk in `extract_v2`, so **no allowlist request was
+needed**: this is corpus data, admitted at Tier A.
+
+Corpus tiles do not record a wind direction, so each tile's wind is derived
+from its own crest axis (`dune_stats.spectral_axis_deg`, the angle of the same
+resultant `spectral_order` takes the magnitude of). Verified: `t04235_10160`
+reads 177.8°, and its belts run E–W in the render.
+
+**`assets/sandhills_patches.bin`** — 8 670 patches of 96 m, 36 conditioning
+buckets (3 slope × 3 TPI × 4 wind-relative aspect), from 44 Nebraska + 30
+Carolina tiles. No bucket empty, none under 128. SPACK1, i16 millimetres.
+
+### Two measurement errors of mine, both caught late
+
+1. **Two band definitions.** Patches are cut from `extract_v2`'s `fine`, a
+   half-amplitude Gaussian band-split; the `fine/band` metric uses a plain 64 m
+   lowpass residual, which reads **1.68× stronger on the same tile**. I built
+   from one definition and measured against the other.
+2. **Two grids.** The first comparison put a 2 m textured tile against an 8 m
+   macro tile — different band denominators — and reported 0.267 → 0.263, i.e.
+   "the quilt did nothing." On a common grid it read 0.240 → 0.263. The stage
+   was working the whole time.
+
+Together these are why `texture_gain` is **2.5–3.1 and not 1.0**, which on real
+lidar patches would otherwise look like fudging. Measured at 2 m on one filter:
+real fine 1.176 m, untextured macro 0.631, textured-at-gain-1.0 0.703; reaching
+1.176 in quadrature needs a 0.99 residual against the 0.358 gain 1.0 delivers.
+
+### Result
+
+| | fine/band | fine RMS |
+|---|---:|---:|
+| REAL | 0.331 | 1.176 m |
+| gen, untextured | 0.240 | 0.631 m |
+| **gen, textured** | **0.376** *(train)* / 0.446 *(mound)* | **1.09 / 1.13 m** |
+
+### The whole-tile golf proxy is now the wrong instrument
+
+Textured tiles clear it 1/5 — and real sandhills clears it 23 %, which is the
+point: **the proxy scores 900 ha while a course occupies 36 ha.** At the scale
+an architect actually sites on:
+
+| | best 600 m window calm | window relief |
+|---|---:|---:|
+| REAL sandhills | 0.368 | 15.2 m |
+| gen train | **0.490** | 9.7 m |
+| gen mound | 0.367 | 10.6 m |
+| *Sand Hills GC* | *0.45* | *19 m* |
+
+Our textured ground offers siting windows at or above real sandhills, and at
+Sand Hills GC's own calm. **From Phase 5 on, routability is read from the
+siting window, not the tile** — `d6w-siting-baseline.md` was already measuring
+courses this way, and the whole-tile number is retained only as a coarse
+regression tripwire.
+
+Tracked: window relief 9.7–10.6 m against real 15.2 and Sand Hills GC's 19 —
+ours are flatter windows, which is the golf dune-relief bound (10–35 m) showing
+up where it was always going to.
+
+**Still open:** whether slip faces survive overlap-add blending
+(`docs/biomes/sandhills.md` open question 2). The megaform brink is rounded by
+design, so the sharp break belongs to the hummock tier, and the test for it
+belongs with A5 when blowout walls give a second sharp feature to check.

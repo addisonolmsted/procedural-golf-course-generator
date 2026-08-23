@@ -160,6 +160,23 @@ pub struct FormSpec {
     /// FLOOR, not a maximand -- otherwise generated courses will
     /// systematically sit on duller ground than real ones."
     pub hummock_floor: Range,
+    /// Gain on the quilted texture residual.
+    ///
+    /// **Not 1.0, for two measurable reasons**, and worth stating because a
+    /// gain above unity on real lidar patches looks like fudging otherwise:
+    ///
+    /// 1. The patches are cut from `extract_v2`'s `fine`, which is a
+    ///    half-amplitude Gaussian band-split. The `fine/band` metric this is
+    ///    calibrated against uses a plain 64 m lowpass residual, which reads
+    ///    **1.68x stronger** on the same tile. Different band definitions,
+    ///    same physical content.
+    /// 2. Overlap-adding independent patches reduces variance, since they are
+    ///    uncorrelated where they overlap.
+    ///
+    /// Measured at 2 m on a common filter: real fine 1.176 m, untextured
+    /// macro 0.631, textured-at-gain-1.0 0.703. Reaching 1.176 in quadrature
+    /// needs a residual of 0.99 against the 0.358 that gain 1.0 delivers.
+    pub texture_gain: Range,
 }
 
 /// One archetype record. Sandhills only, for now: attempt 5 builds ONE
@@ -240,6 +257,7 @@ pub const SANDHILLS: Record = Record {
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
         hummock_floor: Range::new(0.30, 0.50),      // corpus: floors run ~0.5x belt
+        texture_gain: Range::new(2.5, 3.1),         // -> real fine 1.176 m
     },
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
@@ -283,6 +301,7 @@ pub const SANDHILLS: Record = Record {
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
         hummock_floor: Range::new(0.30, 0.50),
+        texture_gain: Range::new(2.5, 3.1),
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
@@ -330,6 +349,7 @@ mod tests {
                 ("hummock_kappa", g.hummock_kappa),
                 ("hummock_gate", g.hummock_gate),
                 ("hummock_floor", g.hummock_floor),
+                ("texture_gain", g.texture_gain),
             ] {
                 assert!(v.lo <= v.hi, "{name}.{k}: lo {} > hi {}", v.lo, v.hi);
                 assert!(v.lo >= 0.0, "{name}.{k}: negative lo");

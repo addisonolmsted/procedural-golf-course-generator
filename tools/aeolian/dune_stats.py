@@ -197,6 +197,43 @@ def spectral_order(z: np.ndarray, cell: float,
     return A, lam_dom, relief
 
 
+def spectral_axis_deg(z: np.ndarray, cell: float,
+                      band_m: tuple[float, float] = (400.0, 1600.0)) -> float:
+    """Crest axis in degrees (undirected, 0-180), from the spectrum.
+
+    The companion to `spectral_order`: same power-weighted doubled-angle
+    resultant, but its ANGLE rather than its magnitude. Crests run
+    perpendicular to the wind, so `axis + 90` is the wind azimuth -- which is
+    the only way to get a wind direction for a corpus tile, since the corpus
+    does not record one and aspect-relative-to-wind is meaningless without it.
+
+    Note the spectrum's angle is the WAVEVECTOR direction, which is ACROSS the
+    crests; the crest axis is that plus 90.
+    """
+    if cell < 8.0:
+        step = int(round(8.0 / cell))
+        z = z[::step, ::step]
+        cell = cell * step
+    z = np.asarray(z, dtype=float)
+    m = np.isfinite(z)
+    if not m.all():
+        z = np.where(m, z, np.nanmedian(z[m]))
+    n = z.shape[0]
+    w = np.hanning(n)
+    F = np.fft.fftshift(np.fft.fft2((z - z.mean()) * np.outer(w, w)))
+    P = np.abs(F) ** 2
+    f = np.fft.fftshift(np.fft.fftfreq(n, d=cell))
+    fy, fx = np.meshgrid(f, f, indexing="ij")
+    fr = np.hypot(fx, fy)
+    lam = np.where(fr > 0, 1.0 / np.maximum(fr, 1e-12), np.inf)
+    band = (lam >= band_m[0]) & (lam <= band_m[1])
+    Pb = P[band]
+    th = np.arctan2(fy, fx)[band]
+    c = np.sum(Pb * np.exp(2j * th)) / np.sum(Pb)
+    k_axis = 0.5 * math.atan2(c.imag, c.real)          # across-crest direction
+    return float((np.degrees(k_axis) + 90.0) % 180.0)  # along-crest
+
+
 def orientation_axis_deg(ridges) -> float:
     """Mean crest azimuth (undirected, deg from +x). Wind is perpendicular."""
     num = np.zeros(2)
