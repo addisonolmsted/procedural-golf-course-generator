@@ -436,3 +436,54 @@ hummock tier is gated to the belt tops so the interdune floors stay flat, which
 is the archetype's routable ground — `hummocks_stay_off_the_interdune_floors`
 pins it, and its first version failed because it ranked the tile's downhill
 corner as "floor" by sorting a grid that carries the regional datum tilt.
+
+---
+
+## 11. The hummock band, measured — and the tier tuned to it
+
+The tier of §10 was calibrated against **one** number: I raised its amplitude
+until the 64–150 m band RMS matched and stopped. `hummock_lambda_m`,
+`hummock_kappa` and `hummock_gate` were guesses, and the provenance comments
+that said "corpus band" were overstating what had been measured. A reviewer
+looking at the renders read the belts and the spacing as right and the texture
+as wrong, which is exactly the shape of that gap.
+
+`spectral_order` already takes a band, so the corpus can be measured at dune
+scale the same way it was at belt scale. **Never done until now.**
+
+| | A p50 | A p10 | A p90 | λ_dom | band relief |
+|---|---:|---:|---:|---:|---:|
+| **real, train belts** (n=9) | **0.261** | 0.160 | 0.309 | **216 m** | **11.40** |
+| **real, mound belts** (n=35) | **0.291** | 0.140 | 0.607 | **228 m** | **10.34** |
+
+**Two findings.**
+
+**Individual dunes are near-isotropic**, A 0.26–0.29, far less oriented than the
+belts they ride on (0.767 / 0.356). The first tier ran at A 0.424 for trains —
+**1.6× too ordered**, inheriting the belt's direction, which reads as combed
+rather than as a dune field.
+
+**Real train and mound belts carry near-identical dunes** — A 0.261 vs 0.291,
+λ 216 vs 228, relief 11.40 vs 10.34. So the hummock dials are now the SAME for
+both classes: **the form class distinguishes the belts, not the dunes on them.**
+Only the gate differs, because a mound belt is a lower, broader pile.
+
+The one dial that does differ is the concentration, and higher for mounds,
+because the dials **compound**: a mound belt is itself built from spread waves,
+so hummocks at the train's κ inherited that disorder on top of their own and
+measured A 0.127 against a 0.291 target. Same compounding as the megaform wander
+in §9.
+
+### Shipped, 24 seeds per class
+
+| | hummock A | *real* | hummock λ | *real* | hummock relief | *real* | megaform A | *target* | proxy |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| train | 0.304 | *0.261* | 238 m | *216* | 10.05 | *11.40* | 0.796 | *0.767* | 24/24 |
+| mound | 0.338 | *0.291* | 222 m | *228* | 9.59 | *10.34* | 0.328 | *0.356* | 24/24 |
+
+Everything inside ~17 %, on a family the policy treats as a plausibility band.
+Three passes went into it and further iteration at n=24 would be fitting noise.
+
+**Method note carried forward:** the first pass read A 0.249 for trains on n=4
+and 0.312 on n=16 — the same lattice-subsample error as §7, in a different
+costume. Hummock dials are calibrated at n≥16.

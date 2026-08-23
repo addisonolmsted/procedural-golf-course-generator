@@ -197,9 +197,16 @@ pub const SANDHILLS: Record = Record {
         lee_deg: Range::new(16.0, 26.0),           // literature, golf-capped
         stoss_share: Range::new(0.66, 0.80),       // literature
         blowout_km2: Range::new(1.5, 5.0),         // golf
-        hummock_lambda_m: Range::new(140.0, 320.0), // corpus band 64-400
-        hummock_relief_m: Range::new(7.0, 16.0),    // corpus band RMS
-        hummock_kappa: Range::new(1.2, 4.0),        // looser than the belt
+        // MEASURED 2026-08-22 over the 64-400 m band of the kept corpus,
+        // split by the form class the megaform band assigns. Real train belts
+        // read A 0.261 / lambda 216 m / band relief 11.40; real mound belts
+        // read 0.291 / 228 / 10.34. The two are NEARLY IDENTICAL, so the
+        // hummock dials are the same for both classes -- individual dunes do
+        // not care whether the belt under them is a train or a mound field.
+        // The form class distinguishes the BELTS, not the dunes on them.
+        hummock_lambda_m: Range::new(190.0, 290.0), // corpus: lambda p50 216-228
+        hummock_relief_m: Range::new(12.0, 21.0),   // 16-seed sweep -> band relief ~11
+        hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),       // golf: floors stay flat
     },
     mound: FormSpec {
@@ -222,9 +229,15 @@ pub const SANDHILLS: Record = Record {
         // near-equal share puts the stoss peak slope above the lee's, which
         // inverts the slip face. Found by `the_profile_is_asymmetric...`.
         blowout_km2: Range::new(2.0, 6.5),         // golf
-        hummock_lambda_m: Range::new(120.0, 280.0),
-        hummock_relief_m: Range::new(5.0, 12.0),
-        hummock_kappa: Range::new(0.8, 3.0),
+        // Same lambda and relief as the train class -- real train and mound
+        // belts carry near-identical dunes (A 0.261 vs 0.291, lambda 216 vs
+        // 228). The CONCENTRATION differs, and higher, because the dials
+        // COMPOUND: a mound belt is itself built from spread waves, so
+        // hummocks at the train's kappa inherited that disorder on top of
+        // their own and measured A 0.127 against a 0.291 target.
+        hummock_lambda_m: Range::new(190.0, 290.0),
+        hummock_relief_m: Range::new(11.0, 19.0),
+        hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
     },
 
