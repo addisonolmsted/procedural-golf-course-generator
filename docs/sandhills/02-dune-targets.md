@@ -853,3 +853,24 @@ texture (defensible — real Dismal corridors are grassy and smooth; revisit at
 P2); one fluvial-pack bucket empty under the edge filter (Phase 4).
 
 45 tests.
+
+---
+
+## 19. Phase 6 blind session — both gates pass
+
+2026-08-23, materials from seeds 100–111 (never seen by any tuning round), 12
+which-is-real pairs (6 course-scale + 6 close-range), 12 name-the-form-class
+tiles. Identical rendering both sides; real tiles carry their own dead-flat
+water so blue is not a tell. Keys held unread until the reviewer answered.
+
+| | score | gate | verdict |
+|---|---:|---|---|
+| **P2** which-is-real | **8/12 (67 %)** | ≤ 8/12 | **PASS — at the boundary** |
+| **P3** name-the-class | **11/12 (92 %)** | ≥ 10/12 | **PASS** |
+
+P2 honesty note: 8/12 is the gate's own operationalization but it is the line,
+not the middle of it. Fooled 4× — evenly split across scales and across form
+classes, so no single systematic tell remains. P3's one miss was a train draw
+at the low end of the κ range read as a mound: the class boundary draws are
+genuinely ambiguous, which the corpus's own overlapping A distributions say
+they should be.
