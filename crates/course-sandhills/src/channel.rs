@@ -337,7 +337,29 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
     let (on_x_edge, coord) = edges[rng.below(edges.len())];
     let diagonal = edges.len() == 2;
     let t0 = if !diagonal {
-        rng.range_f64(slot.0, slot.1)
+        // The trunk OCCUPIES THE PLAIN'S LOW, not a random offset: D8 on a
+        // carved tile whose trunk sat high on the cross-slope routed the
+        // tile's flow down the open plain instead of down the valley
+        // (valley_compare, seeds 104/106 — the extracted trunk was not our
+        // trunk). Seven candidate offsets, keep the lowest crossing line.
+        let mut best = (f64::MAX, 0.5 * (slot.0 + slot.1));
+        for k in 0..7 {
+            let cand = slot.0 + (slot.1 - slot.0) * (k as f64 + rng.range_f64(0.1, 0.9)) / 7.0;
+            let mut sum = 0.0;
+            for j in 0..24 {
+                let along = (j as f64 + 0.5) / 24.0 * EXTENT_M;
+                let p = if on_x_edge {
+                    Vec2::new(along, cand * EXTENT_M)
+                } else {
+                    Vec2::new(cand * EXTENT_M, along)
+                };
+                sum += datum.bilinear(p);
+            }
+            if sum < best.0 {
+                best = (sum, cand);
+            }
+        }
+        best.1
     } else {
         // shift toward the upstream corner so the run crosses the interior
         let along_pos = if on_x_edge { cy > 0.0 } else { cx > 0.0 };

@@ -352,7 +352,7 @@ mod tests {
                 let y = (p.y / 8.0).round().clamp(0.0, (spec.ny - 1) as f64) as u32;
                 max_cut = max_cut.max(datum.get(x, y) - h.get(x, y));
             }
-            assert!(max_cut > 2.0, "seed {seed}: trunk cut only {max_cut:.2} m");
+            assert!(max_cut > 5.0, "seed {seed}: trunk cut only {max_cut:.2} m");
             // …and ground far from every channel is untouched
             let far = crate::channel::d2c_p50(&net); // sanity anchor only
             let _ = far;
@@ -402,8 +402,12 @@ mod tests {
                     }
                     let x = (p.x / 8.0).round() as u32;
                     let y = (p.y / 8.0).round() as u32;
+                    // the VALLEY proper (>1.5 m of cut), not the faint
+                    // runout apron — the apron walk saturated the 640 m
+                    // cap once depths were recalibrated, and a capped
+                    // measure reads as constant width
                     if datum.get(x.min(spec.nx - 1), y.min(spec.ny - 1))
-                        - h.get(x.min(spec.nx - 1), y.min(spec.ny - 1)) < 0.3 {
+                        - h.get(x.min(spec.nx - 1), y.min(spec.ny - 1)) < 1.5 {
                         break;
                     }
                     wm = dd;

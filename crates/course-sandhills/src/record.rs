@@ -255,13 +255,16 @@ pub struct Record {
     /// Tributary attach spacing along parents, metres. THE density lever —
     /// drawn, then tiers repeat until density lands. `corpus`: 2.33 km/km².
     pub attach_m: Range,
-    /// Valley depth unit at Hack factor 1, metres. `plan/lit`: creek heads
-    /// ~1 m, trunk valleys 4-8 m at the trunk's Hack factor 1.6-2.0.
+    /// Valley depth unit at Hack factor 1, metres. `measured 2026-08-25`
+    /// (valley_compare, corpus policy on 6 real tiles): trunk depth p50
+    /// 10-15.6 m, p90 to 22 — the plan's 4-8 m guess read "much too
+    /// shallow" on review and the instrument agreed.
     pub valley_depth_m: Range,
-    /// Valley floor half-width unit at Hack 1, metres. `plan/lit`: heads
-    /// ~8 m full width easing to 100-200 m full valleys on the trunk.
+    /// Valley floor half-width unit at Hack 1, metres. `measured`: the
+    /// HAND<2 floor zone spans 124-248 m on the real trunks.
     pub valley_floor_m: Range,
-    /// Concave wall run unit at Hack 1, metres per side. `plan/lit`.
+    /// Concave wall run unit at Hack 1, metres per side. `measured`: the
+    /// HAND<5 valley zone spans 276-588 m on the real trunks.
     pub valley_wall_m: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
@@ -379,9 +382,9 @@ pub const SANDHILLS: Record = Record {
     cap_flat: Range::new(0.35, 0.7),         // guess
     sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
     attach_m: Range::new(470.0, 680.0),      // review 2026-08-24: -25% density vs corpus 2.33; revisit after the cut
-    valley_depth_m: Range::new(2.4, 4.2),    // plan/lit
-    valley_floor_m: Range::new(6.0, 12.0),   // plan/lit
-    valley_wall_m: Range::new(30.0, 55.0),   // plan/lit
+    valley_depth_m: Range::new(6.4, 10.2),   // measured: trunk p50 10-15.6 at hack 1.7-2.0
+    valley_floor_m: Range::new(14.0, 26.0),  // measured: HAND2 floor 124-248 m
+    valley_wall_m: Range::new(60.0, 95.0),   // measured: HAND5 valley 276-588 m
     p_allogenic_river: 0.30,                 // literature
 };
 
