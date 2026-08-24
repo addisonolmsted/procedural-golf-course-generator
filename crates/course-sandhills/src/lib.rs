@@ -26,6 +26,7 @@
 //! COPIED with a provenance comment naming its source commit.
 
 pub mod blowout;
+pub mod carve;
 pub mod channel;
 pub mod draw;
 pub mod mode;
@@ -52,6 +53,22 @@ pub fn build_fluvial_skeleton(id: &RunIdentity)
     let mut cr = rng::stream(id, rng::CHANNEL);
     let net = channel::grow(&mut cr, &datum, &d);
     (d, datum, net)
+}
+
+/// C1–C3: the skeleton plus the valley carve, at 8 m. What the CARVED
+/// review round judges; later stages (mantle, texture, bays, water) build
+/// on this. The carve draws continue on the channel stream, so a seed's
+/// network is byte-identical with and without carving.
+pub fn build_fluvial_carved(id: &RunIdentity)
+    -> (Descriptors, Grid<f64>, Grid<f64>, channel::Network) {
+    let d = draw::site(id, Some(Mode::Fluvial), None);
+    let mut dr = rng::stream(id, rng::DATUM);
+    let datum = channel::datum(&mut dr, &d);
+    let mut cr = rng::stream(id, rng::CHANNEL);
+    let net = channel::grow(&mut cr, &datum, &d);
+    let mut height = datum.clone();
+    carve::carve(&mut cr, &mut height, &net, &datum, &d);
+    (d, datum, height, net)
 }
 
 pub use mode::Mode;

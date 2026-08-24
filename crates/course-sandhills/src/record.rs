@@ -255,6 +255,14 @@ pub struct Record {
     /// Tributary attach spacing along parents, metres. THE density lever —
     /// drawn, then tiers repeat until density lands. `corpus`: 2.33 km/km².
     pub attach_m: Range,
+    /// Valley depth unit at Hack factor 1, metres. `plan/lit`: creek heads
+    /// ~1 m, trunk valleys 4-8 m at the trunk's Hack factor 1.6-2.0.
+    pub valley_depth_m: Range,
+    /// Valley floor half-width unit at Hack 1, metres. `plan/lit`: heads
+    /// ~8 m full width easing to 100-200 m full valleys on the trunk.
+    pub valley_floor_m: Range,
+    /// Concave wall run unit at Hack 1, metres per side. `plan/lit`.
+    pub valley_wall_m: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -371,6 +379,9 @@ pub const SANDHILLS: Record = Record {
     cap_flat: Range::new(0.35, 0.7),         // guess
     sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
     attach_m: Range::new(470.0, 680.0),      // review 2026-08-24: -25% density vs corpus 2.33; revisit after the cut
+    valley_depth_m: Range::new(2.4, 4.2),    // plan/lit
+    valley_floor_m: Range::new(6.0, 12.0),   // plan/lit
+    valley_wall_m: Range::new(30.0, 55.0),   // plan/lit
     p_allogenic_river: 0.30,                 // literature
 };
 

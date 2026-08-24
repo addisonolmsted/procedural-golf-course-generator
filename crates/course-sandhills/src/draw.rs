@@ -54,6 +54,9 @@ pub struct Descriptors {
     pub cap_flat: f64,
     pub n_sys: u32,
     pub attach_m: f64,
+    pub valley_depth_m: f64,
+    pub valley_floor_m: f64,
+    pub valley_wall_m: f64,
     pub allogenic_river: bool,
 }
 
@@ -128,6 +131,11 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
             1
         },
         attach_m: draw(&mut p, rec.attach_m),
+        // appended AFTER every earlier draw: aeolian byte-stability and the
+        // passed network seeds both depend on the draw order above
+        valley_depth_m: draw(&mut p, rec.valley_depth_m),
+        valley_floor_m: draw(&mut p, rec.valley_floor_m),
+        valley_wall_m: draw(&mut p, rec.valley_wall_m),
     }
 }
 

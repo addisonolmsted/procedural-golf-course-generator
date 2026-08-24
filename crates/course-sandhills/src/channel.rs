@@ -47,48 +47,39 @@ use crate::wind::macro_spec;
 pub fn datum(rng: &mut DetRng, d: &Descriptors) -> Grid<f64> {
     let spec = macro_spec();
     let (nx, ny) = (spec.nx, spec.ny);
-    let (s1, s2, s3) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
-    // tilt direction reuses the drawn regional tilt azimuth; the magnitude
-    // is budgeted from cap relief (the corpus 46.9 m is TOTAL relief, and a
-    // dissected cap spends most of it on the fBm dome-and-swale).
+    let (s1, s2) = (rng.next_u32(), rng.next_u32());
+    let _s3 = rng.next_u32(); // burned: the retired third octave
+    // The cap is a gently TILTED SAND PLAIN, not a blob field (C3 lesson,
+    // two failed renders: fBm swales as deep as the valleys drowned the
+    // drainage, and tanh clipping printed terraced camo blobs). Most of the
+    // relief is the regional fall-line tilt; a low, broad undulation rides
+    // it; every sharp low is C3's job. "Flat-topped interfluves" emerge as
+    // the un-incised plain between valleys — they are not authored here.
     let (tc, ts) = (math::cos(d.floor_tilt_rad), math::sin(d.floor_tilt_rad));
-    let tilt = 0.25 * d.cap_relief_m / EXTENT_M;
+    let tilt = 0.58 * d.cap_relief_m / EXTENT_M;
+    let und_amp = d.cap_relief_m * (0.30 - 0.14 * d.cap_flat);
+    let l = d.cap_wave_m * 1.6;
 
     let mut raw = vec![0.0f64; spec.len()];
     for y in 0..ny {
         for x in 0..nx {
             let p = spec.world_of(x, y);
-            let l = d.cap_wave_m;
             raw[spec.index(x, y)] = noise::perlin2(p.x / l, p.y / l, s1)
-                + 0.50 * noise::perlin2(p.x / l * 2.0, p.y / l * 2.0, s2)
-                + 0.28 * noise::perlin2(p.x / l * 4.0, p.y / l * 4.0, s3);
+                + 0.50 * noise::perlin2(p.x / l * 2.0, p.y / l * 2.0, s2);
         }
     }
-    // normalise on p5/p95 (the surface.rs idiom — tails run past, no clamp)
     let mut sorted = raw.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let lo = sorted[(sorted.len() as f64 * 0.05) as usize];
     let hi = sorted[(sorted.len() as f64 * 0.95) as usize];
     let span = (hi - lo).max(1e-9);
 
-    // The top-clip: above a shoulder the profile is squashed through a tanh
-    // toward a ceiling. cap_flat 0 → w wide → domes; 1 → w tight → mesas.
-    // Smooth everywhere (no polygonal plateau edges — the lesson from the
-    // clamped-normalisation defect in surface.rs).
-    let shoulder = 0.60;
-    let w = 0.55 - 0.42 * d.cap_flat;
-
     let mut g = Grid::filled(spec, 0.0f64);
     for y in 0..ny {
         for x in 0..nx {
             let p = spec.world_of(x, y);
-            let t = (raw[spec.index(x, y)] - lo) / span;
-            let t = if t > shoulder {
-                shoulder + w * ((t - shoulder) / w).tanh()
-            } else {
-                t
-            };
-            g.set(x, y, 0.75 * d.cap_relief_m * t + tilt * (p.x * tc + p.y * ts));
+            let t = (raw[spec.index(x, y)] - lo) / span - 0.5;
+            g.set(x, y, und_amp * t + tilt * (p.x * tc + p.y * ts));
         }
     }
     g
