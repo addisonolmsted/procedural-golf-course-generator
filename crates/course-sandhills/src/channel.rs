@@ -56,8 +56,14 @@ pub fn datum(rng: &mut DetRng, d: &Descriptors) -> Grid<f64> {
     // it; every sharp low is C3's job. "Flat-topped interfluves" emerge as
     // the un-incised plain between valleys — they are not authored here.
     let (tc, ts) = (math::cos(d.floor_tilt_rad), math::sin(d.floor_tilt_rad));
-    let tilt = 0.58 * d.cap_relief_m / EXTENT_M;
-    let und_amp = d.cap_relief_m * (0.30 - 0.14 * d.cap_flat);
+    // Tilt is a CREEK GRADE, not the relief carrier (review 2026-08-25: on
+    // real tiles the relief spans highland to VALLEY FLOOR — with a 27 m
+    // tilt our upstream valley sat above the downstream highland and the
+    // low tint never followed the valley). ~13 m over 3 km = 0.4%, a
+    // low-gradient blackwater profile; the valley incision and interfluve
+    // doming carry the relief.
+    let tilt = 0.28 * d.cap_relief_m / EXTENT_M;
+    let und_amp = d.cap_relief_m * (0.34 - 0.14 * d.cap_flat);
     let l = d.cap_wave_m * 1.6;
 
     let mut raw = vec![0.0f64; spec.len()];
@@ -1097,7 +1103,8 @@ mod tests {
             v.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let relief = v[(v.len() as f64 * 0.99) as usize]
                 - v[(v.len() as f64 * 0.01) as usize];
-            assert!(relief > 22.0 && relief < 62.0, "seed {seed}: relief {relief:.1}");
+            // datum-only relief: the valley carve adds its 12-17 m on top
+            assert!(relief > 14.0 && relief < 45.0, "seed {seed}: relief {relief:.1}");
         }
     }
 

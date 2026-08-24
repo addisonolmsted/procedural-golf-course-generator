@@ -122,7 +122,8 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
         }
         let mut bed: Vec<f64> = (0..n)
             .map(|i| {
-                let breathe = 1.0 + 0.22 * noise::perlin1(arc[i] / 430.0, s_depth);
+                let lam = 430.0 + 320.0 * hk[i];
+                let breathe = 1.0 + 0.22 * noise::perlin1(arc[i] / lam, s_depth);
                 let depth = (depth_unit * hk[i] * breathe).max(0.9);
                 ground[i] - depth
             })
@@ -196,7 +197,8 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
             let f_base = (floor_unit * hk_i).max(2.5);
             let wall_base = (wall_unit * hk_i).max(5.0);
             let depth_loc = {
-                let breathe = 1.0 + 0.22 * noise::perlin1(a / 430.0, pr.s_depth_used);
+                let lam = 430.0 + 320.0 * hk_i;
+                let breathe = 1.0 + 0.22 * noise::perlin1(a / lam, pr.s_depth_used);
                 (depth_unit * hk_i * breathe).max(0.9)
             };
             let rise = depth_loc * (1.02 + 0.10 * noise::perlin1(a / 300.0, pr.s_p));
@@ -223,8 +225,16 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                     // per-side breathing (river idiom: independent seeds per
                     // side) + drawn asymmetry on the flipping cut bank
                     let s_side = if side > 0.0 { pr.s_wl } else { pr.s_wr };
-                    let breathe = 1.0 + 0.55 * noise::perlin1(a / 210.0, s_side)
-                        + 0.15 * noise::perlin1(a / 96.0, s_side.wrapping_add(9));
+                    // Breathing wavelength SCALES with the valley (Hack):
+                    // a 210 m octave on a 300 m-wide trunk printed the
+                    // valley as a caterpillar of discs (seed 109 render) —
+                    // big streams vary their width over longer distances,
+                    // and amplitude eases as wavelength grows.
+                    let lam1 = 210.0 + 240.0 * hk_i;
+                    let lam2 = 96.0 + 110.0 * hk_i;
+                    let amp1 = 0.55 / (1.0 + 0.55 * hk_i);
+                    let breathe = 1.0 + amp1 * noise::perlin1(a / lam1, s_side)
+                        + 0.15 * noise::perlin1(a / lam2, s_side.wrapping_add(9));
                     let asf = if side * flip > 0.0 {
                         2.0 * (1.0 - pr.asym)
                     } else {
