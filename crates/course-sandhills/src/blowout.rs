@@ -46,7 +46,7 @@ const SEP: f64 = 3.0;
 /// surface. `tnorm8` is the megaform position field at 8 m (percentile
 /// height), the same axis the hummock and texture gates key on.
 pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
-             d: &Descriptors) -> Vec<Blowout> {
+             d: &Descriptors, avoid: Option<(&[Vec2], f64)>) -> Vec<Blowout> {
     let spec = height.spec;
     let area_km2 = (spec.nx as f64 * spec.cell_size) * (spec.ny as f64 * spec.cell_size) / 1e6;
     let want = (d.blowout_km2 * area_km2).round() as usize;
@@ -64,6 +64,22 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
         // High ground only: a blowout is wind erosion of an exposed crest.
         if tnorm8.bilinear(p) < 0.62 {
             continue;
+        }
+        // ...and never in a river corridor: review caught seed 5's river
+        // running straight over a bowl. Wind deflation does not persist on a
+        // watered meadow floor.
+        if let Some((line, r_excl)) = avoid {
+            let mut near = false;
+            for q in line.iter().step_by(4) {
+                let dd = ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
+                if dd < r_excl {
+                    near = true;
+                    break;
+                }
+            }
+            if near {
+                continue;
+            }
         }
         let r = rng.range_f64(R_MIN, R_MAX);
         // depth <= 0.30 r: review 2026-08-23, "a bit too sharp" against the

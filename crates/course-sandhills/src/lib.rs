@@ -107,7 +107,10 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let mut height = texture::quilt(&mut tr, pack, &sf.height, &d);
 
     // A5b: blowouts over the texture
-    let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d);
+    let avoid = river_plan.as_ref().map(|pl| {
+        (pl.corr.as_slice(), (pl.floor_hw + pl.wall_m) * 1.4 + 60.0)
+    });
+    let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
 
     // A6b: lakes on the finished ground, then the sharp channel slot
     let mut water = water::find(&height, &sf.datum, &d);

@@ -337,7 +337,12 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
         let rp2 = Vec2::new(p.x + 60.0 * math::sin(hd), p.y - 60.0 * math::cos(hd));
         let (zl, zr) = (height.bilinear(lp), height.bilinear(rp2));
         let lean = 0.30 * ((zr - zl) / 6.0).clamp(-1.0, 1.0);
-        let h = hd + lean;
+        // total deviation from the crossing direction is clamped short of a
+        // reversal: on high-swing draws, swing + wander + lean exceeded pi and
+        // the integrator milled in place -- seed 9 rendered as knotted coils
+        // that then drained every pond they crossed.
+        let dev = (hd - base_heading + lean).clamp(-1.95, 1.95);
+        let h = base_heading + dev;
         p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
         // soft reflect off the side borders so the creek stays on-tile
         if along {
@@ -470,7 +475,9 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
                     (if left { ml } else { mr } * (1.0 + pl.asym * 0.45), 1.0 + pl.asym * 0.4)
                 };
                 let fhw = (pl.floor_hw * m).max(8.0);
-                let wm = (pl.wall_m * wallf).max(30.0);
+                // the WALL breathes too -- with only the floor breathing, the
+                // visible corridor width read as near-constant (review)
+                let wm = (pl.wall_m * wallf * m).max(28.0);
                 let u = ((dd - fhw) / wm).clamp(0.0, 1.0);
                 let beyond = (dd - fhw - wm).max(0.0);
                 // wall rise breathes along the arc, and the whole catena
@@ -478,8 +485,11 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
                 // transition lines read as artificial without it (review)
                 let wr = pl.wall_rise
                     * (1.0 + 0.35 * course_world::noise::perlin1(arc / 900.0, pl.s_wr2));
-                let cat = (0.10 + 0.55 * u)
-                    * course_world::noise::perlin2(w.x / 90.0, w.y / 90.0, pl.s_cat);
+                let cat = (0.15 + 1.05 * u)
+                    * course_world::noise::perlin2(w.x / 90.0, w.y / 90.0, pl.s_cat)
+                    + 0.35 * u
+                        * course_world::noise::perlin2(w.x / 34.0, w.y / 34.0,
+                                                       pl.s_cat ^ 0x5A5A);
                 // hand-off: ~1.5% for the first 40 m, then loose-sand repose
                 // (~10%) until the profile MEETS the dunes. The flat-grade
                 // version could not daylight on a 15 m belt inside the reach

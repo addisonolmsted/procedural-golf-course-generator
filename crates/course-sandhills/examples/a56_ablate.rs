@@ -52,7 +52,7 @@ fn main() {
 
     // +BLOWOUTS on top of that (continuing the same BLOWOUT stream)
     let mut with_b = Grid { spec: panned.spec, data: panned.data.clone() };
-    let bl = blowout::carve(&mut pr, &mut with_b, &tnorm8, &d);
+    let bl = blowout::carve(&mut pr, &mut with_b, &tnorm8, &d, None);
     gridio::write_grid_f32(&out.join("2_blowouts.cgrid"), &with_b).unwrap();
     let s: String = bl.iter().map(|b| format!("{:.1} {:.1} {:.1} {:.1}\n",
         b.center.x, b.center.y, b.radius_m, b.depth_m)).collect();
