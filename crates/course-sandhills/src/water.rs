@@ -228,8 +228,13 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
     } else {
         (Vec2::new(t0 * EXTENT_M, 2.0), std::f64::consts::FRAC_PI_2)
     };
-    let lam = rng.range_f64(90.0, 180.0);          // tight: switchback scale
-    let swing = rng.range_f64(0.85, 1.25);         // radians of heading swing
+    // Meander scale, corrected against the confirmed corridor tiles: the
+    // heading integrator's lateral amplitude is ~swing*lam/2pi, and at
+    // lam 90-180 the channel swung only ~20 m inside a 100-300 m corridor --
+    // a timid wiggle down the middle of a smooth band, where the real Middle
+    // Loup loops across most of its meadow.
+    let lam = rng.range_f64(220.0, 340.0);
+    let swing = rng.range_f64(1.20, 1.70);         // loops, not wiggles
     let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
                       rng.range_f64(0.0, std::f64::consts::TAU));
     let s_noise = rng.next_u32();
@@ -269,10 +274,22 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
         pts.push(p);
     }
 
-    // Monotone bed, shallow: a creek slot, not a canyon.
+    // THE MEASURED CATENA (366 transects across the 7 reviewer-confirmed
+    // corridor tiles, docs/sandhills/02-dune-targets.md §20). The real
+    // structure is NOT a slot: it is a narrow channel winding inside a broad
+    // flat MEADOW CORRIDOR — flat floor 22–132 m wide (p50 50 m at +0.5 m,
+    // 111 m at +1 m), walls rising only 1.2 m at 50 m and 3.2 m at 200 m.
+    // The channel itself stays ~6 m; the corridor is what was missing.
+    //
+    // Two lines, two jobs: the CHANNEL follows the switchback path; the
+    // CORRIDOR follows a lowpass of it, because a real meadow valley is
+    // straighter than the channel that wanders inside it.
     let depth = 1.2;
-    let hw_water = 3.0;                            // ~6 m wet width
-    let hw_cut = 7.0;                              // slot + easing shoulder
+    let hw_water = 3.0;                            // ~6 m wet width (confirmed)
+    let hw_cut = 7.0;                              // channel slot + shoulder
+    let floor_hw = rng.range_f64(14.0, 45.0);      // corpus: flat p25-p50 (half)
+    let wall_m = rng.range_f64(130.0, 220.0);      // corpus: rise ~3 m by ~200
+    let wall_rise = rng.range_f64(2.2, 4.5);       // corpus: r200 p50 3.2
     let mut bed: Vec<f64> = pts.iter().map(|q| height.bilinear(*q) - depth).collect();
     // two smoothing passes so the bed does not chase every dune it crosses
     for _ in 0..2 {
@@ -282,6 +299,62 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
     }
     for i in 1..bed.len() {
         bed[i] = bed[i].min(bed[i - 1] - 0.004);
+    }
+    // --- the meadow corridor, on the LOWPASS line --------------------------
+    let win = 40usize; // ~160 m of path
+    let corr: Vec<Vec2> = (0..pts.len())
+        .map(|i| {
+            let a = i.saturating_sub(win);
+            let b = (i + win).min(pts.len() - 1);
+            let mut sx = 0.0;
+            let mut sy = 0.0;
+            for j in a..=b {
+                sx += pts[j].x;
+                sy += pts[j].y;
+            }
+            let n = (b - a + 1) as f64;
+            Vec2::new(sx / n, sy / n)
+        })
+        .collect();
+    // Past the wall the profile keeps rising at the measured outer grade
+    // (3.2 m @ 200 -> 4.2 m @ 290 = ~1.1%) until it MEETS the dune ground.
+    // The first version capped the target instead, and the cap printed a
+    // sheer scarp wherever the corridor crossed a tall belt.
+    const OUT_GRADE: f64 = 0.012;
+    let reach = floor_hw + wall_m + 300.0;
+    let s_w = rng.next_u32();
+    for (i, q) in corr.iter().enumerate() {
+        // corridor width breathes along the run -- a constant width prints a
+        // razor-straight valley edge; real edges are crisp but irregular
+        let wmod = 1.0 + 0.38 * course_world::noise::perlin1(i as f64 * step / 620.0, s_w);
+        let floor_hw = floor_hw * wmod;
+        let wall_m = wall_m * wmod.max(0.7);
+        let x0 = ((q.x - reach) / spec.cell_size).floor().max(0.0) as u32;
+        let x1 = ((q.x + reach) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
+        let y0 = ((q.y - reach) / spec.cell_size).floor().max(0.0) as u32;
+        let y1 = ((q.y + reach) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
+        let fl = bed[i] + 0.4; // meadow floor sits just above the water
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let w = spec.world_of(x, y);
+                let dd = ((w.x - q.x).powi(2) + (w.y - q.y).powi(2)).sqrt();
+                if dd >= reach {
+                    continue;
+                }
+                let li = spec.index(x, y);
+                // flat floor to floor_hw, the measured wall rise over wall_m,
+                // then the outer grade until the profile meets the ground.
+                let u = ((dd - floor_hw) / wall_m).clamp(0.0, 1.0);
+                let beyond = (dd - floor_hw - wall_m).max(0.0);
+                let tgt = fl + wall_rise * u * u * (3.0 - 2.0 * u) + OUT_GRADE * beyond;
+                if height.data[li] > tgt {
+                    let ex = height.data[li] - tgt;
+                    // wide ease: the corridor daylights into the dunes over
+                    // metres, not at a line
+                    height.data[li] -= ex * math::smoothstep(0.0, 4.0, ex);
+                }
+            }
+        }
     }
     for (i, q) in pts.iter().enumerate() {
         let x0 = ((q.x - hw_cut) / spec.cell_size).floor().max(0.0) as u32;

@@ -874,3 +874,40 @@ classes, so no single systematic tell remains. P3's one miss was a train draw
 at the low end of the κ range read as a mound: the class boundary draws are
 genuinely ambiguous, which the corpus's own overlapping A distributions say
 they should be.
+
+---
+
+## 20. The river catena, measured — a corridor, not a slot
+
+Reviewer method: fetch real tiles along the mapped courses of the Dismal,
+Middle Loup, Snake and North Loup; the reviewer judges which truly carry a
+river; the confirmed set shapes the catena. 18 fetched under the reference-only
+key `sandhills_river` (never in the corpus, packs or bands); **7 confirmed**.
+
+366 transects across the confirmed reaches, recentred on the channel:
+
+| quantity | p25 | p50 | p75 |
+|---|---:|---:|---:|
+| flat width @ +0.5 m | 22 m | **50 m** | 132 m |
+| floor width @ +1.0 m | 40 m | **111 m** | 274 m |
+| rise at 50 m | 0.5 | 1.2 | 2.7 |
+| rise at 200 m | 1.1 | **3.2** | 7.0 |
+| rise at 290 m | 1.2 | 4.2 | 11.2 |
+
+**The design was wrong in kind, not degree.** The real structure is a ~6 m
+channel winding inside a broad flat MEADOW CORRIDOR 50–250 m wide, with walls
+rising only ~3 m over 200 m and continuing at ~1.1 % beyond. The reviewer's
+~6 m water width was confirmed exactly; the slot-only cut was not.
+
+Rebuilt: channel follows the switchback path; the corridor follows a lowpass
+of it (a meadow valley is straighter than the channel inside it); flat floor
+`floor_hw` 14–45 m half-width, measured wall rise, then the outer grade until
+the profile MEETS the dunes — the first version capped the target and printed
+a sheer scarp against tall belts. Meander rescaled to use its corridor
+(λ 220–340, swing 1.2–1.7: the lateral amplitude is ~swing·λ/2π, and the old
+values swung ~20 m inside a 100–300 m corridor). Corridor width breathes along
+the run.
+
+**Residuals, for the next river round:** the meadow floor is featureless where
+real floors carry scroll-bar and oxbow relief; the corridor interior loses its
+texture to the cut. Both are floor-detail questions, not shape questions.
