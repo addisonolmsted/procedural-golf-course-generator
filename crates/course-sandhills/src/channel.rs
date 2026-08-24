@@ -63,7 +63,7 @@ pub fn datum(rng: &mut DetRng, d: &Descriptors) -> Grid<f64> {
     // low-gradient blackwater profile; the valley incision and interfluve
     // doming carry the relief.
     let tilt = 0.28 * d.cap_relief_m / EXTENT_M;
-    let und_amp = d.cap_relief_m * (0.34 - 0.14 * d.cap_flat);
+    let und_amp = d.cap_relief_m * (0.28 - 0.12 * d.cap_flat);
     let l = d.cap_wave_m * 1.6;
 
     let mut raw = vec![0.0f64; spec.len()];
@@ -418,7 +418,7 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
             // in the datum lows, that is the whole point of it
             let lp = Vec2::new(p.x - 70.0 * math::sin(hd), p.y + 70.0 * math::cos(hd));
             let rp = Vec2::new(p.x + 70.0 * math::sin(hd), p.y - 70.0 * math::cos(hd));
-            let lean = 0.50 * ((datum.bilinear(rp) - datum.bilinear(lp)) / 5.0).clamp(-1.0, 1.0);
+            let lean = 0.70 * ((datum.bilinear(rp) - datum.bilinear(lp)) / 5.0).clamp(-1.0, 1.0);
             // Border repulsion as a VECTOR turned into a steering correction
             // (cross product of heading and the inward push) — the scalar
             // lateral form only worked for cardinal crossings. For them this

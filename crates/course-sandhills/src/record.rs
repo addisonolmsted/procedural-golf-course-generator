@@ -382,7 +382,7 @@ pub const SANDHILLS: Record = Record {
     cap_flat: Range::new(0.35, 0.7),         // guess
     sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
     attach_m: Range::new(470.0, 680.0),      // review 2026-08-24: -25% density vs corpus 2.33; revisit after the cut
-    valley_depth_m: Range::new(7.2, 11.0),   // measured: trunk p50 10-15.6 at hack 1.7-2.0
+    valley_depth_m: Range::new(5.8, 8.6),    // measured: trunk p50 10-15.6 at hack 1.7-2.0
     valley_floor_m: Range::new(14.0, 26.0),  // measured: HAND2 floor 124-248 m
     valley_wall_m: Range::new(60.0, 95.0),   // measured: HAND5 valley 276-588 m
     p_allogenic_river: 0.30,                 // literature

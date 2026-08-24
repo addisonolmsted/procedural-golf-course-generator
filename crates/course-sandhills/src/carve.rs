@@ -52,6 +52,8 @@ fn hack(up_len_m: f64) -> f64 {
 struct Program {
     pts: Vec<Vec2>,
     bed: Vec<f64>,
+    /// actual local depth (lowpass ground − bed), ≥ 0.9
+    depth: Vec<f64>,
     /// arc position of each point, from the mouth
     arc: Vec<f64>,
     /// Hack factor at each point (drives every size)
@@ -62,7 +64,6 @@ struct Program {
     s_wl: u32,
     s_wr: u32,
     s_flip: u32,
-    s_depth_used: u32,
     s_p: u32,
     s_jag: u32,
 }
@@ -77,6 +78,11 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
     let trunk_credit = rng.range_f64(TRUNK_CREDIT_M.0, TRUNK_CREDIT_M.1);
     let frag_credit = rng.range_f64(FRAG_CREDIT_M.0, FRAG_CREDIT_M.1);
     let out_grade = rng.range_f64(0.012, 0.020);
+    // Flint's-law steepness: slope(a) = s0 * (up_len/1500)^-0.45, capped at
+    // 2% near heads. `measured 2026-08-25` (trunk_profile on 4 real tiles):
+    // mainstems run 0.1-0.2% in-tile with the climb in the headwaters —
+    // the datum-following bed was linear-to-convex against that.
+    let s0 = rng.range_f64(0.0022, 0.0034);
     let p_base = rng.range_f64(1.5, 2.1);
     let s_cat1 = rng.next_u32();
     let s_cat2 = rng.next_u32();
@@ -128,6 +134,24 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                 ground[i] - depth
             })
             .collect();
+        // THE LONG PROFILE: a concave slope cap on the channel's own bed.
+        // Applied before the junction offset, so a tributary still climbs
+        // steeply out of its parent valley (that transient is real) while
+        // its own profile — and above all the trunk's — stays concave:
+        // flat mainstem, steepening headwaters.
+        for i in 1..n {
+            let ds = arc[i] - arc[i - 1];
+            let up = (total - arc[i] + credit).max(30.0);
+            let smax = (s0 * math::pow(up / 1500.0, -0.45)).min(0.02);
+            let mut b = bed[i].min(bed[i - 1] + smax * ds);
+            // the relief valve: where the flat profile would cut a gorge
+            // (upland bump over the bed), the profile may steepen to 2% —
+            // the water-gap behaviour of real long profiles. Without it a
+            // flat bed under a 30 m bump cut 41 m (seed 109).
+            let dcap = (1.35 * depth_unit * hk[i]).max(6.0);
+            b = b.max((ground[i] - dcap).min(bed[i - 1] + 0.02 * ds));
+            bed[i] = b;
+        }
         // junction continuity: the mouth floor IS the parent floor there,
         // and the difference decays over the first ~150 m
         if let Some(pid) = c.parent {
@@ -145,10 +169,15 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
             }
         }
         // monotone upstream — water cannot flow uphill along its own floor
+        // (0.04% floor: the old 0.15% was itself a whole-profile steepener)
         for i in 1..n {
             let ds = arc[i] - arc[i - 1];
-            bed[i] = bed[i].max(bed[i - 1] + 0.0015 * ds);
+            bed[i] = bed[i].max(bed[i - 1] + 0.0004 * ds);
         }
+
+        // local depth = the ACTUAL ground-to-bed gap: once the profile
+        // cap binds, the hack formula no longer knows how deep the bed sits
+        let depth: Vec<f64> = (0..n).map(|i| (ground[i] - bed[i]).max(0.9)).collect();
 
         // signed turn for the inside-of-bend widening (river idiom)
         let mut turn = vec![0.0f64; n];
@@ -167,12 +196,11 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
         }
 
         progs.push(Program {
-            pts, bed, arc, hk, turn,
+            pts, bed, depth, arc, hk, turn,
             asym: rng.range_f64(0.35, 0.65),
             s_wl: rng.next_u32(),
             s_wr: rng.next_u32(),
             s_flip: rng.next_u32(),
-            s_depth_used: s_depth,
             s_p: rng.next_u32(),
             s_jag: rng.next_u32(),
         });
@@ -196,11 +224,7 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
             // floor half-width, per side below; wall run; rise; exponent
             let f_base = (floor_unit * hk_i).max(2.5);
             let wall_base = (wall_unit * hk_i).max(5.0);
-            let depth_loc = {
-                let lam = 430.0 + 320.0 * hk_i;
-                let breathe = 1.0 + 0.22 * noise::perlin1(a / lam, pr.s_depth_used);
-                (depth_unit * hk_i * breathe).max(0.9)
-            };
+            let depth_loc = pr.depth[i];
             let rise = depth_loc * (1.02 + 0.10 * noise::perlin1(a / 300.0, pr.s_p));
             let p_exp = (p_base + 0.25 * noise::perlin1(a / 520.0, pr.s_p)).clamp(1.35, 2.35);
             // which side is the cut bank flips slowly along the arc
