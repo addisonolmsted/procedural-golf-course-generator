@@ -691,7 +691,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // The survey's n_sys 3 / main_share 57% is exactly this structure.
     // --- final polish: small fills where the ground is still far from water
     let mut n = 0;
-    while d2c_p50(&net) > 132.0 && density_km_km2(&net) < 2.45 && n < 4 {
+    while d2c_p50(&net) > 165.0 && density_km_km2(&net) < 1.85 && n < 4 {
         let mut t = tier3(d.attach_m * 0.8);
         t.min_len = 110.0;
         // fills squeeze into interior voids the fragments cannot reach; the
@@ -714,7 +714,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // spanning trunk"). Only a genuinely underwatered tile gets one, and it
     // gets exactly one: a clipped neighboring trunk entering at the emptiest
     // border low, carrying its own tribs.
-    if density_km_km2(&net) < 1.9 {
+    if density_km_km2(&net) < 1.45 {
         let mut placed = 0u32;
         let mut n_frag = 0u32;
         while n_frag < 4 && placed < 1 {
@@ -1118,11 +1118,13 @@ mod tests {
         for seed in 40u64..64 {
             let (_, net) = skeleton(seed);
             let dens = density_km_km2(&net);
-            assert!(dens > 1.4 && dens < 3.4, "seed {seed}: density {dens:.2}");
+            assert!(dens > 1.05 && dens < 2.6, "seed {seed}: density {dens:.2}");
             pool.push(dens);
         }
         let mean = pool.iter().sum::<f64>() / pool.len() as f64;
-        assert!(mean > 1.9 && mean < 2.9, "pooled density {mean:.2}");
+        // review 2026-08-24: densities run ~25% under the corpus 2.33 until
+        // the carve round shows whether the cut ground reads sparse
+        assert!(mean > 1.4 && mean < 2.3, "pooled density {mean:.2}");
     }
 
     #[test]

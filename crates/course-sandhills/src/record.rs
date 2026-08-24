@@ -370,7 +370,7 @@ pub const SANDHILLS: Record = Record {
     cap_wave_m: Range::new(750.0, 1300.0),   // guess, d2c-bounded
     cap_flat: Range::new(0.35, 0.7),         // guess
     sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
-    attach_m: Range::new(360.0, 520.0),      // calibrated at C2 (density 2.33 at d2c ~110)
+    attach_m: Range::new(470.0, 680.0),      // review 2026-08-24: -25% density vs corpus 2.33; revisit after the cut
     p_allogenic_river: 0.30,                 // literature
 };
 
