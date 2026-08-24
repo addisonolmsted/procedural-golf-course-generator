@@ -225,12 +225,22 @@ struct Field<'a> {
     idx: &'a Index,
     datum: &'a Grid<f64>,
     k_rise: f64,
+    /// Weight on the channel-distance rise term. Tributaries climb AWAY
+    /// from the net (1.0, datum a 0.05 tiebreak). Edge fragments are the
+    /// headwaters of OFF-TILE systems: the d^0.6 term points them back out
+    /// of the tile (every fragment died a stub on it), so they climb the
+    /// real ground instead (0.0, datum 1.0).
+    w_d6: f64,
 }
 
 impl<'a> Field<'a> {
     fn e(&self, p: Vec2) -> f64 {
+        if self.w_d6 == 0.0 {
+            return self.datum.bilinear(p);
+        }
         let (dist, zc, _) = self.idx.nearest(p, None).unwrap();
-        zc + self.k_rise * math::pow(dist.max(0.0), 0.6) + 0.05 * self.datum.bilinear(p)
+        self.w_d6 * (zc + self.k_rise * math::pow(dist.max(0.0), 0.6))
+            + 0.05 * self.datum.bilinear(p)
     }
     fn grad(&self, p: Vec2) -> Vec2 {
         let h = 12.0;
@@ -272,12 +282,14 @@ fn tier2(attach_m: f64) -> Tier {
         end_margin: 240.0,
         centre_deg: 41.0,   // tribs.rs tier2, corpus-fit
         tail_p: 0.10,
-        hold_m: (500.0, 120.0),
+        hold_m: (320.0, 100.0),
         swing: 0.09,
-        lam: (250.0, 550.0),
+        lam: (450.0, 750.0),   // review 2026-08-24: lambda floor raised
         claim: 180.0,       // tribs.rs tier2 — sets d2c together with density
         min_len: 150.0,
-        max_len: 2600.0,
+        // Review 2026-08-24: real tribs reach ~a quarter of the tile width
+        // at most (750 m); attempt 4's 2600 m climbs read wrong here.
+        max_len: 800.0,
         step: 20.0,
         min_gain: 0.012,
     }
@@ -289,12 +301,12 @@ fn tier3(attach_m: f64) -> Tier {
         end_margin: 140.0,
         centre_deg: 41.0,
         tail_p: 0.10,
-        hold_m: (260.0, 80.0),
+        hold_m: (200.0, 70.0),
         swing: 0.09,
-        lam: (180.0, 400.0),
+        lam: (350.0, 600.0),   // review 2026-08-24: lambda floor raised
         claim: 155.0,
         min_len: 90.0,
-        max_len: 900.0,
+        max_len: 450.0,
         step: 16.0,
         min_gain: 0.012,
     }
@@ -335,8 +347,11 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
     };
     // creek planform: longer, lazier than the Nebraska river styles — a
     // low-gradient blackwater creek, not a free-meandering sand-bed river
-    let lam = rng.range_f64(460.0, 680.0);
-    let swing = rng.range_f64(0.55, 0.85);
+    // Review 2026-08-24 ("squiggle too much ... the lambda floor should be
+    // raised a lot"): sweeping wander, not creek-scale wiggle — the tier cut
+    // prints this path into the ground and tight bends cut messy.
+    let lam = rng.range_f64(750.0, 1000.0);
+    let swing = rng.range_f64(0.45, 0.70);
     let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
                       rng.range_f64(0.0, std::f64::consts::TAU));
     let (s_noise, s_lam, s_swing) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
@@ -471,6 +486,9 @@ fn attach_points(rng: &mut DetRng, c: &Channel, t: &Tier) -> Vec<usize> {
 /// the walk departs at the drawn angle off the parent's downstream tangent,
 /// holds its course (interpolated by arc position), then steers uphill on
 /// the field — strictly monotone after a bounded grace window.
+/// Climb from one attachment point on channel `cid`. The junction is t = 0:
+/// the walk departs at the drawn angle off the parent's downstream tangent,
+/// holds its course (interpolated by arc position), then steers uphill.
 fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
          field: &Field, t: &Tier) -> Result<(Vec<Vec2>, Vec<f64>, End), End> {
     let c = &net.chans[cid as usize];
@@ -503,11 +521,21 @@ fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
     // hold interpolated MOUTH→HEAD: mouth-first storage puts the mouth at
     // frac 0, so hold_m.0 belongs at frac 0
     let hold_m = t.hold_m.0 + (t.hold_m.1 - t.hold_m.0) * frac;
+    walk(rng, start, c.z[at], depart, hold_m, field, t, Some(cid), Some(c))
+}
+
+/// The shared walker: departs `start` along `depart`, holds, then climbs
+/// the field. `skip` is the identity exemption for the claim (the parent
+/// channel); `parent` enables the 30 m post-junction clearance. Edge
+/// fragments walk with neither.
+fn walk(rng: &mut DetRng, start: Vec2, z0: f64, depart: Vec2, hold_m: f64,
+        field: &Field, t: &Tier, skip: Option<u32>, parent: Option<&Channel>)
+        -> Result<(Vec<Vec2>, Vec<f64>, End), End> {
     let lam = rng.range_f64(t.lam.0, t.lam.1);
     let phase = rng.range_f64(0.0, std::f64::consts::TAU);
 
     let mut pts = vec![start];
-    let mut z = vec![c.z[at]];
+    let mut z = vec![z0];
     let mut heading = depart;
     let mut arc = 0.0;
     let mut e_prev = field.e(start);
@@ -530,8 +558,8 @@ fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
         };
         let base = Vec2::new(depart.x * hold_w + uphill.x * (1.0 - hold_w),
                              depart.y * hold_w + uphill.y * (1.0 - hold_w));
-        heading = Vec2::new(heading.x * 0.55 + base.x * 0.45,
-                            heading.y * 0.55 + base.y * 0.45).normalized();
+        heading = Vec2::new(heading.x * 0.65 + base.x * 0.35,
+                            heading.y * 0.65 + base.y * 0.35).normalized();
         let wob = t.swing * math::sin(std::f64::consts::TAU * arc / lam + phase)
             * (arc / 200.0).min(1.0);
         let th = math::atan2(heading.y, heading.x) + wob;
@@ -559,7 +587,7 @@ fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
             break;
         }
         // the claim: parent exempt by identity, everything else forbidden
-        if let Some((dist, _, _)) = field.idx.nearest(next, Some(cid)) {
+        if let Some((dist, _, _)) = field.idx.nearest(next, skip) {
             if dist < t.claim {
                 for _ in 0..2 {
                     if pts.len() > 2 {
@@ -578,10 +606,9 @@ fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
         // hard clearance from its parent — 18 because two checked points
         // 20 m apart at 18 m can still dip to ~15 m between samples, safely
         // above the 10 m crossing assertion.
-        if arc + t.step > 48.0 {
-            let par = &net.chans[cid as usize];
+        if let (true, Some(par)) = (arc + t.step > 48.0, parent) {
             let dpar = par.pts.iter().map(|q| q.distance(next)).fold(f64::MAX, f64::min);
-            if dpar < 18.0 {
+            if dpar < 30.0 {
                 for _ in 0..2 {
                     if pts.len() > 2 {
                         pts.pop();
@@ -595,11 +622,14 @@ fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
         heading = step_dir;
         arc += t.step;
         pts.push(next);
-        z.push((e_next - e_start + c.z[at]).max(z.last().unwrap() + 0.01));
+        z.push((e_next - e_start + z0).max(z.last().unwrap() + 0.01));
         e_prev = e_next;
     }
     let len: f64 = pts.windows(2).map(|w| w[0].distance(w[1])).sum();
     if len < t.min_len || pts.len() < 4 {
+        if std::env::var("NET_DEBUG").is_ok() {
+            eprintln!("  stub: {end:?} at len {len:.0} from ({:.0},{:.0})", start.x, start.y);
+        }
         return Err(End::Stub);
     }
     Ok((pts, z, end))
@@ -618,7 +648,6 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
 
     // --- the trunk: ONE per tile (review 2026-08-24 — every real NC tile
     // is single-trunked; the survey's extra "systems" are edge fragments).
-    // The tributary tree carries the density from here.
     for s in 0..d.n_sys.min(1) {
         if let Some((pts, z)) = trunk(rng, datum, d, (0.25, 0.75), &idx) {
             let c = Channel { pts, z, tier: 1, parent: None, sys: s };
@@ -630,64 +659,229 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // attempt 4's rise coefficient: 0.55 of the budget over an 800 m climb
     let k_rise = 0.55 * d.cap_relief_m / math::pow(800.0, 0.6);
 
-    // --- tributary passes
-    let mut pass = 0usize;
-    loop {
-        let (tier, targets): (Tier, Vec<u32>) = match pass {
-            0 => (tier2(d.attach_m),
-                  (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 1)
-                      .collect()),
-            1 => (tier3(d.attach_m),
-                  (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier >= 2)
-                      .collect()),
-            n => {
-                // Coverage fill: whole network, shrinking spacing. The
-                // criterion is d2c, not density — with a single trunk the
-                // density saturates near the tree while far corners stay
-                // empty (battery: d2c 108–181 against the corpus 107).
-                // Density still caps the loop so a tile cannot over-etch.
-                if d2c_p50(&net) <= 118.0 || density_km_km2(&net) >= 2.65 || n >= 6 {
-                    break;
-                }
-                let mut t = tier3(d.attach_m * 0.75f64.powi(n as i32 - 1));
-                t.min_len = 110.0;
-                (t, (0..net.chans.len() as u32).collect())
-            }
-        };
-        let n_before = net.chans.len();
-        for cid in targets {
-            let t = tier.clone();
-            let sites = {
-                let c = &net.chans[cid as usize];
-                attach_points(rng, c, &t)
-            };
-            for at in sites {
-                // one retry on a stub: a site inside a bend often cannot
-                // support the first drawn departure but takes another
-                for _attempt in 0..2 {
-                    let field = Field { idx: &idx, datum, k_rise };
-                    match climb(rng, &net, cid, at, &field, &t) {
-                        Ok((pts, z, _end)) => {
-                            let sys = net.chans[cid as usize].sys;
-                            let tier_no = match pass { 0 => 2, 1 => 3, _ => 4 };
-                            let c = Channel { pts, z, tier: tier_no,
-                                              parent: Some(cid), sys };
-                            idx.add_channel(&c, net.chans.len() as u32);
-                            net.chans.push(c);
-                            break;
-                        }
-                        Err(End::Stub) => continue,
-                        Err(_) => break,
-                    }
-                }
-            }
+    // --- the main tree: tier-2 tribs on the trunk, tier-3 on those
+    let t2_targets: Vec<u32> =
+        (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 1).collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &tier2(d.attach_m), &t2_targets, 2);
+    let t3_targets: Vec<u32> =
+        (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 2).collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &tier3(d.attach_m), &t3_targets, 3);
+
+    // --- EDGE FRAGMENTS (review 2026-08-24): with quarter-tile tribs a
+    // single trunk covers only its own band — density fell to 1.4-1.9 and
+    // d2c blew out to 200-455 against the corpus 2.33/107. Real tiles close
+    // that gap with clipped pieces of NEIGHBORING systems: short streams
+    // whose mouths sit on the tile border and whose headwaters climb inward.
+    // The survey's n_sys 3 / main_share 57% is exactly this structure.
+    // FEW and SUBSTANTIAL: a tile reads as one trunk + 2-4 neighboring
+    // systems, not a ring of border stubs (render check, seed 104: fourteen
+    // attempts at min_len 260 printed exactly that ring).
+    let mut n_frag = 0u32;
+    let mut placed = 0u32;
+    while n_frag < 12 && placed < 7 && d2c_p50(&net) > 135.0 {
+        let fm = frag_mouth(&idx, datum);
+        if std::env::var("NET_DEBUG").is_ok() {
+            eprintln!("  frag_mouth -> {:?}", fm.map(|(m, _)| (m.x, m.y)));
         }
-        pass += 1;
-        if pass >= 7 || (pass > 2 && net.chans.len() == n_before) {
+        let Some((mouth, inward)) = fm else { break };
+        // A fragment is the TRUNK of a neighboring system, so it is built
+        // by the trunk machinery: committed inward heading, wobble, lean
+        // into datum lows. The climb-based version hooked around border
+        // knobs and curled straight back out (render: seed 109's J-hooks —
+        // a local datum gradient is no guide for a through-going stream).
+        if let Some((pts, z)) = frag_trunk(rng, datum, &idx, mouth, inward) {
+            let sys = net.chans.iter().map(|c| c.sys).max().unwrap_or(0) + 1;
+            let cid = net.chans.len() as u32;
+            let c = Channel { pts, z, tier: 1, parent: None, sys };
+            idx.add_channel(&c, cid);
+            net.chans.push(c);
+            // a fragment is a creek like any other: it carries its own
+            // (shorter) tier-2 tribs, and those carry tier-3s
+            let before_t2 = net.chans.len() as u32;
+            let mut ft2 = tier2(d.attach_m);
+            ft2.max_len = 650.0;
+            tier_pass(rng, &mut net, &mut idx, datum, k_rise, &ft2, &[cid], 2);
+            let new_t2: Vec<u32> = (before_t2..net.chans.len() as u32).collect();
+            tier_pass(rng, &mut net, &mut idx, datum, k_rise,
+                      &tier3(d.attach_m), &new_t2, 3);
+            tier_pass(rng, &mut net, &mut idx, datum, k_rise,
+                      &tier3(d.attach_m), &[cid], 3);
+            placed += 1;
+        }
+        n_frag += 1;
+    }
+
+    // --- final polish: small fills where the ground is still far from water
+    let mut n = 0;
+    while d2c_p50(&net) > 132.0 && density_km_km2(&net) < 2.45 && n < 4 {
+        let mut t = tier3(d.attach_m * 0.8);
+        t.min_len = 110.0;
+        // fills squeeze into interior voids the fragments cannot reach; the
+        // relaxed claim lets a climb thread between saturated neighbours on
+        // its way out (it still cannot TOUCH them — 130 m clearance), and
+        // the longer leg lets it actually arrive (tier-3's 450 m cap left
+        // the deep voids untouched)
+        t.claim = 130.0;
+        t.max_len = 800.0;
+        let all: Vec<u32> = (0..net.chans.len() as u32).collect();
+        let before = net.chans.len();
+        tier_pass(rng, &mut net, &mut idx, datum, k_rise, &t, &all, 4);
+        if net.chans.len() == before {
             break;
         }
+        n += 1;
     }
     net
+}
+
+/// One tributary pass: attachment sites on every target channel, one climb
+/// per site with a single stub retry.
+fn tier_pass(rng: &mut DetRng, net: &mut Network, idx: &mut Index,
+             datum: &Grid<f64>, k_rise: f64, tier: &Tier, targets: &[u32],
+             tier_no: u8) {
+    for &cid in targets {
+        let sites = attach_points(rng, &net.chans[cid as usize], tier);
+        for at in sites {
+            // skip only sites doomed in EVERY direction (first step lands
+            // inside a non-parent claim no matter where it points); a site
+            // that merely NEIGHBORS a claim can still walk away from it
+            let start = net.chans[cid as usize].pts[at];
+            if idx.nearest(start, Some(cid))
+                .is_some_and(|(dd, _, _)| dd < tier.claim - tier.step) {
+                continue;
+            }
+            for _attempt in 0..2 {
+                let field = Field { idx: &*idx, datum, k_rise, w_d6: 1.0 };
+                match climb(rng, net, cid, at, &field, tier) {
+                    Ok((pts, z, _end)) => {
+                        let sys = net.chans[cid as usize].sys;
+                        let c = Channel { pts, z, tier: tier_no, parent: Some(cid), sys };
+                        idx.add_channel(&c, net.chans.len() as u32);
+                        net.chans.push(c);
+                        break;
+                    }
+                    Err(End::Stub) => continue,
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
+/// The border point farthest from every existing channel — where the next
+/// off-tile system's clipped fragment enters. Returns the mouth and the
+/// inward normal, or None once the whole border is watered.
+fn frag_mouth(idx: &Index, datum: &Grid<f64>) -> Option<(Vec2, Vec2)> {
+    let lim = EXTENT_M - 6.0;
+    // lowest border point among those with room (a fragment's first reach
+    // must clear the claim) — valleys cross borders at their low points
+    let mut best: Option<(f64, Vec2, Vec2)> = None;
+    let mut t = 24.0;
+    while t < EXTENT_M - 24.0 {
+        for (p, nrm) in [
+            (Vec2::new(t, 6.0), Vec2::new(0.0, 1.0)),
+            (Vec2::new(t, lim), Vec2::new(0.0, -1.0)),
+            (Vec2::new(6.0, t), Vec2::new(1.0, 0.0)),
+            (Vec2::new(lim, t), Vec2::new(-1.0, 0.0)),
+        ] {
+            let dist = idx.nearest(p, None).map(|(dd, _, _)| dd).unwrap_or(f64::MAX);
+            // room ≥ 680: min_len of walkable ground plus the claim, else
+            // the walk cannot survive to acceptance (seed 107 burned all 8
+            // attempts on one 500 m-roomed mouth)
+            if dist < 680.0 {
+                continue;
+            }
+            let z = datum.bilinear(p);
+            if best.map_or(true, |(bz, _, _)| z < bz) {
+                best = Some((z, p, nrm));
+            }
+        }
+        t += 24.0;
+    }
+    best.map(|(_, p, nrm)| (p, nrm))
+}
+
+/// A neighboring system's clipped trunk: enters at a border mouth, runs
+/// inward on a committed heading with the trunk integrator's organs (wobble,
+/// wander, low-seeking lean), and ends at its drawn length, at another edge,
+/// or on approach to the resident network — that approach IS the divide
+/// zone. Returned mouth-first with a strictly increasing bed.
+fn frag_trunk(rng: &mut DetRng, datum: &Grid<f64>, idx: &Index,
+              mouth: Vec2, inward: Vec2) -> Option<(Vec<Vec2>, Vec<f64>)> {
+    let step = 8.0;
+    let lim = EXTENT_M - 2.0;
+    let base_heading = math::atan2(inward.y, inward.x) + rng.range_f64(-0.35, 0.35);
+    let lam = rng.range_f64(700.0, 950.0);
+    let swing = rng.range_f64(0.35, 0.60);
+    let len_cap = rng.range_f64(800.0, 1600.0);
+    let mut out: Option<Vec<Vec2>> = None;
+    'attempt: for attempt in 0..3 {
+        let damp = 0.87f64.powi(attempt);
+        let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
+                          rng.range_f64(0.0, std::f64::consts::TAU));
+        let (s_n, s_l, s_s) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
+        let mut cand = vec![mouth];
+        let mut p = mouth;
+        let mut arc = 0.0;
+        loop {
+            if arc >= len_cap {
+                break;
+            }
+            let lam_e = lam * (1.0 + 0.35 * noise::perlin1(arc / 700.0, s_l));
+            let sw_e = swing * damp
+                * (0.5 + 0.7 * (0.5 + 0.5 * noise::perlin1(arc / 520.0, s_s)));
+            let wob = sw_e
+                * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1)
+                    + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2));
+            let wander = 0.55 * damp * noise::perlin1(arc / 1100.0, s_n);
+            let hd = base_heading + wob + wander;
+            let lp = Vec2::new(p.x - 70.0 * math::sin(hd), p.y + 70.0 * math::cos(hd));
+            let rp = Vec2::new(p.x + 70.0 * math::sin(hd), p.y - 70.0 * math::cos(hd));
+            let lean = 0.50 * ((datum.bilinear(rp) - datum.bilinear(lp)) / 5.0).clamp(-1.0, 1.0);
+            let dev = (hd - base_heading + lean).clamp(-1.2, 1.2);
+            let h = base_heading + dev;
+            p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
+            if (p.x <= 2.0 || p.x >= lim || p.y <= 2.0 || p.y >= lim) && arc > 200.0 {
+                break;
+            }
+            p.x = p.x.clamp(4.0, lim - 2.0);
+            p.y = p.y.clamp(4.0, lim - 2.0);
+            arc += step;
+            // approach to the resident network: the divide — stop, keep
+            if let Some((dist, _, _)) = idx.nearest(p, None) {
+                if dist < 200.0 {
+                    break;
+                }
+            }
+            // self-approach: a hooked draw is rejected wholesale
+            for (j, q) in cand.iter().enumerate() {
+                if (cand.len() - j) as f64 * step > 120.0 && q.distance(p) < 12.0 {
+                    continue 'attempt;
+                }
+            }
+            cand.push(p);
+        }
+        let arc_total = (cand.len() - 1) as f64 * step;
+        let disp = cand[0].distance(*cand.last().unwrap());
+        // reject curls: a through-going stream displaces most of its arc
+        if arc_total < 340.0 || disp < 0.55 * arc_total {
+            continue 'attempt;
+        }
+        out = Some(cand);
+        break;
+    }
+    let pts = out?;
+    // bed on the datum, mouth-first: strictly increasing upstream
+    let mut bed: Vec<f64> = pts.iter().map(|q| datum.bilinear(*q) - 1.0).collect();
+    for _ in 0..2 {
+        for i in 1..bed.len() - 1 {
+            bed[i] = (bed[i - 1] + bed[i] * 2.0 + bed[i + 1]) / 4.0;
+        }
+    }
+    for i in 1..bed.len() {
+        bed[i] = bed[i].max(bed[i - 1] + 0.002);
+    }
+    Some((pts, bed))
 }
 
 // ---------------------------------------------------------------------------
