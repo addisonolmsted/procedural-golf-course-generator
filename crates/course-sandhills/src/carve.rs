@@ -43,7 +43,10 @@ const FRAG_CREDIT_M: (f64, f64) = (800.0, 1800.0);
 /// `(up_len / 1500)^0.7` — attempt 4's `trib_cut` scaling, re-derived
 /// (course-network, branch network-first @ a412b31).
 fn hack(up_len_m: f64) -> f64 {
-    math::pow((up_len_m / 1500.0).max(0.0), 0.7)
+    // exponent 0.7 -> 0.55 (review 2026-08-26: tributaries not cutting
+    // enough — the flatter law keeps small channels proportionally larger
+    // while the units below hold the trunk where the instrument put it)
+    math::pow((up_len_m / 1500.0).max(0.0), 0.55)
 }
 
 /// Per-channel carve program: the bed and the arc table, plus the drawn
@@ -273,11 +276,22 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                     let f_loc = (f_base * breathe * inside).max(2.0);
                     let wall_loc = (wall_base * breathe.sqrt() * asf).max(4.0);
 
-                    // rim jag: the shoulder line wobbles at short wavelength
-                    // — amplitude well under the floor width, or the rim
-                    // beads into a string of pearls (render, seed 109)
-                    let jag = (2.0 + 3.5 * hk_i)
-                        * noise::perlin2(p.x / 64.0, p.y / 64.0, pr.s_jag);
+                    // THE RIM (review 2026-08-26: "edges vary in width
+                    // greatly ... little pockets where water incises into
+                    // the edge at irregular frequent intervals"): a
+                    // two-octave MAP-domain jag, weighted toward the
+                    // shoulder — zero at the water line, strong at the rim,
+                    // so the contour of the valley edge wanders and notches
+                    // while the floor stays clean. Map-domain (perlin of
+                    // x,y) is what keeps this from beading: every stamp
+                    // sees the same pocket field.
+                    let u_pre = ((dist - f_loc) / wall_loc).clamp(0.0, 1.3);
+                    let jag = u_pre
+                        * ((4.0 + 26.0 * hk_i)
+                            * noise::perlin2(p.x / 64.0, p.y / 64.0, pr.s_jag)
+                            + (8.0 + 30.0 * hk_i)
+                                * noise::perlin2(p.x / 150.0, p.y / 150.0,
+                                                 pr.s_jag.wrapping_add(7)));
                     let de = (dist + jag - f_loc).max(0.0);
                     let u = de / wall_loc;
                     let z = if u <= 0.0 || dist <= f_loc {
@@ -292,7 +306,7 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                     // catena noise: zero at the water line, full at the
                     // shoulder — organic walls, clean floor
                     let fade = u.clamp(0.0, 1.0);
-                    let noise_amp = 0.30 * (0.3 + 0.7 * hk_i.min(1.0)) * fade;
+                    let noise_amp = 0.42 * (0.3 + 0.7 * hk_i.min(1.0)) * fade;
                     let mut cand = z
                         + noise_amp
                             * (noise::perlin2(p.x / 55.0, p.y / 55.0, s_cat1)
