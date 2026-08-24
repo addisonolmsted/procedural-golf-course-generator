@@ -323,28 +323,39 @@ fn tier3(attach_m: f64) -> Tier {
 /// ladder that rejects self-approach AND proximity to already-placed systems.
 /// Returned MOUTH-FIRST with a strictly increasing bed.
 fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
-         slot: (f64, f64), idx: &Index) -> Option<(Vec<Vec2>, Vec<f64>)> {
+         slot: (f64, f64), idx: &Index, cardinal_only: bool)
+         -> Option<(Vec<Vec2>, Vec<f64>)> {
     let step = 8.0;
     let lim = EXTENT_M - 2.0;
-    // regional downstream = down the drawn tilt, quantised to a crossing axis
+    // regional downstream = down the drawn tilt, quantised to the nearest of
+    // EIGHT headings — diagonal crossings are legitimate (review question
+    // 2026-08-24); `cardinal_only` is the retry fallback, since a diagonal
+    // start near a corner has less room to establish itself.
     let downhill = d.floor_tilt_rad + std::f64::consts::PI;
-    let axes = [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI,
-                3.0 * std::f64::consts::FRAC_PI_2];
-    let base_heading = *axes.iter()
-        .min_by(|a, b| {
-            let da = math::cos(downhill - **a);
-            let db = math::cos(downhill - **b);
-            db.partial_cmp(&da).unwrap()
-        })
-        .unwrap();
-    let along_x = math::cos(base_heading).abs() >= math::sin(base_heading).abs();
-    let fwd = if along_x { math::cos(base_heading) } else { math::sin(base_heading) };
-    let t0 = rng.range_f64(slot.0, slot.1);
-    let start = match (along_x, fwd > 0.0) {
-        (true, true) => Vec2::new(2.0, t0 * EXTENT_M),
-        (true, false) => Vec2::new(lim, t0 * EXTENT_M),
-        (false, true) => Vec2::new(t0 * EXTENT_M, 2.0),
-        (false, false) => Vec2::new(t0 * EXTENT_M, lim),
+    let n_axes = if cardinal_only { 4 } else { 8 };
+    let quantum = std::f64::consts::TAU / n_axes as f64;
+    let base_heading = quantum * (downhill / quantum).round();
+    let (cx, cy) = (math::cos(base_heading), math::sin(base_heading));
+    // start on a border the heading points away from; a diagonal has two
+    // candidates and draws one, positioned so the path has interior to cross
+    let mut edges: Vec<(bool, f64)> = Vec::new(); // (x-edge?, coordinate)
+    if cx > 0.3 { edges.push((true, 2.0)); }
+    if cx < -0.3 { edges.push((true, lim)); }
+    if cy > 0.3 { edges.push((false, 2.0)); }
+    if cy < -0.3 { edges.push((false, lim)); }
+    let (on_x_edge, coord) = edges[rng.below(edges.len())];
+    let diagonal = edges.len() == 2;
+    let t0 = if !diagonal {
+        rng.range_f64(slot.0, slot.1)
+    } else {
+        // shift toward the upstream corner so the run crosses the interior
+        let along_pos = if on_x_edge { cy > 0.0 } else { cx > 0.0 };
+        if along_pos { rng.range_f64(0.06, 0.48) } else { rng.range_f64(0.52, 0.94) }
+    };
+    let start = if on_x_edge {
+        Vec2::new(coord, t0 * EXTENT_M)
+    } else {
+        Vec2::new(t0 * EXTENT_M, coord)
     };
     // creek planform: longer, lazier than the Nebraska river styles — a
     // low-gradient blackwater creek, not a free-meandering sand-bed river
@@ -389,26 +400,25 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
             let lp = Vec2::new(p.x - 70.0 * math::sin(hd), p.y + 70.0 * math::cos(hd));
             let rp = Vec2::new(p.x + 70.0 * math::sin(hd), p.y - 70.0 * math::cos(hd));
             let lean = 0.50 * ((datum.bilinear(rp) - datum.bilinear(lp)) / 5.0).clamp(-1.0, 1.0);
-            let cross = if along_x { p.y } else { p.x };
-            let repel = 0.55
-                * (math::smoothstep(260.0, 40.0, cross)
-                    - math::smoothstep(lim - 260.0, lim - 40.0, cross));
+            // Border repulsion as a VECTOR turned into a steering correction
+            // (cross product of heading and the inward push) — the scalar
+            // lateral form only worked for cardinal crossings. For them this
+            // reduces to the old behaviour: the fore/aft borders push along
+            // the heading and the cross term vanishes.
+            let rx = math::smoothstep(260.0, 40.0, p.x)
+                - math::smoothstep(lim - 260.0, lim - 40.0, p.x);
+            let ry = math::smoothstep(260.0, 40.0, p.y)
+                - math::smoothstep(lim - 260.0, lim - 40.0, p.y);
+            let (hx, hy) = (math::cos(hd), math::sin(hd));
+            let repel = 0.55 * (hx * ry - hy * rx);
             let dev = (hd - base_heading + lean + repel).clamp(-1.4, 1.4);
             let h = base_heading + dev;
             p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
-            let (done, lat) = if along_x {
-                (p.x <= 2.0 || p.x >= lim, p.y)
-            } else {
-                (p.y <= 2.0 || p.y >= lim, p.x)
-            };
-            if along_x {
-                p.y = lat.clamp(8.0, lim - 8.0);
-            } else {
-                p.x = lat.clamp(8.0, lim - 8.0);
-            }
-            if done && arc > 400.0 {
+            if (p.x <= 2.0 || p.x >= lim || p.y <= 2.0 || p.y >= lim) && arc > 400.0 {
                 break;
             }
+            p.x = p.x.clamp(4.0, lim);
+            p.y = p.y.clamp(4.0, lim);
             arc += step;
             // self-approach (the seed-9 figure-eight lesson) …
             let (cx, cy) = ((p.x / cellsz) as i32, (p.y / cellsz) as i32);
@@ -434,6 +444,9 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
             }
             hash.entry((cx, cy)).or_default().push(i);
             cand.push(p);
+        }
+        if (cand.len() as f64) * step < 1500.0 {
+            continue 'attempt;
         }
         pts = cand;
         break;
@@ -650,7 +663,9 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // --- the trunk: ONE per tile (review 2026-08-24 — every real NC tile
     // is single-trunked; the survey's extra "systems" are edge fragments).
     for s in 0..d.n_sys.min(1) {
-        if let Some((pts, z)) = trunk(rng, datum, d, (0.25, 0.75), &idx) {
+        let got = trunk(rng, datum, d, (0.25, 0.75), &idx, false)
+            .or_else(|| trunk(rng, datum, d, (0.25, 0.75), &idx, true));
+        if let Some((pts, z)) = got {
             let c = Channel { pts, z, tier: 1, parent: None, sys: s };
             idx.add_channel(&c, net.chans.len() as u32);
             net.chans.push(c);
@@ -674,44 +689,6 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // that gap with clipped pieces of NEIGHBORING systems: short streams
     // whose mouths sit on the tile border and whose headwaters climb inward.
     // The survey's n_sys 3 / main_share 57% is exactly this structure.
-    // FEW and SUBSTANTIAL: a tile reads as one trunk + 2-4 neighboring
-    // systems, not a ring of border stubs (render check, seed 104: fourteen
-    // attempts at min_len 260 printed exactly that ring).
-    let mut n_frag = 0u32;
-    let mut placed = 0u32;
-    while n_frag < 12 && placed < 7 && d2c_p50(&net) > 135.0 {
-        let fm = frag_mouth(&idx, datum);
-        if std::env::var("NET_DEBUG").is_ok() {
-            eprintln!("  frag_mouth -> {:?}", fm.map(|(m, _)| (m.x, m.y)));
-        }
-        let Some((mouth, inward)) = fm else { break };
-        // A fragment is the TRUNK of a neighboring system, so it is built
-        // by the trunk machinery: committed inward heading, wobble, lean
-        // into datum lows. The climb-based version hooked around border
-        // knobs and curled straight back out (render: seed 109's J-hooks —
-        // a local datum gradient is no guide for a through-going stream).
-        if let Some((pts, z)) = frag_trunk(rng, datum, &idx, mouth, inward) {
-            let sys = net.chans.iter().map(|c| c.sys).max().unwrap_or(0) + 1;
-            let cid = net.chans.len() as u32;
-            let c = Channel { pts, z, tier: 1, parent: None, sys };
-            idx.add_channel(&c, cid);
-            net.chans.push(c);
-            // a fragment is a creek like any other: it carries its own
-            // (shorter) tier-2 tribs, and those carry tier-3s
-            let before_t2 = net.chans.len() as u32;
-            let mut ft2 = tier2(d.attach_m);
-            ft2.max_len = 650.0;
-            tier_pass(rng, &mut net, &mut idx, datum, k_rise, &ft2, &[cid], 2);
-            let new_t2: Vec<u32> = (before_t2..net.chans.len() as u32).collect();
-            tier_pass(rng, &mut net, &mut idx, datum, k_rise,
-                      &tier3(d.attach_m), &new_t2, 3);
-            tier_pass(rng, &mut net, &mut idx, datum, k_rise,
-                      &tier3(d.attach_m), &[cid], 3);
-            placed += 1;
-        }
-        n_frag += 1;
-    }
-
     // --- final polish: small fills where the ground is still far from water
     let mut n = 0;
     while d2c_p50(&net) > 132.0 && density_km_km2(&net) < 2.45 && n < 4 {
@@ -731,6 +708,40 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
             break;
         }
         n += 1;
+    }
+    // --- the fallback fragment (review 2026-08-24: "remove all of the half
+    // trunks ... maybe for really low density we can include a single half
+    // spanning trunk"). Only a genuinely underwatered tile gets one, and it
+    // gets exactly one: a clipped neighboring trunk entering at the emptiest
+    // border low, carrying its own tribs.
+    if density_km_km2(&net) < 1.9 {
+        let mut placed = 0u32;
+        let mut n_frag = 0u32;
+        while n_frag < 4 && placed < 1 {
+            let fm = frag_mouth(&idx, datum);
+            if std::env::var("NET_DEBUG").is_ok() {
+                eprintln!("  frag_mouth -> {:?}", fm.map(|(m, _)| (m.x, m.y)));
+            }
+            let Some((mouth, inward)) = fm else { break };
+            if let Some((pts, z)) = frag_trunk(rng, datum, &idx, mouth, inward) {
+                let sys = net.chans.iter().map(|c| c.sys).max().unwrap_or(0) + 1;
+                let cid = net.chans.len() as u32;
+                let c = Channel { pts, z, tier: 1, parent: None, sys };
+                idx.add_channel(&c, cid);
+                net.chans.push(c);
+                let before_t2 = net.chans.len() as u32;
+                let mut ft2 = tier2(d.attach_m);
+                ft2.max_len = 650.0;
+                tier_pass(rng, &mut net, &mut idx, datum, k_rise, &ft2, &[cid], 2);
+                let new_t2: Vec<u32> = (before_t2..net.chans.len() as u32).collect();
+                tier_pass(rng, &mut net, &mut idx, datum, k_rise,
+                          &tier3(d.attach_m), &new_t2, 3);
+                tier_pass(rng, &mut net, &mut idx, datum, k_rise,
+                          &tier3(d.attach_m), &[cid], 3);
+                placed += 1;
+            }
+            n_frag += 1;
+        }
     }
     net
 }
