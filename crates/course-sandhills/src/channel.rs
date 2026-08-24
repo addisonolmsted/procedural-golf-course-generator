@@ -702,6 +702,54 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 2).collect();
     tier_pass(rng, &mut net, &mut idx, datum, k_rise, &tier3(d.attach_m), &t3_targets, 3);
 
+    // --- FINGERS (review 2026-08-26: "more very small length tributaries
+    // at the tips"): the ordinary passes keep an end margin, so channel
+    // heads were bare. Short steep head-water nicks, placed only on the
+    // head-ward quarter of tier-2/3 channels.
+    let finger = Tier {
+        spacing: (110.0, 170.0),
+        end_margin: 24.0,
+        centre_deg: 41.0,
+        tail_p: 0.10,
+        hold_m: (70.0, 40.0),
+        swing: 0.09,
+        lam: (150.0, 300.0),
+        claim: 80.0,
+        min_len: 50.0,
+        max_len: 210.0,
+        step: 12.0,
+        min_gain: 0.008,
+    };
+    let tips: Vec<u32> = (0..net.chans.len() as u32)
+        .filter(|c| net.chans[*c as usize].tier >= 2)
+        .collect();
+    for cid in tips {
+        let sites = {
+            let c = &net.chans[cid as usize];
+            let mut arcs: Vec<f64> = vec![0.0];
+            for w in c.pts.windows(2) {
+                arcs.push(arcs.last().unwrap() + w[0].distance(w[1]));
+            }
+            let total = *arcs.last().unwrap();
+            let mut out = Vec::new();
+            let mut a = (0.70 * total).max(finger.end_margin);
+            while a < total - finger.end_margin {
+                out.push(arcs.partition_point(|x| *x < a).min(c.pts.len() - 1));
+                a += rng.range_f64(finger.spacing.0, finger.spacing.1);
+            }
+            out
+        };
+        for at in sites {
+            let field = Field { idx: &idx, datum, k_rise, w_d6: 1.0 };
+            if let Ok((pts, z, _)) = climb(rng, &net, cid, at, &field, &finger) {
+                let sys = net.chans[cid as usize].sys;
+                let c = Channel { pts, z, tier: 4, parent: Some(cid), sys };
+                idx.add_channel(&c, net.chans.len() as u32);
+                net.chans.push(c);
+            }
+        }
+    }
+
     // --- EDGE FRAGMENTS (review 2026-08-24): with quarter-tile tribs a
     // single trunk covers only its own band — density fell to 1.4-1.9 and
     // d2c blew out to 200-455 against the corpus 2.33/107. Real tiles close
