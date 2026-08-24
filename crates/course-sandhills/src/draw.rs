@@ -48,6 +48,12 @@ pub struct Descriptors {
     /// Tilt azimuth of the interdune datum, radians.
     pub floor_tilt_rad: f64,
     pub water_table_m: f64,
+    // fluvial mode
+    pub cap_relief_m: f64,
+    pub cap_wave_m: f64,
+    pub cap_flat: f64,
+    pub n_sys: u32,
+    pub attach_m: f64,
     pub allogenic_river: bool,
 }
 
@@ -112,6 +118,16 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
             let c = p.next_f64();
             c < rec.p_allogenic_river
         },
+        cap_relief_m: draw(&mut p, rec.cap_relief_m),
+        cap_wave_m: draw(&mut p, rec.cap_wave_m),
+        cap_flat: draw(&mut p, rec.cap_flat),
+        n_sys: {
+            let u = p.next_f64() * (rec.sys_weights[0] + rec.sys_weights[1] + rec.sys_weights[2]);
+            if u < rec.sys_weights[0] { 2 }
+            else if u < rec.sys_weights[0] + rec.sys_weights[1] { 3 }
+            else { 4 }
+        },
+        attach_m: draw(&mut p, rec.attach_m),
     }
 }
 

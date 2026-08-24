@@ -237,6 +237,21 @@ pub struct Record {
     /// sit on the Ogallala and the table intersects the surface across much
     /// of the field — thousands of interdune lakes.
     pub water_table_m: Range,
+    // ---- fluvial mode (Carolina) — corpus = docs/sandhills/01-corpus.md ----
+    /// Relief budget for the sand-cap datum. `corpus`: relief_p99_p1 46.9.
+    pub cap_relief_m: Range,
+    /// Wavelength of the interfluve mass, metres. `guess`, bounded by the
+    /// corpus d2c (interfluves must be broad enough to hold ~107 m of dry
+    /// ground between channels).
+    pub cap_wave_m: Range,
+    /// How hard the uplands are clipped flat, 0 = domes, 1 = mesas. `guess`;
+    /// the biome doc calls for broad FLAT-TOPPED interfluves.
+    pub cap_flat: Range,
+    /// Number of independent creek systems. `corpus`: n_sys 3, main 57%.
+    pub sys_weights: [f64; 3],
+    /// Tributary attach spacing along parents, metres. THE density lever —
+    /// drawn, then tiers repeat until density lands. `corpus`: 2.33 km/km².
+    pub attach_m: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -348,6 +363,11 @@ pub const SANDHILLS: Record = Record {
     // uniform draw over the full range made a lake-forming table (< 2 m) a
     // 7% event -- measured 0/40 draws. Deep-table dry tiles stay common.
     water_table_m: Range::new(0.4, 14.0),    // literature: Ogallala intersects
+    cap_relief_m: Range::new(36.0, 54.0),    // corpus: 46.9
+    cap_wave_m: Range::new(750.0, 1300.0),   // guess, d2c-bounded
+    cap_flat: Range::new(0.35, 0.7),         // guess
+    sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
+    attach_m: Range::new(260.0, 380.0),      // calibrated at C2
     p_allogenic_river: 0.30,                 // literature
 };
 

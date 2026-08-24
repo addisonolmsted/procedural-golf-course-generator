@@ -1,0 +1,944 @@
+//! C1 + C2 — the Carolina sand-cap datum and the dendritic creek network.
+//!
+//! The fluvial mode's structural spine, built in two authored stages:
+//!
+//!   C1  a broad, gently domed, FLAT-TOPPED sand-cap datum — deliberately
+//!       valley-free, because every valley must come from the network;
+//!   C2  the network itself — trunks first (the river integrator's heading
+//!       machinery, generalised), then tributaries grown ATTACH-AND-CLIMB.
+//!
+//! Attach-and-climb is a re-derivation of attempt 4's proven construction
+//! (`course-network/src/tribs.rs` + `proto.rs`, branch `network-first`,
+//! HEAD a412b31 — the allowlisted Tier D reference). Its two structural
+//! guarantees carry over unchanged:
+//!
+//!   * NO LOOPS: after a bounded grace window every step must GAIN
+//!     proto-elevation, and a strictly increasing path cannot revisit;
+//!   * NO CROSSINGS: a claim radius against the incrementally updated
+//!     channel set, parent exempt by IDENTITY, not by arc.
+//!
+//! What attempt 4 proved DOESN'T work is equally load-bearing: headward
+//! growth without an elevation constraint mazes (channels organise by room,
+//! not by water), and strict tip-splitting is the binary-tree trap (Rb = 2
+//! by construction). Attachments along a parent's length are what produce
+//! stem-and-branch structure and Rb > 2.
+//!
+//! Corpus targets (docs/sandhills/01-corpus.md, 30 judged NC tiles):
+//! density 2.33 km/km², d2c p50 107.3 m, junction p50 40.7° with 13.2%
+//! above 80°, main_share 57%, n_sys 3, relief p99–p1 46.9 m.
+
+use course_seed::DetRng;
+use course_world::grid::Grid;
+use course_world::math::{self, Vec2};
+use course_world::noise;
+use course_world::world::EXTENT_M;
+
+use crate::draw::Descriptors;
+use crate::wind::macro_spec;
+
+// ---------------------------------------------------------------------------
+// C1 — the sand-cap datum
+// ---------------------------------------------------------------------------
+
+/// The Carolina interfluve mass at 8 m: 3-octave fBm at the drawn cap
+/// wavelength + a regional tilt, with a SOFT TOP-CLIP so the uplands read
+/// flat-topped (the biome doc's "broad flat-topped interfluves"), not as
+/// rolling hills. Valley-free by design.
+pub fn datum(rng: &mut DetRng, d: &Descriptors) -> Grid<f64> {
+    let spec = macro_spec();
+    let (nx, ny) = (spec.nx, spec.ny);
+    let (s1, s2, s3) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
+    // tilt direction reuses the drawn regional tilt azimuth; the magnitude
+    // is budgeted from cap relief (the corpus 46.9 m is TOTAL relief, and a
+    // dissected cap spends most of it on the fBm dome-and-swale).
+    let (tc, ts) = (math::cos(d.floor_tilt_rad), math::sin(d.floor_tilt_rad));
+    let tilt = 0.25 * d.cap_relief_m / EXTENT_M;
+
+    let mut raw = vec![0.0f64; spec.len()];
+    for y in 0..ny {
+        for x in 0..nx {
+            let p = spec.world_of(x, y);
+            let l = d.cap_wave_m;
+            raw[spec.index(x, y)] = noise::perlin2(p.x / l, p.y / l, s1)
+                + 0.50 * noise::perlin2(p.x / l * 2.0, p.y / l * 2.0, s2)
+                + 0.28 * noise::perlin2(p.x / l * 4.0, p.y / l * 4.0, s3);
+        }
+    }
+    // normalise on p5/p95 (the surface.rs idiom — tails run past, no clamp)
+    let mut sorted = raw.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let lo = sorted[(sorted.len() as f64 * 0.05) as usize];
+    let hi = sorted[(sorted.len() as f64 * 0.95) as usize];
+    let span = (hi - lo).max(1e-9);
+
+    // The top-clip: above a shoulder the profile is squashed through a tanh
+    // toward a ceiling. cap_flat 0 → w wide → domes; 1 → w tight → mesas.
+    // Smooth everywhere (no polygonal plateau edges — the lesson from the
+    // clamped-normalisation defect in surface.rs).
+    let shoulder = 0.60;
+    let w = 0.55 - 0.42 * d.cap_flat;
+
+    let mut g = Grid::filled(spec, 0.0f64);
+    for y in 0..ny {
+        for x in 0..nx {
+            let p = spec.world_of(x, y);
+            let t = (raw[spec.index(x, y)] - lo) / span;
+            let t = if t > shoulder {
+                shoulder + w * ((t - shoulder) / w).tanh()
+            } else {
+                t
+            };
+            g.set(x, y, 0.75 * d.cap_relief_m * t + tilt * (p.x * tc + p.y * ts));
+        }
+    }
+    g
+}
+
+// ---------------------------------------------------------------------------
+// the network
+// ---------------------------------------------------------------------------
+
+/// One channel, stored MOUTH-FIRST: index 0 is the downstream end and `z`
+/// strictly increases along the point list. Trunks are reversed into this
+/// order after integration; climbs produce it natively.
+pub struct Channel {
+    pub pts: Vec<Vec2>,
+    pub z: Vec<f64>,
+    /// 1 = trunk, 2/3 = tributary tiers, 4 = density fill pass.
+    pub tier: u8,
+    /// Index of the parent channel (None for trunks).
+    pub parent: Option<u32>,
+    /// Which drainage system this channel belongs to.
+    pub sys: u32,
+}
+
+impl Channel {
+    pub fn arc_len(&self) -> f64 {
+        self.pts.windows(2).map(|w| w[0].distance(w[1])).sum()
+    }
+}
+
+pub struct Network {
+    pub chans: Vec<Channel>,
+}
+
+/// Why a climb ended. Every termination is counted, never hidden
+/// (re-derived: tribs.rs `End`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum End {
+    Divide,
+    Edge,
+    Claimed,
+    MaxArc,
+    Stub,
+}
+
+// --- the incremental point index (re-derivation of proto.rs ChannelSet) ---
+
+struct Index {
+    cell: f64,
+    n: usize,
+    buckets: Vec<Vec<u32>>,
+    pts: Vec<Vec2>,
+    z: Vec<f64>,
+    chan: Vec<u32>,
+}
+
+impl Index {
+    fn new() -> Index {
+        let cell = 64.0;
+        let n = (EXTENT_M / cell).ceil() as usize + 1;
+        Index { cell, n, buckets: vec![Vec::new(); n * n],
+                pts: Vec::new(), z: Vec::new(), chan: Vec::new() }
+    }
+    fn key(&self, p: Vec2) -> (usize, usize) {
+        let x = (p.x / self.cell).clamp(0.0, (self.n - 1) as f64) as usize;
+        let y = (p.y / self.cell).clamp(0.0, (self.n - 1) as f64) as usize;
+        (x, y)
+    }
+    fn add(&mut self, p: Vec2, z: f64, chan: u32) {
+        let (x, y) = self.key(p);
+        let id = self.pts.len() as u32;
+        self.buckets[y * self.n + x].push(id);
+        self.pts.push(p);
+        self.z.push(z);
+        self.chan.push(chan);
+    }
+    fn add_channel(&mut self, c: &Channel, id: u32) {
+        for i in 0..c.pts.len() {
+            self.add(c.pts[i], c.z[i], id);
+        }
+    }
+    /// Nearest stored point, optionally skipping one channel BY IDENTITY —
+    /// the arc-based exemption was "the entire measured tail bias in one
+    /// line" (attempt 4), so it is identity here too.
+    fn nearest(&self, p: Vec2, skip: Option<u32>) -> Option<(f64, f64, u32)> {
+        if self.pts.is_empty() {
+            return None;
+        }
+        let (kx, ky) = self.key(p);
+        let mut best = (f64::MAX, 0.0f64, u32::MAX);
+        let mut r = 0i64;
+        loop {
+            let mut any_cell = false;
+            for oy in -r..=r {
+                for ox in -r..=r {
+                    if r > 0 && ox.abs() != r && oy.abs() != r {
+                        continue;
+                    }
+                    let (x, y) = (kx as i64 + ox, ky as i64 + oy);
+                    if x < 0 || y < 0 || x >= self.n as i64 || y >= self.n as i64 {
+                        continue;
+                    }
+                    any_cell = true;
+                    for &id in &self.buckets[y as usize * self.n + x as usize] {
+                        if Some(self.chan[id as usize]) == skip {
+                            continue;
+                        }
+                        let dist = p.distance(self.pts[id as usize]);
+                        if dist < best.0 {
+                            best = (dist, self.z[id as usize], self.chan[id as usize]);
+                        }
+                    }
+                }
+            }
+            // ring guarantee: a hit is final once the next ring cannot beat it
+            if best.2 != u32::MAX && best.0 <= (r as f64) * self.cell {
+                break;
+            }
+            r += 1;
+            if !any_cell && r as usize > 2 * self.n {
+                break;
+            }
+        }
+        if best.2 == u32::MAX { None } else { Some(best) }
+    }
+}
+
+// --- the proto-elevation field (re-derivation of proto.rs Proto) ----------
+
+/// `e(p) = z(nearest channel) + k·d^0.6 + w·datum(p)` — the potential every
+/// climber ascends. The d^0.6 rise makes valleys the low ground everywhere;
+/// the datum term is a light tiebreak toward real high ground (attempt 4 ran
+/// w_macro = 0.05 of the relief budget; same scale here).
+struct Field<'a> {
+    idx: &'a Index,
+    datum: &'a Grid<f64>,
+    k_rise: f64,
+}
+
+impl<'a> Field<'a> {
+    fn e(&self, p: Vec2) -> f64 {
+        let (dist, zc, _) = self.idx.nearest(p, None).unwrap();
+        zc + self.k_rise * math::pow(dist.max(0.0), 0.6) + 0.05 * self.datum.bilinear(p)
+    }
+    fn grad(&self, p: Vec2) -> Vec2 {
+        let h = 12.0;
+        Vec2::new(
+            (self.e(Vec2::new(p.x + h, p.y)) - self.e(Vec2::new(p.x - h, p.y))) / (2.0 * h),
+            (self.e(Vec2::new(p.x, p.y + h)) - self.e(Vec2::new(p.x, p.y - h))) / (2.0 * h),
+        )
+    }
+}
+
+// --- tier parameters (re-derivation of tribs.rs TierParams) ---------------
+
+#[derive(Clone)]
+struct Tier {
+    spacing: (f64, f64),
+    end_margin: f64,
+    /// Departure-angle centre and orthogonal-tail p. Corpus: p50 40.7°,
+    /// >80° 13.2%. Tail drawn LOW because survival selects for orthogonal
+    /// (attempt 4 measured 0.05 drawn → 9–13% landed).
+    centre_deg: f64,
+    tail_p: f64,
+    /// Hold the departure course (mouth, head) — the "downstream sections
+    /// have greater mass" dial.
+    hold_m: (f64, f64),
+    /// Meander swing — small: the tier cut prints the path into the ground
+    /// (attempt 4 cut this twice on review, 0.22 → 0.09).
+    swing: f64,
+    lam: (f64, f64),
+    claim: f64,
+    min_len: f64,
+    max_len: f64,
+    step: f64,
+    min_gain: f64,
+}
+
+fn tier2(attach_m: f64) -> Tier {
+    Tier {
+        spacing: (attach_m, attach_m * 1.45),
+        end_margin: 240.0,
+        centre_deg: 41.0,   // tribs.rs tier2, corpus-fit
+        tail_p: 0.10,
+        hold_m: (500.0, 120.0),
+        swing: 0.09,
+        lam: (250.0, 550.0),
+        claim: 180.0,       // tribs.rs tier2 — sets d2c together with density
+        min_len: 150.0,
+        max_len: 2600.0,
+        step: 20.0,
+        min_gain: 0.012,
+    }
+}
+
+fn tier3(attach_m: f64) -> Tier {
+    Tier {
+        spacing: (attach_m * 0.65, attach_m * 0.95),
+        end_margin: 140.0,
+        centre_deg: 41.0,
+        tail_p: 0.10,
+        hold_m: (260.0, 80.0),
+        swing: 0.09,
+        lam: (180.0, 400.0),
+        claim: 120.0,
+        min_len: 90.0,
+        max_len: 900.0,
+        step: 16.0,
+        min_gain: 0.012,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// trunks — the river integrator, generalised for creeks on the cap
+// ---------------------------------------------------------------------------
+
+/// One trunk creek, edge-to-edge along the regional drainage axis, steered
+/// into datum lows. Re-uses the plan_river heading machinery (water.rs):
+/// wobble + wander + downhill lean + border repulsion, inside an acceptance
+/// ladder that rejects self-approach AND proximity to already-placed systems.
+/// Returned MOUTH-FIRST with a strictly increasing bed.
+fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
+         slot: (f64, f64), idx: &Index) -> Option<(Vec<Vec2>, Vec<f64>)> {
+    let step = 8.0;
+    let lim = EXTENT_M - 2.0;
+    // regional downstream = down the drawn tilt, quantised to a crossing axis
+    let downhill = d.floor_tilt_rad + std::f64::consts::PI;
+    let axes = [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI,
+                3.0 * std::f64::consts::FRAC_PI_2];
+    let base_heading = *axes.iter()
+        .min_by(|a, b| {
+            let da = math::cos(downhill - **a);
+            let db = math::cos(downhill - **b);
+            db.partial_cmp(&da).unwrap()
+        })
+        .unwrap();
+    let along_x = math::cos(base_heading).abs() >= math::sin(base_heading).abs();
+    let fwd = if along_x { math::cos(base_heading) } else { math::sin(base_heading) };
+    let t0 = rng.range_f64(slot.0, slot.1);
+    let start = match (along_x, fwd > 0.0) {
+        (true, true) => Vec2::new(2.0, t0 * EXTENT_M),
+        (true, false) => Vec2::new(lim, t0 * EXTENT_M),
+        (false, true) => Vec2::new(t0 * EXTENT_M, 2.0),
+        (false, false) => Vec2::new(t0 * EXTENT_M, lim),
+    };
+    // creek planform: longer, lazier than the Nebraska river styles — a
+    // low-gradient blackwater creek, not a free-meandering sand-bed river
+    let lam = rng.range_f64(460.0, 680.0);
+    let swing = rng.range_f64(0.55, 0.85);
+    let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
+                      rng.range_f64(0.0, std::f64::consts::TAU));
+    let (s_noise, s_lam, s_swing) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
+
+    let mut pts: Vec<Vec2> = Vec::new();
+    'attempt: for attempt in 0..6 {
+        let damp = 0.87f64.powi(attempt); // the ladder damp, water.rs
+        let (ph1a, ph2a, s_na, s_la, s_sa) = if attempt == 0 {
+            (ph1, ph2, s_noise, s_lam, s_swing)
+        } else {
+            (rng.range_f64(0.0, std::f64::consts::TAU),
+             rng.range_f64(0.0, std::f64::consts::TAU),
+             rng.next_u32(), rng.next_u32(), rng.next_u32())
+        };
+        let mut cand: Vec<Vec2> = vec![start];
+        let mut p = start;
+        let mut arc = 0.0;
+        use std::collections::HashMap;
+        let cellsz = 16.0;
+        let mut hash: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        hash.entry(((start.x / cellsz) as i32, (start.y / cellsz) as i32))
+            .or_default().push(0);
+        for _ in 0..3000 {
+            let lam_e = lam * (1.0 + 0.35 * noise::perlin1(arc / 700.0, s_la));
+            let sw_e = swing * damp
+                * (0.5 + 0.7 * (0.5 + 0.5 * noise::perlin1(arc / 520.0, s_sa)));
+            let wob = sw_e
+                * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1a)
+                    + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2a));
+            let wander = 0.55 * damp * noise::perlin1(arc / 1100.0, s_na);
+            let hd = base_heading + wob + wander;
+            // downhill lean, stronger than the river's: a creek trunk lives
+            // in the datum lows, that is the whole point of it
+            let lp = Vec2::new(p.x - 70.0 * math::sin(hd), p.y + 70.0 * math::cos(hd));
+            let rp = Vec2::new(p.x + 70.0 * math::sin(hd), p.y - 70.0 * math::cos(hd));
+            let lean = 0.50 * ((datum.bilinear(rp) - datum.bilinear(lp)) / 5.0).clamp(-1.0, 1.0);
+            let cross = if along_x { p.y } else { p.x };
+            let repel = 0.55
+                * (math::smoothstep(260.0, 40.0, cross)
+                    - math::smoothstep(lim - 260.0, lim - 40.0, cross));
+            let dev = (hd - base_heading + lean + repel).clamp(-1.4, 1.4);
+            let h = base_heading + dev;
+            p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
+            let (done, lat) = if along_x {
+                (p.x <= 2.0 || p.x >= lim, p.y)
+            } else {
+                (p.y <= 2.0 || p.y >= lim, p.x)
+            };
+            if along_x {
+                p.y = lat.clamp(8.0, lim - 8.0);
+            } else {
+                p.x = lat.clamp(8.0, lim - 8.0);
+            }
+            if done && arc > 400.0 {
+                break;
+            }
+            arc += step;
+            // self-approach (the seed-9 figure-eight lesson) …
+            let (cx, cy) = ((p.x / cellsz) as i32, (p.y / cellsz) as i32);
+            let i = cand.len();
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if let Some(v) = hash.get(&(cx + dx, cy + dy)) {
+                        for j in v {
+                            if (i - j) as f64 * step > 120.0
+                                && cand[*j].distance(p) < 12.0 {
+                                continue 'attempt;
+                            }
+                        }
+                    }
+                }
+            }
+            // … and approach to a previously placed SYSTEM: two trunks
+            // running confluent would carve one valley twice
+            if let Some((dist, _, _)) = idx.nearest(p, None) {
+                if dist < 260.0 {
+                    continue 'attempt;
+                }
+            }
+            hash.entry((cx, cy)).or_default().push(i);
+            cand.push(p);
+        }
+        pts = cand;
+        break;
+    }
+    if pts.len() < 60 {
+        return None;
+    }
+    // bed on the datum, smoothed, then forced monotone downstream
+    let mut bed: Vec<f64> = pts.iter().map(|q| datum.bilinear(*q) - 0.5).collect();
+    for _ in 0..2 {
+        for i in 1..bed.len() - 1 {
+            bed[i] = (bed[i - 1] + bed[i] * 2.0 + bed[i + 1]) / 4.0;
+        }
+    }
+    for i in 1..bed.len() {
+        bed[i] = bed[i].min(bed[i - 1] - 0.002);
+    }
+    // mouth-first: reverse so z increases along the stored list
+    pts.reverse();
+    bed.reverse();
+    Some((pts, bed))
+}
+
+// ---------------------------------------------------------------------------
+// attach-and-climb (re-derivation of tribs.rs climb + attach_points)
+// ---------------------------------------------------------------------------
+
+/// Attachment sites along one channel: arc positions at drawn spacings,
+/// clear of the ends. Junction spacing is AUTHORED — an input, not an
+/// outcome of where sources landed.
+fn attach_points(rng: &mut DetRng, c: &Channel, t: &Tier) -> Vec<usize> {
+    let mut arcs: Vec<f64> = vec![0.0];
+    for w in c.pts.windows(2) {
+        arcs.push(arcs.last().unwrap() + w[0].distance(w[1]));
+    }
+    let total = *arcs.last().unwrap();
+    let mut out = Vec::new();
+    if total < t.end_margin * 2.0 + t.spacing.0 {
+        return out;
+    }
+    let mut arc = t.end_margin + rng.range_f64(0.0, t.spacing.0 * 0.6);
+    while arc < total - t.end_margin {
+        let i = arcs.partition_point(|a| *a < arc).min(c.pts.len() - 1);
+        out.push(i);
+        arc += rng.range_f64(t.spacing.0, t.spacing.1);
+    }
+    out
+}
+
+/// Climb from one attachment point on channel `cid`. The junction is t = 0:
+/// the walk departs at the drawn angle off the parent's downstream tangent,
+/// holds its course (interpolated by arc position), then steers uphill on
+/// the field — strictly monotone after a bounded grace window.
+fn climb(rng: &mut DetRng, net: &Network, cid: u32, at: usize,
+         field: &Field, t: &Tier) -> Result<(Vec<Vec2>, Vec<f64>, End), End> {
+    let c = &net.chans[cid as usize];
+    let start = c.pts[at];
+    // channels are stored mouth-first, so DOWNSTREAM = toward index 0
+    let down = if at > 0 {
+        Vec2::new(c.pts[at - 1].x - c.pts[at].x, c.pts[at - 1].y - c.pts[at].y).normalized()
+    } else {
+        Vec2::new(c.pts[0].x - c.pts[1].x, c.pts[0].y - c.pts[1].y).normalized()
+    };
+    let mut arcs = 0.0;
+    for w in c.pts.windows(2) {
+        arcs += w[0].distance(w[1]);
+    }
+    let arc_at: f64 = c.pts[..=at].windows(2).map(|w| w[0].distance(w[1])).sum();
+    let frac = (arc_at / arcs.max(1.0)).clamp(0.0, 1.0);
+
+    // the departure: flow arrives at theta off the downstream tangent; the
+    // WALK leaves along the reverse of that flow
+    let theta = if rng.next_f64() < t.tail_p {
+        rng.range_f64(80.0, 95.0).to_radians()
+    } else {
+        rng.range_f64(t.centre_deg - 8.0, t.centre_deg + 9.0).to_radians()
+    };
+    let side = if rng.next_f64() < 0.5 { 1.0 } else { -1.0 };
+    let (co, sn) = (math::cos(theta * side), math::sin(theta * side));
+    let inc = Vec2::new(down.x * co - down.y * sn, down.x * sn + down.y * co);
+    let depart = Vec2::new(-inc.x, -inc.y).normalized();
+
+    // hold interpolated MOUTH→HEAD: mouth-first storage puts the mouth at
+    // frac 0, so hold_m.0 belongs at frac 0
+    let hold_m = t.hold_m.0 + (t.hold_m.1 - t.hold_m.0) * frac;
+    let lam = rng.range_f64(t.lam.0, t.lam.1);
+    let phase = rng.range_f64(0.0, std::f64::consts::TAU);
+
+    let mut pts = vec![start];
+    let mut z = vec![c.z[at]];
+    let mut heading = depart;
+    let mut arc = 0.0;
+    let mut e_prev = field.e(start);
+    let e_start = e_prev;
+    let end;
+    loop {
+        if arc >= t.max_len {
+            end = End::MaxArc;
+            break;
+        }
+        let cur = *pts.last().unwrap();
+        let g = field.grad(cur);
+        let uphill = if g.length() < 1e-9 { heading } else { g.normalized() };
+        // full commitment for the first few steps — the junction owns its
+        // angle (attempt 4 measured a 10° uphill tilt inside 72 m without it)
+        let hold_w = if arc < 3.0 * t.step {
+            1.0
+        } else {
+            ((hold_m - arc) / hold_m.max(1.0)).clamp(0.0, 1.0) * 0.85
+        };
+        let base = Vec2::new(depart.x * hold_w + uphill.x * (1.0 - hold_w),
+                             depart.y * hold_w + uphill.y * (1.0 - hold_w));
+        heading = Vec2::new(heading.x * 0.55 + base.x * 0.45,
+                            heading.y * 0.55 + base.y * 0.45).normalized();
+        let wob = t.swing * math::sin(std::f64::consts::TAU * arc / lam + phase)
+            * (arc / 200.0).min(1.0);
+        let th = math::atan2(heading.y, heading.x) + wob;
+        let mut step_dir = Vec2::new(math::cos(th), math::sin(th));
+
+        // THE MONOTONE RULE with the bounded grace window: a real trib's
+        // lower course crosses near-flat floodplain, and strict monotone
+        // from step 1 selects for orthogonal departures (attempt 4 measured
+        // >80° at 30.8% against a 12% draw). During grace the heading is
+        // committed, so the window cannot loop; after it, strict.
+        let grace = arc < (hold_m * 0.5).clamp(120.0, 280.0);
+        let mut next = Vec2::new(cur.x + step_dir.x * t.step, cur.y + step_dir.y * t.step);
+        let mut e_next = field.e(next);
+        if !grace && e_next < e_prev + t.min_gain {
+            step_dir = uphill;
+            next = Vec2::new(cur.x + step_dir.x * t.step, cur.y + step_dir.y * t.step);
+            e_next = field.e(next);
+            if e_next < e_prev + t.min_gain {
+                end = End::Divide;
+                break;
+            }
+        }
+        if next.x < 4.0 || next.y < 4.0 || next.x > EXTENT_M - 4.0 || next.y > EXTENT_M - 4.0 {
+            end = End::Edge;
+            break;
+        }
+        // the claim: parent exempt by identity, everything else forbidden
+        if let Some((dist, _, _)) = field.idx.nearest(next, Some(cid)) {
+            if dist < t.claim {
+                for _ in 0..2 {
+                    if pts.len() > 2 {
+                        pts.pop();
+                        z.pop();
+                    }
+                }
+                end = End::Claimed;
+                break;
+            }
+        }
+        // The parent identity exemption is for the JUNCTION, not the whole
+        // walk: past the departure a committed grace-window heading can plow
+        // back into the parent's next bend (seed 24: a trib 3 m off its own
+        // parent at arc 80). Beyond 48 m of arc the trib must keep an 18 m
+        // hard clearance from its parent — 18 because two checked points
+        // 20 m apart at 18 m can still dip to ~15 m between samples, safely
+        // above the 10 m crossing assertion.
+        if arc + t.step > 48.0 {
+            let par = &net.chans[cid as usize];
+            let dpar = par.pts.iter().map(|q| q.distance(next)).fold(f64::MAX, f64::min);
+            if dpar < 18.0 {
+                for _ in 0..2 {
+                    if pts.len() > 2 {
+                        pts.pop();
+                        z.pop();
+                    }
+                }
+                end = End::Claimed;
+                break;
+            }
+        }
+        heading = step_dir;
+        arc += t.step;
+        pts.push(next);
+        z.push((e_next - e_start + c.z[at]).max(z.last().unwrap() + 0.01));
+        e_prev = e_next;
+    }
+    let len: f64 = pts.windows(2).map(|w| w[0].distance(w[1])).sum();
+    if len < t.min_len || pts.len() < 4 {
+        return Err(End::Stub);
+    }
+    Ok((pts, z, end))
+}
+
+// ---------------------------------------------------------------------------
+// grow — the whole C2 stage
+// ---------------------------------------------------------------------------
+
+/// Grow the full network on the datum: trunks, then tier-2 tribs on trunks,
+/// tier-3 on everything, then density-fill passes until the drainage density
+/// lands in the corpus band (2.33 km/km² measured; band 2.0–2.7).
+pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
+    let mut net = Network { chans: Vec::new() };
+    let mut idx = Index::new();
+
+    // --- trunks: the main system through the middle, secondaries in the
+    // margin slots, all ladder-checked against what exists
+    let slots: [(f64, f64); 4] = [(0.30, 0.70), (0.04, 0.26), (0.74, 0.96), (0.30, 0.70)];
+    for s in 0..d.n_sys.min(4) {
+        if let Some((pts, z)) = trunk(rng, datum, d, slots[s as usize], &idx) {
+            let c = Channel { pts, z, tier: 1, parent: None, sys: s };
+            idx.add_channel(&c, net.chans.len() as u32);
+            net.chans.push(c);
+        }
+    }
+
+    // attempt 4's rise coefficient: 0.55 of the budget over an 800 m climb
+    let k_rise = 0.55 * d.cap_relief_m / math::pow(800.0, 0.6);
+
+    // --- tributary passes. Secondary systems attach sparser (×1.7): the
+    // main system carries the density (corpus main_share 57%).
+    let mut pass = 0usize;
+    loop {
+        let (tier, targets): (Tier, Vec<u32>) = match pass {
+            0 => (tier2(d.attach_m),
+                  (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 1)
+                      .collect()),
+            1 => (tier3(d.attach_m),
+                  (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier >= 2)
+                      .collect()),
+            n => {
+                // density fill: whole network, shrinking spacing
+                if density_km_km2(&net) >= 2.0 || n >= 4 {
+                    break;
+                }
+                let mut t = tier3(d.attach_m * 0.75f64.powi(n as i32 - 1));
+                t.min_len = 110.0;
+                (t, (0..net.chans.len() as u32).collect())
+            }
+        };
+        let n_before = net.chans.len();
+        for cid in targets {
+            let mult = if net.chans[cid as usize].sys > 0
+                && net.chans[cid as usize].tier == 1 { 1.7 } else { 1.0 };
+            let mut t = tier.clone();
+            t.spacing = (tier.spacing.0 * mult, tier.spacing.1 * mult);
+            let sites = {
+                let c = &net.chans[cid as usize];
+                attach_points(rng, c, &t)
+            };
+            for at in sites {
+                // one retry on a stub: a site inside a bend often cannot
+                // support the first drawn departure but takes another
+                for _attempt in 0..2 {
+                    let field = Field { idx: &idx, datum, k_rise };
+                    match climb(rng, &net, cid, at, &field, &t) {
+                        Ok((pts, z, _end)) => {
+                            let sys = net.chans[cid as usize].sys;
+                            let tier_no = match pass { 0 => 2, 1 => 3, _ => 4 };
+                            let c = Channel { pts, z, tier: tier_no,
+                                              parent: Some(cid), sys };
+                            idx.add_channel(&c, net.chans.len() as u32);
+                            net.chans.push(c);
+                            break;
+                        }
+                        Err(End::Stub) => continue,
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
+        pass += 1;
+        if pass >= 5 || (pass > 2 && net.chans.len() == n_before) {
+            break;
+        }
+    }
+    net
+}
+
+// ---------------------------------------------------------------------------
+// the graph battery — measured in-crate, BEFORE any surface exists
+// ---------------------------------------------------------------------------
+
+pub struct NetStats {
+    pub density_km_km2: f64,
+    pub d2c_p50_m: f64,
+    pub junc_p50_deg: f64,
+    pub junc_gt80_frac: f64,
+    pub main_share: f64,
+    pub n_sys: usize,
+    pub n_chans: usize,
+    pub crossings: usize,
+}
+
+pub fn density_km_km2(net: &Network) -> f64 {
+    let total_m: f64 = net.chans.iter().map(|c| c.arc_len()).sum();
+    (total_m / 1000.0) / ((EXTENT_M / 1000.0) * (EXTENT_M / 1000.0))
+}
+
+pub fn stats(net: &Network) -> NetStats {
+    // d2c: chamfer distance transform on the 8 m grid
+    let spec = macro_spec();
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let big = 1e18f64;
+    let mut dt = vec![big; (nx * ny) as usize];
+    for c in &net.chans {
+        for p in &c.pts {
+            let x = (p.x / 8.0).round().clamp(0.0, (nx - 1) as f64) as i64;
+            let y = (p.y / 8.0).round().clamp(0.0, (ny - 1) as f64) as i64;
+            dt[(y * nx + x) as usize] = 0.0;
+        }
+    }
+    let (orth, diag) = (8.0, 8.0 * std::f64::consts::SQRT_2);
+    for y in 0..ny {
+        for x in 0..nx {
+            let i = (y * nx + x) as usize;
+            for (dx, dy, w) in [(-1i64, 0i64, orth), (0, -1, orth), (-1, -1, diag), (1, -1, diag)] {
+                let (px, py) = (x + dx, y + dy);
+                if px >= 0 && px < nx && py >= 0 && py < ny {
+                    let v = dt[(py * nx + px) as usize] + w;
+                    if v < dt[i] { dt[i] = v; }
+                }
+            }
+        }
+    }
+    for y in (0..ny).rev() {
+        for x in (0..nx).rev() {
+            let i = (y * nx + x) as usize;
+            for (dx, dy, w) in [(1i64, 0i64, orth), (0, 1, orth), (1, 1, diag), (-1, 1, diag)] {
+                let (px, py) = (x + dx, y + dy);
+                if px >= 0 && px < nx && py >= 0 && py < ny {
+                    let v = dt[(py * nx + px) as usize] + w;
+                    if v < dt[i] { dt[i] = v; }
+                }
+            }
+        }
+    }
+    let mut dts: Vec<f64> = dt;
+    dts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let d2c_p50 = dts[dts.len() / 2];
+
+    // junction angles, measured from GEOMETRY, not from the draw
+    let mut angles: Vec<f64> = Vec::new();
+    for c in &net.chans {
+        let Some(pid) = c.parent else { continue };
+        let p = &net.chans[pid as usize];
+        if c.pts.len() < 2 || p.pts.len() < 2 { continue; }
+        let mouth = c.pts[0];
+        let mut k = 0usize;
+        let mut bd = f64::MAX;
+        for (i, q) in p.pts.iter().enumerate() {
+            let dd = q.distance(mouth);
+            if dd < bd { bd = dd; k = i; }
+        }
+        let k = k.max(1);
+        let pflow = Vec2::new(p.pts[k - 1].x - p.pts[k].x, p.pts[k - 1].y - p.pts[k].y)
+            .normalized();
+        let tflow = Vec2::new(c.pts[0].x - c.pts[1].x, c.pts[0].y - c.pts[1].y).normalized();
+        let dot = (pflow.x * tflow.x + pflow.y * tflow.y).clamp(-1.0, 1.0);
+        angles.push(dot.acos().to_degrees());
+    }
+    angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let junc_p50 = if angles.is_empty() { f64::NAN } else { angles[angles.len() / 2] };
+    let gt80 = if angles.is_empty() { 0.0 } else {
+        angles.iter().filter(|a| **a > 80.0).count() as f64 / angles.len() as f64
+    };
+
+    // main_share over systems
+    let n_sys = net.chans.iter().filter(|c| c.tier == 1).count();
+    let mut per_sys = vec![0.0f64; net.chans.iter().map(|c| c.sys).max().unwrap_or(0) as usize + 1];
+    for c in &net.chans {
+        per_sys[c.sys as usize] += c.arc_len();
+    }
+    let total: f64 = per_sys.iter().sum();
+    let main_share = per_sys.iter().cloned().fold(0.0, f64::max) / total.max(1e-9);
+
+    NetStats {
+        density_km_km2: density_km_km2(net),
+        d2c_p50_m: d2c_p50,
+        junc_p50_deg: junc_p50,
+        junc_gt80_frac: gt80,
+        main_share,
+        n_sys,
+        n_chans: net.chans.len(),
+        crossings: crossings(net),
+    }
+}
+
+/// Crossings ASSERTED, not sampled: any point of a channel closer than 10 m
+/// to a DIFFERENT channel, outside a 60 m junction exemption zone, is a
+/// crossing. Two polylines sampled at ≤20 m steps cannot intersect in plan
+/// without producing such a pair.
+pub fn crossings(net: &Network) -> usize {
+    // junction exemption: points near any mouth
+    let mouths: Vec<Vec2> = net.chans.iter()
+        .filter(|c| c.parent.is_some())
+        .map(|c| c.pts[0]).collect();
+    let near_junction = |p: Vec2| mouths.iter().any(|m| m.distance(p) < 60.0);
+
+    let mut idx = Index::new();
+    for (i, c) in net.chans.iter().enumerate() {
+        idx.add_channel(c, i as u32);
+    }
+    let mut n = 0usize;
+    for (i, c) in net.chans.iter().enumerate() {
+        for p in &c.pts {
+            if near_junction(*p) {
+                continue;
+            }
+            if let Some((dist, _, other)) = idx.nearest(*p, Some(i as u32)) {
+                // parent is NOT exempt out here — away from its junction a
+                // trib must keep clear of its own parent too
+                if dist < 10.0 && !near_junction(idx_point(net, other, *p)) {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+fn idx_point(net: &Network, chan: u32, near: Vec2) -> Vec2 {
+    // nearest point of `chan` to `near` (for the junction test on the OTHER
+    // side of a close pair)
+    let c = &net.chans[chan as usize];
+    let mut best = (f64::MAX, c.pts[0]);
+    for p in &c.pts {
+        let dd = p.distance(near);
+        if dd < best.0 {
+            best = (dd, *p);
+        }
+    }
+    best.1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mode::Mode;
+    use course_seed::RunIdentity;
+
+    fn skeleton(seed: u64) -> (Grid<f64>, Network) {
+        let id = RunIdentity::from_seed(seed);
+        let d = crate::draw::site(&id, Some(Mode::Fluvial), None);
+        let mut dr = crate::rng::stream(&id, crate::rng::DATUM);
+        let g = datum(&mut dr, &d);
+        let mut cr = crate::rng::stream(&id, crate::rng::CHANNEL);
+        let net = grow(&mut cr, &g, &d);
+        (g, net)
+    }
+
+    #[test]
+    fn the_datum_relief_lands_in_the_corpus_band() {
+        // corpus relief p99-p1 46.9; the datum carries most of it (valleys
+        // add a few metres of local cut later)
+        for seed in [11u64, 12, 13] {
+            let (g, _) = skeleton(seed);
+            let mut v = g.data.clone();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let relief = v[(v.len() as f64 * 0.99) as usize]
+                - v[(v.len() as f64 * 0.01) as usize];
+            assert!(relief > 22.0 && relief < 62.0, "seed {seed}: relief {relief:.1}");
+        }
+    }
+
+    #[test]
+    fn network_never_crosses() {
+        for seed in 20u64..28 {
+            let (_, net) = skeleton(seed);
+            assert_eq!(crossings(&net), 0, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn climbs_are_monotone() {
+        // z strictly increases mouth→head on EVERY channel — the structural
+        // no-loop guarantee, checked directly
+        for seed in [31u64, 32, 33, 34] {
+            let (_, net) = skeleton(seed);
+            for (i, c) in net.chans.iter().enumerate() {
+                for w in c.z.windows(2) {
+                    assert!(w[1] > w[0], "seed {seed} chan {i}: bed not monotone");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn density_lands_in_band() {
+        // corpus 2.33 km/km²; each seed within a generous band, the pool
+        // near the target
+        let mut pool = Vec::new();
+        for seed in 40u64..64 {
+            let (_, net) = skeleton(seed);
+            let dens = density_km_km2(&net);
+            assert!(dens > 1.4 && dens < 3.4, "seed {seed}: density {dens:.2}");
+            pool.push(dens);
+        }
+        let mean = pool.iter().sum::<f64>() / pool.len() as f64;
+        assert!(mean > 1.9 && mean < 2.9, "pooled density {mean:.2}");
+    }
+
+    #[test]
+    fn junction_angles_in_corpus_band() {
+        // corpus p50 40.7°, >80° 13.2% — pooled across seeds
+        let mut angles = 0.0f64;
+        let mut gt80 = 0.0f64;
+        let mut n = 0usize;
+        for seed in [70u64, 71, 72, 73, 74, 75] {
+            let (_, net) = skeleton(seed);
+            let s = stats(&net);
+            if s.junc_p50_deg.is_finite() {
+                angles += s.junc_p50_deg;
+                gt80 += s.junc_gt80_frac;
+                n += 1;
+            }
+        }
+        let p50 = angles / n as f64;
+        let tail = gt80 / n as f64;
+        assert!(p50 > 30.0 && p50 < 55.0, "junction p50 {p50:.1}");
+        assert!(tail < 0.30, "orthogonal tail {tail:.2}");
+    }
+
+    #[test]
+    fn fluvial_mode_draws_channels() {
+        let (_, net) = skeleton(99);
+        assert!(net.chans.len() >= 3, "only {} channels", net.chans.len());
+        let total: f64 = net.chans.iter().map(|c| c.arc_len()).sum();
+        assert!(total > 8_000.0, "network only {total:.0} m");
+    }
+}

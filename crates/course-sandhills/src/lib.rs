@@ -26,6 +26,7 @@
 //! COPIED with a provenance comment naming its source commit.
 
 pub mod blowout;
+pub mod channel;
 pub mod draw;
 pub mod mode;
 pub mod record;
@@ -39,6 +40,20 @@ use course_seed::RunIdentity;
 use course_world::grid::Grid;
 
 pub use draw::Descriptors;
+
+/// C1 + C2 of the fluvial mode: the sand-cap datum and the dendritic network
+/// grown on it — everything the NETWORK VIEWER round reviews, and nothing
+/// more. No carving happens here; C3 consumes this.
+pub fn build_fluvial_skeleton(id: &RunIdentity)
+    -> (Descriptors, Grid<f64>, channel::Network) {
+    let d = draw::site(id, Some(Mode::Fluvial), None);
+    let mut dr = rng::stream(id, rng::DATUM);
+    let datum = channel::datum(&mut dr, &d);
+    let mut cr = rng::stream(id, rng::CHANNEL);
+    let net = channel::grow(&mut cr, &datum, &d);
+    (d, datum, net)
+}
+
 pub use mode::Mode;
 pub use record::FormClass;
 

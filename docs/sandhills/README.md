@@ -248,6 +248,7 @@ here.
 | `n5/sand/wind/v1` | A1 — wind direction field |
 | `n5/sand/crest/v1` | A2 — crest network |
 | `n5/sand/blowout/v1` | A5 — blowouts and deflation hollows |
+| `n5/sand/datum/v1` | C1 — sand-cap datum |
 | `n5/sand/channel/v1` | C2 — channel network |
 | `n5/sand/water/v1` | A6 / C4 — allogenic river, lakes, wet bottoms |
 | `n5/sand/texture/v1` | T — fabric |

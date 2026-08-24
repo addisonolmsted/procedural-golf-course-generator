@@ -26,6 +26,8 @@ pub const PATCHY: &str = "n5/sand/patchy/v1";
 pub const HUMMOCK: &str = "n5/sand/hummock/v1";
 /// A5 — blowouts and deflation hollows.
 pub const BLOWOUT: &str = "n5/sand/blowout/v1";
+/// C1 — the sand-cap datum (fluvial mode).
+pub const DATUM: &str = "n5/sand/datum/v1";
 /// C2 — the channel network (fluvial mode).
 pub const CHANNEL: &str = "n5/sand/channel/v1";
 /// A6 / C4 — allogenic river, interdune lakes, wet bottoms.
@@ -33,8 +35,8 @@ pub const WATER: &str = "n5/sand/water/v1";
 /// T — fabric.
 pub const TEXTURE: &str = "n5/sand/texture/v1";
 
-pub const REGISTRY: [&str; 9] =
-    [DRAW, WIND, CREST, PATCHY, HUMMOCK, BLOWOUT, CHANNEL, WATER, TEXTURE];
+pub const REGISTRY: [&str; 10] =
+    [DRAW, WIND, CREST, PATCHY, HUMMOCK, BLOWOUT, DATUM, CHANNEL, WATER, TEXTURE];
 
 /// THE way an attempt-5 stage obtains randomness. Panics on an unregistered
 /// name, exactly as `RunIdentity::stream` does.
