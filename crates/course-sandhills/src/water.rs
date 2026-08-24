@@ -262,6 +262,10 @@ pub struct RiverPlan {
     pub s_wr: u32,
     pub s_flip: u32,
     pub s_shelf: u32,
+    /// catena-noise and wall-rise-variation seeds — the level lines of the
+    /// valley transitions read as artificial without them (review).
+    pub s_cat: u32,
+    pub s_wr2: u32,
     /// Shelf (terrace) height above the floor, metres; present in stretches.
     pub shelf_h: f64,
 }
@@ -324,7 +328,16 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
             * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1)
                 + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2));
         let wander = style.wander * course_world::noise::perlin1(arc / 900.0, s_noise);
-        let h = base_heading + wob + wander;
+        // gentle downhill preference: sample the macro left and right of the
+        // heading and lean toward the lower side, so the channel occupies
+        // lows instead of skirting them (review on seed 5: the stream hugged
+        // past a low point, "weird from a drainage perspective").
+        let hd = base_heading + wob + wander;
+        let lp = Vec2::new(p.x - 60.0 * math::sin(hd), p.y + 60.0 * math::cos(hd));
+        let rp2 = Vec2::new(p.x + 60.0 * math::sin(hd), p.y - 60.0 * math::cos(hd));
+        let (zl, zr) = (height.bilinear(lp), height.bilinear(rp2));
+        let lean = 0.30 * ((zr - zl) / 6.0).clamp(-1.0, 1.0);
+        let h = hd + lean;
         p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
         // soft reflect off the side borders so the creek stays on-tile
         if along {
@@ -358,8 +371,8 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     let depth = 1.2;
     let hw_water = 3.0;                            // ~6 m wet width (review-confirmed)
     let hw_cut = 7.0;                              // channel slot + shoulder
-    let floor_hw = rng.range_f64(18.0, 38.0);      // lit: belt = 10-14 widths
-    let wall_m = rng.range_f64(60.0, 110.0);       // lit: repose-limited sand
+    let floor_hw = rng.range_f64(10.0, 22.0);      // review: full effect ~200 m
+    let wall_m = rng.range_f64(35.0, 75.0);        // review: full effect ~200 m
     let wall_rise = rng.range_f64(2.0, 3.5);       // lit: low dune-country relief
     let mut bed: Vec<f64> = pts.iter().map(|q| height.bilinear(*q) - depth).collect();
     // two smoothing passes so the bed does not chase every dune it crosses
@@ -375,8 +388,11 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     let s_wr = rng.next_u32();
     let s_flip = rng.next_u32();
     let s_shelf = rng.next_u32();
+    let s_cat = rng.next_u32();
+    let s_wr2 = rng.next_u32();
+    let s_grade = rng.next_u32();
     let asym = rng.range_f64(0.35, 0.65);
-    let shelf_h = rng.range_f64(0.9, 2.0);
+    let shelf_h = rng.range_f64(0.6, 1.4);         // review: steps close to the stream
 
     // --- the meadow corridor, on the LOWPASS line --------------------------
     let win = 40usize; // ~160 m of path
@@ -401,7 +417,7 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     const OUT_GRADE: f64 = 0.015;
     let reach = floor_hw + wall_m + 180.0;
     return Some(RiverPlan { pts, corr, bed, floor_hw, wall_m, wall_rise,
-                            asym, s_wl, s_wr, s_flip, s_shelf, shelf_h });
+                            asym, s_wl, s_wr, s_flip, s_shelf, s_cat, s_wr2, shelf_h });
 }
 
 /// The corridor: carved into the MACRO (8 m), before texture. Left and right
@@ -412,7 +428,10 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
     let spec = height.spec;
     const OUT_GRADE: f64 = 0.015;
     let step = 4.0;
-    let reach_max = (pl.floor_hw + pl.wall_m) * 1.9 + 180.0;
+    // Reach must be far enough that the repose hand-off below ALWAYS meets
+    // the ground before it — a hard reach cutoff against tall belts printed
+    // an 8 m staircase cliff (review render, seed 5).
+    let reach_max = (pl.floor_hw + pl.wall_m) * 1.6 + 320.0;
     for (i, q) in pl.corr.iter().enumerate() {
         let arc = i as f64 * step;
         // local tangent for the side sign
@@ -425,8 +444,8 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
         let flip = course_world::noise::perlin1(arc / 700.0, pl.s_flip) > 0.0;
         // per-side widths, independently breathing and MORE aggressive than
         // the old shared +-38%
-        let ml = 1.0 + 0.55 * course_world::noise::perlin1(arc / 420.0, pl.s_wl);
-        let mr = 1.0 + 0.55 * course_world::noise::perlin1(arc / 420.0, pl.s_wr);
+        let ml = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wl);
+        let mr = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wr);
         // shelf gate: present in stretches on the slip-off side
         let shelf_on = course_world::noise::perlin1(arc / 520.0, pl.s_shelf) > 0.15;
         let fl = pl.bed[i] + 0.4;
@@ -454,12 +473,29 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
                 let wm = (pl.wall_m * wallf).max(30.0);
                 let u = ((dd - fhw) / wm).clamp(0.0, 1.0);
                 let beyond = (dd - fhw - wm).max(0.0);
-                let mut tgt = fl + pl.wall_rise * u * u * (3.0 - 2.0 * u) + OUT_GRADE * beyond;
+                // wall rise breathes along the arc, and the whole catena
+                // carries 2-D noise that grows away from the water -- level
+                // transition lines read as artificial without it (review)
+                let wr = pl.wall_rise
+                    * (1.0 + 0.35 * course_world::noise::perlin1(arc / 900.0, pl.s_wr2));
+                let cat = (0.10 + 0.55 * u)
+                    * course_world::noise::perlin2(w.x / 90.0, w.y / 90.0, pl.s_cat);
+                // hand-off: ~1.5% for the first 40 m, then loose-sand repose
+                // (~10%) until the profile MEETS the dunes. The flat-grade
+                // version could not daylight on a 15 m belt inside the reach
+                // and cliffed at the boundary.
+                let hand = if beyond <= 40.0 {
+                    OUT_GRADE * beyond
+                } else {
+                    OUT_GRADE * 40.0 + 0.10 * (beyond - 40.0)
+                };
+                let mut tgt = fl + wr * u * u * (3.0 - 2.0 * u) + hand + cat;
                 // the shelf: flatten a band of the slip-off wall onto a tread
                 if shelf_on && !cut_side {
+                    // steps sit CLOSE to the stream at this scale (review)
                     let sh = fl + pl.shelf_h;
-                    if tgt > sh && u < 0.75 {
-                        let ease = math::smoothstep(0.75, 0.55, u);
+                    if tgt > sh && u < 0.45 {
+                        let ease = math::smoothstep(0.45, 0.28, u);
                         tgt = tgt + (sh - tgt) * ease;
                     }
                 }
