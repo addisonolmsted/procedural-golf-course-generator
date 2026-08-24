@@ -515,6 +515,42 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
         (depth, floor_hw, wall_m, wall_rise)
     };
 
+    // In a GORGE the corridor is narrow enough that ordinary meander
+    // amplitude swings the channel outside its own walls (review: incised
+    // seed 94, "river meanders outside of the valley"). Incised channels are
+    // soft-pulled toward the corridor line, capped near the floor width --
+    // a smooth tanh clamp, so bends compress rather than kink. Applied ONLY
+    // to incised plans; regular rivers are untouched.
+    if incised {
+        let win0 = 40usize;
+        let corr0: Vec<Vec2> = (0..pts.len())
+            .map(|i| {
+                let a = i.saturating_sub(win0);
+                let b = (i + win0).min(pts.len() - 1);
+                let mut sx = 0.0;
+                let mut sy = 0.0;
+                for j in a..=b {
+                    sx += pts[j].x;
+                    sy += pts[j].y;
+                }
+                let n = (b - a + 1) as f64;
+                Vec2::new(sx / n, sy / n)
+            })
+            .collect();
+        let maxoff = floor_hw + 5.0;
+        for i in 0..pts.len() {
+            let ox = pts[i].x - corr0[i].x;
+            let oy = pts[i].y - corr0[i].y;
+            let dist = (ox * ox + oy * oy).sqrt();
+            if dist > 1e-6 {
+                let e2 = math::exp(2.0 * dist / maxoff);
+                let tanh = (e2 - 1.0) / (e2 + 1.0);
+                let sc = maxoff * tanh / dist;
+                pts[i] = Vec2::new(corr0[i].x + ox * sc, corr0[i].y + oy * sc);
+            }
+        }
+    }
+
     // --- the meadow corridor, on the LOWPASS line --------------------------
     let win = 40usize; // ~160 m of path
     let corr: Vec<Vec2> = (0..pts.len())
