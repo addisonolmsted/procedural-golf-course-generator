@@ -2,7 +2,7 @@ use course_sandhills::{draw, Mode};
 use course_seed::RunIdentity;
 fn main() {
     let mut n = 0;
-    for s in 31..400u64 {
+    for s in 67..500u64 {
         let d = draw::site(&RunIdentity::from_seed(s), Some(Mode::Aeolian), None);
         if d.allogenic_river {
             println!("{s}");

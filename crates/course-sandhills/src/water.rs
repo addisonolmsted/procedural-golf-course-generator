@@ -289,7 +289,11 @@ impl RiverStyle {
     pub const PASSED: [RiverStyle; 5] = [
         RiverStyle { lam: (420.0, 560.0), swing: (0.70, 0.95), wander: 0.55 }, // A lazy
         RiverStyle { lam: (300.0, 420.0), swing: (0.95, 1.20), wander: 0.65 }, // B classic
-        RiverStyle { lam: (220.0, 340.0), swing: (1.20, 1.70), wander: 0.80 }, // C loops
+        // C's floor is 283, measured: that is the lambda the reviewer's
+        // approved C-on-seed-5 actually ran at, and a fresh seed drawing 254
+        // from the old (220,340) failed review for exactly "lambda too
+        // small". The bound is the approved draw, not the old range edge.
+        RiverStyle { lam: (283.0, 340.0), swing: (1.20, 1.70), wander: 0.80 }, // C loops
         RiverStyle { lam: (260.0, 480.0), swing: (0.75, 1.45), wander: 0.90 }, // D mixed
         RiverStyle { lam: (500.0, 700.0), swing: (0.40, 0.60), wander: 1.10 }, // E wander
     ];
@@ -325,6 +329,10 @@ pub struct RiverPlan {
     pub s_wr2: u32,
     /// Shelf (terrace) height above the floor, metres; present in stretches.
     pub shelf_h: f64,
+    /// The INCISED variant (~12% of rivers): a deep valley sharply cut into
+    /// the dunelands — the Sand Hills CC setting, where the Middle Loup runs
+    /// well below the dune surface. Same machinery, gorge numbers.
+    pub incised: bool,
 }
 
 pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &Descriptors) {
@@ -470,9 +478,9 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     //     hands off to the dunes.
     //
     // Full visible corridor ≈ 160–300 m against the old 300–640.
-    let depth = 1.2;
     let hw_water = 3.0;                            // ~6 m wet width (review-confirmed)
     let hw_cut = 7.0;                              // channel slot + shoulder
+    let depth = 1.2;
     let floor_hw = rng.range_f64(10.0, 22.0);      // review: full effect ~200 m
     let wall_m = rng.range_f64(35.0, 75.0);        // review: full effect ~200 m
     let wall_rise = rng.range_f64(2.0, 3.5);       // lit: low dune-country relief
@@ -495,6 +503,17 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     let s_grade = rng.next_u32();
     let asym = rng.range_f64(0.35, 0.65);
     let shelf_h = rng.range_f64(0.6, 1.4);         // review: steps close to the stream
+    // Incised coin LAST among the shared draws, so non-incised seeds keep
+    // byte-identical rivers; only a gorge seed consumes the override draws.
+    let incised = rng.next_f64() < 0.12;
+    let (depth, floor_hw, wall_m, wall_rise) = if incised {
+        // the gorge: bed well below the dune surface, walls climbing hard --
+        // deep, narrow, sharp. The Sand Hills CC setting.
+        (rng.range_f64(4.5, 8.0), rng.range_f64(7.0, 14.0),
+         rng.range_f64(30.0, 55.0), rng.range_f64(6.0, 11.0))
+    } else {
+        (depth, floor_hw, wall_m, wall_rise)
+    };
 
     // --- the meadow corridor, on the LOWPASS line --------------------------
     let win = 40usize; // ~160 m of path
@@ -519,7 +538,8 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     const OUT_GRADE: f64 = 0.015;
     let reach = floor_hw + wall_m + 180.0;
     return Some(RiverPlan { pts, corr, bed, floor_hw, wall_m, wall_rise,
-                            asym, s_wl, s_wr, s_flip, s_shelf, s_cat, s_wr2, shelf_h });
+                            asym, s_wl, s_wr, s_flip, s_shelf, s_cat, s_wr2, shelf_h,
+                            incised });
 }
 
 /// The corridor: carved into the MACRO (8 m), before texture. Left and right
