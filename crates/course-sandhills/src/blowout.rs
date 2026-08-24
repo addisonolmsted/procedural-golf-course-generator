@@ -66,7 +66,10 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
             continue;
         }
         let r = rng.range_f64(R_MIN, R_MAX);
-        let depth = rng.range_f64(D_MIN, D_MAX).min(r * 0.45); // no needle pits
+        // depth <= 0.30 r: review 2026-08-23, "a bit too sharp" against the
+        // real tiles -- these are STABILIZED, grass-held bowls, not active
+        // slip-faced pits. 0.45 allowed 24 deg mean walls; 0.30 caps at ~17.
+        let depth = rng.range_f64(D_MIN, D_MAX).min(r * 0.30);
         if placed.iter().any(|b| {
             let dd = ((b.center.x - p.x).powi(2) + (b.center.y - p.y).powi(2)).sqrt();
             dd < SEP * b.radius_m.max(r)
@@ -118,9 +121,10 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
                     rr /= m.max(0.55);
                 }
                 if rr < 1.0 {
-                    // steep wall, flat-ish floor: the cut deepens fast inside
-                    // the rim and levels off — a waste bunker, not a cone.
-                    let cut = b.depth_m * math::smoothstep(1.0, 0.55, rr);
+                    // The wall transition spans 70% of the radius (was 45%):
+                    // same review. A wide smoothstep keeps the flat-ish floor
+                    // and the readable rim while dropping the wall grade.
+                    let cut = b.depth_m * math::smoothstep(1.0, 0.30, rr);
                     let li = spec.index(x, y);
                     height.data[li] -= cut;
                     vol += cut * spec.cell_size * spec.cell_size;

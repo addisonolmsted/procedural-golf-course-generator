@@ -214,8 +214,44 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
 /// switchbacks possible (an offset line cannot fold past its chord — attempt
 /// 4 learned this on its serpentine round). (3) Organic wander comes from
 /// low-frequency heading noise, so no two bends repeat.
+/// Planform style — pulled out so review variants are the SAME code at
+/// different numbers, and the chosen one wires in by changing defaults.
+#[derive(Clone, Copy, Debug)]
+pub struct RiverStyle {
+    pub lam: (f64, f64),
+    pub swing: (f64, f64),
+    /// low-frequency heading wander amplitude, radians
+    pub wander: f64,
+}
+
+impl RiverStyle {
+    /// The five review-passed planforms (2026-08-23, 10/10 pass). One is
+    /// drawn per river, equal weights — variety across the passed set rather
+    /// than one blended middle. Reviewer bound: λ never below C's 220 m
+    /// ("C for seed 5 should be the tightest bound for lambda").
+    pub const PASSED: [RiverStyle; 5] = [
+        RiverStyle { lam: (420.0, 560.0), swing: (0.70, 0.95), wander: 0.55 }, // A lazy
+        RiverStyle { lam: (300.0, 420.0), swing: (0.95, 1.20), wander: 0.65 }, // B classic
+        RiverStyle { lam: (220.0, 340.0), swing: (1.20, 1.70), wander: 0.80 }, // C loops
+        RiverStyle { lam: (260.0, 480.0), swing: (0.75, 1.45), wander: 0.90 }, // D mixed
+        RiverStyle { lam: (500.0, 700.0), swing: (0.40, 0.60), wander: 1.10 }, // E wander
+    ];
+}
+
+impl Default for RiverStyle {
+    fn default() -> Self {
+        RiverStyle::PASSED[2]
+    }
+}
+
 pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &Descriptors) {
-    if !d.allogenic_river {
+    let pick = RiverStyle::PASSED[rng.below(RiverStyle::PASSED.len())];
+    river_styled(rng, height, water, d, pick, false)
+}
+
+pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
+                    d: &Descriptors, style: RiverStyle, force: bool) {
+    if !d.allogenic_river && !force {
         return;
     }
     let spec = height.spec;
@@ -233,8 +269,8 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
     // lam 90-180 the channel swung only ~20 m inside a 100-300 m corridor --
     // a timid wiggle down the middle of a smooth band, where the real Middle
     // Loup loops across most of its meadow.
-    let lam = rng.range_f64(220.0, 340.0);
-    let swing = rng.range_f64(1.20, 1.70);         // loops, not wiggles
+    let lam = rng.range_f64(style.lam.0, style.lam.1);
+    let swing = rng.range_f64(style.swing.0, style.swing.1);
     let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
                       rng.range_f64(0.0, std::f64::consts::TAU));
     let s_noise = rng.next_u32();
@@ -257,7 +293,7 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
         let wob = sw_e
             * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1)
                 + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2));
-        let wander = 0.80 * course_world::noise::perlin1(arc / 900.0, s_noise);
+        let wander = style.wander * course_world::noise::perlin1(arc / 900.0, s_noise);
         let h = base_heading + wob + wander;
         p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
         // soft reflect off the side borders so the creek stays on-tile
@@ -274,22 +310,27 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
         pts.push(p);
     }
 
-    // THE MEASURED CATENA (366 transects across the 7 reviewer-confirmed
-    // corridor tiles, docs/sandhills/02-dune-targets.md §20). The real
-    // structure is NOT a slot: it is a narrow channel winding inside a broad
-    // flat MEADOW CORRIDOR — flat floor 22–132 m wide (p50 50 m at +0.5 m,
-    // 111 m at +1 m), walls rising only 1.2 m at 50 m and 3.2 m at 200 m.
-    // The channel itself stays ~6 m; the corridor is what was missing.
+    // THE CATENA, from literature and geomorphic principles (review
+    // 2026-08-23: the measured-tile version dissected too much terrain; keep
+    // the effect narrow). Structure keeps the two-line design — channel on
+    // the switchback path, corridor on its lowpass — with sizes from first
+    // principles rather than from the messy corridor tiles:
     //
-    // Two lines, two jobs: the CHANNEL follows the switchback path; the
-    // CORRIDOR follows a lowpass of it, because a real meadow valley is
-    // straighter than the channel that wanders inside it.
+    //   * meander-belt width ≈ 10–14 channel widths (Leopold & Wolman) →
+    //     the flat floor spans the belt: 36–76 m full at a 6 m channel;
+    //   * a spring-fed sand-bed stream runs at near-constant discharge, so
+    //     one channel size and a shallow ~1.2 m section;
+    //   * valley sides in loose sand are repose-limited: the wall climbs its
+    //     2–3.5 m over 60–110 m (3–5% grades), then the ~1.5% outer grade
+    //     hands off to the dunes.
+    //
+    // Full visible corridor ≈ 160–300 m against the old 300–640.
     let depth = 1.2;
-    let hw_water = 3.0;                            // ~6 m wet width (confirmed)
+    let hw_water = 3.0;                            // ~6 m wet width (review-confirmed)
     let hw_cut = 7.0;                              // channel slot + shoulder
-    let floor_hw = rng.range_f64(14.0, 45.0);      // corpus: flat p25-p50 (half)
-    let wall_m = rng.range_f64(130.0, 220.0);      // corpus: rise ~3 m by ~200
-    let wall_rise = rng.range_f64(2.2, 4.5);       // corpus: r200 p50 3.2
+    let floor_hw = rng.range_f64(18.0, 38.0);      // lit: belt = 10-14 widths
+    let wall_m = rng.range_f64(60.0, 110.0);       // lit: repose-limited sand
+    let wall_rise = rng.range_f64(2.0, 3.5);       // lit: low dune-country relief
     let mut bed: Vec<f64> = pts.iter().map(|q| height.bilinear(*q) - depth).collect();
     // two smoothing passes so the bed does not chase every dune it crosses
     for _ in 0..2 {
@@ -320,8 +361,8 @@ pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &De
     // (3.2 m @ 200 -> 4.2 m @ 290 = ~1.1%) until it MEETS the dune ground.
     // The first version capped the target instead, and the cap printed a
     // sheer scarp wherever the corridor crossed a tall belt.
-    const OUT_GRADE: f64 = 0.012;
-    let reach = floor_hw + wall_m + 300.0;
+    const OUT_GRADE: f64 = 0.015;
+    let reach = floor_hw + wall_m + 180.0;
     let s_w = rng.next_u32();
     for (i, q) in corr.iter().enumerate() {
         // corridor width breathes along the run -- a constant width prints a
