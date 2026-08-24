@@ -149,6 +149,30 @@ pub const TEX_RES_M: f64 = 2.0;
 pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descriptors)
     -> Grid<f64>
 {
+    quilt_core(rng, pack, macro_h, d, None)
+}
+
+/// The fluvial quilt (review 2026-08-26: "texture shows grain along the
+/// tributaries and trunk based on proximity"). Two departures from the
+/// aeolian quilt, both carried by `fields`:
+///   * patches are conditioned on aspect relative to the LOCAL CHANNEL
+///     TANGENT (the pack was rebuilt the same way — each real patch keyed
+///     against its own tile's drainage grain), so the pasted fabric runs
+///     along the valleys;
+///   * the position gate is CHANNEL PROXIMITY, not megaform height: full
+///     fabric in and near the valleys, easing to `texture_floor` on the
+///     open interfluves.
+pub fn quilt_fluvial(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
+                     grain: &Grid<f64>, prox: &Grid<f64>, d: &Descriptors)
+    -> Grid<f64>
+{
+    quilt_core(rng, pack, macro_h, d, Some((grain, prox)))
+}
+
+fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
+              d: &Descriptors, fields: Option<(&Grid<f64>, &Grid<f64>)>)
+    -> Grid<f64>
+{
     let mspec = macro_spec();
     let n = (course_world::world::EXTENT_M / TEX_RES_M).round() as u32 + 1;
     let spec = course_world::grid::GridSpec::new(
@@ -213,7 +237,11 @@ pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descri
             let mx = ((wc.x / RES_M).round() as i64).clamp(0, mspec.nx as i64 - 1) as u32;
             let my = ((wc.y / RES_M).round() as i64).clamp(0, mspec.ny as i64 - 1) as u32;
             let mi = mspec.index(mx, my);
-            let b = pack.bucket(slope[mi], tpi[mi], aspect[mi] - d.wind_rad);
+            let refd = match fields {
+                Some((grain, _)) => grain.data[mi],
+                None => d.wind_rad,
+            };
+            let b = pack.bucket(slope[mi], tpi[mi], aspect[mi] - refd);
             let k = k0.wrapping_add(tile.wrapping_mul(2_654_435_761));
             for yy in 0..p {
                 let gy = y0 + yy as i64;
@@ -246,9 +274,15 @@ pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descri
             let w = spec.world_of(x, y);
             let mx = ((w.x / RES_M).round() as i64).clamp(0, mspec.nx as i64 - 1) as u32;
             let my = ((w.y / RES_M).round() as i64).clamp(0, mspec.ny as i64 - 1) as u32;
-            let g = d.texture_floor
-                + (1.0 - d.texture_floor)
-                    * math::smoothstep(0.30, 0.62, mpos[mspec.index(mx, my)]);
+            let mi = mspec.index(mx, my);
+            let g = match fields {
+                // proximity gate: prox is 1 in the valley zone, 0 far out
+                Some((_, prox)) => d.texture_floor
+                    + (1.0 - d.texture_floor) * prox.data[mi].clamp(0.0, 1.0),
+                None => d.texture_floor
+                    + (1.0 - d.texture_floor)
+                        * math::smoothstep(0.30, 0.62, mpos[mi]),
+            };
             out.data[i] += d.texture_gain * g * acc[i] / wsum[i];
         }
     }

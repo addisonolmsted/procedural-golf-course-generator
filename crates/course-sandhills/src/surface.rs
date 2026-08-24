@@ -333,6 +333,34 @@ fn pct(v: &[f64], a: f64, b: f64) -> (f64, f64) {
 }
 
 /// Peak-to-trough relief of the built surface, p95 - p5.
+/// The hummock phase field alone, normalised to ±0.5 — the C4 relict
+/// mantle reuses the aeolian hummock machinery on the fluvial interfluves
+/// (the physical cohesion between the two modes). No advection: a relict,
+/// degraded mantle reads symmetric.
+pub fn hummock_field(hw: &WindField) -> Grid<f64> {
+    let spec = macro_spec();
+    let ww = wave_weights(&hw.ks);
+    let mut raw = vec![0.0f64; spec.len()];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let mut a = 0.0;
+            for i in 0..hw.n_waves() {
+                a += ww[i] * profile(hw.cycle(i, x, y), 0.5);
+            }
+            raw[spec.index(x, y)] = a;
+        }
+    }
+    let (lo, hi) = pct(&raw, 0.05, 0.95);
+    let span = (hi - lo).max(1e-9);
+    let mut g = Grid::filled(spec, 0.0f64);
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            g.set(x, y, (raw[spec.index(x, y)] - lo) / span - 0.5);
+        }
+    }
+    g
+}
+
 pub fn relief(g: &Grid<f64>) -> f64 {
     let mut v: Vec<f64> = g.data.iter().copied().filter(|z| z.is_finite()).collect();
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());

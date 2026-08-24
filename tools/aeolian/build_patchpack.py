@@ -71,6 +71,30 @@ def bucket(slope, tpi, aspect_rel):
     return (s * N_TPI + t) * ASPECT_BINS + a
 
 
+def tile_grain(tile_path):
+    """Per-pixel reference direction for a FLUVIAL tile: the local channel
+    tangent, from the tile's own drainage (D8 at the corpus policy), as the
+    perpendicular of the smoothed distance-field gradient. Review 2026-08-26:
+    real texture shows grain ALONG the tributaries and trunk by proximity —
+    a single per-tile axis cannot carry that; this field can. Returns
+    (dir8[y,x] radians on the 8 m grid, dist8[y,x] metres)."""
+    import sys as _sys
+    _sys.path.insert(0, str(_TOOLS.parent / "tools" / "metrics"))
+    from metrics import core as mcore
+    from macro_campaign import flow
+    z, (_, _, cell) = read_f32(str(tile_path))
+    step = max(1, int(round(8.0 / cell)))
+    z8 = z[::step, ::step].astype(np.float64)
+    zf = mcore.fill_depressions(z8, 8.0)
+    rec, _ = flow.receivers(zf, 8.0)
+    acc = flow.accumulate(rec).astype(np.float64) * 64.0
+    chan = acc >= 6.0e4
+    dist = ndimage.distance_transform_edt(~chan, sampling=8.0)
+    dsm = ndimage.gaussian_filter(dist, 3.0)
+    gy, gx = np.gradient(dsm, 8.0)
+    return np.arctan2(gx, -gy), dist
+
+
 def tile_wind(tile_path):
     """Wind azimuth for a corpus tile, from its own dune crests.
 
@@ -119,7 +143,13 @@ def build_one(dst, BIOMES):
             zt = zt.astype(np.float32)
             fine = zt - ndimage.gaussian_filter(zt, (64.0 / np.pi) / tcell)
             cond = d["cond8"].astype(np.float32)     # slope, tpi, relief_pos, aspect, dist
-            wind = tile_wind(OUT / "tiles" / biome / f"{t}.cgrid")
+            fluvial = biome.endswith("_nc")
+            if fluvial:
+                grain_dir, _gd = tile_grain(OUT / "tiles" / biome / f"{t}.cgrid")
+                wind = 0.0
+            else:
+                grain_dir = None
+                wind = tile_wind(OUT / "tiles" / biome / f"{t}.cgrid")
             n_before = sum(len(b) for b in buckets)
             for y in range(0, fine.shape[0] - PATCH, STRIDE):
                 for x in range(0, fine.shape[1] - PATCH, STRIDE):
@@ -145,7 +175,11 @@ def build_one(dst, BIOMES):
                     # fragment is pasted with its upwind ramp and downwind
                     # apron amputated: an isolated black gash. The material
                     # was always real; the truncation was the artifact.
-                    lo_thresh = -2.0 * max(float(p.std()), 0.05)
+                    # Fluvial: the 2.0-sigma filter emptied a steep bucket
+                    # (steep Carolina ground IS creek bank, exactly the
+                    # fabric valley sides need) — relaxed to 2.6.
+                    sigma_k = 2.6 if fluvial else 2.0
+                    lo_thresh = -sigma_k * max(float(p.std()), 0.05)
                     deep = p < lo_thresh
                     if deep.any():
                         edge = np.zeros_like(deep)
@@ -155,7 +189,12 @@ def build_one(dst, BIOMES):
                         edge[:, 1] |= True; edge[:, -2] |= True
                         if (deep & edge).any():
                             continue
-                    bi = bucket(sl, tp, float(asp) - wind)
+                    if fluvial:
+                        ref = float(grain_dir[min(cy, grain_dir.shape[0]-1),
+                                              min(cx, grain_dir.shape[1]-1)])
+                    else:
+                        ref = wind
+                    bi = bucket(sl, tp, float(asp) - ref)
                     # Reservoir-cap during collection: holding every candidate
                     # would be ~0.5 GB before the cap is applied.
                     b = buckets[bi]
