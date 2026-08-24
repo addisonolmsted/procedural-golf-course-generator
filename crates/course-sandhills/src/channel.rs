@@ -287,9 +287,10 @@ fn tier2(attach_m: f64) -> Tier {
         lam: (450.0, 750.0),   // review 2026-08-24: lambda floor raised
         claim: 180.0,       // tribs.rs tier2 — sets d2c together with density
         min_len: 150.0,
-        // Review 2026-08-24: real tribs reach ~a quarter of the tile width
-        // at most (750 m); attempt 4's 2600 m climbs read wrong here.
-        max_len: 800.0,
+        // Review 2026-08-24: reach capped well below attempt 4's 2600 m
+        // climbs; first ~1/4 tile, then raised to ~1/2 tile on review
+        // ("increase it to around 0.5 tile as a max and see").
+        max_len: 1500.0,
         step: 20.0,
         min_gain: 0.012,
     }
@@ -306,7 +307,7 @@ fn tier3(attach_m: f64) -> Tier {
         lam: (350.0, 600.0),   // review 2026-08-24: lambda floor raised
         claim: 155.0,
         min_len: 90.0,
-        max_len: 450.0,
+        max_len: 700.0,
         step: 16.0,
         min_gain: 0.012,
     }
