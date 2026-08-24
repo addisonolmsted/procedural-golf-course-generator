@@ -487,8 +487,10 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
         let flip = course_world::noise::perlin1(arc / 700.0, pl.s_flip) > 0.0;
         // per-side widths, independently breathing and MORE aggressive than
         // the old shared +-38%
-        let ml = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wl);
-        let mr = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wr);
+        let ml = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wl)
+            + 0.35 * course_world::noise::perlin1(arc / 90.0, pl.s_wl ^ 0x11);
+        let mr = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wr)
+            + 0.35 * course_world::noise::perlin1(arc / 90.0, pl.s_wr ^ 0x11);
         // shelf gate: present in stretches on the slip-off side
         let shelf_on = course_world::noise::perlin1(arc / 520.0, pl.s_shelf) > 0.15;
         let fl = pl.bed[i] + 0.4;
@@ -527,7 +529,12 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
                     * course_world::noise::perlin2(w.x / 90.0, w.y / 90.0, pl.s_cat)
                     + 0.35 * u
                         * course_world::noise::perlin2(w.x / 34.0, w.y / 34.0,
-                                                       pl.s_cat ^ 0x5A5A);
+                                                       pl.s_cat ^ 0x5A5A)
+                    // rim band: the daylight line was too rounded (review) --
+                    // extra short noise concentrated where wall meets dunes
+                    + math::smoothstep(0.5, 1.0, u) * 1.1
+                        * course_world::noise::perlin2(w.x / 42.0, w.y / 42.0,
+                                                       pl.s_cat ^ 0xC3);
                 // hand-off: ~1.5% for the first 40 m, then loose-sand repose
                 // (~10%) until the profile MEETS the dunes. The flat-grade
                 // version could not daylight on a 15 m belt inside the reach
