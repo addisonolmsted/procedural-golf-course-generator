@@ -60,7 +60,7 @@ fn main() {
 
     // +WATER (lakes only -- the river is removed pending redesign)
     let full = with_b;
-    let wat = water::find(&full, &sf.datum, &d, None);
+    let wat = water::find(&full, &sf.datum, &d, None, &bl);
     gridio::write_grid_f32(&out.join("3_full.cgrid"), &full).unwrap();
     gridio::write_grid_f32(&out.join("3_water.cgrid"), &wat.surface).unwrap();
     println!("lake_frac {:.3}, {} blowouts", wat.lake_frac, bl.len());

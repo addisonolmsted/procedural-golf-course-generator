@@ -113,7 +113,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
 
     // A6b: lakes on the finished ground, then the sharp channel slot
-    let mut water = water::find(&height, &sf.datum, &d, river_plan.as_ref());
+    let mut water = water::find(&height, &sf.datum, &d, river_plan.as_ref(), &blowouts);
     let river = if let Some(pl) = &river_plan {
         water::cut_channel(&mut height, &mut water, pl);
         Some(pl.pts.clone())

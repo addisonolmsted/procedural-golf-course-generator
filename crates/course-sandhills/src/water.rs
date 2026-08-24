@@ -28,7 +28,7 @@ pub struct Water {
 /// here), so each lake takes ONE flat level — the 25th percentile of the
 /// table across its own extent — and cells above that level go dry again.
 pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
-            river: Option<&RiverPlan>) -> Water {
+            river: Option<&RiverPlan>, blowouts: &[crate::blowout::Blowout]) -> Water {
     let spec = height.spec;
     let mut surface = Grid::filled(spec, f64::NAN);
     let mut wet = vec![false; spec.len()];
@@ -111,6 +111,25 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
     }
     for i in 0..spec.len() {
         wet[i] = margin[i] < 0.0;
+    }
+    // Blowouts are exempt from filling (review): a deflation bowl is dry by
+    // construction -- the wind cut it, and deflation stops at the capillary
+    // fringe, so its floor sits above saturation even where the cut dips
+    // below the mapped table.
+    for b in blowouts {
+        let r = b.radius_m * 1.45 + 6.0;
+        let x0 = ((b.center.x - r) / spec.cell_size).floor().max(0.0) as u32;
+        let x1 = ((b.center.x + r) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
+        let y0 = ((b.center.y - r) / spec.cell_size).floor().max(0.0) as u32;
+        let y1 = ((b.center.y + r) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let p = spec.world_of(x, y);
+                if ((p.x - b.center.x).powi(2) + (p.y - b.center.y).powi(2)).sqrt() < r {
+                    wet[spec.index(x, y)] = false;
+                }
+            }
+        }
     }
     // connected components, 4-neighbour flood fill
     let mut comp = vec![0u32; spec.len()];
@@ -607,9 +626,23 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
 /// The channel slot + water: cut at 2 m, AFTER texture — the one sharp piece.
 pub fn cut_channel(height: &mut Grid<f64>, water: &mut Water, pl: &RiverPlan) {
     let spec = height.spec;
-    let hw_water = 3.0;
-    let hw_cut = 7.0;
+    // Width cheats slightly with the local planform (review): wider through
+    // straight, long-wavelength runs, narrower in tight bends. VERY slight —
+    // wet width spans ~5.2–7.0 m across the whole range.
+    let curv_at = |i: usize| -> f64 {
+        let a = pl.pts[i.saturating_sub(10)];
+        let b = pl.pts[i];
+        let c = pl.pts[(i + 10).min(pl.pts.len() - 1)];
+        let v1 = Vec2::new(b.x - a.x, b.y - a.y);
+        let v2 = Vec2::new(c.x - b.x, c.y - b.y);
+        let dot = (v1.x * v2.x + v1.y * v2.y)
+            / (v1.length().max(1e-9) * v2.length().max(1e-9));
+        dot.clamp(-1.0, 1.0).acos()
+    };
     for (i, q) in pl.pts.iter().enumerate() {
+        let straightness = 1.0 - math::smoothstep(0.05, 0.45, curv_at(i));
+        let hw_water = 2.6 + 0.9 * straightness;
+        let hw_cut = 6.4 + 1.6 * straightness;
         let x0 = ((q.x - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
         let x1 = ((q.x + hw_cut) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
         let y0 = ((q.y - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
