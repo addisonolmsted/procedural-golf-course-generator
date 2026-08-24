@@ -87,18 +87,37 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let mut pr = rng::stream(id, rng::BLOWOUT);
     let _pan = blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d);
 
-    // T: texture at 2 m
+    // A6a: PLAN the river and carve its CORRIDOR into the macro, before
+    // texture — the corridor is a landform and belongs under the quilt
+    // (review: the corridor floor was "much too smooth"). The 6 m channel
+    // slot stays a sharp post-texture cut.
+    let mut rr = rng::stream(id, rng::WATER);
+    let river_plan = if d.allogenic_river {
+        let pick = water::RiverStyle::PASSED[rr.below(water::RiverStyle::PASSED.len())];
+        water::plan_river(&mut rr, &sf.height, &d, pick)
+    } else {
+        None
+    };
+    if let Some(pl) = &river_plan {
+        water::carve_corridor(&mut sf.height, pl);
+    }
+
+    // T: texture at 2 m — now covering the corridor floor too
     let mut tr = rng::stream(id, rng::TEXTURE);
     let mut height = texture::quilt(&mut tr, pack, &sf.height, &d);
 
     // A5b: blowouts over the texture
     let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d);
 
-    // A6: lakes, then the redesigned creek-scale river on the coin.
+    // A6b: lakes on the finished ground, then the sharp channel slot
     let mut water = water::find(&height, &sf.datum, &d);
-    let mut rr = rng::stream(id, rng::WATER);
-    water::river(&mut rr, &mut height, &mut water, &d);
+    let river = if let Some(pl) = &river_plan {
+        water::cut_channel(&mut height, &mut water, pl);
+        Some(pl.pts.clone())
+    } else {
+        None
+    };
 
     Tile { d, height, water: water.surface, lake_frac: water.lake_frac,
-           blowouts, river: water.river }
+           blowouts, river }
 }

@@ -244,6 +244,28 @@ impl Default for RiverStyle {
     }
 }
 
+/// Everything the two carve passes need, planned once so the corridor can be
+/// cut into the 8 m macro BEFORE texture (it is a landform and belongs under
+/// the quilt — review 2026-08-23: the corridor floor was "much too smooth")
+/// while the 6 m channel slot stays a sharp post-texture feature.
+pub struct RiverPlan {
+    pub pts: Vec<Vec2>,
+    pub corr: Vec<Vec2>,
+    pub bed: Vec<f64>,
+    pub floor_hw: f64,
+    pub wall_m: f64,
+    pub wall_rise: f64,
+    /// Per-side asymmetry: the cut-bank side is steeper and narrower. Drawn
+    /// once per river; which side is "cut" flips slowly along the arc.
+    pub asym: f64,
+    pub s_wl: u32,
+    pub s_wr: u32,
+    pub s_flip: u32,
+    pub s_shelf: u32,
+    /// Shelf (terrace) height above the floor, metres; present in stretches.
+    pub shelf_h: f64,
+}
+
 pub fn river(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water, d: &Descriptors) {
     let pick = RiverStyle::PASSED[rng.below(RiverStyle::PASSED.len())];
     river_styled(rng, height, water, d, pick, false)
@@ -254,6 +276,14 @@ pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
     if !d.allogenic_river && !force {
         return;
     }
+    if let Some(plan) = plan_river(rng, height, d, style) {
+        carve_corridor(height, &plan);
+        cut_channel(height, water, &plan);
+    }
+}
+
+pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: RiverStyle)
+    -> Option<RiverPlan> {
     let spec = height.spec;
     let step = 4.0;
     // Cross the tile roughly perpendicular to the wind, like the Dismal.
@@ -341,6 +371,13 @@ pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
     for i in 1..bed.len() {
         bed[i] = bed[i].min(bed[i - 1] - 0.004);
     }
+    let s_wl = rng.next_u32();
+    let s_wr = rng.next_u32();
+    let s_flip = rng.next_u32();
+    let s_shelf = rng.next_u32();
+    let asym = rng.range_f64(0.35, 0.65);
+    let shelf_h = rng.range_f64(0.9, 2.0);
+
     // --- the meadow corridor, on the LOWPASS line --------------------------
     let win = 40usize; // ~160 m of path
     let corr: Vec<Vec2> = (0..pts.len())
@@ -363,41 +400,85 @@ pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
     // sheer scarp wherever the corridor crossed a tall belt.
     const OUT_GRADE: f64 = 0.015;
     let reach = floor_hw + wall_m + 180.0;
-    let s_w = rng.next_u32();
-    for (i, q) in corr.iter().enumerate() {
-        // corridor width breathes along the run -- a constant width prints a
-        // razor-straight valley edge; real edges are crisp but irregular
-        let wmod = 1.0 + 0.38 * course_world::noise::perlin1(i as f64 * step / 620.0, s_w);
-        let floor_hw = floor_hw * wmod;
-        let wall_m = wall_m * wmod.max(0.7);
-        let x0 = ((q.x - reach) / spec.cell_size).floor().max(0.0) as u32;
-        let x1 = ((q.x + reach) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
-        let y0 = ((q.y - reach) / spec.cell_size).floor().max(0.0) as u32;
-        let y1 = ((q.y + reach) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
-        let fl = bed[i] + 0.4; // meadow floor sits just above the water
+    return Some(RiverPlan { pts, corr, bed, floor_hw, wall_m, wall_rise,
+                            asym, s_wl, s_wr, s_flip, s_shelf, shelf_h });
+}
+
+/// The corridor: carved into the MACRO (8 m), before texture. Left and right
+/// are shaped independently — the cut-bank side is steeper and narrower, the
+/// slip-off side wider and gentler, the roles flipping slowly along the arc —
+/// and an intermittent shelf (a young terrace) rides the slip-off side.
+pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
+    let spec = height.spec;
+    const OUT_GRADE: f64 = 0.015;
+    let step = 4.0;
+    let reach_max = (pl.floor_hw + pl.wall_m) * 1.9 + 180.0;
+    for (i, q) in pl.corr.iter().enumerate() {
+        let arc = i as f64 * step;
+        // local tangent for the side sign
+        let a = &pl.corr[i.saturating_sub(3)];
+        let b = &pl.corr[(i + 3).min(pl.corr.len() - 1)];
+        let tang = Vec2::new(b.x - a.x, b.y - a.y);
+        let tl = tang.length().max(1e-9);
+        let (tx, ty) = (tang.x / tl, tang.y / tl);
+        // which side is the cut bank right now (flips over ~700 m)
+        let flip = course_world::noise::perlin1(arc / 700.0, pl.s_flip) > 0.0;
+        // per-side widths, independently breathing and MORE aggressive than
+        // the old shared +-38%
+        let ml = 1.0 + 0.55 * course_world::noise::perlin1(arc / 420.0, pl.s_wl);
+        let mr = 1.0 + 0.55 * course_world::noise::perlin1(arc / 420.0, pl.s_wr);
+        // shelf gate: present in stretches on the slip-off side
+        let shelf_on = course_world::noise::perlin1(arc / 520.0, pl.s_shelf) > 0.15;
+        let fl = pl.bed[i] + 0.4;
+        let x0 = ((q.x - reach_max) / spec.cell_size).floor().max(0.0) as u32;
+        let x1 = ((q.x + reach_max) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
+        let y0 = ((q.y - reach_max) / spec.cell_size).floor().max(0.0) as u32;
+        let y1 = ((q.y + reach_max) / spec.cell_size).ceil().min(spec.ny as f64 - 1.0) as u32;
         for y in y0..=y1 {
             for x in x0..=x1 {
                 let w = spec.world_of(x, y);
-                let dd = ((w.x - q.x).powi(2) + (w.y - q.y).powi(2)).sqrt();
-                if dd >= reach {
+                let (dx, dy) = (w.x - q.x, w.y - q.y);
+                let dd = (dx * dx + dy * dy).sqrt();
+                if dd >= reach_max {
                     continue;
                 }
+                let left = dx * ty - dy * tx > 0.0;
+                let cut_side = left == flip;
+                let (m, wallf) = if cut_side {
+                    // cut bank: narrower and steeper
+                    (if left { ml } else { mr } * (1.0 - pl.asym * 0.45), 1.0 - pl.asym * 0.5)
+                } else {
+                    (if left { ml } else { mr } * (1.0 + pl.asym * 0.45), 1.0 + pl.asym * 0.4)
+                };
+                let fhw = (pl.floor_hw * m).max(8.0);
+                let wm = (pl.wall_m * wallf).max(30.0);
+                let u = ((dd - fhw) / wm).clamp(0.0, 1.0);
+                let beyond = (dd - fhw - wm).max(0.0);
+                let mut tgt = fl + pl.wall_rise * u * u * (3.0 - 2.0 * u) + OUT_GRADE * beyond;
+                // the shelf: flatten a band of the slip-off wall onto a tread
+                if shelf_on && !cut_side {
+                    let sh = fl + pl.shelf_h;
+                    if tgt > sh && u < 0.75 {
+                        let ease = math::smoothstep(0.75, 0.55, u);
+                        tgt = tgt + (sh - tgt) * ease;
+                    }
+                }
                 let li = spec.index(x, y);
-                // flat floor to floor_hw, the measured wall rise over wall_m,
-                // then the outer grade until the profile meets the ground.
-                let u = ((dd - floor_hw) / wall_m).clamp(0.0, 1.0);
-                let beyond = (dd - floor_hw - wall_m).max(0.0);
-                let tgt = fl + wall_rise * u * u * (3.0 - 2.0 * u) + OUT_GRADE * beyond;
                 if height.data[li] > tgt {
                     let ex = height.data[li] - tgt;
-                    // wide ease: the corridor daylights into the dunes over
-                    // metres, not at a line
                     height.data[li] -= ex * math::smoothstep(0.0, 4.0, ex);
                 }
             }
         }
     }
-    for (i, q) in pts.iter().enumerate() {
+}
+
+/// The channel slot + water: cut at 2 m, AFTER texture — the one sharp piece.
+pub fn cut_channel(height: &mut Grid<f64>, water: &mut Water, pl: &RiverPlan) {
+    let spec = height.spec;
+    let hw_water = 3.0;
+    let hw_cut = 7.0;
+    for (i, q) in pl.pts.iter().enumerate() {
         let x0 = ((q.x - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
         let x1 = ((q.x + hw_cut) / spec.cell_size).ceil().min(spec.nx as f64 - 1.0) as u32;
         let y0 = ((q.y - hw_cut) / spec.cell_size).floor().max(0.0) as u32;
@@ -410,15 +491,14 @@ pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
                     continue;
                 }
                 let li = spec.index(x, y);
-                // slot floor near the line, easing to grade at hw_cut
                 let f = math::smoothstep(0.35, 1.0, dd / hw_cut);
-                let t = bed[i] + f * (height.data[li] - bed[i]).max(0.0);
+                let t = pl.bed[i] + f * (height.data[li] - pl.bed[i]).max(0.0);
                 if height.data[li] > t {
                     let ex = height.data[li] - t;
                     height.data[li] -= ex * math::smoothstep(0.0, 1.2, ex);
                 }
                 if dd < hw_water {
-                    let ws = bed[i] + 0.4;
+                    let ws = pl.bed[i] + 0.4;
                     let cur = water.surface.data[li];
                     if cur.is_nan() || cur > ws {
                         water.surface.data[li] = ws;
@@ -427,7 +507,7 @@ pub fn river_styled(rng: &mut DetRng, height: &mut Grid<f64>, water: &mut Water,
             }
         }
     }
-    water.river = Some(pts);
+    water.river = Some(pl.pts.clone());
 }
 
 #[cfg(test)]
