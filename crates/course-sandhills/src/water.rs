@@ -355,8 +355,13 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     -> Option<RiverPlan> {
     let spec = height.spec;
     let step = 4.0;
-    // Cross the tile roughly perpendicular to the wind, like the Dismal.
-    let along = rng.next_f64() < 0.5;
+    // The river runs WITH the dune trains, not across them (review: seeds 76
+    // and 86 crossed the belts perpendicular). Physically, water follows the
+    // interdune corridors, which run along the crest axis = wind + 90 deg.
+    // The old coin is still flipped so every later draw keeps its value.
+    let _legacy_coin = rng.next_f64();
+    let crest_axis = d.wind_rad + std::f64::consts::FRAC_PI_2;
+    let along = math::cos(crest_axis).abs() >= math::sin(crest_axis).abs();
     let t0 = rng.range_f64(0.25, 0.75);
     let (start, base_heading) = if along {
         (Vec2::new(2.0, t0 * EXTENT_M), 0.0)
@@ -600,12 +605,20 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
         let (tx, ty) = (tang.x / tl, tang.y / tl);
         // which side is the cut bank right now (flips over ~700 m)
         let flip = course_world::noise::perlin1(arc / 700.0, pl.s_flip) > 0.0;
-        // per-side widths, independently breathing and MORE aggressive than
-        // the old shared +-38%
-        let ml = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wl)
-            + 0.35 * course_world::noise::perlin1(arc / 90.0, pl.s_wl ^ 0x11);
-        let mr = 1.0 + 0.75 * course_world::noise::perlin1(arc / 300.0, pl.s_wr)
-            + 0.35 * course_world::noise::perlin1(arc / 90.0, pl.s_wr ^ 0x11);
+        // per-side widths: aggressive breathing, plus INSIDE-OF-BEND
+        // widening -- a migrating channel leaves its slip-off side broad, so
+        // the valley opens on the inside of every bend and the corridor stops
+        // shadowing the channel line exactly (review).
+        let v1 = Vec2::new(pl.corr[i].x - a.x, pl.corr[i].y - a.y);
+        let v2 = Vec2::new(b.x - pl.corr[i].x, b.y - pl.corr[i].y);
+        let cz = v1.x * v2.y - v1.y * v2.x;
+        let turn = (cz / (v1.length() * v2.length()).max(1e-9)).clamp(-1.0, 1.0);
+        let bend = 2.6 * turn.abs().min(0.30);
+        let (bl2, br2) = if turn > 0.0 { (bend, 0.0) } else { (0.0, bend) };
+        let ml = 1.0 + bl2 + 0.95 * course_world::noise::perlin1(arc / 300.0, pl.s_wl)
+            + 0.50 * course_world::noise::perlin1(arc / 90.0, pl.s_wl ^ 0x11);
+        let mr = 1.0 + br2 + 0.95 * course_world::noise::perlin1(arc / 300.0, pl.s_wr)
+            + 0.50 * course_world::noise::perlin1(arc / 90.0, pl.s_wr ^ 0x11);
         // shelf gate: present in stretches on the slip-off side
         let shelf_on = course_world::noise::perlin1(arc / 520.0, pl.s_shelf) > 0.15;
         let fl = pl.bed[i] + 0.4;
@@ -647,7 +660,7 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
                                                        pl.s_cat ^ 0x5A5A)
                     // rim band: the daylight line was too rounded (review) --
                     // extra short noise concentrated where wall meets dunes
-                    + math::smoothstep(0.5, 1.0, u) * 1.1
+                    + math::smoothstep(0.5, 1.0, u) * 1.5
                         * course_world::noise::perlin2(w.x / 42.0, w.y / 42.0,
                                                        pl.s_cat ^ 0xC3);
                 // hand-off: ~1.5% for the first 40 m, then loose-sand repose
