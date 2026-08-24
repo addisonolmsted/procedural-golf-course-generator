@@ -27,7 +27,8 @@ pub struct Water {
 /// table. The table rides the regional datum (the Ogallala is unconfined
 /// here), so each lake takes ONE flat level — the 25th percentile of the
 /// table across its own extent — and cells above that level go dry again.
-pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
+pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
+            river: Option<&RiverPlan>) -> Water {
     let spec = height.spec;
     let mut surface = Grid::filled(spec, f64::NAN);
     let mut wet = vec![false; spec.len()];
@@ -49,12 +50,49 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors) -> Water {
         .collect();
     above.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let floor_off = above[above.len() / 12];
+    // RIVER DRAWDOWN. A river drains its corridor: the local water table is
+    // depressed toward the river's own bed, easing back to the regional
+    // table over a few hundred metres. Without this, shallow-table seeds
+    // flooded the corridor floor with lakes sitting directly on the river
+    // (review, 2026-08-23). Computed at the datum grid's 8 m and sampled
+    // bilinearly, like the table itself.
+    let dspec = datum8.spec;
+    let mut ddown = Grid::filled(dspec, 0.0f64);
+    if let Some(pl) = river {
+        let reach = (pl.floor_hw + pl.wall_m) * 1.4 + 220.0;
+        for (i, q) in pl.corr.iter().enumerate().step_by(2) {
+            let bed_t = pl.bed[i] + 0.3;
+            let x0 = ((q.x - reach) / dspec.cell_size).floor().max(0.0) as u32;
+            let x1 = ((q.x + reach) / dspec.cell_size).ceil().min(dspec.nx as f64 - 1.0) as u32;
+            let y0 = ((q.y - reach) / dspec.cell_size).floor().max(0.0) as u32;
+            let y1 = ((q.y + reach) / dspec.cell_size).ceil().min(dspec.ny as f64 - 1.0) as u32;
+            for yy in y0..=y1 {
+                for xx in x0..=x1 {
+                    let w = dspec.world_of(xx, yy);
+                    let dd = ((w.x - q.x).powi(2) + (w.y - q.y).powi(2)).sqrt();
+                    if dd >= reach {
+                        continue;
+                    }
+                    let p2 = dspec.world_of(xx, yy);
+                    let tab = datum8.bilinear(p2) + floor_off - d.water_table_m;
+                    let full = (tab - bed_t).max(0.0);
+                    let f = 1.0 - math::smoothstep(pl.floor_hw + pl.wall_m, reach, dd);
+                    let li = dspec.index(xx, yy);
+                    if full * f > ddown.data[li] {
+                        ddown.data[li] = full * f;
+                    }
+                }
+            }
+        }
+    }
+
     let mut margin = vec![0.0f64; spec.len()];
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let li = spec.index(x, y);
             let p = spec.world_of(x, y);
-            table[li] = datum8.bilinear(p) + floor_off - d.water_table_m;
+            table[li] = datum8.bilinear(p) + floor_off - d.water_table_m
+                - ddown.bilinear(p);
             margin[li] = height.data[li] - table[li];
         }
     }
