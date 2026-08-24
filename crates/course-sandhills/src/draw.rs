@@ -122,10 +122,10 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         cap_wave_m: draw(&mut p, rec.cap_wave_m),
         cap_flat: draw(&mut p, rec.cap_flat),
         n_sys: {
-            let u = p.next_f64() * (rec.sys_weights[0] + rec.sys_weights[1] + rec.sys_weights[2]);
-            if u < rec.sys_weights[0] { 2 }
-            else if u < rec.sys_weights[0] + rec.sys_weights[1] { 3 }
-            else { 4 }
+            // Single-trunked (review 2026-08-24). The weights coin is still
+            // burned so every later draw keeps its value.
+            let _legacy = p.next_f64();
+            1
         },
         attach_m: draw(&mut p, rec.attach_m),
     }

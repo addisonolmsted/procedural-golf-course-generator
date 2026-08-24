@@ -292,7 +292,7 @@ fn tier3(attach_m: f64) -> Tier {
         hold_m: (260.0, 80.0),
         swing: 0.09,
         lam: (180.0, 400.0),
-        claim: 120.0,
+        claim: 155.0,
         min_len: 90.0,
         max_len: 900.0,
         step: 16.0,
@@ -616,11 +616,11 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     let mut net = Network { chans: Vec::new() };
     let mut idx = Index::new();
 
-    // --- trunks: the main system through the middle, secondaries in the
-    // margin slots, all ladder-checked against what exists
-    let slots: [(f64, f64); 4] = [(0.30, 0.70), (0.04, 0.26), (0.74, 0.96), (0.30, 0.70)];
-    for s in 0..d.n_sys.min(4) {
-        if let Some((pts, z)) = trunk(rng, datum, d, slots[s as usize], &idx) {
+    // --- the trunk: ONE per tile (review 2026-08-24 — every real NC tile
+    // is single-trunked; the survey's extra "systems" are edge fragments).
+    // The tributary tree carries the density from here.
+    for s in 0..d.n_sys.min(1) {
+        if let Some((pts, z)) = trunk(rng, datum, d, (0.25, 0.75), &idx) {
             let c = Channel { pts, z, tier: 1, parent: None, sys: s };
             idx.add_channel(&c, net.chans.len() as u32);
             net.chans.push(c);
@@ -630,8 +630,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // attempt 4's rise coefficient: 0.55 of the budget over an 800 m climb
     let k_rise = 0.55 * d.cap_relief_m / math::pow(800.0, 0.6);
 
-    // --- tributary passes. Secondary systems attach sparser (×1.7): the
-    // main system carries the density (corpus main_share 57%).
+    // --- tributary passes
     let mut pass = 0usize;
     loop {
         let (tier, targets): (Tier, Vec<u32>) = match pass {
@@ -642,8 +641,12 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
                   (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier >= 2)
                       .collect()),
             n => {
-                // density fill: whole network, shrinking spacing
-                if density_km_km2(&net) >= 2.0 || n >= 4 {
+                // Coverage fill: whole network, shrinking spacing. The
+                // criterion is d2c, not density — with a single trunk the
+                // density saturates near the tree while far corners stay
+                // empty (battery: d2c 108–181 against the corpus 107).
+                // Density still caps the loop so a tile cannot over-etch.
+                if d2c_p50(&net) <= 118.0 || density_km_km2(&net) >= 2.65 || n >= 6 {
                     break;
                 }
                 let mut t = tier3(d.attach_m * 0.75f64.powi(n as i32 - 1));
@@ -653,10 +656,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         };
         let n_before = net.chans.len();
         for cid in targets {
-            let mult = if net.chans[cid as usize].sys > 0
-                && net.chans[cid as usize].tier == 1 { 1.7 } else { 1.0 };
-            let mut t = tier.clone();
-            t.spacing = (tier.spacing.0 * mult, tier.spacing.1 * mult);
+            let t = tier.clone();
             let sites = {
                 let c = &net.chans[cid as usize];
                 attach_points(rng, c, &t)
@@ -683,7 +683,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
             }
         }
         pass += 1;
-        if pass >= 5 || (pass > 2 && net.chans.len() == n_before) {
+        if pass >= 7 || (pass > 2 && net.chans.len() == n_before) {
             break;
         }
     }
@@ -710,8 +710,11 @@ pub fn density_km_km2(net: &Network) -> f64 {
     (total_m / 1000.0) / ((EXTENT_M / 1000.0) * (EXTENT_M / 1000.0))
 }
 
-pub fn stats(net: &Network) -> NetStats {
-    // d2c: chamfer distance transform on the 8 m grid
+/// d2c p50 via a two-pass chamfer transform on the 8 m grid — the corpus
+/// instrument's resolution. Also the fill-pass criterion in `grow`: density
+/// alone saturates near the existing tree and leaves far corners empty
+/// (single-trunk battery: d2c 108–181 against the corpus 107).
+pub fn d2c_p50(net: &Network) -> f64 {
     let spec = macro_spec();
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let big = 1e18f64;
@@ -750,8 +753,11 @@ pub fn stats(net: &Network) -> NetStats {
     }
     let mut dts: Vec<f64> = dt;
     dts.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let d2c_p50 = dts[dts.len() / 2];
+    dts[dts.len() / 2]
+}
 
+pub fn stats(net: &Network) -> NetStats {
+    let d2c_p50 = d2c_p50(net);
     // junction angles, measured from GEOMETRY, not from the draw
     let mut angles: Vec<f64> = Vec::new();
     for c in &net.chans {

@@ -247,7 +247,10 @@ pub struct Record {
     /// How hard the uplands are clipped flat, 0 = domes, 1 = mesas. `guess`;
     /// the biome doc calls for broad FLAT-TOPPED interfluves.
     pub cap_flat: Range,
-    /// Number of independent creek systems. `corpus`: n_sys 3, main 57%.
+    /// Number of independent creek systems. `review 2026-08-24`: every real
+    /// NC tile is SINGLE-TRUNKED — pattern_survey's n_sys 3 counts edge
+    /// fragments of off-tile systems as components, not extra trunks. One
+    /// trunk per tile; the tributary tree carries the density.
     pub sys_weights: [f64; 3],
     /// Tributary attach spacing along parents, metres. THE density lever —
     /// drawn, then tiers repeat until density lands. `corpus`: 2.33 km/km².
@@ -367,7 +370,7 @@ pub const SANDHILLS: Record = Record {
     cap_wave_m: Range::new(750.0, 1300.0),   // guess, d2c-bounded
     cap_flat: Range::new(0.35, 0.7),         // guess
     sys_weights: [0.25, 0.5, 0.25],          // corpus: n_sys p50 3
-    attach_m: Range::new(260.0, 380.0),      // calibrated at C2
+    attach_m: Range::new(300.0, 430.0),      // calibrated at C2 (density 2.33 at d2c ~110)
     p_allogenic_river: 0.30,                 // literature
 };
 
