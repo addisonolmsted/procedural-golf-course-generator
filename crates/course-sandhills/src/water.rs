@@ -348,52 +348,92 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     let s_noise = rng.next_u32();
     let s_lam = rng.next_u32();
     let s_swing = rng.next_u32();
-
-    let mut pts: Vec<Vec2> = vec![start];
-    let mut p = start;
-    let mut arc = 0.0;
     let lim = EXTENT_M - 2.0;
-    for _ in 0..6000 {
-        // heading: forward progress + periodic swing + slow organic wander.
-        // BOTH the wavelength and the swing breathe along the run -- a
-        // constant-parameter serpentine is exactly as manufactured as a
-        // constant sinusoid, just curlier (measured on the first render of
-        // this redesign, and twice before on this project).
-        let lam_e = lam * (1.0 + 0.45 * course_world::noise::perlin1(arc / 640.0, s_lam));
-        let sw_e = swing
-            * (0.45 + 0.75 * (0.5 + 0.5 * course_world::noise::perlin1(arc / 480.0, s_swing)));
-        let wob = sw_e
-            * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1)
-                + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2));
-        let wander = style.wander * course_world::noise::perlin1(arc / 900.0, s_noise);
-        // gentle downhill preference: sample the macro left and right of the
-        // heading and lean toward the lower side, so the channel occupies
-        // lows instead of skirting them (review on seed 5: the stream hugged
-        // past a low point, "weird from a drainage perspective").
-        let hd = base_heading + wob + wander;
-        let lp = Vec2::new(p.x - 60.0 * math::sin(hd), p.y + 60.0 * math::cos(hd));
-        let rp2 = Vec2::new(p.x + 60.0 * math::sin(hd), p.y - 60.0 * math::cos(hd));
-        let (zl, zr) = (height.bilinear(lp), height.bilinear(rp2));
-        let lean = 0.30 * ((zr - zl) / 6.0).clamp(-1.0, 1.0);
-        // total deviation from the crossing direction is clamped short of a
-        // reversal: on high-swing draws, swing + wander + lean exceeded pi and
-        // the integrator milled in place -- seed 9 rendered as knotted coils
-        // that then drained every pond they crossed.
-        let dev = (hd - base_heading + lean).clamp(-1.95, 1.95);
-        let h = base_heading + dev;
-        p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
-        // soft reflect off the side borders so the creek stays on-tile
-        if along {
-            p.y = p.y.clamp(60.0, lim - 60.0);
-            if p.x >= lim { break; }
-            p.x = p.x.max(2.0);
+
+    // Build the path inside an ACCEPTANCE LADDER: a candidate that crosses
+    // or kisses itself is rejected and rebuilt with the swing and wander
+    // damped 13% per attempt. Review failures that forced this: seed 9 drew
+    // figure-eight crossovers (the deviation clamp bounds the HEADING, but a
+    // +110 deg lobe into a -110 deg lobe can still cross in PLAN), and seed
+    // 18 bent in a square against the border because position was CLAMPED to
+    // a line -- heading wobble against a hard wall integrates into square
+    // slides. Borders now repel the heading smoothly instead.
+    //
+    // Attempt 1 draws exactly what the unladdered version drew, so every
+    // seed that passed review is byte-identical; retries draw fresh phases.
+    let mut pts: Vec<Vec2> = Vec::new();
+    'attempt: for attempt in 0..6 {
+        let damp = 0.87f64.powi(attempt);
+        let (ph1a, ph2a, s_na, s_la, s_sa) = if attempt == 0 {
+            (ph1, ph2, s_noise, s_lam, s_swing)
         } else {
-            p.x = p.x.clamp(60.0, lim - 60.0);
-            if p.y >= lim { break; }
-            p.y = p.y.max(2.0);
+            (rng.range_f64(0.0, std::f64::consts::TAU),
+             rng.range_f64(0.0, std::f64::consts::TAU),
+             rng.next_u32(), rng.next_u32(), rng.next_u32())
+        };
+        let mut cand: Vec<Vec2> = vec![start];
+        let mut p = start;
+        let mut arc = 0.0;
+        use std::collections::HashMap;
+        let cellsz = 16.0;
+        let mut hash: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        hash.entry(((start.x / cellsz) as i32, (start.y / cellsz) as i32))
+            .or_default().push(0);
+        for _ in 0..6000 {
+            let lam_e = lam * (1.0 + 0.45 * course_world::noise::perlin1(arc / 640.0, s_la));
+            let sw_e = swing * damp
+                * (0.45 + 0.75 * (0.5 + 0.5 * course_world::noise::perlin1(arc / 480.0, s_sa)));
+            let wob = sw_e
+                * (math::sin(std::f64::consts::TAU * arc / lam_e + ph1a)
+                    + 0.35 * math::sin(std::f64::consts::TAU * arc / (lam_e * 2.7) + ph2a));
+            let wander = style.wander * damp
+                * course_world::noise::perlin1(arc / 900.0, s_na);
+            let hd = base_heading + wob + wander;
+            let lp = Vec2::new(p.x - 60.0 * math::sin(hd), p.y + 60.0 * math::cos(hd));
+            let rp2 = Vec2::new(p.x + 60.0 * math::sin(hd), p.y - 60.0 * math::cos(hd));
+            let (zl, zr) = (height.bilinear(lp), height.bilinear(rp2));
+            let lean = 0.30 * ((zr - zl) / 6.0).clamp(-1.0, 1.0);
+            let cross = if along { p.y } else { p.x };
+            let repel = 0.55
+                * (math::smoothstep(260.0, 40.0, cross)
+                    - math::smoothstep(lim - 260.0, lim - 40.0, cross));
+            let dev = (hd - base_heading + lean + repel).clamp(-1.95, 1.95);
+            let h = base_heading + dev;
+            p = Vec2::new(p.x + step * math::cos(h), p.y + step * math::sin(h));
+            if along {
+                p.y = p.y.clamp(8.0, lim - 8.0);
+                if p.x >= lim { break; }
+                p.x = p.x.max(2.0);
+            } else {
+                p.x = p.x.clamp(8.0, lim - 8.0);
+                if p.y >= lim { break; }
+                p.y = p.y.max(2.0);
+            }
+            arc += step;
+            let (cx, cy) = ((p.x / cellsz) as i32, (p.y / cellsz) as i32);
+            let idx = cand.len();
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if let Some(v) = hash.get(&(cx + dx, cy + dy)) {
+                        for j in v {
+                            if (idx - j) as f64 * step > 120.0 {
+                                let q = cand[*j];
+                                if ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt() < 12.0 {
+                                    continue 'attempt;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            hash.entry((cx, cy)).or_default().push(idx);
+            cand.push(p);
         }
-        arc += step;
-        pts.push(p);
+        pts = cand;
+        break;
+    }
+    if pts.len() < 40 {
+        return None;
     }
 
     // THE CATENA, from literature and geomorphic principles (review
