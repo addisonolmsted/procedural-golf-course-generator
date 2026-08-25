@@ -70,6 +70,63 @@ pub struct Tile {
     pub river: Option<Vec<course_world::math::Vec2>>,
 }
 
+/// X3 — the finished fluvial tile at 2 m: the assembled landform with the
+/// grain-aligned texture quilted on.
+///
+/// The division of labour is the one both failed experiments in X0c argued
+/// for: the 8 m layer supplies LANDFORM (bed, valley profile, shoulders,
+/// rounded divides) and the 2 m layer supplies GRAIN. Neither tries to do
+/// the other's job — noise at landform scale mottles, and texture cannot
+/// round a 100 m ridge.
+pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
+                              pack: &texture::PatchPack)
+    -> (Descriptors, channel::Network, assemble::Assembled, Grid<f64>) {
+    let (d, net, asm) = build_fluvial_macro(id, prof);
+    let spec = asm.height.spec;
+
+    // Grain = the local channel tangent, from the assembler's own distance
+    // field, derived exactly as the patch pack derives it from a real
+    // tile's: the perpendicular of the smoothed distance gradient. Both
+    // sides of the comparison are built the same way, which is what makes
+    // pasted fabric run along OUR valleys the way it ran along theirs.
+    let mut dsm = asm.dist.data.clone();
+    for _ in 0..6 {
+        let src = dsm.clone();
+        for y in 0..spec.ny as i64 {
+            for x in 0..spec.nx as i64 {
+                let at = |dx: i64, dy: i64| {
+                    src[spec.index((x + dx).clamp(0, spec.nx as i64 - 1) as u32,
+                                   (y + dy).clamp(0, spec.ny as i64 - 1) as u32)]
+                };
+                dsm[spec.index(x as u32, y as u32)] =
+                    0.2 * (at(0, 0) + at(-1, 0) + at(1, 0) + at(0, -1) + at(0, 1));
+            }
+        }
+    }
+    let mut grain = Grid::filled(spec, 0.0f64);
+    let mut gate = Grid::filled(spec, 0.0f64);
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let (xm, xp) = (x.saturating_sub(1), (x + 1).min(spec.nx - 1));
+            let (ym, yp) = (y.saturating_sub(1), (y + 1).min(spec.ny - 1));
+            let gx = (dsm[spec.index(xp, y)] - dsm[spec.index(xm, y)]) / 16.0;
+            let gy = (dsm[spec.index(x, yp)] - dsm[spec.index(x, ym)]) / 16.0;
+            grain.data[i] = course_world::math::atan2(gx, -gy);
+            // Valley sides carry the most fabric, interfluve tops the least
+            // — but nothing is ever bare: `texture_floor` holds the base
+            // everywhere and this gate only adds on top of it.
+            gate.data[i] = (1.0 - 0.55 * asm.u.data[i]).clamp(0.0, 1.0);
+        }
+    }
+
+    let mut tr = rng::stream(id, rng::TEXTURE);
+    let mut dt = d.clone();
+    dt.texture_gain = d.texture_gain * d.fluvial_tex_k;
+    let tex = texture::quilt_fluvial(&mut tr, pack, &asm.height, &grain, &gate, &dt);
+    (d, net, asm, tex)
+}
+
 /// X1+X2 — the fluvial surface at 8 m: network, graded beds, and the
 /// measured HAND profile assembled over them. This is the whole macro
 /// stage; the 2 m texture rides on top.
