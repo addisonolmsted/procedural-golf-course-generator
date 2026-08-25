@@ -177,6 +177,25 @@ fn chamfer(spec: course_world::grid::GridSpec, seed: &[(u32, u32, f64)])
 /// right around the tile rim. Every field here — bed, distance, u, w, H —
 /// runs through this, so the bug reached all of them.
 fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
+    // DIAGNOSTIC ONLY (SAND_OLD_BLUR=1): the border-skipping form, kept so
+    // the fix can be demonstrated against itself on identical seeds.
+    if std::env::var("SAND_OLD_BLUR").is_ok() {
+        for _ in 0..passes {
+            let src = a.clone();
+            for y in 1..spec.ny - 1 {
+                for x in 1..spec.nx - 1 {
+                    let i = spec.index(x, y);
+                    a[i] = 0.2
+                        * (src[i]
+                            + src[spec.index(x - 1, y)]
+                            + src[spec.index(x + 1, y)]
+                            + src[spec.index(x, y - 1)]
+                            + src[spec.index(x, y + 1)]);
+                }
+            }
+        }
+        return;
+    }
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     for _ in 0..passes {
         let src = a.clone();
@@ -205,6 +224,9 @@ fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
 /// removes the whole class at once, and it is loose enough (22%) that no
 /// real cross-valley bed gradient is touched.
 fn slope_limit(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, max_grade: f64) {
+    if std::env::var("SAND_NO_SLOPELIMIT").is_ok() {
+        return;                                  // DIAGNOSTIC ONLY
+    }
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let (o, dg) = (max_grade * CELL, max_grade * CELL * std::f64::consts::SQRT_2);
     for _ in 0..2 {
