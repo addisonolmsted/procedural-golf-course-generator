@@ -71,9 +71,13 @@ struct Program {
     s_jag: u32,
 }
 
-pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
-             datum: &Grid<f64>, d: &Descriptors) {
-    let spec = height.spec;
+/// The graded beds, one per channel: the resampled centre-line and its bed
+/// elevation. Junction-first (a tributary mouth IS its parent floor), Flint
+/// concave profiles, the water-gap relief valve. This is the whole surviving
+/// half of the old carve — the catena stamp is retired in favour of the
+/// measured HAND profile in `assemble.rs`.
+pub fn beds(rng: &mut DetRng, net: &Network, datum: &Grid<f64>,
+            d: &Descriptors) -> Vec<(Vec<Vec2>, Vec<f64>)> {
     // ---- per-tile draws -------------------------------------------------
     let depth_unit = d.valley_depth_m;
     let floor_unit = d.valley_floor_m;
@@ -227,122 +231,7 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
         let _ = cid;
     }
 
-    // ---- the stamp ------------------------------------------------------
-    let cell = 8.0;
-    for pr in &progs {
-        let n = pr.pts.len();
-        for i in 0..n {
-            let q = pr.pts[i];
-            let a = pr.arc[i];
-            let hk_i = pr.hk[i];
-            // local tangent for the side sign
-            let t0 = pr.pts[i.saturating_sub(1)];
-            let t1 = pr.pts[(i + 1).min(n - 1)];
-            let tang = Vec2::new(t1.x - t0.x, t1.y - t0.y).normalized();
-
-            // ---- the local program: nothing constant --------------------
-            // floor half-width, per side below; wall run; rise; exponent
-            let f_base = (floor_unit * hk_i).max(2.5);
-            let wall_base = (wall_unit * hk_i).max(5.0);
-            let depth_loc = pr.depth[i];
-            let rise = depth_loc * (1.02 + 0.10 * noise::perlin1(a / 300.0, pr.s_p));
-            let p_exp = (p_base + 0.25 * noise::perlin1(a / 520.0, pr.s_p)).clamp(1.35, 2.35);
-            // which side is the cut bank flips slowly along the arc
-            let flip = if noise::perlin1(a / 700.0, pr.s_flip) > 0.0 { 1.0 } else { -1.0 };
-
-            // Bounded: the runout beyond the wall gets a fixed window and
-            // then YIELDS to the upland — an unbounded rise/out_grade reach
-            // let the stamp carve unrelated swales 600+ m away (seed 205).
-            let reach = f_base * 1.9 + wall_base * 2.2 + 380.0;
-            let r_px = (reach / cell).ceil() as i64 + 1;
-            let (cx, cy) = ((q.x / cell).round() as i64, (q.y / cell).round() as i64);
-            for gy in (cy - r_px).max(0)..=(cy + r_px).min(spec.ny as i64 - 1) {
-                for gx in (cx - r_px).max(0)..=(cx + r_px).min(spec.nx as i64 - 1) {
-                    let p = spec.world_of(gx as u32, gy as u32);
-                    let dx = p.x - q.x;
-                    let dy = p.y - q.y;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    if dist > reach {
-                        continue;
-                    }
-                    let side = if tang.x * dy - tang.y * dx >= 0.0 { 1.0 } else { -1.0 };
-                    // per-side breathing (river idiom: independent seeds per
-                    // side) + drawn asymmetry on the flipping cut bank
-                    let s_side = if side > 0.0 { pr.s_wl } else { pr.s_wr };
-                    // Breathing wavelength SCALES with the valley (Hack):
-                    // a 210 m octave on a 300 m-wide trunk printed the
-                    // valley as a caterpillar of discs (seed 109 render) —
-                    // big streams vary their width over longer distances,
-                    // and amplitude eases as wavelength grows.
-                    let lam1 = 210.0 + 240.0 * hk_i;
-                    let lam2 = 96.0 + 110.0 * hk_i;
-                    let amp1 = 0.55 / (1.0 + 0.55 * hk_i);
-                    let breathe = 1.0 + amp1 * noise::perlin1(a / lam1, s_side)
-                        + 0.15 * noise::perlin1(a / lam2, s_side.wrapping_add(9));
-                    let asf = if side * flip > 0.0 {
-                        2.0 * (1.0 - pr.asym)
-                    } else {
-                        2.0 * pr.asym
-                    };
-                    // inside of the bend widens with curvature
-                    let inside = if side * pr.turn[i] > 0.0 {
-                        1.0 + (2.6 * pr.turn[i].abs() * 100.0).min(0.30)
-                    } else {
-                        1.0
-                    };
-                    let f_loc = (f_base * breathe * inside).max(2.0);
-                    let wall_loc = (wall_base * breathe.sqrt() * asf).max(4.0);
-
-                    // THE RIM (review 2026-08-26: "edges vary in width
-                    // greatly ... little pockets where water incises into
-                    // the edge at irregular frequent intervals"): a
-                    // two-octave MAP-domain jag, weighted toward the
-                    // shoulder — zero at the water line, strong at the rim,
-                    // so the contour of the valley edge wanders and notches
-                    // while the floor stays clean. Map-domain (perlin of
-                    // x,y) is what keeps this from beading: every stamp
-                    // sees the same pocket field.
-                    let u_pre = ((dist - f_loc) / wall_loc).clamp(0.0, 1.3);
-                    let jag = u_pre
-                        * ((3.0 + 18.0 * hk_i)
-                            * noise::perlin2(p.x / 64.0, p.y / 64.0, pr.s_jag)
-                            + (6.0 + 21.0 * hk_i)
-                                * noise::perlin2(p.x / 150.0, p.y / 150.0,
-                                                 pr.s_jag.wrapping_add(7)));
-                    let de = (dist + jag - f_loc).max(0.0);
-                    let u = de / wall_loc;
-                    let z = if u <= 0.0 || dist <= f_loc {
-                        // the floor: near-flat, faint cross-grain
-                        pr.bed[i]
-                            + 0.12 * hk_i * noise::perlin2(p.x / 30.0, p.y / 30.0, s_floor)
-                    } else if u < 1.0 {
-                        pr.bed[i] + rise * math::pow(u, p_exp)
-                    } else {
-                        pr.bed[i] + rise + out_grade * (de - wall_loc)
-                    };
-                    // catena noise: zero at the water line, full at the
-                    // shoulder — organic walls, clean floor
-                    let fade = u.clamp(0.0, 1.0);
-                    let noise_amp = 0.42 * (0.3 + 0.7 * hk_i.min(1.0)) * fade;
-                    let mut cand = z
-                        + noise_amp
-                            * (noise::perlin2(p.x / 55.0, p.y / 55.0, s_cat1)
-                                + 0.5 * noise::perlin2(p.x / 23.0, p.y / 23.0, s_cat2));
-                    let idx = spec.index(gx as u32, gy as u32);
-                    // locality: past the runout window the catena hands the
-                    // ground back to the upland, smoothly
-                    let over = (de - wall_loc - 200.0) / 160.0;
-                    if over > 0.0 {
-                        let t = math::smoothstep(0.0, 1.0, over.min(1.0));
-                        cand = cand * (1.0 - t) + datum.data[idx] * t;
-                    }
-                    if cand < height.data[idx] {
-                        height.data[idx] = cand;
-                    }
-                }
-            }
-        }
-    }
+    progs.into_iter().map(|pr| (pr.pts, pr.bed)).collect()
 }
 
 fn resample(pts: &[Vec2], step: f64) -> (Vec<Vec2>, Vec<usize>) {
@@ -374,119 +263,112 @@ fn resample(pts: &[Vec2], step: f64) -> (Vec<Vec2>, Vec<usize>) {
     (out, src)
 }
 
+/// Re-base the HANGING tiers (4/5) onto an assembled surface.
+///
+/// Their beds are first built against the routing datum, which is not the
+/// ground the tile ends up with — B + H differs from it by metres. Left
+/// uncorrected, a gully bed sits at the wrong height and drags the bed
+/// field with it, which printed a hard step beside every channel (render,
+/// seeds 104/109). So the macro build assembles once from the trunk-and-
+/// tributary tiers, re-bases the gullies onto THAT ground, and assembles
+/// again.
+pub fn rebase_hanging(beds: &mut [(Vec<Vec2>, Vec<f64>)], net: &Network,
+                      surface: &Grid<f64>) {
+    for (ci, c) in net.chans.iter().enumerate() {
+        if c.tier < 4 {
+            continue;
+        }
+        let (pts, bed) = &mut beds[ci];
+        let n = pts.len();
+        if n < 2 {
+            continue;
+        }
+        // a swale is a shallow incision into the ground it crosses
+        let cut = 0.7 + 0.5 * ((c.tier as f64) - 4.0).max(0.0);
+        let mut arc = 0.0;
+        for i in 0..n {
+            if i > 0 {
+                arc += pts[i - 1].distance(pts[i]);
+            }
+            let g = surface.bilinear(pts[i]);
+            let want = g - cut * (1.0 - 0.5 * (arc / 260.0).min(1.0));
+            bed[i] = if i == 0 { want } else { want.max(bed[i - 1] + 0.002) };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mode::Mode;
     use course_seed::RunIdentity;
 
-    fn carved(seed: u64) -> (Grid<f64>, Grid<f64>, Network) {
+    fn graded(seed: u64) -> (Grid<f64>, Network, Vec<(Vec<Vec2>, Vec<f64>)>) {
         let id = RunIdentity::from_seed(seed);
         let d = crate::draw::site(&id, Some(Mode::Fluvial), None);
         let mut dr = crate::rng::stream(&id, crate::rng::DATUM);
         let datum = crate::channel::datum(&mut dr, &d);
         let mut cr = crate::rng::stream(&id, crate::rng::CHANNEL);
         let net = crate::channel::grow(&mut cr, &datum, &d);
-        let mut h = datum.clone();
-        carve(&mut cr, &mut h, &net, &datum, &d);
-        (datum, h, net)
+        let beds = beds(&mut cr, &net, &datum, &d);
+        (datum, net, beds)
     }
 
     #[test]
-    fn the_carve_only_cuts() {
-        // valleys are EROSIONAL: min-composition may lower ground, never
-        // raise it — the mode's deposits() == false, checked on the field
+    fn every_bed_rises_upstream() {
+        // water cannot flow uphill along its own floor
         for seed in [201u64, 202, 203] {
-            let (datum, h, _) = carved(seed);
-            for i in 0..h.data.len() {
-                assert!(h.data[i] <= datum.data[i] + 1e-9, "seed {seed}: raised ground");
+            let (_, _, bs) = graded(seed);
+            for (i, (_, b)) in bs.iter().enumerate() {
+                for w in b.windows(2) {
+                    assert!(w[1] >= w[0] - 1e-9,
+                            "seed {seed} chan {i}: bed falls upstream");
+                }
             }
         }
     }
 
     #[test]
-    fn the_carve_reaches_every_trunk_and_stays_local() {
+    fn tributary_mouths_meet_their_parent_floor() {
+        // THE grading law (X0c): a trib mouth IS its parent's floor there,
+        // which is what puts the whole system in the tile's low ground
         for seed in [204u64, 205] {
-            let (datum, h, net) = carved(seed);
-            let spec = h.spec;
-            // somewhere along the trunk the cut is substantial…
-            let trunk = &net.chans[0];
-            let mut max_cut = 0.0f64;
-            for p in &trunk.pts {
-                let x = (p.x / 8.0).round().clamp(0.0, (spec.nx - 1) as f64) as u32;
-                let y = (p.y / 8.0).round().clamp(0.0, (spec.ny - 1) as f64) as u32;
-                max_cut = max_cut.max(datum.get(x, y) - h.get(x, y));
-            }
-            assert!(max_cut > 5.0, "seed {seed}: trunk cut only {max_cut:.2} m");
-            // …and ground far from every channel is untouched
-            let far = crate::channel::d2c_p50(&net); // sanity anchor only
-            let _ = far;
-            let mut idx_far = None;
-            'search: for y in (0..spec.ny).step_by(7) {
-                for x in (0..spec.nx).step_by(7) {
-                    let p = spec.world_of(x, y);
-                    let near = net.chans.iter().flat_map(|c| c.pts.iter())
-                        .any(|q| q.distance(p) < 650.0);
-                    if !near {
-                        idx_far = Some((x, y));
-                        break 'search;
+            let (_, net, bs) = graded(seed);
+            let mut worst: f64 = 0.0;
+            for (ci, c) in net.chans.iter().enumerate() {
+                let Some(pid) = c.parent else { continue };
+                // tier 4/5 HANG on the wall by design — a side swale grades
+                // from the wall face, it does not slot down to the trunk
+                // floor (floor-anchored gullies printed claw gouges)
+                if c.tier >= 4 {
+                    continue;
+                }
+                let (ppts, pbed) = &bs[pid as usize];
+                let mouth = bs[ci].0[0];
+                let mut best = (f64::MAX, 0usize);
+                for (j, q) in ppts.iter().enumerate() {
+                    let dd = q.distance(mouth);
+                    if dd < best.0 {
+                        best = (dd, j);
                     }
                 }
+                worst = worst.max((bs[ci].1[0] - pbed[best.1]).abs());
             }
-            if let Some((x, y)) = idx_far {
-                assert!((datum.get(x, y) - h.get(x, y)).abs() < 1e-9,
-                        "seed {seed}: cut far from the network");
-            }
+            assert!(worst < 3.0, "seed {seed}: mouth off parent floor by {worst:.1} m");
         }
     }
 
     #[test]
-    fn valley_widths_are_not_constant() {
-        // the review rule, asserted: measure the half-width of the cut at
-        // many stations along the trunk; the spread must be real
-        let (datum, h, net) = carved(206);
-        let spec = h.spec;
-        let trunk = &net.chans[0];
-        let mut widths = Vec::new();
-        let n = trunk.pts.len();
-        for i in (6..n - 6).step_by(8) {
-            let q = trunk.pts[i];
-            let t0 = trunk.pts[i - 1];
-            let t1 = trunk.pts[i + 1];
-            let tang = Vec2::new(t1.x - t0.x, t1.y - t0.y).normalized();
-            let nrm = Vec2::new(-tang.y, tang.x);
-            // walk outward until the cut fades below 0.3 m
-            let mut wsum = 0.0;
-            for sgn in [1.0, -1.0] {
-                let mut wm = 0.0;
-                for k in 1..80 {
-                    let dd = k as f64 * 8.0;
-                    let p = Vec2::new(q.x + nrm.x * dd * sgn, q.y + nrm.y * dd * sgn);
-                    if p.x < 0.0 || p.y < 0.0 || p.x > 2999.0 || p.y > 2999.0 {
-                        break;
-                    }
-                    let x = (p.x / 8.0).round() as u32;
-                    let y = (p.y / 8.0).round() as u32;
-                    // the VALLEY proper (>1.5 m of cut), not the faint
-                    // runout apron — the apron walk saturated the 640 m
-                    // cap once depths were recalibrated, and a capped
-                    // measure reads as constant width
-                    if datum.get(x.min(spec.nx - 1), y.min(spec.ny - 1))
-                        - h.get(x.min(spec.nx - 1), y.min(spec.ny - 1)) < 1.5 {
-                        break;
-                    }
-                    wm = dd;
+    fn beds_stay_under_the_ground_they_cut() {
+        for seed in [206u64, 207] {
+            let (datum, _, bs) = graded(seed);
+            let mut worst: f64 = 0.0;
+            for (pts, b) in &bs {
+                for (i, p) in pts.iter().enumerate() {
+                    worst = worst.max(b[i] - datum.bilinear(*p));
                 }
-                wsum += wm;
             }
-            if wsum > 0.0 {
-                widths.push(wsum);
-            }
+            assert!(worst < 2.0, "seed {seed}: bed {worst:.1} m above the datum");
         }
-        assert!(widths.len() > 10, "too few stations measured");
-        let mean = widths.iter().sum::<f64>() / widths.len() as f64;
-        let var = widths.iter().map(|w| (w - mean).powi(2)).sum::<f64>() / widths.len() as f64;
-        let cv = var.sqrt() / mean;
-        assert!(cv > 0.14, "valley width nearly constant: cv {cv:.3} at mean {mean:.0} m");
     }
 }

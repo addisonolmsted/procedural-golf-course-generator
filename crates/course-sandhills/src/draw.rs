@@ -57,6 +57,7 @@ pub struct Descriptors {
     pub valley_depth_m: f64,
     pub valley_floor_m: f64,
     pub valley_wall_m: f64,
+    pub hand_resid: f64,
     pub allogenic_river: bool,
 }
 
@@ -136,6 +137,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         valley_depth_m: draw(&mut p, rec.valley_depth_m),
         valley_floor_m: draw(&mut p, rec.valley_floor_m),
         valley_wall_m: draw(&mut p, rec.valley_wall_m),
+        hand_resid: draw(&mut p, rec.hand_resid),
     }
 }
 

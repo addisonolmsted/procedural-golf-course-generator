@@ -1070,8 +1070,52 @@ def reconstruct(target, out_dir):
     return z8, z_curve, z_rec
 
 
+def export_table(out_path, thresh=1.2e4):
+    """X0d — ship the measured H(u, W) table and residual spread for the
+    Rust assembler. Text format, HTAB1: small, diffable, provenance in the
+    header. The channel threshold is part of the measurement and travels
+    with it (X0c: fine channels are what make the pattern read)."""
+    global THRESH
+    THRESH = thresh
+    tiles = kept_tiles()
+    per_tile = []
+    for t in tiles:
+        per_tile.append((t, analyze(load_z8(t))))
+        print(f"  extracted {t}", flush=True)
+    tab = hu_fit(per_tile)
+    n_w = len(W_EDGES) + 1
+    rs = np.zeros((n_w, U_BINS + 1)); rn = np.zeros_like(rs)
+    for _, A in per_tile:
+        u, W, _, _ = valley_coords(A["chan"], A["dist"])
+        r = A["hand"] - hu_eval(tab, u, W)
+        wb = np.digitize(W, W_EDGES)
+        ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+        for a in range(n_w):
+            for i in range(U_BINS + 1):
+                mm = (wb == a) & (ub == i)
+                if mm.sum() > 60:
+                    rs[a, i] += r[mm].std() * mm.sum(); rn[a, i] += mm.sum()
+    rstd = np.where(rn > 0, rs / np.maximum(rn, 1), 0.4)
+    L = ["HTAB1",
+         f"# measured HAND profile, {len(tiles)} kept {BIOME} tiles, "
+         f"corpus extraction at {CELL:.0f} m, channels acc >= {thresh:.3g} m^2",
+         "# H(u, W): u = d/(d+m) normalised valley coordinate, "
+         "W = d+m local half-width (m)",
+         f"u_bins {U_BINS}",
+         "w_centers " + " ".join(f"{c:.1f}" for c in [60, 125, 210, 330, 520])]
+    for a in range(n_w):
+        L.append("h " + " ".join(f"{v:.4f}" for v in tab[a]))
+    for a in range(n_w):
+        L.append("s " + " ".join(f"{v:.4f}" for v in rstd[a]))
+    out_path.write_text("\n".join(L) + "\n")
+    print(f"wrote {out_path.name}: {n_w} half-width bands x {U_BINS + 1} u bins")
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "build"
+    if mode == "export":
+        export_table(ROOT / "assets" / "sandhills_hand_profile.txt")
+        return
     if mode == "build":
         curve, buckets = collect(kept_tiles())
         packed, index = [], []

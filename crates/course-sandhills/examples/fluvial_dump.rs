@@ -1,18 +1,19 @@
-//! Dump C1-C5 full fluvial tiles (textured, 2 m) for the textured round.
-use course_sandhills::{build_fluvial_full, texture};
+//! Dump X1+X2 assembled fluvial tiles (8 m) for the assembled round.
+use course_sandhills::{assemble::HandProfile, build_fluvial_macro};
 use course_world::gridio;
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let out = std::path::Path::new(&a[0]);
     std::fs::create_dir_all(out).unwrap();
-    let pack = texture::PatchPack::load(std::path::Path::new(
-        "assets/sandhills_patches_fluvial.bin")).expect("fluvial pack");
+    let prof = HandProfile::load(std::path::Path::new(
+        "assets/sandhills_hand_profile.txt")).expect("hand profile");
     for s in &a[1..] {
         let seed: u64 = s.parse().unwrap();
         let id = course_seed::RunIdentity::from_seed(seed);
-        let (_, _, tex, net) = build_fluvial_full(&id, &pack);
-        gridio::write_grid_f32(&out.join(format!("full_{seed}.cgrid")), &tex).unwrap();
+        let (_, net, asm) = build_fluvial_macro(&id, &prof);
+        gridio::write_grid_f32(&out.join(format!("asm_{seed}.cgrid")), &asm.height)
+            .unwrap();
         let mut j = format!("{{\"seed\":{seed},\"chans\":[");
         for (i, c) in net.chans.iter().enumerate() {
             if i > 0 { j.push(','); }
@@ -24,7 +25,11 @@ fn main() {
             j.push_str("]}");
         }
         j.push_str("]}");
-        std::fs::write(out.join(format!("full_{seed}.json")), j).unwrap();
-        println!("seed {seed} done");
+        std::fs::write(out.join(format!("asm_{seed}.json")), j).unwrap();
+        let mut v = asm.height.data.clone();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let relief = v[(v.len() as f64 * 0.99) as usize]
+            - v[(v.len() as f64 * 0.01) as usize];
+        println!("seed {seed}: {} chans, relief {relief:.1} m", net.chans.len());
     }
 }

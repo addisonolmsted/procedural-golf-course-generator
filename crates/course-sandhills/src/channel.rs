@@ -738,12 +738,86 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 3).collect();
     tier_pass(rng, &mut net, &mut idx, datum, k_rise, &t4, &t4_targets, 4);
 
-    // NOTE (attempt-2 reset, 2026-08-28): the sub-threshold passes — side
-    // gullies and fingers — are RETIRED from the authored network. That
-    // structure now arrives DERIVED, inside the quilted HAND field: real
-    // valley-side fabric carries its own gullies and feathering, and two
-    // unaligned gully systems (authored + derived) would collide. The
-    // authored/derived boundary is the corpus extraction threshold (6e4 m²).
+    // --- SIDE GULLIES + FINGERS, RESTORED (X0c, 2026-08-25).
+    // Retired at N0 on the expectation that real HAND patches would carry
+    // the fine drainage. The patch route died at X0, and the measurement is
+    // unambiguous about what replaces it: dropping the channel threshold on
+    // a real tile restores the dendritic pattern with nothing else changed,
+    // while noise at the right amplitude never does (isotropic mottles,
+    // fall-line LIC starbursts). Fine drainage is GEOMETRY — these tiers
+    // cut the small valleys the H field hangs its profile on. Tier 5.
+    let gully = Tier {
+        spacing: (140.0 * g_mult, 220.0 * g_mult),
+        end_margin: 60.0,
+        centre_deg: 38.0,
+        tail_p: 0.10,
+        // hold most of the walk: a gully released to the uphill blend on a
+        // steep wall curls into a banana — real rim swales run straight up
+        // the fall line
+        hold_m: (170.0, 110.0),
+        swing: 0.09,
+        lam: (150.0, 300.0),
+        claim: 80.0,
+        min_len: 45.0,
+        max_len: 260.0,
+        step: 12.0,
+        min_gain: 0.008,
+        wander: 0.10,
+    };
+    let gully_targets: Vec<u32> = (0..net.chans.len() as u32)
+        .filter(|c| net.chans[*c as usize].tier <= 2)
+        .collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &gully, &gully_targets, 5);
+
+    // FINGERS: short head-water nicks on the head-ward quarter of every
+    // tier-2/3 channel, where the ordinary end margin leaves tips bare.
+    let finger = Tier {
+        spacing: (110.0 * g_mult, 170.0 * g_mult),
+        end_margin: 24.0,
+        centre_deg: 41.0,
+        tail_p: 0.10,
+        hold_m: (70.0, 40.0),
+        swing: 0.09,
+        lam: (150.0, 300.0),
+        claim: 80.0,
+        min_len: 50.0,
+        max_len: 210.0,
+        step: 12.0,
+        min_gain: 0.008,
+        wander: 0.10,
+    };
+    let tips: Vec<u32> = (0..net.chans.len() as u32)
+        .filter(|c| {
+            let t = net.chans[*c as usize].tier;
+            t == 2 || t == 3
+        })
+        .collect();
+    for cid in tips {
+        let sites = {
+            let c = &net.chans[cid as usize];
+            let mut arcs: Vec<f64> = vec![0.0];
+            for w in c.pts.windows(2) {
+                arcs.push(arcs.last().unwrap() + w[0].distance(w[1]));
+            }
+            let total = *arcs.last().unwrap();
+            let mut out = Vec::new();
+            let mut a = (0.70 * total).max(finger.end_margin);
+            while a < total - finger.end_margin {
+                out.push(arcs.partition_point(|x| *x < a).min(c.pts.len() - 1));
+                a += rng.range_f64(finger.spacing.0, finger.spacing.1);
+            }
+            out
+        };
+        for at in sites {
+            let field = Field { idx: &idx, datum, k_rise, w_d6: 1.0 };
+            if let Ok((pts, z, _)) = climb(rng, &net, cid, at, &field, &finger) {
+                let sys = net.chans[cid as usize].sys;
+                let c = Channel { pts, z, tier: 5, parent: Some(cid), sys };
+                idx.add_channel(&c, net.chans.len() as u32);
+                net.chans.push(c);
+            }
+        }
+    }
 
     // --- EDGE FRAGMENTS (review 2026-08-24): with quarter-tile tribs a
     // single trunk covers only its own band — density fell to 1.4-1.9 and
@@ -1183,18 +1257,21 @@ mod tests {
             let dens = density_km_km2(&net);
             // planned-line density counts gullies/fingers BELOW the corpus
             // extraction threshold; the corpus-comparable number is the D8
-            // density on the carved tile (valley_compare), which runs lower
-            // this is PLANNED-LINE length including sub-threshold gullies
-            // and fingers — a texture accounting, not the corpus metric.
-            // The band is a runaway/collapse backstop; the corpus-comparable
-            // number is the D8-extracted density on the carved tile.
-            assert!(dens > 1.5 && dens < 3.3, "seed {seed}: density {dens:.2}");
+            // PLANNED-LINE length at the FINE accounting: tier-5 gullies
+            // and fingers sit below the corpus extraction threshold, so
+            // this is not the corpus 2.33 — real tiles measured at the
+            // same fine threshold (1.2e4) carry ~5.4 km/km². The band is a
+            // runaway/collapse backstop; the corpus-comparable number is
+            // the D8-extracted density on the ASSEMBLED surface.
+            assert!(dens > 2.0 && dens < 4.6, "seed {seed}: density {dens:.2}");
             pool.push(dens);
         }
         let mean = pool.iter().sum::<f64>() / pool.len() as f64;
-        // N0 (2026-08-28): sub-threshold passes retired; planned-line
-        // density of tiers 1-4 aims at the corpus 2.33
-        assert!(mean > 1.9 && mean < 2.9, "pooled density {mean:.2}");
+        // X1 (2026-08-25): fine tiers restored, so planned-line density is
+        // the FINE accounting — real tiles measured at the same fine
+        // threshold (1.2e4) carry ~5.4 km/km²; the corpus 2.33 is the
+        // coarse-threshold number and is checked on the assembled surface.
+        assert!(mean > 2.4 && mean < 4.2, "pooled density {mean:.2}");
     }
 
     #[test]

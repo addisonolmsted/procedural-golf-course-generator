@@ -266,6 +266,10 @@ pub struct Record {
     /// Concave wall run unit at Hack 1, metres per side. `measured`: the
     /// HAND<5 valley zone spans 276-588 m on the real trunks.
     pub valley_wall_m: Range,
+    /// Residual amplitude against the measured per-(u,W) spread.
+    /// `measured 2026-08-25` (leave-one-out): 0.45-0.6 lands the assembled
+    /// open-ground curvature at 0.86-1.07x the real tiles'.
+    pub hand_resid: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -385,6 +389,7 @@ pub const SANDHILLS: Record = Record {
     valley_depth_m: Range::new(6.6, 9.8),    // measured; rebalanced for the 0.55 hack exponent
     valley_floor_m: Range::new(20.0, 36.0),  // measured + review 2026-08-26 (wider still)
     valley_wall_m: Range::new(84.0, 130.0),  // measured + review 2026-08-26 (wider still)
+    hand_resid: Range::new(0.42, 0.62),      // measured (leave-one-out)
     p_allogenic_river: 0.30,                 // literature
 };
 

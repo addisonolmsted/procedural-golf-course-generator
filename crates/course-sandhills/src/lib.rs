@@ -25,6 +25,7 @@
 //! be added to the allowlist in `docs/sandhills/README.md` §3 first, then
 //! COPIED with a provenance comment naming its source commit.
 
+pub mod assemble;
 pub mod blowout;
 pub mod carve;
 pub mod channel;
@@ -41,6 +42,8 @@ use course_seed::RunIdentity;
 use course_world::grid::Grid;
 
 pub use draw::Descriptors;
+pub use mode::Mode;
+pub use record::FormClass;
 
 /// C1 + C2 of the fluvial mode: the sand-cap datum and the dendritic network
 /// grown on it — everything the NETWORK VIEWER round reviews, and nothing
@@ -55,151 +58,6 @@ pub fn build_fluvial_skeleton(id: &RunIdentity)
     (d, datum, net)
 }
 
-/// C1–C5: the full fluvial surface — datum, network, carve, relict mantle,
-/// grain-aligned texture. Water and bays are later stages.
-pub fn build_fluvial_full(id: &RunIdentity, pack: &texture::PatchPack)
-    -> (Descriptors, Grid<f64>, Grid<f64>, channel::Network) {
-    let d = draw::site(id, Some(Mode::Fluvial), None);
-    let mut dr = rng::stream(id, rng::DATUM);
-    let datum = channel::datum(&mut dr, &d);
-    let mut cr = rng::stream(id, rng::CHANNEL);
-    let net = channel::grow(&mut cr, &datum, &d);
-    let mut height = datum.clone();
-    carve::carve(&mut cr, &mut height, &net, &datum, &d);
-
-    // channel proximity + grain fields at 8 m: distance via chamfer over the
-    // resampled network, tangent = the perpendicular of the smoothed
-    // distance-field gradient (the SAME derivation the patch pack used on
-    // the real tiles — symmetry is the point)
-    let spec8 = height.spec;
-    let big = 1e18f64;
-    let mut dist = vec![big; spec8.len()];
-    for c in &net.chans {
-        for w in c.pts.windows(2) {
-            let seg = w[0].distance(w[1]);
-            let n = (seg / 6.0).ceil() as usize;
-            for k in 0..=n {
-                let t = k as f64 / n.max(1) as f64;
-                let px = w[0].x + (w[1].x - w[0].x) * t;
-                let py = w[0].y + (w[1].y - w[0].y) * t;
-                let x = (px / 8.0).round().clamp(0.0, (spec8.nx - 1) as f64) as u32;
-                let y = (py / 8.0).round().clamp(0.0, (spec8.ny - 1) as f64) as u32;
-                dist[spec8.index(x, y)] = 0.0;
-            }
-        }
-    }
-    let (orth, diag) = (8.0, 8.0 * std::f64::consts::SQRT_2);
-    for pass in 0..2 {
-        let (ys, xs): (Vec<u32>, Vec<u32>) = if pass == 0 {
-            ((0..spec8.ny).collect(), (0..spec8.nx).collect())
-        } else {
-            ((0..spec8.ny).rev().collect(), (0..spec8.nx).rev().collect())
-        };
-        for &y in &ys {
-            for &x in &xs {
-                let i = spec8.index(x, y);
-                for (dx, dy, w) in [(-1i64, 0i64, orth), (0, -1, orth), (-1, -1, diag),
-                                    (1, -1, diag), (1, 0, orth), (0, 1, orth),
-                                    (1, 1, diag), (-1, 1, diag)] {
-                    let (px, py) = (x as i64 + dx, y as i64 + dy);
-                    if px >= 0 && px < spec8.nx as i64 && py >= 0 && py < spec8.ny as i64 {
-                        let v = dist[spec8.index(px as u32, py as u32)] + w;
-                        if v < dist[i] {
-                            dist[i] = v;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // smooth the distance field, then grain = perp of its gradient
-    let mut dsm = Grid::filled(spec8, 0.0f64);
-    dsm.data.copy_from_slice(&dist);
-    for _ in 0..4 {
-        let src = dsm.data.clone();
-        for y in 1..spec8.ny - 1 {
-            for x in 1..spec8.nx - 1 {
-                let i = spec8.index(x, y);
-                dsm.data[i] = 0.2 * src[i]
-                    + 0.2 * (src[spec8.index(x - 1, y)] + src[spec8.index(x + 1, y)]
-                        + src[spec8.index(x, y - 1)] + src[spec8.index(x, y + 1)]);
-            }
-        }
-    }
-    let mut grain = Grid::filled(spec8, 0.0f64);
-    let mut prox = Grid::filled(spec8, 0.0f64);
-    for y in 0..spec8.ny {
-        for x in 0..spec8.nx {
-            let i = spec8.index(x, y);
-            let (xm, xp) = (x.saturating_sub(1), (x + 1).min(spec8.nx - 1));
-            let (ym, yp) = (y.saturating_sub(1), (y + 1).min(spec8.ny - 1));
-            let gx = (dsm.get(xp, y) - dsm.get(xm, y)) / 16.0;
-            let gy = (dsm.get(x, yp) - dsm.get(x, ym)) / 16.0;
-            grain.data[i] = course_world::math::atan2(gx, -gy);
-            prox.data[i] = course_world::math::smoothstep(320.0, 60.0, dist[i]);
-        }
-    }
-
-    // C4: the relict mantle on the interfluves — the aeolian hummock
-    // machinery at low relief, gated AWAY from the valley zone
-    let mut wr = rng::stream(id, rng::WIND);
-    // κ clamped LOW: a relict, degraded mantle is isotropic mounds — a
-    // train-class draw printed coherent wave trains across the interfluves
-    // (seed 104 render), which is live aeolian fabric, not a relict one.
-    let hw = wind::build(&mut wr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
-                         d.wind_wander_m * 0.45, d.hummock_kappa.min(0.7),
-                         d.hummock_spread.max(0.5));
-    let hf = surface::hummock_field(&hw);
-    // CALM (review 2026-08-27: real interfluves are matte fine grain; the
-    // full-strength mantle printed vermiculate swirls): low relief, and
-    // gated by a two-octave patchiness field so mound fields survive in
-    // PATCHES on an otherwise quiet upland — how relict topography ages.
-    let mantle_relief = (d.hummock_relief_m * 0.28).min(1.2);
-    let sp1 = wr.next_u32();
-    let sp2 = wr.next_u32();
-    for y in 0..spec8.ny {
-        for x in 0..spec8.nx {
-            let i = spec8.index(x, y);
-            let p = spec8.world_of(x, y);
-            let sup = 0.5
-                + 0.5
-                    * (course_world::noise::perlin2(p.x / 900.0, p.y / 900.0, sp1)
-                        + 0.5 * course_world::noise::perlin2(p.x / 380.0, p.y / 380.0, sp2));
-            let patch = course_world::math::smoothstep(0.35, 0.75, sup);
-            let upland = 1.0 - prox.data[i];
-            height.data[i] += mantle_relief * upland * patch * hf.data[i];
-        }
-    }
-
-    // C5: the grain-aligned texture. Gain trimmed against the measured NC
-    // fine band (real fine_std 0.317-0.405 across 8 tiles; the aeolian gain
-    // draw ran ours to 0.40-0.49).
-    let mut tr = rng::stream(id, rng::TEXTURE);
-    let mut dt = d.clone();
-    dt.texture_gain = d.texture_gain * 0.72;
-    let tex = texture::quilt_fluvial(&mut tr, pack, &height, &grain, &prox, &dt);
-    (d, datum, tex, net)
-}
-
-/// C1–C3: the skeleton plus the valley carve, at 8 m. What the CARVED
-/// review round judges; later stages (mantle, texture, bays, water) build
-/// on this. The carve draws continue on the channel stream, so a seed's
-/// network is byte-identical with and without carving.
-pub fn build_fluvial_carved(id: &RunIdentity)
-    -> (Descriptors, Grid<f64>, Grid<f64>, channel::Network) {
-    let d = draw::site(id, Some(Mode::Fluvial), None);
-    let mut dr = rng::stream(id, rng::DATUM);
-    let datum = channel::datum(&mut dr, &d);
-    let mut cr = rng::stream(id, rng::CHANNEL);
-    let net = channel::grow(&mut cr, &datum, &d);
-    let mut height = datum.clone();
-    carve::carve(&mut cr, &mut height, &net, &datum, &d);
-    (d, datum, height, net)
-}
-
-pub use mode::Mode;
-pub use record::FormClass;
-
 /// The finished aeolian tile: the full A0–A6 pipeline for one seed.
 pub struct Tile {
     pub d: Descriptors,
@@ -210,6 +68,33 @@ pub struct Tile {
     pub lake_frac: f64,
     pub blowouts: Vec<blowout::Blowout>,
     pub river: Option<Vec<course_world::math::Vec2>>,
+}
+
+/// X1+X2 — the fluvial surface at 8 m: network, graded beds, and the
+/// measured HAND profile assembled over them. This is the whole macro
+/// stage; the 2 m texture rides on top.
+pub fn build_fluvial_macro(id: &RunIdentity, prof: &assemble::HandProfile)
+    -> (Descriptors, channel::Network, assemble::Assembled) {
+    let d = draw::site(id, Some(Mode::Fluvial), None);
+    let mut dr = rng::stream(id, rng::DATUM);
+    let datum = channel::datum(&mut dr, &d);
+    let mut cr = rng::stream(id, rng::CHANNEL);
+    let net = channel::grow(&mut cr, &datum, &d);
+    let mut beds = carve::beds(&mut cr, &net, &datum, &d);
+    let mut ar = rng::stream(id, rng::HAND);
+    // pass 1: the trunk-and-tributary skeleton defines the valley floors
+    let main: Vec<(Vec<course_world::math::Vec2>, Vec<f64>)> = beds
+        .iter()
+        .zip(net.chans.iter())
+        .filter(|(_, c)| c.tier < 4)
+        .map(|(b, _)| b.clone())
+        .collect();
+    let first = assemble::assemble(&mut ar, &main, prof, &d);
+    // pass 2: hanging gullies re-based onto that ground, then everything
+    carve::rebase_hanging(&mut beds, &net, &first.height);
+    let mut ar2 = rng::stream(id, rng::HAND);
+    let asm = assemble::assemble(&mut ar2, &beds, prof, &d);
+    (d, net, asm)
 }
 
 /// Run the whole aeolian pipeline. Stage order is load-bearing:
