@@ -275,24 +275,47 @@ fn resample(pts: &[Vec2], step: f64) -> (Vec<Vec2>, Vec<usize>) {
 pub fn rebase_hanging(beds: &mut [(Vec<Vec2>, Vec<f64>)], net: &Network,
                       surface: &Grid<f64>) {
     for (ci, c) in net.chans.iter().enumerate() {
-        if c.tier < 4 {
-            continue;
-        }
         let (pts, bed) = &mut beds[ci];
         let n = pts.len();
         if n < 2 {
             continue;
         }
-        // a swale is a shallow incision into the ground it crosses
-        let cut = 0.7 + 0.5 * ((c.tier as f64) - 4.0).max(0.0);
-        let mut arc = 0.0;
-        for i in 0..n {
-            if i > 0 {
-                arc += pts[i - 1].distance(pts[i]);
+        if c.tier >= 4 {
+            // a swale is a shallow incision into the ground it crosses
+            let cut = 0.7 + 0.5 * ((c.tier as f64) - 4.0).max(0.0);
+            let mut arc = 0.0;
+            for i in 0..n {
+                if i > 0 {
+                    arc += pts[i - 1].distance(pts[i]);
+                }
+                let g = surface.bilinear(pts[i]);
+                let want = g - cut * (1.0 - 0.5 * (arc / 260.0).min(1.0));
+                bed[i] = if i == 0 { want } else { want.max(bed[i - 1] + 0.002) };
             }
+            continue;
+        }
+        // THE DEPTH CAP for the graded tiers. Their beds are cut against the
+        // routing datum, which is NOT the ground the tile ends up with, so
+        // wherever the assembled surface rose above the datum a bed was left
+        // far beneath it and its HEAD printed a deep conical pit — measured,
+        // 36 of a tile's 40 sharpest cells sat within 40 m of a channel
+        // head. Valley DEPTH is the H profile's job; a bed only has to be
+        // the local low, so none may sit more than `cut` under its ground.
+        let cut = match c.tier {
+            1 => 3.2,
+            2 => 2.4,
+            _ => 1.7,
+        };
+        for i in 0..n {
             let g = surface.bilinear(pts[i]);
-            let want = g - cut * (1.0 - 0.5 * (arc / 260.0).min(1.0));
-            bed[i] = if i == 0 { want } else { want.max(bed[i - 1] + 0.002) };
+            if bed[i] < g - cut {
+                bed[i] = g - cut;
+            }
+        }
+        // raising a bed can break the upstream-rising invariant
+        for i in 1..n {
+            let ds = pts[i - 1].distance(pts[i]);
+            bed[i] = bed[i].max(bed[i - 1] + 0.0004 * ds);
         }
     }
 }

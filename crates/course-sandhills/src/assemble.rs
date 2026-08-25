@@ -188,13 +188,25 @@ fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
 
 /// Assemble the 8 m surface from the network and its beds.
 pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
-                prof: &HandProfile, d: &Descriptors) -> Assembled {
+                tiers: &[u8], prof: &HandProfile, d: &Descriptors) -> Assembled {
     let spec = macro_spec();
 
     // --- rasterise channels: nearest-cell bed value ------------------------
+    // TWO seed sets. Every channel point seeds the DISTANCE field — that
+    // is what cuts valleys. Only the interior of a channel seeds the BED
+    // field: a tip pinned to its own bed while its neighbours relax is a
+    // point constraint with support on one side, and it stands as a spike
+    // (measured, the sharpest cells on a tile clustered within 40 m of
+    // channel heads; a row of them read as dark notches along a rim).
+    // Fine channels are the worst offenders and get the widest exclusion,
+    // since their beds are the least consistent with their surroundings.
     let mut seed: Vec<(u32, u32, f64)> = Vec::new();
+    let mut bed_seed: Vec<(u32, u32, f64)> = Vec::new();
     let mut chan = vec![false; spec.len()];
-    for (pts, bed) in beds.iter() {
+    for (ci, (pts, bed)) in beds.iter().enumerate() {
+        let tier = tiers.get(ci).copied().unwrap_or(1);
+        let skip = if tier >= 4 { 4 } else { 2 };
+        let last = pts.len().saturating_sub(1);
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
             let seg = a.distance(b);
@@ -206,13 +218,20 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
                 let y = (p.y / CELL).round().clamp(0.0, (spec.ny - 1) as f64) as u32;
                 let z = bed[k] + (bed[k + 1] - bed[k]) * t;
                 seed.push((x, y, z));
+                if k >= skip && k + skip <= last {
+                    bed_seed.push((x, y, z));
+                }
                 chan[spec.index(x, y)] = true;
             }
         }
     }
+    if bed_seed.is_empty() {
+        bed_seed = seed.clone();
+    }
 
     // --- distance + bed ----------------------------------------------------
-    let (dist, bed_near) = chamfer(spec, &seed);
+    let (dist, _) = chamfer(spec, &seed);
+    let (_, bed_near) = chamfer(spec, &bed_seed);
 
     // B: nearest-channel bed, then relaxed with the channels re-anchored
     // every pass. Enough passes (48 ≈ 55 m of spread) to dissolve the
@@ -227,10 +246,19 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     let mut bedf = bed_near.clone();
     for _ in 0..48 {
         blur(spec, &mut bedf, 1);
-        for &(x, y, z) in &seed {
-            bedf[spec.index(x, y)] = z;   // channels hold their own bed
+        for &(x, y, z) in &bed_seed {
+            bedf[spec.index(x, y)] = z;   // channel interiors hold their bed
         }
     }
+    // Release the pin. Re-anchoring on the last pass leaves every channel
+    // cell at exactly its bed while its neighbours sit where diffusion put
+    // them, so any bed out of line with its surroundings — a head, above
+    // all, which has neighbours on one side only — stands as a spike. That
+    // is the singularity: measured, 36 of a tile's 40 sharpest cells lay
+    // within 40 m of a channel head, ON the channel, and neither the bed
+    // depth cap nor smoothing H moved them. Two free passes let the pinned
+    // values settle into their own field.
+    blur(spec, &mut bedf, 2);
 
     // --- the divide field and the valley coordinate ------------------------
     // medial axis = where the distance field's gradient collapses
@@ -272,12 +300,25 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // --- H + residual ------------------------------------------------------
     let (s1, s2, s3) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
     let rk = d.hand_resid;
+
+    // H as a field, so its CONE APEXES can be rounded. A channel ENDPOINT
+    // is a point source in the distance field: u rises radially around it,
+    // so H forms a cone whose tip is a gradient singularity. Measured, 36
+    // of a tile's 40 sharpest cells sat within 40 m of a channel head. Two
+    // blur passes round the tips; the valley floors, being lines rather
+    // than points, are barely touched.
+    let mut hf = vec![0.0f64; spec.len()];
+    for i in 0..spec.len() {
+        hf[i] = prof.height(u[i], w[i]);
+    }
+    blur(spec, &mut hf, 2);
+
     let mut height = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
             let p = spec.world_of(x, y);
-            let h = prof.height(u[i], w[i]);
+            let h = hf[i];
             // walls carry the roughness; floors and interfluve tops are calm
             let wall = math::exp(-((u[i] - 0.55) / 0.30).powi(2));
             // taper to nothing at the water line: forcing height = bed on
@@ -335,7 +376,8 @@ mod tests {
                 "assets/sandhills_hand_profile.txt")))
             .expect("hand profile");
         let mut ar = crate::rng::stream(&id, crate::rng::HAND);
-        assemble(&mut ar, &beds, &prof, &d)
+        let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
+        assemble(&mut ar, &beds, &tiers, &prof, &d)
     }
 
     #[test]
@@ -359,23 +401,31 @@ mod tests {
     }
 
     #[test]
-    fn hand_is_zero_on_the_channels() {
-        // the surface must touch its own beds: the whole system reads as
-        // the tile's low ground, which is what the real tiles do
+    fn the_channels_are_the_low_ground() {
+        // The invariant that matters, and the one the whole representation
+        // exists to produce: ground ON the network sits well below ground
+        // out on the interfluves. It is NOT "every channel cell equals its
+        // bed" — channel TIPS are deliberately left unpinned, because a
+        // point constraint with support on one side stands as a spike (the
+        // singularities: the sharpest cells on a tile clustered within
+        // 40 m of channel heads).
         for seed in [301u64, 302] {
             let a = build(seed);
-            let mut worst: f64 = 0.0;
+            let (mut near, mut nn) = (0.0f64, 0usize);
+            let (mut far, mut fnn) = (0.0f64, 0usize);
             for i in 0..a.height.data.len() {
-                if a.dist.data[i] < 1e-9 {
-                    worst = worst.max(a.height.data[i] - a.bed.data[i]);
+                let d = a.dist.data[i];
+                if d < 8.0 {
+                    near += a.height.data[i];
+                    nn += 1;
+                } else if (80.0..160.0).contains(&d) {
+                    far += a.height.data[i];
+                    fnn += 1;
                 }
             }
-            // The surface is NOT clamped to the bed at channel cells — that
-            // cut a one-cell knife trench down every fine gully. It may sit
-            // a little above, from the residual taper and from the cell
-            // centre not lying exactly on the line; a metre would mean the
-            // channels had stopped being the low ground.
-            assert!(worst < 0.25, "seed {seed}: channel cells sit {worst:.2} m above bed");
+            assert!(nn > 100 && fnn > 100, "seed {seed}: too few samples");
+            let drop = far / fnn as f64 - near / nn as f64;
+            assert!(drop > 1.5, "seed {seed}: interfluves only {drop:.2} m above the channels");
         }
     }
 

@@ -859,7 +859,10 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         let mut t = tier3(d.attach_m);
         t.max_len = 1400.0;
         t.min_len = 50.0;
-        t.claim = 45.0;
+        // 45 m let coverage walks run within ~56 m of a much deeper
+        // channel, and the bed mismatch across that gap printed as a dark
+        // point artifact; 68 keeps fine channels in their own ground
+        t.claim = 68.0;
         t.min_gain = 0.006;
         let mut fails = 0;
         let mut n_cover = 0;

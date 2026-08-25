@@ -89,11 +89,14 @@ pub fn build_fluvial_macro(id: &RunIdentity, prof: &assemble::HandProfile)
         .filter(|(_, c)| c.tier < 4)
         .map(|(b, _)| b.clone())
         .collect();
-    let first = assemble::assemble(&mut ar, &main, prof, &d);
+    let main_tiers: Vec<u8> = net.chans.iter().filter(|c| c.tier < 4)
+        .map(|c| c.tier).collect();
+    let first = assemble::assemble(&mut ar, &main, &main_tiers, prof, &d);
     // pass 2: hanging gullies re-based onto that ground, then everything
     carve::rebase_hanging(&mut beds, &net, &first.height);
     let mut ar2 = rng::stream(id, rng::HAND);
-    let asm = assemble::assemble(&mut ar2, &beds, prof, &d);
+    let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
+    let asm = assemble::assemble(&mut ar2, &beds, &tiers, prof, &d);
     (d, net, asm)
 }
 
