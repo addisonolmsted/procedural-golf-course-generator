@@ -169,18 +169,69 @@ fn chamfer(spec: course_world::grid::GridSpec, seed: &[(u32, u32, f64)])
     (d, v)
 }
 
+/// Five-point relaxation with EDGE REPLICATION.
+///
+/// The first version skipped the border ring (`1..ny-1`), so the outermost
+/// row and column never relaxed at all: they kept raw nearest-cell values
+/// while everything inside smoothed, and the mismatch printed as artifacts
+/// right around the tile rim. Every field here — bed, distance, u, w, H —
+/// runs through this, so the bug reached all of them.
 fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     for _ in 0..passes {
         let src = a.clone();
-        for y in 1..spec.ny - 1 {
-            for x in 1..spec.nx - 1 {
-                let i = spec.index(x, y);
-                a[i] = 0.2
-                    * (src[i]
-                        + src[spec.index(x - 1, y)]
-                        + src[spec.index(x + 1, y)]
-                        + src[spec.index(x, y - 1)]
-                        + src[spec.index(x, y + 1)]);
+        for y in 0..ny {
+            for x in 0..nx {
+                let at = |dx: i64, dy: i64| -> f64 {
+                    let px = (x + dx).clamp(0, nx - 1) as u32;
+                    let py = (y + dy).clamp(0, ny - 1) as u32;
+                    src[spec.index(px, py)]
+                };
+                a[spec.index(x as u32, y as u32)] =
+                    0.2 * (at(0, 0) + at(-1, 0) + at(1, 0) + at(0, -1) + at(0, 1));
+            }
+        }
+    }
+}
+
+/// Limit the bed field's slope (a Lipschitz filter, swept like a chamfer).
+///
+/// B is the envelope of the valley FLOORS. Two floors 40 m apart cannot
+/// differ by 20 m — that is a 60% grade, and no sand landscape holds it.
+/// It happened anyway wherever a fine channel was graded beside a much
+/// deeper one, and the step printed as a hard point artifact that survived
+/// every earlier fix, because the fixes addressed how B is interpolated
+/// rather than what it was interpolating BETWEEN. Capping the gradient
+/// removes the whole class at once, and it is loose enough (22%) that no
+/// real cross-valley bed gradient is touched.
+fn slope_limit(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, max_grade: f64) {
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let (o, dg) = (max_grade * CELL, max_grade * CELL * std::f64::consts::SQRT_2);
+    for _ in 0..2 {
+        for pass in 0..2 {
+            let ys: Vec<i64> = if pass == 0 { (0..ny).collect() } else { (0..ny).rev().collect() };
+            for &y in &ys {
+                let xs: Vec<i64> = if pass == 0 { (0..nx).collect() } else { (0..nx).rev().collect() };
+                for &x in &xs {
+                    let i = spec.index(x as u32, y as u32);
+                    let nb: [(i64, i64, f64); 4] = if pass == 0 {
+                        [(-1, 0, o), (0, -1, o), (-1, -1, dg), (1, -1, dg)]
+                    } else {
+                        [(1, 0, o), (0, 1, o), (1, 1, dg), (-1, 1, dg)]
+                    };
+                    for (dx, dy, lim) in nb {
+                        let (px, py) = (x + dx, y + dy);
+                        if px < 0 || py < 0 || px >= nx || py >= ny {
+                            continue;
+                        }
+                        let j = spec.index(px as u32, py as u32);
+                        if a[i] > a[j] + lim {
+                            a[i] = a[j] + lim;
+                        } else if a[i] < a[j] - lim {
+                            a[i] = a[j] - lim;
+                        }
+                    }
+                }
             }
         }
     }
@@ -258,6 +309,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // within 40 m of a channel head, ON the channel, and neither the bed
     // depth cap nor smoothing H moved them. Two free passes let the pinned
     // values settle into their own field.
+    slope_limit(spec, &mut bedf, 0.22);
     blur(spec, &mut bedf, 2);
 
     // --- the divide field and the valley coordinate ------------------------
@@ -265,12 +317,17 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     let mut dsm = dist.clone();
     blur(spec, &mut dsm, 8);
     let mut med: Vec<(u32, u32, f64)> = Vec::new();
-    for y in 1..spec.ny - 1 {
-        for x in 1..spec.nx - 1 {
-            let gx = (dsm[spec.index(x + 1, y)] - dsm[spec.index(x - 1, y)]) / (2.0 * CELL);
-            let gy = (dsm[spec.index(x, y + 1)] - dsm[spec.index(x, y - 1)]) / (2.0 * CELL);
-            if (gx * gx + gy * gy).sqrt() < 0.6 && dist[spec.index(x, y)] > 24.0 {
-                med.push((x, y, 0.0));
+    let gat = |dsm: &Vec<f64>, x: i64, y: i64| -> f64 {
+        dsm[spec.index(x.clamp(0, spec.nx as i64 - 1) as u32,
+                       y.clamp(0, spec.ny as i64 - 1) as u32)]
+    };
+    for y in 0..spec.ny as i64 {
+        for x in 0..spec.nx as i64 {
+            let gx = (gat(&dsm, x + 1, y) - gat(&dsm, x - 1, y)) / (2.0 * CELL);
+            let gy = (gat(&dsm, x, y + 1) - gat(&dsm, x, y - 1)) / (2.0 * CELL);
+            if (gx * gx + gy * gy).sqrt() < 0.6
+                && dist[spec.index(x as u32, y as u32)] > 24.0 {
+                med.push((x as u32, y as u32, 0.0));
             }
         }
     }
