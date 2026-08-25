@@ -103,8 +103,15 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
             }
         }
     }
-    let mut grain = Grid::filled(spec, 0.0f64);
-    let mut gate = Grid::filled(spec, 0.0f64);
+    // The grain is an AXIS, not a direction, and it must be smoothed as
+    // one. Taken raw, the distance gradient reverses across every divide —
+    // it points away from whichever channel happens to be nearest — so
+    // neighbouring patches on a ridge were pasted at alternating
+    // orientations, which is what read as a regular herringbone. Averaging
+    // the DOUBLED angle (cos 2t, sin 2t) treats t and t+180 as the same
+    // axis, so the field varies slowly and the flip disappears.
+    let mut c2 = vec![0.0f64; spec.len()];
+    let mut s2 = vec![0.0f64; spec.len()];
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
@@ -112,12 +119,31 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
             let (ym, yp) = (y.saturating_sub(1), (y + 1).min(spec.ny - 1));
             let gx = (dsm[spec.index(xp, y)] - dsm[spec.index(xm, y)]) / 16.0;
             let gy = (dsm[spec.index(x, yp)] - dsm[spec.index(x, ym)]) / 16.0;
-            grain.data[i] = course_world::math::atan2(gx, -gy);
-            // Valley sides carry the most fabric, interfluve tops the least
-            // — but nothing is ever bare: `texture_floor` holds the base
-            // everywhere and this gate only adds on top of it.
-            gate.data[i] = (1.0 - 0.55 * asm.u.data[i]).clamp(0.0, 1.0);
+            let t = 2.0 * course_world::math::atan2(gx, -gy);
+            c2[i] = course_world::math::cos(t);
+            s2[i] = course_world::math::sin(t);
         }
+    }
+    for _ in 0..10 {
+        for f in [&mut c2, &mut s2] {
+            let src = f.clone();
+            for y in 0..spec.ny as i64 {
+                for x in 0..spec.nx as i64 {
+                    let at = |dx: i64, dy: i64| {
+                        src[spec.index((x + dx).clamp(0, spec.nx as i64 - 1) as u32,
+                                       (y + dy).clamp(0, spec.ny as i64 - 1) as u32)]
+                    };
+                    f[spec.index(x as u32, y as u32)] =
+                        0.2 * (at(0, 0) + at(-1, 0) + at(1, 0) + at(0, -1) + at(0, 1));
+                }
+            }
+        }
+    }
+    let mut grain = Grid::filled(spec, 0.0f64);
+    let mut gate = Grid::filled(spec, 0.0f64);
+    for i in 0..spec.len() {
+        grain.data[i] = 0.5 * course_world::math::atan2(s2[i], c2[i]);
+        gate.data[i] = (1.0 - 0.55 * asm.u.data[i]).clamp(0.0, 1.0);
     }
 
     let mut tr = rng::stream(id, rng::TEXTURE);

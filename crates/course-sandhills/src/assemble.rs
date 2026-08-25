@@ -424,6 +424,23 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // (render, seeds 104/109). Small channels are wider than they are deep
     // and must be allowed to read that way.
 
+    // SHARPEN THE VALLEYS. The H table is a MEDIAN over 30 tiles, and a
+    // median of cross-sections is gentler than any of them: the shoulder
+    // survives (that is what the u coordinate bought) but the whole
+    // profile is softened. Measured, the assembled surface carried peak
+    // curvature 0.57-1.11 against real tiles' 1.15-1.84, and adding
+    // texture only made it fuzzier — 2 m grain cannot sharpen a 100 m
+    // landform. An unsharp pass at VALLEY scale restores the edge, applied
+    // to the landform before texture, where it belongs.
+    let sharp = d.valley_sharp;
+    if sharp > 0.0 {
+        let mut lp = height.data.clone();
+        blur(spec, &mut lp, 9);                   // ~ 40 m lowpass
+        for i in 0..spec.len() {
+            height.data[i] += sharp * (height.data[i] - lp[i]);
+        }
+    }
+
     let mut g_dist = Grid::filled(spec, 0.0f64);
     let mut g_u = Grid::filled(spec, 0.0f64);
     let mut g_w = Grid::filled(spec, 0.0f64);

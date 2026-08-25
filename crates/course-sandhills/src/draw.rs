@@ -60,6 +60,7 @@ pub struct Descriptors {
     pub hand_resid: f64,
     pub fluvial_tex_k: f64,
     pub tex_patchy: f64,
+    pub valley_sharp: f64,
     pub allogenic_river: bool,
 }
 
@@ -142,6 +143,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         hand_resid: draw(&mut p, rec.hand_resid),
         fluvial_tex_k: draw(&mut p, rec.fluvial_tex_k),
         tex_patchy: draw(&mut p, rec.tex_patchy),
+        valley_sharp: draw(&mut p, rec.valley_sharp),
     }
 }
 
