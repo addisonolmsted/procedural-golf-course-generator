@@ -123,7 +123,14 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     let mut tr = rng::stream(id, rng::TEXTURE);
     let mut dt = d.clone();
     dt.texture_gain = d.texture_gain * d.fluvial_tex_k;
-    let tex = texture::quilt_fluvial(&mut tr, pack, &asm.height, &grain, &gate, &dt);
+    let tex = match texture::TexProfile::load(std::path::Path::new(
+        "assets/sandhills_texture_profile.txt")) {
+        Ok(tp) => texture::quilt_fluvial_v2(&mut tr, pack, &asm.height, &grain,
+                                            &asm.u, &tp, &dt),
+        Err(_) => texture::quilt_fluvial(&mut tr, pack, &asm.height, &grain,
+                                         &gate, &dt),
+    };
+    let _ = &gate;
     (d, net, asm, tex)
 }
 

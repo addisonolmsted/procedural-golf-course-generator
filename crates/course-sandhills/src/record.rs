@@ -274,6 +274,10 @@ pub struct Record {
     /// draw. `measured 2026-08-25`: calibrated so the finished tile's
     /// sub-64 m band matches the real NC tiles (fine_std 0.317-0.405).
     pub fluvial_tex_k: Range,
+    /// Texture patchiness: how much local roughness varies across a tile.
+    /// `measured 2026-08-25`: real tiles' local roughness has a coefficient
+    /// of variation of 0.55; a flat paste gives 0.20.
+    pub tex_patchy: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -394,7 +398,8 @@ pub const SANDHILLS: Record = Record {
     valley_floor_m: Range::new(20.0, 36.0),  // measured + review 2026-08-26 (wider still)
     valley_wall_m: Range::new(84.0, 130.0),  // measured + review 2026-08-26 (wider still)
     hand_resid: Range::new(0.42, 0.62),      // measured (leave-one-out)
-    fluvial_tex_k: Range::new(0.90, 1.15),   // calibrated at X3
+    fluvial_tex_k: Range::new(0.64, 0.84),   // calibrated at X3
+    tex_patchy: Range::new(1.55, 2.15),      // calibrated to CV 0.55
     p_allogenic_river: 0.30,                 // literature
 };
 

@@ -152,6 +152,52 @@ pub fn quilt(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>, d: &Descri
     quilt_core(rng, pack, macro_h, d, None)
 }
 
+/// Measured texture amplitude vs position across the valley (`TPROF1`,
+/// from `tools/aeolian/texture_by_position.py`).
+///
+/// The review asked the right question — real texture plainly differs
+/// between floor, wall and ridge — and the answer is measured, not guessed:
+/// the finest band runs 1.25x its tile mean on the channel down to 0.88 at
+/// the divide, and the coarser bands flatten out (1.11 -> 0.99). So fine
+/// detail concentrates near water while the broad fabric barely cares. The
+/// gate this replaces was a linear ramp to 0.45, both too strong and the
+/// same for every band.
+pub struct TexProfile {
+    u_bins: usize,
+    /// `g[band][u]` — gain against that band's own tile mean.
+    g: Vec<Vec<f64>>,
+}
+
+impl TexProfile {
+    pub fn load(path: &std::path::Path) -> std::io::Result<TexProfile> {
+        let txt = std::fs::read_to_string(path)?;
+        let mut u_bins = 12usize;
+        let mut g = Vec::new();
+        for line in txt.lines() {
+            let l = line.trim();
+            if l.is_empty() || l.starts_with('#') || l == "TPROF1" {
+                continue;
+            }
+            let mut it = l.split_whitespace();
+            match it.next() {
+                Some("u_bins") => u_bins = it.next().unwrap().parse().unwrap(),
+                Some("g") => g.push(it.map(|v| v.parse().unwrap()).collect()),
+                _ => {}
+            }
+        }
+        Ok(TexProfile { u_bins, g })
+    }
+
+    /// Gain for a band at valley position `u`, linear between bins.
+    fn gain(&self, band: usize, u: f64) -> f64 {
+        let row = &self.g[band.min(self.g.len() - 1)];
+        let x = (u.clamp(0.0, 1.0) * (self.u_bins - 1) as f64).min((self.u_bins - 1) as f64);
+        let i = (x as usize).min(self.u_bins - 2);
+        let f = x - i as f64;
+        row[i] * (1.0 - f) + row[i + 1] * f
+    }
+}
+
 /// The fluvial quilt (review 2026-08-26: "texture shows grain along the
 /// tributaries and trunk based on proximity"). Two departures from the
 /// aeolian quilt, both carried by `fields`:
@@ -167,6 +213,100 @@ pub fn quilt_fluvial(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     -> Grid<f64>
 {
     quilt_core(rng, pack, macro_h, d, Some((grain, prox)))
+}
+
+/// The fluvial quilt with the MEASURED position profile and the roughness
+/// variation restored.
+///
+/// Overlap-add averages four patches over every cell, and averaging
+/// exemplars is what turns pasted lidar into uniform fuzz: measured, real
+/// tiles' local roughness varies 55% across a tile while ours varied 20%
+/// (0.37x). Amplitude and spectrum were both already right — what was
+/// missing was that roughness is PATCHY. Two corrections, in this order:
+/// the measured per-band gain against valley position, then a two-octave
+/// supply field (the `belt_patchiness` idiom from surface.rs) calibrated so
+/// the variation statistic matches the corpus.
+pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
+                        grain: &Grid<f64>, uf: &Grid<f64>, prof: &TexProfile,
+                        d: &Descriptors) -> Grid<f64>
+{
+    let base = macro_h;
+    let unit = Grid::filled(uf.spec, 1.0f64);
+    let out = quilt_core(rng, pack, base, d, Some((grain, &unit)));
+    let spec = out.spec;
+
+    // the pasted residual, split into a fine and a coarse half
+    let mut resid = vec![0.0f64; spec.len()];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            resid[i] = out.data[i] - base.bilinear(spec.world_of(x, y));
+        }
+    }
+    let mut coarse = resid.clone();
+    let w = (12.0 / TEX_RES_M).round() as usize;      // ~12 m split
+    box_blur(spec, &mut coarse, w, 2);
+
+    let (sp1, sp2) = (rng.next_u32(), rng.next_u32());
+    let mut z = Grid::filled(spec, 0.0f64);
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let p = spec.world_of(x, y);
+            let u = uf.bilinear(p);
+            // measured: band 0 is the finest, band 2 the broad fabric
+            let gf = prof.gain(0, u);
+            let gc = prof.gain(2, u);
+            // roughness is patchy — the statistic the blending destroyed
+            let sup = 1.0
+                + d.tex_patchy
+                    * (course_world::noise::perlin2(p.x / 520.0, p.y / 520.0, sp1)
+                        + 0.70 * course_world::noise::perlin2(
+                            p.x / 190.0, p.y / 190.0, sp2)
+                        + 0.40 * course_world::noise::perlin2(
+                            p.x / 80.0, p.y / 80.0, sp1.wrapping_add(7)));
+            let sup = sup.max(0.12);
+            let fine = resid[i] - coarse[i];
+            z.data[i] = base.bilinear(p) + sup * (gf * fine + gc * coarse[i]);
+        }
+    }
+    z
+}
+
+fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, w: usize,
+            passes: usize) {
+    if w < 1 {
+        return;
+    }
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    for _ in 0..passes {
+        let src = a.clone();
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut s = 0.0;
+                let mut n = 0.0;
+                for k in -(w as i64)..=(w as i64) {
+                    let xx = (x + k).clamp(0, nx - 1) as u32;
+                    s += src[spec.index(xx, y as u32)];
+                    n += 1.0;
+                }
+                a[spec.index(x as u32, y as u32)] = s / n;
+            }
+        }
+        let src = a.clone();
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut s = 0.0;
+                let mut n = 0.0;
+                for k in -(w as i64)..=(w as i64) {
+                    let yy = (y + k).clamp(0, ny - 1) as u32;
+                    s += src[spec.index(x as u32, yy)];
+                    n += 1.0;
+                }
+                a[spec.index(x as u32, y as u32)] = s / n;
+            }
+        }
+    }
 }
 
 fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
