@@ -295,10 +295,12 @@ fn tier2(attach_m: f64) -> Tier {
 
 fn tier3(attach_m: f64) -> Tier {
     Tier {
-        spacing: (attach_m * 0.65, attach_m * 0.95),
+        // review 2026-08-27: real parent tributaries carry MANY sub-tribs
+        // at acute angles — spacing tightened, departures drawn acute
+        spacing: (attach_m * 0.42, attach_m * 0.68),
         end_margin: 140.0,
-        centre_deg: 41.0,
-        tail_p: 0.10,
+        centre_deg: 36.0,
+        tail_p: 0.06,
         hold_m: (200.0, 70.0),
         swing: 0.09,
         lam: (350.0, 600.0),   // review 2026-08-24: lambda floor raised
@@ -702,12 +704,67 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 2).collect();
     tier_pass(rng, &mut net, &mut idx, datum, k_rise, &tier3(d.attach_m), &t3_targets, 3);
 
+    // governor for everything below tier 3: on an already-rich tree the
+    // small features space out — they are texture, not coverage (a hot
+    // attach draw ran the planned-line tail to 3.56 without it)
+    let g_mult = (density_km_km2(&net) / 2.1).max(1.0);
+
+    // --- TIER 4 (review 2026-08-27): one more real branching level —
+    // sub-tribs on the tier-3s, acute, short
+    let t4 = Tier {
+        spacing: (d.attach_m * 0.45 * g_mult, d.attach_m * 0.70 * g_mult),
+        end_margin: 90.0,
+        centre_deg: 34.0,
+        tail_p: 0.06,
+        hold_m: (160.0, 60.0),
+        swing: 0.09,
+        lam: (280.0, 480.0),
+        claim: 110.0,
+        min_len: 80.0,
+        max_len: 420.0,
+        step: 14.0,
+        min_gain: 0.012,
+    };
+    let t4_targets: Vec<u32> =
+        (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 3).collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &t4, &t4_targets, 4);
+
+    // --- SIDE GULLIES (review 2026-08-27: feathered valley sides — small
+    // incisions along the WHOLE length of the trunk and the big tribs, not
+    // just at tips; "include some on the trunk as well"). Same finger tier,
+    // full arc. Their beds integrate from the parent floor at carve time,
+    // so they notch INTO the valley rim as geometry.
+    let gully = Tier {
+        spacing: (140.0 * g_mult, 220.0 * g_mult),
+        end_margin: 60.0,
+        centre_deg: 38.0,
+        tail_p: 0.10,
+        // hold most of the walk: a gully released to the uphill blend on a
+        // steep wall curls into a banana (render, seed 109) — real rim
+        // swales run straight up the fall line
+        hold_m: (170.0, 110.0),
+        swing: 0.09,
+        lam: (150.0, 300.0),
+        claim: 80.0,
+        min_len: 45.0,
+        max_len: 260.0,
+        step: 12.0,
+        min_gain: 0.008,
+    };
+    let gully_targets: Vec<u32> = (0..net.chans.len() as u32)
+        .filter(|c| {
+            let ch = &net.chans[*c as usize];
+            ch.tier == 1 || ch.tier == 2
+        })
+        .collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &gully, &gully_targets, 4);
+
     // --- FINGERS (review 2026-08-26: "more very small length tributaries
     // at the tips"): the ordinary passes keep an end margin, so channel
     // heads were bare. Short steep head-water nicks, placed only on the
     // head-ward quarter of tier-2/3 channels.
     let finger = Tier {
-        spacing: (110.0, 170.0),
+        spacing: (110.0 * g_mult, 170.0 * g_mult),
         end_margin: 24.0,
         centre_deg: 41.0,
         tail_p: 0.10,
@@ -758,7 +815,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // The survey's n_sys 3 / main_share 57% is exactly this structure.
     // --- final polish: small fills where the ground is still far from water
     let mut n = 0;
-    while d2c_p50(&net) > 165.0 && density_km_km2(&net) < 1.85 && n < 4 {
+    while d2c_p50(&net) > 165.0 && density_km_km2(&net) < 1.7 && n < 4 {
         let mut t = tier3(d.attach_m * 0.8);
         t.min_len = 110.0;
         // fills squeeze into interior voids the fragments cannot reach; the
@@ -1186,13 +1243,20 @@ mod tests {
         for seed in 40u64..64 {
             let (_, net) = skeleton(seed);
             let dens = density_km_km2(&net);
-            assert!(dens > 1.05 && dens < 2.6, "seed {seed}: density {dens:.2}");
+            // planned-line density counts gullies/fingers BELOW the corpus
+            // extraction threshold; the corpus-comparable number is the D8
+            // density on the carved tile (valley_compare), which runs lower
+            // this is PLANNED-LINE length including sub-threshold gullies
+            // and fingers — a texture accounting, not the corpus metric.
+            // The band is a runaway/collapse backstop; the corpus-comparable
+            // number is the D8-extracted density on the carved tile.
+            assert!(dens > 1.4 && dens < 4.0, "seed {seed}: density {dens:.2}");
             pool.push(dens);
         }
         let mean = pool.iter().sum::<f64>() / pool.len() as f64;
-        // review 2026-08-24: densities run ~25% under the corpus 2.33 until
-        // the carve round shows whether the cut ground reads sparse
-        assert!(mean > 1.4 && mean < 2.3, "pooled density {mean:.2}");
+        // review 2026-08-27: sub-branching densified (tier-4, gullies,
+        // fingers) — the pool includes sub-threshold channels
+        assert!(mean > 1.9 && mean < 3.1, "pooled density {mean:.2}");
     }
 
     #[test]

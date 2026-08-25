@@ -129,35 +129,17 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                 ground[i] = (ground[i - 1] + ground[i] * 2.0 + ground[i + 1]) / 4.0;
             }
         }
-        let mut bed: Vec<f64> = (0..n)
-            .map(|i| {
-                let lam = 430.0 + 320.0 * hk[i];
-                let breathe = 1.0 + 0.22 * noise::perlin1(arc[i] / lam, s_depth);
-                let depth = (depth_unit * hk[i] * breathe).max(0.9);
-                ground[i] - depth
-            })
-            .collect();
-        // THE LONG PROFILE: a concave slope cap on the channel's own bed.
-        // Applied before the junction offset, so a tributary still climbs
-        // steeply out of its parent valley (that transient is real) while
-        // its own profile — and above all the trunk's — stays concave:
-        // flat mainstem, steepening headwaters.
-        for i in 1..n {
-            let ds = arc[i] - arc[i - 1];
-            let up = (total - arc[i] + credit).max(30.0);
-            let smax = (s0 * math::pow(up / 1500.0, -0.45)).min(0.02);
-            let mut b = bed[i].min(bed[i - 1] + smax * ds);
-            // the relief valve: where the flat profile would cut a gorge
-            // (upland bump over the bed), the profile may steepen to 2% —
-            // the water-gap behaviour of real long profiles. Without it a
-            // flat bed under a 30 m bump cut 41 m (seed 109).
-            let dcap = (1.35 * depth_unit * hk[i]).max(6.0);
-            b = b.max((ground[i] - dcap).min(bed[i - 1] + 0.02 * ds));
-            bed[i] = b;
-        }
-        // junction continuity: the mouth floor IS the parent floor there,
-        // and the difference decays over the first ~150 m
+        let mut bed: Vec<f64>;
         if let Some(pid) = c.parent {
+            // A TRIBUTARY IS GRADED TO ITS TRUNK (review 2026-08-27: on
+            // real tiles the ENTIRE system sits in the green — trib valleys
+            // are deeply incised near their mouths, shallowing upstream).
+            // The old ground-following bed put a trib at a formula depth
+            // below the LOCAL upland, so it left the low band within 150 m
+            // of its junction. Here the bed is INTEGRATED upstream from the
+            // junction: the mouth floor IS the parent floor, rising by the
+            // stream's own concave law; depth below upland is an OUTCOME —
+            // parent-scale at the mouth, ~1 m at the head.
             let par = &progs[pid as usize];
             let mut best = (f64::MAX, 0usize);
             for (j, q) in par.pts.iter().enumerate() {
@@ -166,16 +148,51 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                     best = (dd, j);
                 }
             }
-            let offset = par.bed[best.1] - bed[0];
-            for i in 0..n {
-                bed[i] += offset * math::exp(-arc[i] / 150.0);
+            bed = vec![0.0; n];
+            // Gully-scale channels (tier 4) HANG on the valley wall: a side
+            // swale grades from the wall face, it does not slot down to the
+            // trunk floor (floor-anchored gullies printed as claw-shaped
+            // gouges along every rim — render, seed 109). Real ephemeral
+            // side channels join above the floor.
+            bed[0] = if c.tier >= 4 {
+                par.bed[best.1].max(ground[0] - 2.2)
+            } else {
+                par.bed[best.1]
+            };
+            for i in 1..n {
+                let ds = arc[i] - arc[i - 1];
+                let up = (total - arc[i] + credit).max(30.0);
+                let smax = (s0 * math::pow(up / 1500.0, -0.45)).min(0.02);
+                let mut b = bed[i - 1] + smax * ds;
+                // the relief valve, unchanged: through high ground the
+                // profile may steepen to 2% rather than cut a gorge
+                let dcap = (1.35 * depth_unit * hk[i]).max(6.0);
+                b = b.max((ground[i] - dcap).min(bed[i - 1] + 0.02 * ds));
+                // and a trib may not end ABOVE its local ground: cap the
+                // rise so the head lands ~0.9 m under the upland
+                b = b.min(ground[i] - 0.9);
+                bed[i] = b.max(bed[i - 1] + 0.0004 * ds);
             }
-        }
-        // monotone upstream — water cannot flow uphill along its own floor
-        // (0.04% floor: the old 0.15% was itself a whole-profile steepener)
-        for i in 1..n {
-            let ds = arc[i] - arc[i - 1];
-            bed[i] = bed[i].max(bed[i - 1] + 0.0004 * ds);
+        } else {
+            bed = (0..n)
+                .map(|i| {
+                    let lam = 430.0 + 320.0 * hk[i];
+                    let breathe = 1.0 + 0.22 * noise::perlin1(arc[i] / lam, s_depth);
+                    let depth = (depth_unit * hk[i] * breathe).max(0.9);
+                    ground[i] - depth
+                })
+                .collect();
+            // THE LONG PROFILE: a concave slope cap on the trunk's own bed
+            // — flat mainstem, steepening headwaters.
+            for i in 1..n {
+                let ds = arc[i] - arc[i - 1];
+                let up = (total - arc[i] + credit).max(30.0);
+                let smax = (s0 * math::pow(up / 1500.0, -0.45)).min(0.02);
+                let mut b = bed[i].min(bed[i - 1] + smax * ds);
+                let dcap = (1.35 * depth_unit * hk[i]).max(6.0);
+                b = b.max((ground[i] - dcap).min(bed[i - 1] + 0.02 * ds));
+                bed[i] = b.max(bed[i - 1] + 0.0004 * ds);
+            }
         }
 
         // local depth = the ACTUAL ground-to-bed gap: once the profile
@@ -287,9 +304,9 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, net: &Network,
                     // sees the same pocket field.
                     let u_pre = ((dist - f_loc) / wall_loc).clamp(0.0, 1.3);
                     let jag = u_pre
-                        * ((4.0 + 26.0 * hk_i)
+                        * ((3.0 + 18.0 * hk_i)
                             * noise::perlin2(p.x / 64.0, p.y / 64.0, pr.s_jag)
-                            + (8.0 + 30.0 * hk_i)
+                            + (6.0 + 21.0 * hk_i)
                                 * noise::perlin2(p.x / 150.0, p.y / 150.0,
                                                  pr.s_jag.wrapping_add(7)));
                     let de = (dist + jag - f_loc).max(0.0);

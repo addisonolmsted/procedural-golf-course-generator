@@ -150,10 +150,25 @@ pub fn build_fluvial_full(id: &RunIdentity, pack: &texture::PatchPack)
                          d.wind_wander_m * 0.45, d.hummock_kappa.min(0.7),
                          d.hummock_spread.max(0.5));
     let hf = surface::hummock_field(&hw);
-    let mantle_relief = (d.hummock_relief_m * 0.7).min(2.6);
-    for i in 0..spec8.len() {
-        let upland = 1.0 - prox.data[i];
-        height.data[i] += mantle_relief * upland * hf.data[i];
+    // CALM (review 2026-08-27: real interfluves are matte fine grain; the
+    // full-strength mantle printed vermiculate swirls): low relief, and
+    // gated by a two-octave patchiness field so mound fields survive in
+    // PATCHES on an otherwise quiet upland — how relict topography ages.
+    let mantle_relief = (d.hummock_relief_m * 0.28).min(1.2);
+    let sp1 = wr.next_u32();
+    let sp2 = wr.next_u32();
+    for y in 0..spec8.ny {
+        for x in 0..spec8.nx {
+            let i = spec8.index(x, y);
+            let p = spec8.world_of(x, y);
+            let sup = 0.5
+                + 0.5
+                    * (course_world::noise::perlin2(p.x / 900.0, p.y / 900.0, sp1)
+                        + 0.5 * course_world::noise::perlin2(p.x / 380.0, p.y / 380.0, sp2));
+            let patch = course_world::math::smoothstep(0.35, 0.75, sup);
+            let upland = 1.0 - prox.data[i];
+            height.data[i] += mantle_relief * upland * patch * hf.data[i];
+        }
     }
 
     // C5: the grain-aligned texture. Gain trimmed against the measured NC
