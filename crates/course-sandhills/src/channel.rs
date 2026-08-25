@@ -845,6 +845,113 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         }
         n += 1;
     }
+    // --- COVERAGE (X2 diagnosis, 2026-08-25). Real Carolina tiles are
+    // drained EVERYWHERE: at the fine extraction threshold their distance
+    // to the nearest channel runs p50 45-55 m and never exceeds ~300 m.
+    // Ours ran p50 290 with corners 1971 m out, and that empty far field
+    // is exactly where the assembled surface went flat and creased — the
+    // profile saturates when there is no drainage to hang it on.
+    //
+    // So: while any ground is too far from water, attach a channel at the
+    // nearest existing point and walk it toward that ground. Termination is
+    // the coverage itself, which is the property that was wrong.
+    {
+        let mut t = tier3(d.attach_m);
+        t.max_len = 1400.0;
+        t.min_len = 50.0;
+        t.claim = 45.0;
+        t.min_gain = 0.006;
+        let mut fails = 0;
+        let mut n_cover = 0;
+        let mut skip_r: Vec<(Vec2, f64)> = Vec::new();
+        for _ in 0..320 {
+            let (dt, spec0) = dist_field(&net);
+            let mut worst = (0.0f64, 0usize);
+            for (i, v) in dt.iter().enumerate() {
+                if *v <= worst.0 {
+                    continue;
+                }
+                let q = Vec2::new((i % spec0.nx as usize) as f64 * 8.0,
+                                  (i / spec0.nx as usize) as f64 * 8.0);
+                if skip_r.iter().any(|(c, r)| c.distance(q) < *r) {
+                    continue;
+                }
+                worst = (*v, i);
+            }
+            if worst.0 <= 0.0 {
+                break;
+            }
+            if worst.0 < 190.0 {
+                break;
+            }
+            let (gx, gy) = ((worst.1 % spec0.nx as usize) as f64,
+                            (worst.1 / spec0.nx as usize) as f64);
+            let target = Vec2::new(gx * 8.0, gy * 8.0);
+            // nearest existing channel point, and the site on it
+            let mut best = (f64::MAX, 0u32, 0usize);
+            for (ci, c) in net.chans.iter().enumerate() {
+                for (k, q) in c.pts.iter().enumerate() {
+                    let dd = q.distance(target);
+                    if dd < best.0 {
+                        best = (dd, ci as u32, k);
+                    }
+                }
+            }
+            let (cid, at) = (best.1, best.2);
+            let start = net.chans[cid as usize].pts[at];
+            let depart = Vec2::new(target.x - start.x, target.y - start.y).normalized();
+            let z0 = net.chans[cid as usize].z[at];
+            let hold = (best.0 * 0.55).clamp(120.0, 420.0);
+            let field = Field { idx: &idx, datum, k_rise, w_d6: 1.0 };
+            let parent = &net.chans[cid as usize];
+            // Jittered retries: the first departure often dies inside the
+            // attach point's own neighbourhood claim (measured: the pass
+            // jammed on a corner cell, failing 7x at the same site), and a
+            // swung one finds the gap.
+            let mut placed = false;
+            for att in 0..4 {
+                let dep = if att == 0 {
+                    depart
+                } else {
+                    let j = rng.range_f64(-0.9, 0.9);
+                    let (c0, s0) = (math::cos(j), math::sin(j));
+                    Vec2::new(depart.x * c0 - depart.y * s0,
+                              depart.x * s0 + depart.y * c0)
+                };
+                if let Ok((pts, z, _)) = walk(rng, start, z0, dep, hold, &field,
+                                              &t, Some(cid), Some(parent)) {
+                    let sys = net.chans[cid as usize].sys;
+                    let c = Channel { pts, z, tier: 5, parent: Some(cid), sys };
+                    idx.add_channel(&c, net.chans.len() as u32);
+                    net.chans.push(c);
+                    placed = true;
+                    break;
+                }
+            }
+            if !placed {
+                fails += 1;
+                if std::env::var("NET_DEBUG").is_ok() {
+                    eprintln!("  cover: FAIL at ({:.0},{:.0}) worst {:.0} m, attach {:.0} m",
+                              target.x, target.y, worst.0, best.0);
+                }
+                if fails > 40 {
+                    break;
+                }
+                // exclude this neighbourhood from the next pick so the loop
+                // moves on instead of retrying one impossible corner
+                skip_r.push((target, 220.0));
+            } else {
+                fails = 0;
+                n_cover += 1;
+            }
+        }
+        if std::env::var("NET_DEBUG").is_ok() {
+            let (dt, _) = dist_field(&net);
+            let mx = dt.iter().cloned().fold(0.0f64, f64::max);
+            eprintln!("  cover: placed {n_cover}, max dist now {mx:.0} m");
+        }
+    }
+
     // --- the fallback fragment (review 2026-08-24: "remove all of the half
     // trunks ... maybe for really low density we can include a single half
     // spanning trunk"). Only a genuinely underwatered tile gets one, and it
@@ -1050,6 +1157,52 @@ pub struct NetStats {
 pub fn density_km_km2(net: &Network) -> f64 {
     let total_m: f64 = net.chans.iter().map(|c| c.arc_len()).sum();
     (total_m / 1000.0) / ((EXTENT_M / 1000.0) * (EXTENT_M / 1000.0))
+}
+
+/// The distance field to the network, 8 m chamfer — the coverage measure.
+pub fn dist_field(net: &Network) -> (Vec<f64>, course_world::grid::GridSpec) {
+    let spec = macro_spec();
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let mut dt = vec![1e18f64; spec.len()];
+    for c in &net.chans {
+        for w in c.pts.windows(2) {
+            let seg = w[0].distance(w[1]);
+            let n = (seg / 4.0).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                let x = ((w[0].x + (w[1].x - w[0].x) * t) / 8.0)
+                    .round().clamp(0.0, (nx - 1) as f64) as i64;
+                let y = ((w[0].y + (w[1].y - w[0].y) * t) / 8.0)
+                    .round().clamp(0.0, (ny - 1) as f64) as i64;
+                dt[(y * nx + x) as usize] = 0.0;
+            }
+        }
+    }
+    let (o, dg) = (8.0, 8.0 * std::f64::consts::SQRT_2);
+    for pass in 0..2 {
+        let ys: Vec<i64> = if pass == 0 { (0..ny).collect() } else { (0..ny).rev().collect() };
+        for &y in &ys {
+            let xs: Vec<i64> = if pass == 0 { (0..nx).collect() } else { (0..nx).rev().collect() };
+            for &x in &xs {
+                let i = (y * nx + x) as usize;
+                let nb: [(i64, i64, f64); 4] = if pass == 0 {
+                    [(-1, 0, o), (0, -1, o), (-1, -1, dg), (1, -1, dg)]
+                } else {
+                    [(1, 0, o), (0, 1, o), (1, 1, dg), (-1, 1, dg)]
+                };
+                for (dx, dy, w) in nb {
+                    let (px, py) = (x + dx, y + dy);
+                    if px >= 0 && px < nx && py >= 0 && py < ny {
+                        let v = dt[(py * nx + px) as usize] + w;
+                        if v < dt[i] {
+                            dt[i] = v;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (dt, spec)
 }
 
 /// d2c p50 via a two-pass chamfer transform on the 8 m grid — the corpus
@@ -1263,7 +1416,11 @@ mod tests {
             // same fine threshold (1.2e4) carry ~5.4 km/km². The band is a
             // runaway/collapse backstop; the corpus-comparable number is
             // the D8-extracted density on the ASSEMBLED surface.
-            assert!(dens > 2.0 && dens < 4.6, "seed {seed}: density {dens:.2}");
+            // Fine accounting: tiers 1-5 including the coverage pass. Real
+            // tiles at the same fine threshold carry ~5.4 km/km²; the
+            // corpus 2.33 is the COARSE number and is checked on the
+            // assembled surface (extracted 2.38-2.42 there).
+            assert!(dens > 2.4 && dens < 6.2, "seed {seed}: density {dens:.2}");
             pool.push(dens);
         }
         let mean = pool.iter().sum::<f64>() / pool.len() as f64;
@@ -1271,7 +1428,7 @@ mod tests {
         // the FINE accounting — real tiles measured at the same fine
         // threshold (1.2e4) carry ~5.4 km/km²; the corpus 2.33 is the
         // coarse-threshold number and is checked on the assembled surface.
-        assert!(mean > 2.4 && mean < 4.2, "pooled density {mean:.2}");
+        assert!(mean > 3.0 && mean < 5.6, "pooled density {mean:.2}");
     }
 
     #[test]
