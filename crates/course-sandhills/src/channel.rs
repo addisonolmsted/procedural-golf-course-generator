@@ -271,6 +271,10 @@ struct Tier {
     max_len: f64,
     step: f64,
     min_gain: f64,
+    /// Long-wave heading wander (radians at ~900 m octave). Review N0
+    /// round 8: first-order tribs read too straight — this bends the RUN,
+    /// where `swing` only wiggles the line (and squiggle is banned).
+    wander: f64,
 }
 
 fn tier2(attach_m: f64) -> Tier {
@@ -289,6 +293,7 @@ fn tier2(attach_m: f64) -> Tier {
         max_len: 2000.0,
         step: 20.0,
         min_gain: 0.012,
+        wander: 0.42,
     }
 }
 
@@ -308,6 +313,7 @@ fn tier3(attach_m: f64) -> Tier {
         max_len: 900.0,        // N0 round 7: reach up with the tier-2s
         step: 16.0,
         min_gain: 0.012,
+        wander: 0.18,
     }
 }
 
@@ -567,6 +573,7 @@ fn walk(rng: &mut DetRng, start: Vec2, z0: f64, depart: Vec2, hold_m: f64,
         -> Result<(Vec<Vec2>, Vec<f64>, End), End> {
     let lam = rng.range_f64(t.lam.0, t.lam.1);
     let phase = rng.range_f64(0.0, std::f64::consts::TAU);
+    let s_wander = rng.next_u32();
 
     let mut pts = vec![start];
     let mut z = vec![z0];
@@ -596,7 +603,9 @@ fn walk(rng: &mut DetRng, start: Vec2, z0: f64, depart: Vec2, hold_m: f64,
                             heading.y * 0.65 + base.y * 0.35).normalized();
         let wob = t.swing * math::sin(std::f64::consts::TAU * arc / lam + phase)
             * (arc / 200.0).min(1.0);
-        let th = math::atan2(heading.y, heading.x) + wob;
+        let wander = t.wander * noise::perlin1(arc / 900.0, s_wander)
+            * (arc / 260.0).min(1.0);
+        let th = math::atan2(heading.y, heading.x) + wob + wander;
         let mut step_dir = Vec2::new(math::cos(th), math::sin(th));
 
         // THE MONOTONE RULE with the bounded grace window: a real trib's
@@ -723,6 +732,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         max_len: 420.0,
         step: 14.0,
         min_gain: 0.012,
+        wander: 0.12,
     };
     let t4_targets: Vec<u32> =
         (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 3).collect();
