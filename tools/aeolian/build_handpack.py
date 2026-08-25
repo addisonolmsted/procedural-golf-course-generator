@@ -522,6 +522,84 @@ def round_crests(H, dist, sigma=5.0, passes=3, width=0.55):
     return out
 
 
+# --- the NORMALISED valley coordinate -------------------------------------
+# Absolute distance was the wrong x-axis for H0. Pooling the median over
+# absolute distance destroys the SHOULDER — the convex break where the flat
+# interfluve turns down into the valley — because the shoulder sits at a
+# different distance in every valley, so averaging smears it into a smooth
+# ramp. That smearing is exactly why the drainage pattern stopped reading:
+# a valley EDGE is a break in slope, and the pooled curve has none.
+#
+# The same choice also over-built the headwaters: at fixed distance the
+# median HAND is drawn from wide main valleys, but where channels crowd
+# together there is no room for that height.
+#
+# Both are fixed by measuring against the LOCAL valley half-width:
+#     u = d / (d + m)    d = distance to channel, m = distance to divide
+# u = 0 at the channel, 1 at the divide, whatever the valley's size. The
+# shoulder lands at the same u in every valley and survives the median; the
+# amplitude is conditioned on the half-width W = d + m, so crowded
+# headwaters get proportionally less height. A third property comes free:
+# if real crests are rounded (measured: they are), the profile arrives with
+# zero slope at u = 1 and the divide crease never forms.
+U_BINS = 24
+W_EDGES = [90.0, 160.0, 260.0, 400.0]           # -> 5 half-width bands
+
+
+def valley_coords(chan, dist):
+    gy, gx = np.gradient(ndimage.gaussian_filter(dist, 1.0), CELL)
+    medial = (np.hypot(gx, gy) < 0.6) & (dist > 24.0)
+    if not medial.any():
+        medial = dist > np.percentile(dist, 99.0)
+    m = ndimage.distance_transform_edt(~medial, sampling=CELL)
+    W = dist + m
+    u = np.clip(dist / np.maximum(W, 1e-6), 0.0, 1.0)
+    return u, W, m, medial
+
+
+def hu_fit(per_tile):
+    """Median HAND on the (u, W-band) grid — the shape-preserving curve."""
+    n_w = len(W_EDGES) + 1
+    tab = np.full((n_w, U_BINS + 1), np.nan)
+    us, Ws, Hs = [], [], []
+    for _, A in per_tile:
+        u, W, _, _ = valley_coords(A["chan"], A["dist"])
+        us.append(u.ravel()); Ws.append(W.ravel()); Hs.append(A["hand"].ravel())
+    u = np.concatenate(us); W = np.concatenate(Ws); H = np.concatenate(Hs)
+    wb = np.digitize(W, W_EDGES)
+    ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+    for a in range(n_w):
+        for i in range(U_BINS + 1):
+            mm = (wb == a) & (ub == i)
+            if mm.sum() > 60:
+                tab[a, i] = np.median(H[mm])
+    for a in range(n_w):                       # fill, then keep monotone
+        v = tab[a]
+        ok = np.isfinite(v)
+        if ok.any():
+            tab[a] = np.interp(np.arange(U_BINS + 1), np.nonzero(ok)[0], v[ok])
+        else:
+            tab[a] = 0.0
+        tab[a, 0] = 0.0
+        tab[a] = np.maximum.accumulate(tab[a])
+    return tab
+
+
+def hu_eval(tab, u, W):
+    """Bilinear in (u, W) — continuous in both, so no band seams."""
+    centers = np.array([60.0, 125.0, 210.0, 330.0, 520.0])
+    wc = np.clip(W, centers[0], centers[-1])
+    hi = np.clip(np.searchsorted(centers, wc), 1, len(centers) - 1)
+    lo = hi - 1
+    t = (wc - centers[lo]) / (centers[hi] - centers[lo])
+    x = np.clip(u, 0, 1) * U_BINS
+    i0 = np.clip(x.astype(int), 0, U_BINS - 1)
+    fx = x - i0
+    def row(b):
+        return tab[b, i0] * (1 - fx) + tab[b, i0 + 1] * fx
+    return row(lo) * (1 - t) + row(hi) * t
+
+
 def channel_links(chan, acc):
     """Label channel cells by LINK — the reach between confluences.
 
@@ -574,6 +652,145 @@ def softmin_hand(lbl, n_links, acc, curve, shape, kh=2.2, min_cells=6):
         acc_sm = e if first else acc_sm + e
         first = False
     return -kh * np.log(np.maximum(acc_sm, 1e-300))
+
+
+def flow_lic(noise, dist, steps=9, step_len=1.1):
+    """Smear noise ALONG the fall line — a line-integral convolution over
+    the distance field's gradient.
+
+    Isotropic noise at the correct amplitude gives MOTTLING, not drainage:
+    it has no lines in it. Real valley sides are feathered by gullies that
+    run straight down the wall, and a hillshade reads those lines as the
+    drainage pattern. Streaking the residual along grad(d) — the fall line
+    toward the nearest channel — turns the same energy into that fabric.
+    """
+    from scipy.ndimage import map_coordinates
+    gy, gx = np.gradient(ndimage.gaussian_filter(dist, 1.5), CELL)
+    n = np.hypot(gx, gy) + 1e-9
+    ux, uy = gx / n, gy / n
+    ny, nx = noise.shape
+    yy, xx = np.mgrid[0:ny, 0:nx].astype(np.float64)
+    out = noise.copy()
+    w = 1.0
+    for sgn in (1.0, -1.0):
+        py, px = yy.copy(), xx.copy()
+        for _ in range(steps):
+            px = px + sgn * step_len * ux[np.clip(py.astype(int), 0, ny - 1),
+                                          np.clip(px.astype(int), 0, nx - 1)]
+            py = py + sgn * step_len * uy[np.clip(py.astype(int), 0, ny - 1),
+                                          np.clip(px.astype(int), 0, nx - 1)]
+            out += map_coordinates(noise, [py, px], order=1, mode="nearest")
+            w += 1.0
+    out /= w
+    return out / (out.std() + 1e-12)
+
+
+def reconstruct11(target, out_dir, tau_b=80.0, resid_k=1.0, h_gain=1.0,
+                  wall_k=1.6, lic=1.0):
+    """v11 = v10 + flow-aligned residual (the drainage fabric)."""
+    tiles = kept_tiles()
+    others = [t for t in tiles if t != target]
+    per_tile = [(t, analyze(load_z8(t))) for t in others]
+    tab = hu_fit(per_tile)
+    n_w = len(W_EDGES) + 1
+    rs = np.zeros((n_w, U_BINS + 1)); rn = np.zeros_like(rs)
+    for _, A in per_tile:
+        u, W, _, _ = valley_coords(A["chan"], A["dist"])
+        r = A["hand"] - hu_eval(tab, u, W)
+        wb = np.digitize(W, W_EDGES)
+        ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+        for a in range(n_w):
+            for i in range(U_BINS + 1):
+                mm = (wb == a) & (ub == i)
+                if mm.sum() > 60:
+                    rs[a, i] += r[mm].std() * mm.sum(); rn[a, i] += mm.sum()
+    rstd = np.where(rn > 0, rs / np.maximum(rn, 1), 0.4)
+
+    z8 = load_z8(target)
+    A = analyze(z8)
+    B = soft_bed(A["chan"], z8, tau_b=tau_b)
+    u, W, _, _ = valley_coords(A["chan"], A["dist"])
+    H = hu_eval(tab, u, W) * h_gain
+    wb = np.digitize(W, W_EDGES)
+    ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+    std_map = ndimage.gaussian_filter(rstd[wb, ub], 3.0) * resid_k
+    wall = np.exp(-((u - 0.55) / 0.30) ** 2)
+    rng = np.random.default_rng(11)
+    def oct_(sig):
+        g = ndimage.gaussian_filter(rng.standard_normal(z8.shape), sig)
+        return g / g.std()
+    fine = oct_(2.2)
+    fine = fine * (1 - lic) + flow_lic(fine, A["dist"]) * lic
+    mid = oct_(6.0)
+    mid = mid * (1 - lic) + flow_lic(mid, A["dist"], steps=6) * lic
+    R = std_map * (0.50 * fine * (0.30 + wall_k * wall)
+                   + 0.32 * mid + 0.18 * oct_(24.0))
+    z_rec = B + H + R
+    np.savez_compressed(out_dir / f"recon11_{target}.npz",
+                        z_real=z8.astype(np.float32),
+                        z_rec=z_rec.astype(np.float32),
+                        z_curve=(B + H).astype(np.float32))
+    return z8, B + H, z_rec, A, tab
+
+
+def reconstruct10(target, out_dir, tau_b=80.0, resid_k=1.0, h_gain=1.0,
+                  wall_k=1.6):
+    """v10 — H measured on the NORMALISED valley coordinate.
+
+    One change fixes three things: the headwater over-height (amplitude now
+    scales with the local valley half-width), the lost valley edges (the
+    shoulder survives the median because every valley shares the u axis),
+    and the divide crease (the measured profile flattens at u = 1, so the
+    crest arrives rounded from the data). The residual is also placed on u
+    — real valley SIDES are the rough ground, floors and interfluve tops
+    are calm — which is the second half of getting the pattern to read.
+    """
+    tiles = kept_tiles()
+    others = [t for t in tiles if t != target]
+    per_tile = []
+    for t in others:
+        z8o = load_z8(t)
+        per_tile.append((t, analyze(z8o)))
+    tab = hu_fit(per_tile)
+
+    # residual spread on the same coordinate
+    n_w = len(W_EDGES) + 1
+    rs = np.zeros((n_w, U_BINS + 1)); rn = np.zeros_like(rs)
+    for _, A in per_tile:
+        u, W, _, _ = valley_coords(A["chan"], A["dist"])
+        r = A["hand"] - hu_eval(tab, u, W)
+        wb = np.digitize(W, W_EDGES)
+        ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+        for a in range(n_w):
+            for i in range(U_BINS + 1):
+                mm = (wb == a) & (ub == i)
+                if mm.sum() > 60:
+                    rs[a, i] += r[mm].std() * mm.sum(); rn[a, i] += mm.sum()
+    rstd = np.where(rn > 0, rs / np.maximum(rn, 1), 0.4)
+
+    z8 = load_z8(target)
+    A = analyze(z8)
+    B = soft_bed(A["chan"], z8, tau_b=tau_b)
+    u, W, _, _ = valley_coords(A["chan"], A["dist"])
+    H = hu_eval(tab, u, W) * h_gain
+
+    wb = np.digitize(W, W_EDGES)
+    ub = np.clip((u * U_BINS).astype(int), 0, U_BINS)
+    std_map = ndimage.gaussian_filter(rstd[wb, ub], 3.0) * resid_k
+    # walls carry the roughness; floors and tops are calm
+    wall = np.exp(-((u - 0.55) / 0.30) ** 2)
+    rng = np.random.default_rng(11)
+    def oct_(sig):
+        g = ndimage.gaussian_filter(rng.standard_normal(z8.shape), sig)
+        return g / g.std()
+    R = std_map * (0.45 * oct_(4.0) * (0.35 + wall_k * wall)
+                   + 0.35 * oct_(11.0) + 0.20 * oct_(28.0))
+    z_rec = B + H + R
+    np.savez_compressed(out_dir / f"recon10_{target}.npz",
+                        z_real=z8.astype(np.float32),
+                        z_rec=z_rec.astype(np.float32),
+                        z_curve=(B + H).astype(np.float32))
+    return z8, B + H, z_rec, A, tab
 
 
 def reconstruct9(target, out_dir, tau_b=80.0, kh=2.2, resid_k=1.0, h_gain=1.0):
@@ -878,6 +1095,40 @@ def main():
         targets = [a for a in sys.argv[2:] if a.startswith("t0")]
         for t in targets:
             reconstruct(t, out)
+    elif mode == "reconstruct11":
+        out = pathlib.Path(sys.argv[-1]) if pathlib.Path(sys.argv[-1]).is_dir() \
+            else pathlib.Path(".")
+        def arg(k, dv):
+            return float(next((a.split("=")[1] for a in sys.argv
+                               if a.startswith(k + "=")), dv))
+        hg, rk, lic = arg("hg", 0.9), arg("rk", 0.6), arg("lic", 1.0)
+        for t in [a for a in sys.argv[2:] if a.startswith("t0")]:
+            real, bh, rec, A, tab = reconstruct11(t, out, h_gain=hg,
+                                                  resid_k=rk, lic=lic)
+            g = divide_gate(real, rec, A)
+            f = rec - ndimage.gaussian_filter(rec, (64.0 / np.pi) / CELL)
+            print(f"  {t} hg={hg:.2f} rk={rk:.2f} lic={lic:.1f}: crest "
+                  f"{g['recon'][0] / g['real'][0]:.2f}x | open "
+                  f"{g['recon'][1] / g['real'][1]:.2f}x | relief "
+                  f"{g['real_relief']:.1f} vs {g['recon_relief']:.1f} | "
+                  f"band64 {float(f.std()):.3f}", flush=True)
+    elif mode == "reconstruct10":
+        out = pathlib.Path(sys.argv[-1]) if pathlib.Path(sys.argv[-1]).is_dir() \
+            else pathlib.Path(".")
+        def arg(k, dv):
+            return float(next((a.split("=")[1] for a in sys.argv
+                               if a.startswith(k + "=")), dv))
+        hg, rk, wk = arg("hg", 1.0), arg("rk", 1.0), arg("wk", 1.6)
+        for t in [a for a in sys.argv[2:] if a.startswith("t0")]:
+            real, bh, rec, A, tab = reconstruct10(t, out, h_gain=hg,
+                                                  resid_k=rk, wall_k=wk)
+            g = divide_gate(real, rec, A)
+            fine = rec - ndimage.gaussian_filter(rec, (64.0 / np.pi) / CELL)
+            print(f"  {t} hg={hg:.2f} rk={rk:.1f}: crest "
+                  f"{g['recon'][0] / g['real'][0]:.2f}x real | open "
+                  f"{g['recon'][1] / g['real'][1]:.2f}x | relief "
+                  f"{g['real_relief']:.1f} vs {g['recon_relief']:.1f} | "
+                  f"band64 {float(fine.std()):.3f}", flush=True)
     elif mode == "reconstruct9":
         out = pathlib.Path(sys.argv[-1]) if pathlib.Path(sys.argv[-1]).is_dir() \
             else pathlib.Path(".")
