@@ -258,11 +258,16 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             let gf = prof.gain(0, u);
             let gc = prof.gain(2, u);
             // roughness is patchy — the statistic the blending destroyed
+            // the 190 m octave is the one that reads as patterned grain on
+            // the high ground (measured: tops carried 1.37x real in the
+            // 150-250 m band), so it is thinned there
+            let top_m = math::smoothstep(0.70, 0.96, u);
             let sup = 1.0
                 + d.tex_patchy
                     * (course_world::noise::perlin2(p.x / 520.0, p.y / 520.0, sp1)
-                        + 0.70 * course_world::noise::perlin2(
-                            p.x / 190.0, p.y / 190.0, sp2)
+                        + 0.70 * (1.0 - 0.60 * top_m)
+                            * course_world::noise::perlin2(
+                                p.x / 190.0, p.y / 190.0, sp2)
                         + 0.40 * course_world::noise::perlin2(
                             p.x / 80.0, p.y / 80.0, sp1.wrapping_add(7)));
             let sup = sup.max(0.12);
@@ -271,7 +276,7 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // still, and the zone measurement had room for it (our tops sat
             // at the top of the real range, our floors at the bottom).
             let top = math::smoothstep(0.72, 0.97, u);
-            let calm = 1.0 - 0.42 * top;
+            let calm = 1.0 - 0.45 * top;
             let fine = resid[i] - coarse[i];
             z.data[i] = base.bilinear(p) + calm * sup * (gf * fine + gc * coarse[i]);
         }
@@ -388,6 +393,16 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
                 None => d.wind_rad,
             };
             let b = pack.bucket(slope[mi], tpi[mi], aspect[mi] - refd);
+            // NOT a min-error patch selection. Image quilting's
+            // best-match rule was tried here to restore v1's exemplar
+            // character (review 2026-08-25) and FAILED on this material:
+            // choosing the candidate that agrees with its neighbours makes
+            // neighbouring patches self-similar, and their shared elongated
+            // features chain up — the tile came back covered in worm-like
+            // ridges, far worse than the fuzz it was meant to cure. Carolina
+            // wall fabric is directional enough that "most agreeable" and
+            // "most repetitive" are the same patch. Pseudo-random selection
+            // it is; the character has to come from the LANDFORM instead.
             let k = k0.wrapping_add(tile.wrapping_mul(2_654_435_761));
             for yy in 0..p {
                 let gy = y0 + yy as i64;

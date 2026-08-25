@@ -213,6 +213,35 @@ fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
     }
 }
 
+/// Separable box blur — reaches long wavelengths cheaply. The 5-point
+/// relaxation needs ~780 passes for a 200 m radius; three box passes get
+/// there in three.
+fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, r: i64,
+            passes: usize) {
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    for _ in 0..passes {
+        for axis in 0..2 {
+            let src = a.clone();
+            for y in 0..ny {
+                for x in 0..nx {
+                    let mut sum = 0.0;
+                    let mut n = 0.0;
+                    for k in -r..=r {
+                        let (px, py) = if axis == 0 {
+                            ((x + k).clamp(0, nx - 1), y)
+                        } else {
+                            (x, (y + k).clamp(0, ny - 1))
+                        };
+                        sum += src[spec.index(px as u32, py as u32)];
+                        n += 1.0;
+                    }
+                    a[spec.index(x as u32, y as u32)] = sum / n;
+                }
+            }
+        }
+    }
+}
+
 /// Limit the bed field's slope (a Lipschitz filter, swept like a chamfer).
 ///
 /// B is the envelope of the valley FLOORS. Two floors 40 m apart cannot
@@ -408,11 +437,18 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
             // three octaves, none short enough to read as dimples at 8 m
             // (the first pass ran a 34 m octave and the interfluves came
             // out pebbled); sub-64 m fabric is the texture stage's job
+            // Only the fine octave was wall-weighted, so the 165 m one
+            // rode straight over the interfluve tops — measured, they
+            // carried 1.37x real in the 150-250 m band, which is the
+            // patterned grain the review picked out at "around 250 m".
+            let top_r = math::smoothstep(0.70, 0.96, u[i]);
             let r = amp
                 * (0.46 * (0.30 + 1.6 * wall)
                     * noise::perlin2(p.x / 78.0, p.y / 78.0, s1)
-                    + 0.34 * noise::perlin2(p.x / 165.0, p.y / 165.0, s2)
-                    + 0.20 * noise::perlin2(p.x / 340.0, p.y / 340.0, s3));
+                    + 0.34 * (1.0 - 0.62 * top_r)
+                        * noise::perlin2(p.x / 165.0, p.y / 165.0, s2)
+                    + 0.20 * (1.0 - 0.35 * top_r)
+                        * noise::perlin2(p.x / 340.0, p.y / 340.0, s3));
             height.data[i] = bedf[i] + h + r;
         }
     }
@@ -440,17 +476,38 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // concentrated there and the tops get an extra lowpass instead.
     let sharp = d.valley_sharp;
     if sharp > 0.0 {
+        // The lowpass has to be at VALLEY scale. At ~40 m this amplified
+        // the fabric instead of the edge — it inflated the sub-64 m band
+        // to 0.53 against a real 0.29-0.41 and added exactly the fuzz it
+        // was meant to cure. A valley edge is a 100-200 m feature.
         let mut lp = height.data.clone();
-        blur(spec, &mut lp, 9);                   // ~ 40 m lowpass
+        box_blur(spec, &mut lp, 13, 2);           // ~ 105 m
+        // The tops need a genuinely LONG lowpass: measured, they carried
+        // 1.37x real in the 150-250 m band, and that energy is LANDFORM,
+        // not texture — thinning the residual's octaves barely touched it.
         let mut hi = height.data.clone();
-        blur(spec, &mut hi, 44);                  // ~ 120 m, for the tops
+        box_blur(spec, &mut hi, 24, 3);           // ~ 190 m radius
+        // The WEIGHTS are smoothed before use. u carries fine-scale
+        // variation, and multiplying a large lowpass difference by a
+        // jittery weight injects energy at exactly the scale we are trying
+        // to remove — measured, the sub-64 m band ran 0.58-0.61 against a
+        // real 0.29-0.41 until these were blurred.
+        let mut w_edge = vec![0.0f64; spec.len()];
+        let mut w_top = vec![0.0f64; spec.len()];
         for i in 0..spec.len() {
-            let uu = u[i];
-            // shoulder window: nothing on the floor, nothing on the crest
-            let edge = math::exp(-((uu - 0.60) / 0.24).powi(2));
-            let top = math::smoothstep(0.70, 0.96, uu);
+            w_edge[i] = math::exp(-((u[i] - 0.60) / 0.24).powi(2));
+            w_top[i] = math::smoothstep(0.70, 0.96, u[i]);
+        }
+        box_blur(spec, &mut w_edge, 6, 2);
+        box_blur(spec, &mut w_top, 6, 2);
+        for i in 0..spec.len() {
+            let edge = w_edge[i];
+            let top = w_top[i];
             let z = height.data[i];
-            let sharpened = z + sharp * 2.60 * edge * (z - lp[i]);
+            // the wider (valley-scale) lowpass leaves a much larger
+            // residual, so the coefficient is small: 2.1 against a 40 m
+            // lowpass became 1.0 of sub-64 m band against a real 0.29-0.41
+            let sharpened = z + sharp * 0.55 * edge * (z - lp[i]);
             // interfluve tops relax toward their own long lowpass
             height.data[i] = sharpened * (1.0 - 0.78 * top) + hi[i] * (0.78 * top);
         }
