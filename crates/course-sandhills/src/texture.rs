@@ -266,8 +266,14 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
                         + 0.40 * course_world::noise::perlin2(
                             p.x / 80.0, p.y / 80.0, sp1.wrapping_add(7)));
             let sup = sup.max(0.12);
+            // The measured profile already thins the fabric toward the
+            // divide; review 2026-08-25 asked for the high ground calmer
+            // still, and the zone measurement had room for it (our tops sat
+            // at the top of the real range, our floors at the bottom).
+            let top = math::smoothstep(0.72, 0.97, u);
+            let calm = 1.0 - 0.42 * top;
             let fine = resid[i] - coarse[i];
-            z.data[i] = base.bilinear(p) + sup * (gf * fine + gc * coarse[i]);
+            z.data[i] = base.bilinear(p) + calm * sup * (gf * fine + gc * coarse[i]);
         }
     }
     z

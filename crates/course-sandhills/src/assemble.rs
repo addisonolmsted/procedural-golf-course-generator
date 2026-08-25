@@ -432,12 +432,27 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // texture only made it fuzzier — 2 m grain cannot sharpen a 100 m
     // landform. An unsharp pass at VALLEY scale restores the edge, applied
     // to the landform before texture, where it belongs.
+    // …and it is applied BY POSITION, not uniformly. A flat unsharp
+    // sharpens the interfluve tops as much as the valley edges, which is
+    // backwards on both counts (review 2026-08-25: "higher land can be
+    // even smoother and the valley edges even sharper"). The break between
+    // upland and valley lives around u ≈ 0.6, so the sharpening is
+    // concentrated there and the tops get an extra lowpass instead.
     let sharp = d.valley_sharp;
     if sharp > 0.0 {
         let mut lp = height.data.clone();
         blur(spec, &mut lp, 9);                   // ~ 40 m lowpass
+        let mut hi = height.data.clone();
+        blur(spec, &mut hi, 44);                  // ~ 120 m, for the tops
         for i in 0..spec.len() {
-            height.data[i] += sharp * (height.data[i] - lp[i]);
+            let uu = u[i];
+            // shoulder window: nothing on the floor, nothing on the crest
+            let edge = math::exp(-((uu - 0.60) / 0.24).powi(2));
+            let top = math::smoothstep(0.70, 0.96, uu);
+            let z = height.data[i];
+            let sharpened = z + sharp * 2.60 * edge * (z - lp[i]);
+            // interfluve tops relax toward their own long lowpass
+            height.data[i] = sharpened * (1.0 - 0.78 * top) + hi[i] * (0.78 * top);
         }
     }
 
