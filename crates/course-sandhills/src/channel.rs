@@ -284,10 +284,9 @@ fn tier2(attach_m: f64) -> Tier {
         lam: (450.0, 750.0),   // review 2026-08-24: lambda floor raised
         claim: 180.0,       // tribs.rs tier2 — sets d2c together with density
         min_len: 150.0,
-        // Review 2026-08-24: reach capped well below attempt 4's 2600 m
-        // climbs; first ~1/4 tile, then raised to ~1/2 tile on review
-        // ("increase it to around 0.5 tile as a max and see").
-        max_len: 1500.0,
+        // Reach cap by review, three steps: ~1/4 tile (2026-08-24), ~1/2
+        // tile ("increase to 0.5 and see"), ~2/3 tile (N0 round 7).
+        max_len: 2000.0,
         step: 20.0,
         min_gain: 0.012,
     }
@@ -295,9 +294,9 @@ fn tier2(attach_m: f64) -> Tier {
 
 fn tier3(attach_m: f64) -> Tier {
     Tier {
-        // review 2026-08-27: real parent tributaries carry MANY sub-tribs
-        // at acute angles — spacing tightened, departures drawn acute
-        spacing: (attach_m * 0.42, attach_m * 0.68),
+        // review 2026-08-27 + N0 round 7: real parent tributaries carry
+        // MANY sub-tribs at acute angles — spacing tightened twice
+        spacing: (attach_m * 0.34, attach_m * 0.55),
         end_margin: 140.0,
         centre_deg: 36.0,
         tail_p: 0.06,
@@ -306,7 +305,7 @@ fn tier3(attach_m: f64) -> Tier {
         lam: (350.0, 600.0),   // review 2026-08-24: lambda floor raised
         claim: 155.0,
         min_len: 90.0,
-        max_len: 700.0,
+        max_len: 900.0,        // N0 round 7: reach up with the tier-2s
         step: 16.0,
         min_gain: 0.012,
     }
@@ -712,7 +711,7 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // --- TIER 4 (review 2026-08-27): one more real branching level —
     // sub-tribs on the tier-3s, acute, short
     let t4 = Tier {
-        spacing: (d.attach_m * 0.45 * g_mult, d.attach_m * 0.70 * g_mult),
+        spacing: (d.attach_m * 0.38 * g_mult, d.attach_m * 0.60 * g_mult),
         end_margin: 90.0,
         centre_deg: 34.0,
         tail_p: 0.06,
