@@ -486,7 +486,10 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
         // 1.37x real in the 150-250 m band, and that energy is LANDFORM,
         // not texture — thinning the residual's octaves barely touched it.
         let mut hi = height.data.clone();
-        box_blur(spec, &mut hi, 24, 3);           // ~ 190 m radius
+        // review 2026-08-25: still too much presence at 150-250 m on the
+        // tops, so the lowpass is longer again and the tops lean on it
+        // harder
+        box_blur(spec, &mut hi, 34, 3);           // ~ 270 m radius
         // The WEIGHTS are smoothed before use. u carries fine-scale
         // variation, and multiplying a large lowpass difference by a
         // jittery weight injects energy at exactly the scale we are trying
@@ -507,9 +510,10 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
             // the wider (valley-scale) lowpass leaves a much larger
             // residual, so the coefficient is small: 2.1 against a 40 m
             // lowpass became 1.0 of sub-64 m band against a real 0.29-0.41
-            let sharpened = z + sharp * 0.55 * edge * (z - lp[i]);
+            // the shoulder can take more now the weights are smoothed
+            let sharpened = z + sharp * 0.95 * edge * (z - lp[i]);
             // interfluve tops relax toward their own long lowpass
-            height.data[i] = sharpened * (1.0 - 0.78 * top) + hi[i] * (0.78 * top);
+            height.data[i] = sharpened * (1.0 - 0.90 * top) + hi[i] * (0.90 * top);
         }
     }
 
