@@ -287,6 +287,28 @@ impl ReliefProfile {
     }
 }
 
+/// Review 2026-08-26 asked for the relief effect to be pushed BEYOND what the
+/// corpus shows — less amplitude on the high ground, and the transition moved
+/// DOWN so more of the tile reads as calm upland and the roughness is confined
+/// to the low ground.
+///
+/// These two are therefore deliberately NOT measured values, unlike the RPROF1
+/// table they shape, which stays a faithful record of the corpus. Keeping the
+/// exaggeration separate from the measurement is the point: the table can be
+/// re-measured without disturbing the taste call, and the taste call can be
+/// dialled without corrupting the data.
+///
+/// * `SHIFT < 1` remaps relief so the high-ground gains arrive at lower
+///   ground — that is the "transition to lower reliefs".
+/// * `STRENGTH > 1` exaggerates the curve's departure from flat.
+const RELIEF_SHIFT: f64 = 0.60;
+const RELIEF_STRENGTH: f64 = 1.90;
+
+/// The shaped relief gain, BEFORE normalisation.
+fn relief_raw(rp: &ReliefProfile, band: usize, h: f64) -> f64 {
+    rp.gain(band, h.clamp(0.0, 1.0).powf(RELIEF_SHIFT)).powf(RELIEF_STRENGTH)
+}
+
 pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
                         grain: &Grid<f64>, uf: &Grid<f64>, prof: &TexProfile,
                         rprof: Option<&ReliefProfile>, d: &Descriptors) -> Grid<f64>
@@ -327,6 +349,31 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
         let span = (hi - lo).max(1e-6);
         for i in 0..spec.len() {
             hrel[i] = ((zs[i] - lo) / span).clamp(0.0, 1.0);
+        }
+    }
+
+    // --- normalise the relief curve ON THE LOW THIRD ------------------
+    // Not on the tile mean: a mean-preserving rescale only moves energy from
+    // the tops into the valleys, so the high ground never actually loses any
+    // (review 2026-08-26 asked for it to). Not on a single anchor point
+    // either — that was tried and it dropped the low ground by 45% as well,
+    // because removing the mean-preserving rescale removed a compensating
+    // boost with it. Dividing by the curve's own mean over the low third
+    // pins that third at exactly the amplitude it had before any relief
+    // conditioning, and lets everything above it fall away.
+    let (mut nf, mut nc) = (1.0f64, 1.0f64);
+    if let Some(rp) = rprof {
+        let (mut sf, mut sc, mut cnt) = (0.0, 0.0, 0usize);
+        for i in 0..spec.len() {
+            if hrel[i] < 1.0 / 3.0 {
+                sf += relief_raw(rp, 1, hrel[i]);
+                sc += relief_raw(rp, 3, hrel[i]);
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            nf = (sf / cnt as f64).max(1e-3);
+            nc = (sc / cnt as f64).max(1e-3);
         }
     }
 
@@ -374,7 +421,8 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // "bumps and pocks" of the review, while the high ground keeps
             // its broad swells and loses the grain.
             let (rf, rc) = match rprof {
-                Some(rp) => (rp.gain(1, hrel[i]), rp.gain(3, hrel[i])),
+                Some(rp) => (relief_raw(rp, 1, hrel[i]) / nf,
+                             relief_raw(rp, 3, hrel[i]) / nc),
                 None => (1.0, 1.0),
             };
             let fine = resid[i] - coarse[i];
@@ -393,26 +441,12 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // 3.5 sigma leaves ordinary fabric untouched (tanh is within 1% of the
     // identity below ~1 sigma) and squashes only the imported scars. A hard
     // clip would replace one sharp edge with another; tanh cannot.
-    // The relief curve has a tile mean below 1, so applying it raw would
-    // quietly darken the whole fabric and undo the band calibration. Rescale
-    // to the RMS the increment would have had without it: only the
-    // DISTRIBUTION over relief changes, never the total.
-    if rprof.is_some() {
-        let mut a0 = 0.0;
-        let mut a1 = 0.0;
-        for (i, v) in inc.iter().enumerate() {
-            let (rf, _) = (rprof.unwrap().gain(1, hrel[i]), 0.0);
-            a0 += (v / rf.max(1e-3)) * (v / rf.max(1e-3));
-            a1 += v * v;
-        }
-        if a1 > 1e-12 {
-            let k = (a0 / a1).sqrt();
-            for v in inc.iter_mut() {
-                *v *= k;
-            }
-        }
-    }
-
+    // No RMS renormalisation here. An earlier version rescaled the increment
+    // to the RMS it would have had without the relief curve, so that only the
+    // DISTRIBUTION moved; review 2026-08-26 asked for the high ground to lose
+    // amplitude outright, which a mean-preserving rescale cannot deliver. The
+    // anchor in `relief_gain` holds the low ground instead, so the tile
+    // amplitude falls — a deliberate departure from the band calibration.
     let mut acc = 0.0;
     for v in inc.iter() {
         acc += v * v;
