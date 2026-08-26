@@ -150,10 +150,14 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     let mut tr = rng::stream(id, rng::TEXTURE);
     let mut dt = d.clone();
     dt.texture_gain = d.texture_gain * d.fluvial_tex_k;
+    // Measured amplitude-by-relief curve (RPROF1). Optional: without it the
+    // quilt behaves exactly as before.
+    let rprof = texture::ReliefProfile::load(std::path::Path::new(
+        "assets/sandhills_relief_profile.txt")).ok();
     let mut tex = match texture::TexProfile::load(std::path::Path::new(
         "assets/sandhills_texture_profile.txt")) {
         Ok(tp) => texture::quilt_fluvial_v2(&mut tr, pack, &asm.height, &grain,
-                                            &asm.u, &tp, &dt),
+                                            &asm.u, &tp, rprof.as_ref(), &dt),
         Err(_) => texture::quilt_fluvial(&mut tr, pack, &asm.height, &grain,
                                          &gate, &dt),
     };

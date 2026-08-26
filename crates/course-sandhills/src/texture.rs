@@ -226,9 +226,70 @@ pub fn quilt_fluvial(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
 /// the measured per-band gain against valley position, then a two-octave
 /// supply field (the `belt_patchiness` idiom from surface.rs) calibrated so
 /// the variation statistic matches the corpus.
+/// Texture amplitude as a function of RELIEF POSITION, measured on the 65 NC
+/// tiles by `tools/aeolian/texture_by_relief.py`.
+///
+/// This is a different axis from `TexProfile`'s `u`. `u` is planform — how
+/// far a point sits between its channel and its divide — and a point can be
+/// far from any channel and still be LOW, out on a broad flat interfluve.
+/// Review 2026-08-26 read the difference as one of height, and the corpus
+/// agrees emphatically: the bottom third of the relief carries 1.09-1.15x a
+/// tile's mean band RMS and the top third 0.81-0.89x, in every band from
+/// 2-4 m to 32-64 m. Our own tiles measured almost FLAT above the lowest
+/// bin (0.92-1.00), which is why the high ground did not read as calmer.
+///
+/// The curve is not monotone at the bottom: bin 0 sits below bin 1 in the
+/// coarser bands, because the very lowest ground is the alluvial valley
+/// FLOOR, which is flat. The lower slope just above it is the roughest
+/// ground on the tile. Keeping the whole curve rather than two endpoints is
+/// what preserves that.
+pub struct ReliefProfile {
+    bins: usize,
+    /// `g[band][bin]` — gain against that band's own tile mean.
+    g: Vec<Vec<f64>>,
+}
+
+impl ReliefProfile {
+    pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
+        let txt = std::fs::read_to_string(path)?;
+        let mut lines = txt.lines();
+        let tag = lines.next().unwrap_or("").trim().to_string();
+        if tag != "RPROF1" {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                                           "not an RPROF1 table"));
+        }
+        let mut hdr = lines.next().unwrap_or("").split_whitespace();
+        let nband: usize = hdr.next().unwrap_or("0").parse().unwrap_or(0);
+        let bins: usize = hdr.next().unwrap_or("0").parse().unwrap_or(0);
+        let _ = lines.next();                       // band labels
+        let mut g = Vec::with_capacity(nband);
+        for _ in 0..nband {
+            let row: Vec<f64> = lines.next().unwrap_or("").split_whitespace()
+                .filter_map(|v| v.parse().ok()).collect();
+            g.push(row);
+        }
+        Ok(ReliefProfile { bins, g })
+    }
+
+    /// Gain for `band` at normalised relief `h` in [0,1], linear between bin
+    /// centres and flat outside them.
+    pub fn gain(&self, band: usize, h: f64) -> f64 {
+        let row = match self.g.get(band) {
+            Some(r) if !r.is_empty() => r,
+            _ => return 1.0,
+        };
+        let t = (h.clamp(0.0, 1.0) * self.bins as f64 - 0.5).clamp(0.0, (self.bins - 1) as f64);
+        let i = t.floor() as usize;
+        let f = t - i as f64;
+        let a = row[i.min(row.len() - 1)];
+        let b = row[(i + 1).min(row.len() - 1)];
+        a + (b - a) * f
+    }
+}
+
 pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
                         grain: &Grid<f64>, uf: &Grid<f64>, prof: &TexProfile,
-                        d: &Descriptors) -> Grid<f64>
+                        rprof: Option<&ReliefProfile>, d: &Descriptors) -> Grid<f64>
 {
     let base = macro_h;
     let unit = Grid::filled(uf.spec, 1.0f64);
@@ -246,6 +307,28 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     let mut coarse = resid.clone();
     let w = (12.0 / TEX_RES_M).round() as usize;      // ~12 m split
     box_blur(spec, &mut coarse, w, 2);
+
+    // --- normalised relief, from the MACRO surface --------------------
+    // Taken from `base`, not from the textured field, so the texture cannot
+    // feed back into its own conditioning. 2nd-98th percentile, matching how
+    // the corpus curve was measured.
+    let mut hrel = vec![0.5f64; spec.len()];
+    if rprof.is_some() {
+        let mut zs: Vec<f64> = Vec::with_capacity(spec.len());
+        for y in 0..spec.ny {
+            for x in 0..spec.nx {
+                zs.push(base.bilinear(spec.world_of(x, y)));
+            }
+        }
+        let mut srt = zs.clone();
+        srt.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let lo = srt[(srt.len() as f64 * 0.02) as usize];
+        let hi = srt[(srt.len() as f64 * 0.98) as usize];
+        let span = (hi - lo).max(1e-6);
+        for i in 0..spec.len() {
+            hrel[i] = ((zs[i] - lo) / span).clamp(0.0, 1.0);
+        }
+    }
 
     let (sp1, sp2) = (rng.next_u32(), rng.next_u32());
     let mut z = Grid::filled(spec, 0.0f64);
@@ -284,8 +367,18 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // at the top of the real range, our floors at the bottom).
             let top = math::smoothstep(0.72, 0.97, u);
             let calm = 1.0 - 0.45 * top;
+            // Relief conditioning, applied SEPARATELY to the two halves so
+            // it changes character and not only amplitude: the corpus shows
+            // the low ground holding relatively more fine energy (its
+            // fine/coarse ratio is 1.24 against 0.95 up high), which is the
+            // "bumps and pocks" of the review, while the high ground keeps
+            // its broad swells and loses the grain.
+            let (rf, rc) = match rprof {
+                Some(rp) => (rp.gain(1, hrel[i]), rp.gain(3, hrel[i])),
+                None => (1.0, 1.0),
+            };
             let fine = resid[i] - coarse[i];
-            inc[i] = calm * sup * (gf * fine + gc * coarse[i]);
+            inc[i] = calm * sup * (gf * rf * fine + gc * rc * coarse[i]);
         }
     }
 
@@ -300,6 +393,26 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // 3.5 sigma leaves ordinary fabric untouched (tanh is within 1% of the
     // identity below ~1 sigma) and squashes only the imported scars. A hard
     // clip would replace one sharp edge with another; tanh cannot.
+    // The relief curve has a tile mean below 1, so applying it raw would
+    // quietly darken the whole fabric and undo the band calibration. Rescale
+    // to the RMS the increment would have had without it: only the
+    // DISTRIBUTION over relief changes, never the total.
+    if rprof.is_some() {
+        let mut a0 = 0.0;
+        let mut a1 = 0.0;
+        for (i, v) in inc.iter().enumerate() {
+            let (rf, _) = (rprof.unwrap().gain(1, hrel[i]), 0.0);
+            a0 += (v / rf.max(1e-3)) * (v / rf.max(1e-3));
+            a1 += v * v;
+        }
+        if a1 > 1e-12 {
+            let k = (a0 / a1).sqrt();
+            for v in inc.iter_mut() {
+                *v *= k;
+            }
+        }
+    }
+
     let mut acc = 0.0;
     for v in inc.iter() {
         acc += v * v;
