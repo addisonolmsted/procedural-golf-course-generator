@@ -282,6 +282,13 @@ pub struct Record {
     /// profile under-sharpens (peak curvature 0.57-1.11 vs real 1.15-1.84);
     /// this restores the valley edge at landform scale.
     pub valley_sharp: Range,
+    /// Divide-skeleton warp, metres. `measured 2026-08-25` (ridge_diag2):
+    /// without it the interfluves print the drainage's geometric dual as a
+    /// branching ridge network.
+    pub divide_warp: Range,
+    /// Upland relief that is INDEPENDENT of the drainage, metres — the
+    /// irregularity real interfluves get from geology and inheritance.
+    pub upland_relief_m: Range,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -405,6 +412,8 @@ pub const SANDHILLS: Record = Record {
     fluvial_tex_k: Range::new(0.64, 0.84),   // calibrated at X3
     tex_patchy: Range::new(1.55, 2.15),      // calibrated to CV 0.55
     valley_sharp: Range::new(0.55, 0.85),    // calibrated to real curvature
+    divide_warp: Range::new(70.0, 120.0),    // measured (ridge_diag2)
+    upland_relief_m: Range::new(3.4, 5.8),   // measured (ridge_diag2)
     p_allogenic_river: 0.30,                 // literature
 };
 

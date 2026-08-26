@@ -363,9 +363,27 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     slope_limit(spec, &mut bedf, 0.22);
     blur(spec, &mut bedf, 2);
 
-    // --- the divide field and the valley coordinate ------------------------
+    // --- the warp, THEN the divide field -----------------------------------
+    // Warping only the coordinate was not enough: the medial axis was still
+    // found on the unwarped field, so the skeleton stayed exactly where it
+    // was and the ridge tree with it (measured: long-run share barely moved,
+    // 83-91% -> 79-90%). The divide has to be FOUND on the warped field.
+    let (wa, wb) = (rng.next_u32(), rng.next_u32());
+    let warp_m = d.divide_warp;
+    let mut distw = vec![0.0f64; spec.len()];
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let p = spec.world_of(x, y);
+            let n1 = noise::perlin2(p.x / 430.0, p.y / 430.0, wa);
+            let n2 = noise::perlin2(p.x / 170.0, p.y / 170.0, wb);
+            let reach = math::smoothstep(20.0, 140.0, dist[i]);
+            distw[i] = (dist[i] + warp_m * reach * (n1 + 0.55 * n2)).max(0.0);
+        }
+    }
+
     // medial axis = where the distance field's gradient collapses
-    let mut dsm = dist.clone();
+    let mut dsm = distw.clone();
     blur(spec, &mut dsm, 8);
     let mut med: Vec<(u32, u32, f64)> = Vec::new();
     let gat = |dsm: &Vec<f64>, x: i64, y: i64| -> f64 {
@@ -377,7 +395,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
             let gx = (gat(&dsm, x + 1, y) - gat(&dsm, x - 1, y)) / (2.0 * CELL);
             let gy = (gat(&dsm, x, y + 1) - gat(&dsm, x, y - 1)) / (2.0 * CELL);
             if (gx * gx + gy * gy).sqrt() < 0.6
-                && dist[spec.index(x as u32, y as u32)] > 24.0 {
+                && distw[spec.index(x as u32, y as u32)] > 24.0 {
                 med.push((x as u32, y as u32, 0.0));
             }
         }
@@ -390,9 +408,9 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     let mut u = vec![0.0f64; spec.len()];
     let mut w = vec![0.0f64; spec.len()];
     for i in 0..spec.len() {
-        let ww = dist[i] + mdist[i];
+        let ww = distw[i] + mdist[i];
         w[i] = ww;
-        u[i] = (dist[i] / ww.max(1e-6)).clamp(0.0, 1.0);
+        u[i] = (distw[i] / ww.max(1e-6)).clamp(0.0, 1.0);
     }
     // W is a property of the VALLEY, not of the cell: it must not jump
     // where the medial mask is ragged
@@ -407,6 +425,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
 
     // --- H + residual ------------------------------------------------------
     let (s1, s2, s3) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
+    let s_ind = rng.next_u32();
     let rk = d.hand_resid;
 
     // H as a field, so its CONE APEXES can be rounded. A channel ENDPOINT
@@ -426,7 +445,16 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
         for x in 0..spec.nx {
             let i = spec.index(x, y);
             let p = spec.world_of(x, y);
-            let h = hf[i];
+            // Independent upland relief: real interfluves are irregular for
+            // reasons the drainage knows nothing about (geology, inherited
+            // surface), and our generator had no term for any of it — every
+            // upland height was a function of the network. This one is not.
+            let ind = d.upland_relief_m
+                * math::smoothstep(0.35, 0.85, u[i])
+                * (noise::perlin2(p.x / 620.0, p.y / 620.0, s_ind)
+                    + 0.5 * noise::perlin2(p.x / 260.0, p.y / 260.0,
+                                           s_ind.wrapping_add(11)));
+            let h = hf[i] + ind;
             // walls carry the roughness; floors and interfluve tops are calm
             let wall = math::exp(-((u[i] - 0.55) / 0.30).powi(2));
             // taper to nothing at the water line: forcing height = bed on
