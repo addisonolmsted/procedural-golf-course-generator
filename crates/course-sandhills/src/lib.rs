@@ -177,7 +177,7 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     // X4 — water last, on the finished ground
     let mut wr2 = rng::stream(id, rng::WATER);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
-    let water = water::fluvial(&mut wr2, &tex, &beds_for_water, &tiers, &u2, &d);
+    let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &d);
     (d, net, asm, tex, water, bays)
 }
 

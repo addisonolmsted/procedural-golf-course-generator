@@ -860,7 +860,7 @@ mod tests {
 /// No drawdown field is needed here (the aeolian mode needs one because its
 /// river is an intruder on a dune field). Here the creeks ARE the drainage:
 /// ground near them is low because they drained it.
-pub fn fluvial(rng: &mut DetRng, height: &Grid<f64>,
+pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                beds: &[(Vec<Vec2>, Vec<f64>)], tiers: &[u8],
                u_field: &Grid<f64>, d: &Descriptors) -> Water {
     let spec = height.spec;
@@ -942,6 +942,206 @@ pub fn fluvial(rng: &mut DetRng, height: &Grid<f64>,
                     surface.data[i] = surface.data[i].max(lvl);
                 }
             }
+        }
+    }
+
+    // --- PONDS IN CLOSED DEPRESSIONS ---------------------------------------
+    // Real Carolina interfluves DO hold standing water away from the trunk:
+    // measured over 8 kept tiles, closed depressions cover 0.24% of a tile
+    // on the interfluves alone (up to 0.68%), reaching 2.3 ha and 2.7 m
+    // deep. That is bay country — a bay floor is exactly such a pit — so
+    // rather than placing ponds, we FIND them: fill the surface, and
+    // whatever the fill had to raise is a basin that would hold water.
+    //
+    // Done at 8 m: a pond smaller than a few cells is not a pond, and the
+    // fill is far cheaper there.
+    let step = (8.0 / cell).round().max(1.0) as usize;
+    let (nx8, ny8) = ((spec.nx as usize).div_ceil(step), (spec.ny as usize).div_ceil(step));
+    let mut z8 = vec![0.0f64; nx8 * ny8];
+    for y in 0..ny8 {
+        for x in 0..nx8 {
+            let sx = (x * step).min(spec.nx as usize - 1) as u32;
+            let sy = (y * step).min(spec.ny as usize - 1) as u32;
+            z8[y * nx8 + x] = height.data[spec.index(sx, sy)];
+        }
+    }
+    // Planchon-Darboux: start high everywhere but the border, then let the
+    // surface drain down to its neighbours until nothing moves.
+    let hi = z8.iter().cloned().fold(f64::MIN, f64::max) + 10.0;
+    let mut f: Vec<f64> = (0..nx8 * ny8)
+        .map(|i| {
+            let (x, y) = (i % nx8, i / nx8);
+            if x == 0 || y == 0 || x == nx8 - 1 || y == ny8 - 1 { z8[i] } else { hi }
+        })
+        .collect();
+    let eps = 1e-4;
+    for _ in 0..200 {
+        let mut moved = false;
+        for pass in 0..2 {
+            let order: Vec<usize> = if pass == 0 {
+                (0..nx8 * ny8).collect()
+            } else {
+                (0..nx8 * ny8).rev().collect()
+            };
+            for i in order {
+                if f[i] <= z8[i] {
+                    continue;
+                }
+                let (x, y) = ((i % nx8) as i64, (i / nx8) as i64);
+                let mut lowest = f64::MAX;
+                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                    let (a, b) = (x + dx, y + dy);
+                    if a >= 0 && b >= 0 && a < nx8 as i64 && b < ny8 as i64 {
+                        lowest = lowest.min(f[b as usize * nx8 + a as usize]);
+                    }
+                }
+                let cand = (lowest + eps).max(z8[i]);
+                if cand < f[i] - 1e-9 {
+                    f[i] = cand;
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    // A pit is only a pond if it is both DEEP enough and BIG enough. Without
+    // the area test the fill returns every texture-scale hollow and the tile
+    // floods: measured, 7-11% of the tile against real tiles' 0.5-2.5% of
+    // closed depression at the same depth threshold.
+    let pond_min = rng.range_f64(0.55, 0.85);
+    let mut pit = vec![false; nx8 * ny8];
+    for i in 0..nx8 * ny8 {
+        pit[i] = f[i] - z8[i] >= pond_min;
+    }
+    // connected-component area filter, 4-neighbour flood
+    let min_cells = 46usize;                     // ≈ 0.3 ha at 8 m
+    let mut keep = vec![false; nx8 * ny8];
+    let mut seen = vec![false; nx8 * ny8];
+    for start in 0..nx8 * ny8 {
+        if !pit[start] || seen[start] {
+            continue;
+        }
+        let mut stack = vec![start];
+        let mut comp = Vec::new();
+        seen[start] = true;
+        while let Some(k) = stack.pop() {
+            comp.push(k);
+            let (x, y) = ((k % nx8) as i64, (k / nx8) as i64);
+            for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                let (a, b) = (x + dx, y + dy);
+                if a < 0 || b < 0 || a >= nx8 as i64 || b >= ny8 as i64 {
+                    continue;
+                }
+                let m = b as usize * nx8 + a as usize;
+                if pit[m] && !seen[m] {
+                    seen[m] = true;
+                    stack.push(m);
+                }
+            }
+        }
+        if comp.len() >= min_cells {
+            for k in comp {
+                keep[k] = true;
+            }
+        }
+    }
+    // The pond LEVEL is interpolated back to 2 m, not sampled per 8 m cell:
+    // nearest-cell sampling gave the shorelines an 8 m staircase.
+    let lvl_at = |wx: f64, wy: f64| -> f64 {
+        let gx = (wx / (cell * step as f64)).clamp(0.0, (nx8 - 1) as f64);
+        let gy = (wy / (cell * step as f64)).clamp(0.0, (ny8 - 1) as f64);
+        let (x0, y0) = (gx.floor() as usize, gy.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(nx8 - 1), (y0 + 1).min(ny8 - 1));
+        let (tx, ty) = (gx - x0 as f64, gy - y0 as f64);
+        let a = f[y0 * nx8 + x0] * (1.0 - tx) + f[y0 * nx8 + x1] * tx;
+        let b = f[y1 * nx8 + x0] * (1.0 - tx) + f[y1 * nx8 + x1] * tx;
+        a * (1.0 - ty) + b * ty
+    };
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let (bx, by) = ((x as usize / step).min(nx8 - 1), (y as usize / step).min(ny8 - 1));
+            let j = by * nx8 + bx;
+            if !keep[j] {
+                continue;
+            }
+            let wp = spec.world_of(x, y);
+            let lvl = lvl_at(wp.x, wp.y);
+            if height.data[i] < lvl {
+                if surface.data[i].is_nan() {
+                    wet_cells += 1;
+                    surface.data[i] = lvl;
+                } else {
+                    surface.data[i] = surface.data[i].max(lvl);
+                }
+            }
+        }
+    }
+
+    // --- FLATTEN THE GROUND UNDER STANDING WATER ---------------------------
+    // A pond floor is a depositional surface: fines settle out and level it.
+    // Sloping ground beneath a flat water plane reads wrong, and it is wrong
+    // — so anything under standing water is levelled to a shallow, near-flat
+    // bed. The CREEKS are exempt: a creek bed keeps its gradient, which is
+    // what makes it a creek.
+    let mut creek = vec![false; spec.len()];
+    for (ci, (pts, _)) in beds.iter().enumerate() {
+        let tier = tiers.get(ci).copied().unwrap_or(1);
+        if tier >= 4 {
+            continue;
+        }
+        for p in pts {
+            let r = 4;
+            let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+            for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                    creek[spec.index(gx as u32, gy as u32)] = true;
+                }
+            }
+        }
+    }
+    // Level the ROUGHNESS, not the basin. Pulling the floor toward a fixed
+    // offset below the water plane filled the bays in — a bay is a basin,
+    // and its depth is the point of it. Blending toward a heavily smoothed
+    // copy of the ground removes the fabric a pond floor would not carry
+    // while keeping the hollow it sits in.
+    let mut flat = height.data.clone();
+    {
+        let r = (26.0 / cell).round() as i64;      // ~26 m
+        for _ in 0..2 {
+            for axis in 0..2 {
+                let src = flat.clone();
+                for y in 0..spec.ny as i64 {
+                    for x in 0..spec.nx as i64 {
+                        let (mut acc, mut n) = (0.0, 0.0);
+                        for k in -r..=r {
+                            let (px, py) = if axis == 0 {
+                                ((x + k).clamp(0, spec.nx as i64 - 1), y)
+                            } else {
+                                (x, (y + k).clamp(0, spec.ny as i64 - 1))
+                            };
+                            acc += src[spec.index(px as u32, py as u32)];
+                            n += 1.0;
+                        }
+                        flat[spec.index(x as u32, y as u32)] = acc / n;
+                    }
+                }
+            }
+        }
+    }
+    for i in 0..spec.len() {
+        if surface.data[i].is_nan() || creek[i] {
+            continue;
+        }
+        // deeper water = quieter floor
+        let sub = (surface.data[i] - height.data[i]).max(0.0);
+        let k = (0.55 + 0.45 * math::smoothstep(0.0, 1.2, sub)).min(1.0);
+        height.data[i] += (flat[i] - height.data[i]) * k;
+        // and never leave ground standing above its own water surface
+        if height.data[i] > surface.data[i] - 0.05 {
+            height.data[i] = surface.data[i] - 0.05;
         }
     }
 

@@ -253,8 +253,10 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_m) * 1.3) {
             continue;
         }
-        let depth = rng.range_f64(0.8, 2.6);
-        let rim = depth * rng.range_f64(0.28, 0.55);
+        // deep enough to READ, and to hold water when the table is up:
+        // at 1-2 m over 400 m the basin vanished into the fabric (render)
+        let depth = rng.range_f64(2.2, 4.4);
+        let rim = depth * rng.range_f64(0.35, 0.62);
         let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
         let (ct, st) = (math::cos(theta), math::sin(theta));
         let s_edge = rng.next_u32();
@@ -277,7 +279,8 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
                 let i = spec.index(gx as u32, gy as u32);
                 // the basin: flat-ish floor, smooth wall
                 if r < 1.0 {
-                    let t = math::smoothstep(1.0, 0.55, r);
+                    // flat-floored, steep-walled: a bay is a basin, not a dish
+                    let t = math::smoothstep(1.0, 0.72, r);
                     height.data[i] -= depth * t;
                 }
                 // the rim: outside the rim line, strongest to the SE
