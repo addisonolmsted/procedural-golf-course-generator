@@ -240,8 +240,12 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         if out.len() >= n as usize {
             break;
         }
-        let a_m = rng.range_f64(80.0, 300.0);           // 160-600 m long
-        let b_m = a_m * rng.range_f64(0.55, 0.78);      // consistently oval
+        // MEASURED 2026-08-25: the corpus holds only three intact bay-like
+        // upland depressions, and they run 173-256 m long, 88-116 m wide,
+        // 0.7-2.6 m deep, with soft rims — much smaller and gentler than the
+        // 440-506 m basins this was drawing. Sized to what the ground shows.
+        let a_m = rng.range_f64(85.0, 190.0);           // 170-380 m long
+        let b_m = a_m * rng.range_f64(0.42, 0.60);      // measured elongation ~2.2
         let c = course_world::math::Vec2::new(
             rng.range_f64(a_m, course_world::world::EXTENT_M - a_m),
             rng.range_f64(a_m, course_world::world::EXTENT_M - a_m));
@@ -253,10 +257,8 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_m) * 1.3) {
             continue;
         }
-        // deep enough to READ, and to hold water when the table is up:
-        // at 1-2 m over 400 m the basin vanished into the fabric (render)
-        let depth = rng.range_f64(2.2, 4.4);
-        let rim = depth * rng.range_f64(0.35, 0.62);
+        let depth = rng.range_f64(0.9, 2.6);            // measured 0.7-2.6
+        let rim = depth * rng.range_f64(0.18, 0.38);   // real rims are soft
         let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
         let (ct, st) = (math::cos(theta), math::sin(theta));
         let s_edge = rng.next_u32();

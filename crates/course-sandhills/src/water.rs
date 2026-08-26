@@ -877,14 +877,28 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         if tier >= 4 {
             continue;                       // ephemeral: dry
         }
+        // Review 2026-08-25: the full trunk must not read as a ribbon of
+        // water. A trunk carries wet REACHES — pools and runs separated by
+        // dry or braided sand — so its wetting is gated along the arc, and
+        // the width stays modest but never hairline. Tributaries are wet
+        // continuously; they are small enough that it reads as a creek line
+        // rather than a lake.
         let hw = match tier {
-            1 => rng.range_f64(2.2, 4.0),   // ~4-8 m wet width
-            2 => rng.range_f64(1.4, 2.4),
+            1 => rng.range_f64(1.8, 3.0),   // 3.5-6 m: present, not a lake
+            2 => rng.range_f64(1.3, 2.2),
             _ => rng.range_f64(0.9, 1.5),
         };
+        let s_reach = rng.next_u32();
+        let reach_lo = if tier == 1 { rng.range_f64(-0.05, 0.20) } else { -1.0 };
+        let mut arc = 0.0;
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
             let seg = a.distance(b);
+            arc += seg;
+            // wet reaches: a few hundred metres on, a few hundred off
+            if course_world::noise::perlin1(arc / 420.0, s_reach) < reach_lo {
+                continue;
+            }
             let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
             for j in 0..=n {
                 let t = j as f64 / n as f64;
@@ -923,7 +937,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // calibrated to the measured NC lake fraction (0.047 against the
     // Nebraska 0.26) — Carolina creek bottoms are swampy, but the
     // uplands are dry
-    let table_depth = d.water_table_m.min(5.5);
+    let table_depth = d.water_table_m.min(5.5) * 0.0;   // retired: see ponds
     let mut floor_z: Vec<f64> = Vec::new();
     for i in 0..spec.len() {
         if u_field.data[i] < 0.14 {
@@ -1010,13 +1024,13 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // the area test the fill returns every texture-scale hollow and the tile
     // floods: measured, 7-11% of the tile against real tiles' 0.5-2.5% of
     // closed depression at the same depth threshold.
-    let pond_min = rng.range_f64(0.55, 0.85);
+    let pond_min = rng.range_f64(0.95, 1.45);
     let mut pit = vec![false; nx8 * ny8];
     for i in 0..nx8 * ny8 {
         pit[i] = f[i] - z8[i] >= pond_min;
     }
     // connected-component area filter, 4-neighbour flood
-    let min_cells = 46usize;                     // ≈ 0.3 ha at 8 m
+    let min_cells = 125usize;                    // ≈ 0.8 ha at 8 m
     let mut keep = vec![false; nx8 * ny8];
     let mut seen = vec![false; nx8 * ny8];
     for start in 0..nx8 * ny8 {
@@ -1041,7 +1055,30 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                 }
             }
         }
-        if comp.len() >= min_cells {
+        // Where a pit sits matters as much as its size. Real interfluve
+        // depressions are RARE — 0.05-0.68% of a tile against 0.48-2.46%
+        // for the tile as a whole — so upland pits have to clear a much
+        // higher bar than valley ones, which is also what a bay floor
+        // does: large and properly basined, not a hollow in the fabric.
+        if comp.len() < min_cells {
+            continue;
+        }
+        let mut u_sum = 0.0;
+        let mut deepest = 0.0f64;
+        for &k in &comp {
+            let (bx, by) = (k % nx8, k / nx8);
+            let wx = bx as f64 * cell * step as f64;
+            let wy = by as f64 * cell * step as f64;
+            u_sum += u_field.bilinear(Vec2::new(wx, wy));
+            deepest = deepest.max(f[k] - z8[k]);
+        }
+        let u_mean = u_sum / comp.len() as f64;
+        let ok = if u_mean < 0.55 {
+            true                                   // valley floor: ordinary
+        } else {
+            comp.len() >= 230 && deepest >= 1.3    // upland: ≈1.5 ha and deep
+        };
+        if ok {
             for k in comp {
                 keep[k] = true;
             }
@@ -1059,9 +1096,33 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let b = f[y1 * nx8 + x0] * (1.0 - tx) + f[y1 * nx8 + x1] * tx;
         a * (1.0 - ty) + b * ty
     };
+    // Ponds belong OFF the trunk. Filling depressions along the main valley
+    // floor is what turned the trunk into one long lake (review); the trunk
+    // gets its wet reaches and nothing more.
+    let mut trunkzone = vec![false; spec.len()];
+    for (ci, (pts, _)) in beds.iter().enumerate() {
+        if tiers.get(ci).copied().unwrap_or(1) != 1 {
+            continue;
+        }
+        for p in pts {
+            let r = (95.0 / cell).ceil() as i64;
+            let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+            for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                    let q = spec.world_of(gx as u32, gy as u32);
+                    if q.distance(*p) <= 95.0 {
+                        trunkzone[spec.index(gx as u32, gy as u32)] = true;
+                    }
+                }
+            }
+        }
+    }
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
+            if trunkzone[i] {
+                continue;
+            }
             let (bx, by) = ((x as usize / step).min(nx8 - 1), (y as usize / step).min(ny8 - 1));
             let j = by * nx8 + bx;
             if !keep[j] {
@@ -1136,8 +1197,11 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             continue;
         }
         // deeper water = quieter floor
+        // Feathered by depth: at the shoreline the levelling is weak and it
+        // strengthens with submergence, so no flat-edged strip prints inside
+        // the water (review: a thinner flat section showed inside the trunk).
         let sub = (surface.data[i] - height.data[i]).max(0.0);
-        let k = (0.55 + 0.45 * math::smoothstep(0.0, 1.2, sub)).min(1.0);
+        let k = 0.9 * math::smoothstep(0.05, 1.1, sub);
         height.data[i] += (flat[i] - height.data[i]) * k;
         // and never leave ground standing above its own water surface
         if height.data[i] > surface.data[i] - 0.05 {
