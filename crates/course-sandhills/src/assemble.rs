@@ -42,6 +42,7 @@ use course_seed::DetRng;
 use course_world::grid::Grid;
 use course_world::math::{self, Vec2};
 use course_world::noise;
+use course_world::world::EXTENT_M;
 
 use crate::draw::Descriptors;
 use crate::wind::macro_spec;
@@ -335,6 +336,85 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     let (dist, _) = chamfer(spec, &seed);
     let (_, bed_near) = chamfer(spec, &bed_seed);
 
+    // --- POINTED valley heads ---------------------------------------------
+    // Review 2026-08-26: our tributary heads read as ROUND where the real
+    // ones are pointed. That is structural, not a dial. Every channel point
+    // seeds the chamfer, so around a terminal point the iso-distance
+    // contours are CIRCLES centred on it — and since the valley is a
+    // function of distance, the head comes out as a semicircular
+    // amphitheatre wrapped around the tip. A real headwater is a zero-order
+    // hollow that tapers to a cusp along its own axis.
+    //
+    // The fix is to make distance ANISOTROPIC beyond the tip: the along-axis
+    // component is stretched, so what was a circle becomes a pointed oval
+    // and the valley closes over a short distance upstream instead of
+    // swinging around the end. At s = 0 the correction is the identity, so
+    // it joins the ordinary field continuously.
+    // It is applied to a SEPARATE field. `dist` itself stays the true
+    // distance to the nearest channel, because other stages ask it that
+    // question and mean it: the bay placement uses it for clearance, and
+    // inflating it near tips let bays sit on sloping valley-head ground
+    // (measured — seed 9513 gained a hard-edged bay at a tributary head the
+    // first time this was tried). Only the valley SHAPE uses the corrected
+    // field.
+    const HEAD_ALPHA: f64 = 2.6;      // along-axis stretch beyond the tip
+    const HEAD_REACH: f64 = 260.0;    // no tip governs ground further than this
+    let mut dist_v = dist.clone();
+    for (ci, (pts, _)) in beds.iter().enumerate() {
+        let tier = tiers.get(ci).copied().unwrap_or(1);
+        if tier < 2 || pts.len() < 2 {
+            continue;                 // the trunk runs off-tile at both ends
+        }
+        let tip = pts[pts.len() - 1];
+        let margin = 90.0;
+        if tip.x < margin || tip.y < margin
+            || tip.x > EXTENT_M - margin || tip.y > EXTENT_M - margin
+        {
+            continue;                 // leaves the tile: not a headwater
+        }
+        let prev = pts[pts.len() - 2];
+        let dv = Vec2::new(tip.x - prev.x, tip.y - prev.y);
+        let len = (dv.x * dv.x + dv.y * dv.y).sqrt();
+        if len < 1e-6 {
+            continue;
+        }
+        let dir = Vec2::new(dv.x / len, dv.y / len);
+        let r = (HEAD_REACH / CELL).ceil() as i64;
+        let (cx, cy) = ((tip.x / CELL).round() as i64, (tip.y / CELL).round() as i64);
+        for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+            for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                let p = spec.world_of(gx as u32, gy as u32);
+                let (vx, vy) = (p.x - tip.x, p.y - tip.y);
+                let s_ax = vx * dir.x + vy * dir.y;
+                if s_ax <= 0.0 {
+                    continue;         // upstream side only
+                }
+                let de = (vx * vx + vy * vy).sqrt();
+                if de > HEAD_REACH {
+                    continue;
+                }
+                let i = spec.index(gx as u32, gy as u32);
+                // Only where this tip IS the nearest channel — but as a
+                // SMOOTH weight, not a threshold. A hard test put a step in
+                // the distance field wherever another channel took over, and
+                // a step in d is a cliff in the surface.
+                let wsel = math::smoothstep(CELL * 5.0, CELL * 1.0, (dist[i] - de).abs());
+                let wrad = math::smoothstep(HEAD_REACH, HEAD_REACH * 0.55, de);
+                let wt = wsel * wrad;
+                if wt <= 0.0 {
+                    continue;
+                }
+                let q = (de * de - s_ax * s_ax).max(0.0).sqrt();
+                let dn = ((HEAD_ALPHA * s_ax).powi(2) + q * q).sqrt();
+                if dn > dist_v[i] {
+                    dist_v[i] += wt * (dn - dist_v[i]);
+                }
+            }
+        }
+    }
+    blur(spec, &mut dist_v, 2);
+    let dist_v = dist_v;
+
     // B: nearest-channel bed, then relaxed with the channels re-anchored
     // every pass. Enough passes (48 ≈ 55 m of spread) to dissolve the
     // Voronoi creases that printed the interfluves as flat polygonal
@@ -412,9 +492,9 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
             let n = noise::perlin2(p.x / 300.0, p.y / 300.0, wa)
                 + 0.6 * noise::perlin2(p.x / 130.0, p.y / 130.0, wb);
             let md = (mdist[i] + d.divide_wander * n).max(0.0);
-            let ww = dist[i] + md;
-            w[i] = dist[i] + mdist[i];        // half-width from the TRUE field
-            u[i] = (dist[i] / ww.max(1e-6)).clamp(0.0, 1.0);
+            let ww = dist_v[i] + md;
+            w[i] = dist_v[i] + mdist[i];      // half-width from the valley field
+            u[i] = (dist_v[i] / ww.max(1e-6)).clamp(0.0, 1.0);
         }
     }
     // W is a property of the VALLEY, not of the cell: it must not jump
