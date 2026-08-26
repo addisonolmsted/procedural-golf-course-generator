@@ -1011,6 +1011,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let mut pos: Vec<(Vec2, Vec2, f64)> = Vec::new();   // centre, perp, swing
         let mut zs: Vec<f64> = Vec::new();
         let mut fac: Vec<f64> = Vec::new();
+        let mut arcs: Vec<f64> = Vec::new();
         let mut arc = 0.0;
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
@@ -1044,6 +1045,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                 pos.push((p, perp, off));
                 zs.push(bed[k] + (bed[k + 1] - bed[k]) * t);
                 fac.push(f);
+                arcs.push(s_here);
             }
             arc += seg;
         }
@@ -1062,7 +1064,24 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // and a bed taken from the trunk centre-line there had to cut metres
         // to reach it), and the cut is a one-sided SOFT skirt that reaches
         // zero 26 m out, so there is no edge to catch the light.
-        let skirt = 26.0f64;
+        // --- the carved swale: narrower, and never the same twice ---------
+        // Review: a fixed 26 m skirt with a fixed 0.35 m cut is literally an
+        // extrusion — constant width, constant cross-section, constant depth
+        // for three kilometres — and it reads as one. Four things now vary
+        // along the axis, all from the creek's own seed so the rest of the
+        // tile is untouched:
+        //
+        //   * half the base width (13 m, was 26), modulated by two octaves;
+        //   * the cut depth, so the swale has pools and shallows;
+        //   * the wet width itself;
+        //   * and an ASYMMETRY tied to the bend — the outer bank of a
+        //     meander is the cut bank and carries the wider, deeper edge,
+        //     the inner bank is the point bar and barely registers. That is
+        //     what stops the cross-section being a symmetric trough.
+        let s_w = m_seed ^ 0x9E37_79B9;
+        let s_d = m_seed ^ 0x85EB_CA6B;
+        let s_h = m_seed ^ 0xC2B2_AE35;
+        let base_skirt = 13.0f64;
         let mut qs: Vec<Vec2> = Vec::with_capacity(pos.len());
         for i in 0..pos.len() {
             let (p0, perp, off) = pos[i];
@@ -1095,28 +1114,47 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let h0: Vec<f64> = height.data.clone();
         for i in 0..qs.len() {
             let (p, z) = (qs[i], zs[i]);
-            let r = (skirt / cell).ceil() as i64 + 1;
+            let a = arcs[i];
+            let perp = pos[i].1;
+            let off = pos[i].2;
+            // width: two octaves, so it swells and pinches on more than one
+            // scale instead of breathing regularly
+            let wmul = 1.0
+                + 0.40 * course_world::noise::perlin1(a / 270.0, s_w)
+                + 0.20 * course_world::noise::perlin1(a / 88.0, s_w ^ 0x11);
+            let sk_c = (base_skirt * wmul).clamp(6.5, 23.0);
+            // depth: pools and shallows along the run
+            let cut = (0.30 + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
+            // wet width breathes a little too
+            let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
+                .clamp(1.4, 3.4);
+            let r = ((sk_c * 1.45) / cell).ceil() as i64 + 1;
             let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
             for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
                 for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
                     let idx = spec.index(gx as u32, gy as u32);
-                    let dd = spec.world_of(gx as u32, gy as u32).distance(p);
-                    if dd > skirt {
+                    let q = spec.world_of(gx as u32, gy as u32);
+                    let dd = q.distance(p);
+                    // which bank? the outer one is the cut bank
+                    let side = (q.x - p.x) * perp.x + (q.y - p.y) * perp.y;
+                    let outer = side * off >= 0.0;
+                    let sk = if outer { sk_c * 1.40 } else { sk_c * 0.68 };
+                    if dd > sk {
                         continue;
                     }
                     // one-sided soft cut: full at the centre-line, nothing at
                     // the skirt, and never a fill
-                    let t = math::smoothstep(skirt, hw, dd);
-                    let target = z - 0.35;
+                    let t = math::smoothstep(sk, hwi, dd);
+                    let target = z - cut;
                     let over = (h0[idx] - target).max(0.0);
                     let cand = h0[idx] - t * over;
                     if cand < height.data[idx] {
                         height.data[idx] = cand;
                     }
-                    if dd <= hw + 2.0 {
+                    if dd <= hwi + 2.0 {
                         creek[idx] = true;
                     }
-                    if dd <= hw {
+                    if dd <= hwi {
                         if surface.data[idx].is_nan() {
                             wet_cells += 1;
                             surface.data[idx] = z;
