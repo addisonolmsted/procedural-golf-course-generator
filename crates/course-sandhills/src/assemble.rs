@@ -387,12 +387,35 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     }
     let (mdist, _) = chamfer(spec, &med);
 
+    // WANDER THE DIVIDE — by perturbing the distance to the MEDIAL AXIS,
+    // never the distance to the channels.
+    //
+    // The profile is exactly symmetric about the medial axis, so the
+    // midline between two channels is a perfect ridge and stays connected
+    // everywhere: that, not density, is why our uplands carry a ridge tree
+    // where real ones carry dashes (our fine drainage measures at real
+    // density — p50 54-57 m against a real 43-48). Real divides wander,
+    // because the two sides erode unequally.
+    //
+    // u = dist/(dist+mdist), so perturbing MDIST moves the crest laterally
+    // while leaving the valleys alone: near a channel mdist is large and a
+    // few tens of metres barely register, but at the crest mdist -> 0 and
+    // the same perturbation moves the divide. This is the targeted form of
+    // the warp that damaged the valleys when it was applied to dist.
+    let (wa, wb) = (rng.next_u32(), rng.next_u32());
     let mut u = vec![0.0f64; spec.len()];
     let mut w = vec![0.0f64; spec.len()];
-    for i in 0..spec.len() {
-        let ww = dist[i] + mdist[i];
-        w[i] = ww;
-        u[i] = (dist[i] / ww.max(1e-6)).clamp(0.0, 1.0);
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let p = spec.world_of(x, y);
+            let n = noise::perlin2(p.x / 300.0, p.y / 300.0, wa)
+                + 0.6 * noise::perlin2(p.x / 130.0, p.y / 130.0, wb);
+            let md = (mdist[i] + d.divide_wander * n).max(0.0);
+            let ww = dist[i] + md;
+            w[i] = dist[i] + mdist[i];        // half-width from the TRUE field
+            u[i] = (dist[i] / ww.max(1e-6)).clamp(0.0, 1.0);
+        }
     }
     // W is a property of the VALLEY, not of the cell: it must not jump
     // where the medial mask is ragged
@@ -420,6 +443,47 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
         hf[i] = prof.height(u[i], w[i]);
     }
     blur(spec, &mut hf, 2);
+
+    // --- THE CAP (approach B) ----------------------------------------------
+    // A Carolina interfluve IS the preserved relict sand cap; valleys are
+    // incised INTO it. So the tops are referenced to a cap surface and only
+    // the valleys are referenced to their beds.
+    //
+    // This is the one change that can remove the drainage dual, and the
+    // reason is structural rather than aesthetic: while upland height is a
+    // monotone function of distance-to-network, the aspect flips on the
+    // medial axis everywhere and a ridge tree exists — measured, and proved
+    // by approach A failing at double amplitude (see branch
+    // sandhills-crest-A). The tops have to get their shape from something
+    // the network does not determine.
+    //
+    // The cap is built as LOWPASS(bed + full valley depth) + an independent
+    // deviation. The lowpass is long enough (≈ 500 m) to erase structure at
+    // the valley-spacing scale, which is exactly the dual, while keeping the
+    // regional trend so the two references agree on average and the blend
+    // has no step to hide.
+    let mut cap = vec![0.0f64; spec.len()];
+    for i in 0..spec.len() {
+        cap[i] = bedf[i] + prof.height(1.0, w[i]);
+    }
+    box_blur(spec, &mut cap, 62, 2);            // ≈ 500 m: erases the dual
+    let (k1, k2) = (rng.next_u32(), rng.next_u32());
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            let p = spec.world_of(x, y);
+            cap[i] += d.upland_relief_m
+                * (noise::perlin2(p.x / 700.0, p.y / 700.0, k1)
+                    + 0.55 * noise::perlin2(p.x / 300.0, p.y / 300.0, k2));
+        }
+    }
+    // the blend stays bed-dominated well past the shoulder: everything that
+    // went wrong before went wrong near the valleys
+    let mut wcap = vec![0.0f64; spec.len()];
+    for i in 0..spec.len() {
+        wcap[i] = math::smoothstep(0.74, 0.96, u[i]);
+    }
+    box_blur(spec, &mut wcap, 5, 2);
 
     let mut height = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
@@ -449,7 +513,13 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
                         * noise::perlin2(p.x / 165.0, p.y / 165.0, s2)
                     + 0.20 * (1.0 - 0.35 * top_r)
                         * noise::perlin2(p.x / 340.0, p.y / 340.0, s3));
-            height.data[i] = bedf[i] + h + r;
+            // bed-referenced in the valleys, cap-referenced on the tops.
+            // The cap form uses DEPTH BELOW THE CAP — the same measured
+            // table, re-parameterised, not invented geometry.
+            let z_bed = bedf[i] + h + r;
+            let depth_below_cap = prof.height(1.0, w[i]) - h;
+            let z_cap = cap[i] - depth_below_cap + r;
+            height.data[i] = z_bed * (1.0 - wcap[i]) + z_cap * wcap[i];
         }
     }
 

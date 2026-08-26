@@ -61,6 +61,8 @@ pub struct Descriptors {
     pub fluvial_tex_k: f64,
     pub tex_patchy: f64,
     pub valley_sharp: f64,
+    pub upland_relief_m: f64,
+    pub divide_wander: f64,
     pub allogenic_river: bool,
 }
 
@@ -144,6 +146,8 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         fluvial_tex_k: draw(&mut p, rec.fluvial_tex_k),
         tex_patchy: draw(&mut p, rec.tex_patchy),
         valley_sharp: draw(&mut p, rec.valley_sharp),
+        upland_relief_m: draw(&mut p, rec.upland_relief_m),
+        divide_wander: draw(&mut p, rec.divide_wander),
     }
 }
 
