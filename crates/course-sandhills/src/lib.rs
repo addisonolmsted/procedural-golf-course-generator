@@ -30,6 +30,7 @@ pub mod blowout;
 pub mod carve;
 pub mod channel;
 pub mod draw;
+pub mod erode;
 pub mod mode;
 pub mod record;
 pub mod rng;
@@ -204,6 +205,20 @@ pub fn build_fluvial_macro(id: &RunIdentity, prof: &assemble::HandProfile)
 pub fn build_fluvial_macro_beds(id: &RunIdentity, prof: &assemble::HandProfile)
     -> (Descriptors, channel::Network, assemble::Assembled,
         Vec<(Vec<course_world::math::Vec2>, Vec<f64>)>) {
+    // OFF pending review. The pass is implemented and cheap, but measured
+    // against the corpus it does not do the thing it was asked for: it
+    // cannot sharpen a valley edge (see erode.rs). Enabling it is a taste
+    // call about the upland fabric, not a fidelity win, so it stays off
+    // until that call is made.
+    build_fluvial_macro_opts(id, prof, None)
+}
+
+/// As `build_fluvial_macro_beds`, with the erosion pass selectable so a
+/// review can render the same seed with and without it.
+pub fn build_fluvial_macro_opts(id: &RunIdentity, prof: &assemble::HandProfile,
+                                ero: Option<erode::Erosion>)
+    -> (Descriptors, channel::Network, assemble::Assembled,
+        Vec<(Vec<course_world::math::Vec2>, Vec<f64>)>) {
     let d = draw::site(id, Some(Mode::Fluvial), None);
     let mut dr = rng::stream(id, rng::DATUM);
     let datum = channel::datum(&mut dr, &d);
@@ -225,7 +240,13 @@ pub fn build_fluvial_macro_beds(id: &RunIdentity, prof: &assemble::HandProfile)
     carve::rebase_hanging(&mut beds, &net, &first.height);
     let mut ar2 = rng::stream(id, rng::HAND);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
-    let asm = assemble::assemble(&mut ar2, &beds, &tiers, prof, &d);
+    let mut asm = assemble::assemble(&mut ar2, &beds, &tiers, prof, &d);
+    // Water erosion goes here: after the surface exists, before texture and
+    // before water is defined, so the ponds and creeks are found on ground
+    // the water itself shaped.
+    if let Some(e) = ero {
+        erode::run(&mut asm.height, &e);
+    }
     (d, net, asm, beds)
 }
 
