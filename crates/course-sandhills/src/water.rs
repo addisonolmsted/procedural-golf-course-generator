@@ -889,6 +889,14 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     let m_seed = rng.next_u32();
 
     let mut wet_cells = 0usize;
+    // Cells the FLATTENING must not touch. A meander creek is offset from
+    // the trunk centre-line by up to a swing width, so a mask built from
+    // that centre-line missed it entirely and the flattening pulled the
+    // channel floor up toward a 26 m blur — leaving a ridge along the
+    // creek's own axis flanked by the carve, which read as a beaded dark
+    // line down the middle of the swale (review). The carve marks its own
+    // cells instead.
+    let mut creek = vec![false; spec.len()];
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         // Only the TRUNK carries visible water. The tributaries were drawn
@@ -1047,40 +1055,74 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let hi = (i + 13).min(src.len());
             fac[i] = src[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
         }
-        // a creek runs downhill; hold the bed monotone along the path
-        for i in 1..zs.len() {
-            if zs[i] > zs[i - 1] {
-                zs[i] = zs[i - 1];
-            }
-        }
-        let bank = 3.0f64;
+        // The carve must not become a TRENCH. Writing a hard floor inside
+        // hw and a hard shelf outside it put a wall at each boundary — 825%
+        // slope on seed 121, the "sharp ditch" of the review. Two changes:
+        // the bed FOLLOWS THE GROUND (the swing can ride onto higher ground,
+        // and a bed taken from the trunk centre-line there had to cut metres
+        // to reach it), and the cut is a one-sided SOFT skirt that reaches
+        // zero 26 m out, so there is no edge to catch the light.
+        let skirt = 26.0f64;
+        let mut qs: Vec<Vec2> = Vec::with_capacity(pos.len());
         for i in 0..pos.len() {
             let (p0, perp, off) = pos[i];
             let o = off * fac[i];
-            let p = Vec2::new(p0.x + perp.x * o, p0.y + perp.y * o);
-            let z = zs[i];
-            let r = ((hw + bank) / cell).ceil() as i64 + 1;
+            qs.push(Vec2::new(p0.x + perp.x * o, p0.y + perp.y * o));
+        }
+        // Ground-following bed with a CUT CAP. Strict monotonicity plus a
+        // single low ground sample locked the bed down for the rest of the
+        // path, so every later point had to cut metres to reach it — the
+        // skirt then spread a 50 m cut over 26 m and gave 510% slopes 20 m
+        // from the water. The bed still prefers to fall, but it may climb
+        // rather than cut deeper than CUT_CAP, which no eye can read on a
+        // creek and which bounds the carve by construction.
+        const CUT_CAP: f64 = 2.2;
+        let mut gr: Vec<f64> = Vec::with_capacity(qs.len());
+        for i in 0..qs.len() {
+            gr.push(height.bilinear(qs[i]));
+        }
+        zs[0] = zs[0].min(gr[0] - 0.35);
+        for i in 1..zs.len() {
+            let want = zs[i].min(gr[i] - 0.35).min(zs[i - 1]);
+            zs[i] = want.max(gr[i] - CUT_CAP).min(gr[i] - 0.35);
+        }
+        // The cut is taken against a SNAPSHOT of the ground and combined by
+        // MIN, not applied in sequence. Path points sit ~1 m apart and the
+        // skirt reaches 26 m, so each cell is visited by ~50 of them; a
+        // running subtraction compounded those visits and gouged a hard
+        // black slot down the creek's own centre-line (review). Reading h0
+        // makes the result order-independent and idempotent.
+        let h0: Vec<f64> = height.data.clone();
+        for i in 0..qs.len() {
+            let (p, z) = (qs[i], zs[i]);
+            let r = (skirt / cell).ceil() as i64 + 1;
             let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
             for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
                 for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
                     let idx = spec.index(gx as u32, gy as u32);
                     let dd = spec.world_of(gx as u32, gy as u32).distance(p);
-                    if dd > hw + bank {
+                    if dd > skirt {
                         continue;
                     }
+                    // one-sided soft cut: full at the centre-line, nothing at
+                    // the skirt, and never a fill
+                    let t = math::smoothstep(skirt, hw, dd);
+                    let target = z - 0.35;
+                    let over = (h0[idx] - target).max(0.0);
+                    let cand = h0[idx] - t * over;
+                    if cand < height.data[idx] {
+                        height.data[idx] = cand;
+                    }
+                    if dd <= hw + 2.0 {
+                        creek[idx] = true;
+                    }
                     if dd <= hw {
-                        // carve the slot, then fill it
-                        height.data[idx] = height.data[idx].min(z - 0.45);
                         if surface.data[idx].is_nan() {
                             wet_cells += 1;
                             surface.data[idx] = z;
                         } else {
                             surface.data[idx] = surface.data[idx].min(z);
                         }
-                    } else {
-                        // a low bank, so the creek reads as incised
-                        let t = (dd - hw) / bank;
-                        height.data[idx] = height.data[idx].min(z + 0.30 + 0.60 * t);
                     }
                 }
             }
@@ -1476,7 +1518,6 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // — so anything under standing water is levelled to a shallow, near-flat
     // bed. The CREEKS are exempt: a creek bed keeps its gradient, which is
     // what makes it a creek.
-    let mut creek = vec![false; spec.len()];
     for (ci, (pts, _)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         if tier >= 4 {

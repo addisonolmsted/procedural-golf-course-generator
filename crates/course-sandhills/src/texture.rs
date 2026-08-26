@@ -249,6 +249,7 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
 
     let (sp1, sp2) = (rng.next_u32(), rng.next_u32());
     let mut z = Grid::filled(spec, 0.0f64);
+    let mut inc = vec![0.0f64; spec.len()];
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
@@ -256,7 +257,13 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             let u = uf.bilinear(p);
             // measured: band 0 is the finest, band 2 the broad fabric
             let gf = prof.gain(0, u);
-            let gc = prof.gain(2, u);
+            // MEASURED 2026-08-25 against the 65-tile NC corpus at 2 m:
+            // band 4-8 m sat at 0.98x of the real median and 128-256 m at
+            // 0.97x, but everything between ran 1.14-1.23x, peaking at
+            // 16-32 m — the "graininess" of the review. The excess is
+            // therefore in the COARSE half of the quilt, not the fine one,
+            // so the trim goes here and the fine gain is left alone.
+            let gc = prof.gain(2, u) * 0.82;
             // roughness is patchy — the statistic the blending destroyed
             // the 190 m octave is the one that reads as patterned grain on
             // the high ground (measured: tops carried 1.37x real in the
@@ -278,7 +285,31 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             let top = math::smoothstep(0.72, 0.97, u);
             let calm = 1.0 - 0.45 * top;
             let fine = resid[i] - coarse[i];
-            z.data[i] = base.bilinear(p) + calm * sup * (gf * fine + gc * coarse[i]);
+            inc[i] = calm * sup * (gf * fine + gc * coarse[i]);
+        }
+    }
+
+    // --- SOFT-CLAMP the pasted increment -------------------------------
+    // The quilt pastes 2 m residual cut from real NC tiles, and those tiles
+    // carry man-made cuts — road prisms, borrow pits, unmasked pond edges
+    // (a known Stage-0 corpus gap). Pasted onto our ground they print as
+    // isolated 4-5 m gouges with 75-90% walls in terrain the macro stage
+    // left at 0-3%: measured at seed 121, (764,2172) and (2442,1248), where
+    // the macro surface is smooth and only the textured one has the pit.
+    // These are ~16 sigma against a band std of 0.26 m, so a soft knee at
+    // 3.5 sigma leaves ordinary fabric untouched (tanh is within 1% of the
+    // identity below ~1 sigma) and squashes only the imported scars. A hard
+    // clip would replace one sharp edge with another; tanh cannot.
+    let mut acc = 0.0;
+    for v in inc.iter() {
+        acc += v * v;
+    }
+    let sigma = (acc / inc.len() as f64).sqrt().max(1e-6);
+    let knee = 3.5 * sigma;
+    for y in 0..spec.ny {
+        for x in 0..spec.nx {
+            let i = spec.index(x, y);
+            z.data[i] = base.bilinear(spec.world_of(x, y)) + knee * (inc[i] / knee).tanh();
         }
     }
     z
