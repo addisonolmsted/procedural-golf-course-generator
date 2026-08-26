@@ -871,11 +871,31 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // Wet width scales with the tier: a trunk carries a few metres of water,
     // a headwater gully carries none at all (dry sand most of the year, and
     // below the extraction threshold besides).
+    // THE MEANDERING-CREEK VARIANT (review 2026-08-25). In about one tile in
+    // ten the trunk valley carries a creek that meanders across its own
+    // floor instead of a pond sitting in the deepest part. The planform is
+    // the one the Nebraska river rounds closed at 12/12: a wavelength and
+    // swing drawn from RiverStyle::PASSED, applied here as an offset from
+    // the trunk centre-line rather than as a free path, so the creek stays
+    // in its valley. Max 4-5 m across, per the review.
+    let meander = rng.next_f64() < d.p_valley_creek;
+    if std::env::var("NET_DEBUG").is_ok() && meander {
+        eprintln!("  MEANDER creek tile");
+    }
+    let mstyle = RiverStyle::PASSED[rng.below(RiverStyle::PASSED.len())];
+    let m_lam = rng.range_f64(mstyle.lam.0, mstyle.lam.1);
+    let m_swing = rng.range_f64(mstyle.swing.0, mstyle.swing.1);
+    let m_phase = rng.range_f64(0.0, std::f64::consts::TAU);
+    let m_seed = rng.next_u32();
+
     let mut wet_cells = 0usize;
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
-        if tier >= 4 {
-            continue;                       // ephemeral: dry
+        // Only the TRUNK carries visible water. The tributaries were drawn
+        // as 2-4 m ribbons and read as hairlines across the tile (review);
+        // a creek that thin is a line on a map, not water on the ground.
+        if tier >= 2 {
+            continue;
         }
         // Review 2026-08-25: the full trunk must not read as a ribbon of
         // water. A trunk carries wet REACHES — pools and runs separated by
@@ -883,13 +903,14 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // the width stays modest but never hairline. Tributaries are wet
         // continuously; they are small enough that it reads as a creek line
         // rather than a lake.
-        let hw = match tier {
-            1 => rng.range_f64(1.8, 3.0),   // 3.5-6 m: present, not a lake
-            2 => rng.range_f64(1.3, 2.2),
-            _ => rng.range_f64(0.9, 1.5),
+        let hw = if meander {
+            rng.range_f64(2.0, 2.5)         // 4-5 m across, per review
+        } else {
+            rng.range_f64(1.8, 3.0)         // 3.5-6 m: present, not a lake
         };
         let s_reach = rng.next_u32();
-        let reach_lo = if tier == 1 { rng.range_f64(-0.05, 0.20) } else { -1.0 };
+        // a meandering creek runs continuously; a braided trunk does not
+        let reach_lo = if meander { -1.0 } else { rng.range_f64(-0.05, 0.20) };
         let mut arc = 0.0;
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
@@ -902,8 +923,24 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
             for j in 0..=n {
                 let t = j as f64 / n as f64;
-                let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                let mut p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
                 let z = bed[k] + (bed[k + 1] - bed[k]) * t;
+                if meander {
+                    // swing across the floor, bounded by the valley itself
+                    let s_here = arc - seg + seg * t;
+                    let lam_e = m_lam
+                        * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, m_seed));
+                    let off = m_swing * 26.0
+                        * (math::sin(std::f64::consts::TAU * s_here / lam_e + m_phase)
+                            + 0.35 * math::sin(std::f64::consts::TAU * s_here
+                                               / (lam_e * 2.7) + m_phase * 1.7));
+                    let tang = Vec2::new(b.x - a.x, b.y - a.y).normalized();
+                    let q = Vec2::new(p.x - tang.y * off, p.y + tang.x * off);
+                    // never leave the valley floor
+                    if u_field.bilinear(q) < 0.34 {
+                        p = q;
+                    }
+                }
                 let r = (hw / cell).ceil() as i64 + 1;
                 let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
                 for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
@@ -1110,7 +1147,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
                 for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
                     let q = spec.world_of(gx as u32, gy as u32);
-                    if q.distance(*p) <= 95.0 {
+                    if q.distance(*p) <= if meander { 150.0 } else { 95.0 } {
                         trunkzone[spec.index(gx as u32, gy as u32)] = true;
                     }
                 }

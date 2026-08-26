@@ -295,6 +295,9 @@ pub struct Record {
     /// bays are the region's signature landform but are far from uniform —
     /// many tiles carry none.
     pub bay_weights: [f64; 4],
+    /// P(the trunk valley carries a MEANDERING creek instead of ponds).
+    /// `review 2026-08-25`: about one tile in ten.
+    pub p_valley_creek: f64,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -421,6 +424,7 @@ pub const SANDHILLS: Record = Record {
     upland_relief_m: Range::new(2.2, 4.0),   // measured (ridge_diag2)
     divide_wander: Range::new(28.0, 52.0),   // measured (ridge_diag2)
     bay_weights: [0.42, 0.30, 0.19, 0.09], // literature: many tiles carry none
+    p_valley_creek: 0.10,                    // review: ~1 tile in 10
     p_allogenic_river: 0.30,                 // literature
 };
 
