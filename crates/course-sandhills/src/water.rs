@@ -843,3 +843,107 @@ mod tests {
                 "river wet width proxy {mean_width:.1} m -- creek spec is ~6 m");
     }
 }
+
+// ---------------------------------------------------------------------------
+// X4 — the Carolina water: wet creeks and rare ponds
+// ---------------------------------------------------------------------------
+
+/// Water for the fluvial mode.
+///
+/// Carolina is far drier than Nebraska: the measured lake fraction is 0.047
+/// against the Sandhills' 0.26, and the water that IS there is mostly the
+/// creeks themselves — blackwater streams running in their own floors —
+/// rather than interdune ponds. So this is the opposite construction to
+/// `find`: the channels are wet by definition, and standing water is the
+/// exception, found only where the table grazes a broad valley floor.
+///
+/// No drawdown field is needed here (the aeolian mode needs one because its
+/// river is an intruder on a dune field). Here the creeks ARE the drainage:
+/// ground near them is low because they drained it.
+pub fn fluvial(rng: &mut DetRng, height: &Grid<f64>,
+               beds: &[(Vec<Vec2>, Vec<f64>)], tiers: &[u8],
+               u_field: &Grid<f64>, d: &Descriptors) -> Water {
+    let spec = height.spec;
+    let mut surface = Grid::filled(spec, f64::NAN);
+    let cell = spec.cell_size;
+
+    // --- the creeks -------------------------------------------------------
+    // Wet width scales with the tier: a trunk carries a few metres of water,
+    // a headwater gully carries none at all (dry sand most of the year, and
+    // below the extraction threshold besides).
+    let mut wet_cells = 0usize;
+    for (ci, (pts, bed)) in beds.iter().enumerate() {
+        let tier = tiers.get(ci).copied().unwrap_or(1);
+        if tier >= 4 {
+            continue;                       // ephemeral: dry
+        }
+        let hw = match tier {
+            1 => rng.range_f64(2.2, 4.0),   // ~4-8 m wet width
+            2 => rng.range_f64(1.4, 2.4),
+            _ => rng.range_f64(0.9, 1.5),
+        };
+        for k in 0..pts.len().saturating_sub(1) {
+            let (a, b) = (pts[k], pts[k + 1]);
+            let seg = a.distance(b);
+            let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
+            for j in 0..=n {
+                let t = j as f64 / n as f64;
+                let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                let z = bed[k] + (bed[k + 1] - bed[k]) * t;
+                let r = (hw / cell).ceil() as i64 + 1;
+                let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+                for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                    for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                        let q = spec.world_of(gx as u32, gy as u32);
+                        if q.distance(p) > hw {
+                            continue;
+                        }
+                        let i = spec.index(gx as u32, gy as u32);
+                        // the creek surface sits just above its own bed, and
+                        // never above the ground beside it
+                        let s = z + 0.15;
+                        if s <= height.data[i] + 0.6
+                            && (surface.data[i].is_nan() || s < surface.data[i])
+                        {
+                            if surface.data[i].is_nan() {
+                                wet_cells += 1;
+                            }
+                            surface.data[i] = s;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- standing water ---------------------------------------------------
+    // Only where the table grazes a valley FLOOR: u below the floor band and
+    // ground below the drawn table. Everything else stays dry, which is what
+    // keeps the measured lake fraction near 0.047 instead of Nebraska's 0.26.
+    // calibrated to the measured NC lake fraction (0.047 against the
+    // Nebraska 0.26) — Carolina creek bottoms are swampy, but the
+    // uplands are dry
+    let table_depth = d.water_table_m.min(5.5);
+    let mut floor_z: Vec<f64> = Vec::new();
+    for i in 0..spec.len() {
+        if u_field.data[i] < 0.14 {
+            floor_z.push(height.data[i]);
+        }
+    }
+    if !floor_z.is_empty() {
+        floor_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let lvl = floor_z[(floor_z.len() as f64 * 0.06) as usize] + table_depth;
+        for i in 0..spec.len() {
+            if u_field.data[i] < 0.30 && height.data[i] < lvl {
+                if surface.data[i].is_nan() {
+                    wet_cells += 1;
+                    surface.data[i] = lvl;
+                } else {
+                    surface.data[i] = surface.data[i].max(lvl);
+                }
+            }
+        }
+    }
+
+    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: None }
+}

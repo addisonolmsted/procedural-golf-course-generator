@@ -80,8 +80,9 @@ pub struct Tile {
 /// round a 100 m ridge.
 pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
                               pack: &texture::PatchPack)
-    -> (Descriptors, channel::Network, assemble::Assembled, Grid<f64>) {
-    let (d, net, asm) = build_fluvial_macro(id, prof);
+    -> (Descriptors, channel::Network, assemble::Assembled, Grid<f64>,
+        water::Water, Vec<blowout::Bay>) {
+    let (d, net, asm, beds_for_water) = build_fluvial_macro_beds(id, prof);
     let spec = asm.height.spec;
 
     // Grain = the local channel tangent, from the assembler's own distance
@@ -149,7 +150,7 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     let mut tr = rng::stream(id, rng::TEXTURE);
     let mut dt = d.clone();
     dt.texture_gain = d.texture_gain * d.fluvial_tex_k;
-    let tex = match texture::TexProfile::load(std::path::Path::new(
+    let mut tex = match texture::TexProfile::load(std::path::Path::new(
         "assets/sandhills_texture_profile.txt")) {
         Ok(tp) => texture::quilt_fluvial_v2(&mut tr, pack, &asm.height, &grain,
                                             &asm.u, &tp, &dt),
@@ -157,7 +158,27 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
                                          &gate, &dt),
     };
     let _ = &gate;
-    (d, net, asm, tex)
+
+    // C6 — Carolina bays, at 2 m and OVER the texture: they are the sharpest
+    // landform on this ground and must not be blended away (the aeolian
+    // mode learned the same about blowouts).
+    let u2 = {
+        let mut g = Grid::filled(tex.spec, 0.0f64);
+        for y in 0..tex.spec.ny {
+            for x in 0..tex.spec.nx {
+                g.set(x, y, asm.u.bilinear(tex.spec.world_of(x, y)));
+            }
+        }
+        g
+    };
+    let mut br = rng::stream(id, rng::BLOWOUT);
+    let bays = blowout::bays(&mut br, &mut tex, &u2, &d);
+
+    // X4 — water last, on the finished ground
+    let mut wr2 = rng::stream(id, rng::WATER);
+    let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
+    let water = water::fluvial(&mut wr2, &tex, &beds_for_water, &tiers, &u2, &d);
+    (d, net, asm, tex, water, bays)
 }
 
 /// X1+X2 — the fluvial surface at 8 m: network, graded beds, and the
@@ -165,6 +186,15 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
 /// stage; the 2 m texture rides on top.
 pub fn build_fluvial_macro(id: &RunIdentity, prof: &assemble::HandProfile)
     -> (Descriptors, channel::Network, assemble::Assembled) {
+    let (d, net, asm, _) = build_fluvial_macro_beds(id, prof);
+    (d, net, asm)
+}
+
+/// As `build_fluvial_macro`, also returning the graded beds — the water
+/// stage needs them to know where each creek's floor actually is.
+pub fn build_fluvial_macro_beds(id: &RunIdentity, prof: &assemble::HandProfile)
+    -> (Descriptors, channel::Network, assemble::Assembled,
+        Vec<(Vec<course_world::math::Vec2>, Vec<f64>)>) {
     let d = draw::site(id, Some(Mode::Fluvial), None);
     let mut dr = rng::stream(id, rng::DATUM);
     let datum = channel::datum(&mut dr, &d);
@@ -187,7 +217,7 @@ pub fn build_fluvial_macro(id: &RunIdentity, prof: &assemble::HandProfile)
     let mut ar2 = rng::stream(id, rng::HAND);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
     let asm = assemble::assemble(&mut ar2, &beds, &tiers, prof, &d);
-    (d, net, asm)
+    (d, net, asm, beds)
 }
 
 /// Run the whole aeolian pipeline. Stage order is load-bearing:

@@ -63,6 +63,7 @@ pub struct Descriptors {
     pub valley_sharp: f64,
     pub upland_relief_m: f64,
     pub divide_wander: f64,
+    pub n_bays: u32,
     pub allogenic_river: bool,
 }
 
@@ -148,6 +149,14 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         valley_sharp: draw(&mut p, rec.valley_sharp),
         upland_relief_m: draw(&mut p, rec.upland_relief_m),
         divide_wander: draw(&mut p, rec.divide_wander),
+        n_bays: {
+            let w = rec.bay_weights;
+            let u = p.next_f64() * (w[0] + w[1] + w[2] + w[3]);
+            if u < w[0] { 0 }
+            else if u < w[0] + w[1] { 1 }
+            else if u < w[0] + w[1] + w[2] { 2 }
+            else { 3 }
+        },
     }
 }
 

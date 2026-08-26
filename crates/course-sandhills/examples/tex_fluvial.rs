@@ -1,4 +1,4 @@
-//! X3 — dump finished (textured, 2 m) fluvial tiles.
+//! X3+X4 — dump finished fluvial tiles: textured ground, bays, water.
 use course_sandhills::{assemble::HandProfile, build_fluvial_textured, texture};
 use course_world::gridio;
 
@@ -13,8 +13,15 @@ fn main() {
     for s in &a[1..] {
         let seed: u64 = s.parse().unwrap();
         let id = course_seed::RunIdentity::from_seed(seed);
-        let (_, _, _, tex) = build_fluvial_textured(&id, &prof, &pack);
+        let (_, _, _, tex, water, bays) = build_fluvial_textured(&id, &prof, &pack);
         gridio::write_grid_f32(&out.join(format!("tex_{seed}.cgrid")), &tex).unwrap();
-        println!("seed {seed} textured");
+        gridio::write_grid_f32(&out.join(format!("tex_{seed}.water.cgrid")),
+                               &water.surface).unwrap();
+        let bl: String = bays.iter()
+            .map(|b| format!("{:.0} {:.0} {:.0} {:.0} {:.2}\n",
+                             b.center.x, b.center.y, b.a_m, b.b_m, b.depth_m))
+            .collect();
+        std::fs::write(out.join(format!("tex_{seed}.bays.txt")), bl).unwrap();
+        println!("seed {seed}: {} bays, lake_frac {:.4}", bays.len(), water.lake_frac);
     }
 }

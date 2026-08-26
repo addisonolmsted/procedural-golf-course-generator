@@ -291,6 +291,10 @@ pub struct Record {
     /// `measured 2026-08-25` (ridge_diag2): a symmetric profile makes the
     /// midline a perfect connected ridge; real divides are broken.
     pub divide_wander: Range,
+    /// Carolina bays per tile, as weights for 0/1/2/3. `literature`: the
+    /// bays are the region's signature landform but are far from uniform —
+    /// many tiles carry none.
+    pub bay_weights: [f64; 4],
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -416,6 +420,7 @@ pub const SANDHILLS: Record = Record {
     valley_sharp: Range::new(0.55, 0.85),    // calibrated to real curvature
     upland_relief_m: Range::new(2.2, 4.0),   // measured (ridge_diag2)
     divide_wander: Range::new(28.0, 52.0),   // measured (ridge_diag2)
+    bay_weights: [0.42, 0.30, 0.19, 0.09], // literature: many tiles carry none
     p_allogenic_river: 0.30,                 // literature
 };
 

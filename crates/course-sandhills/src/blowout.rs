@@ -202,3 +202,94 @@ pub fn pans(rng: &mut DetRng, height: &mut Grid<f64>, tnorm: &[f64], d: &Descrip
     }
     pan
 }
+
+// ---------------------------------------------------------------------------
+// C6 — Carolina bays
+// ---------------------------------------------------------------------------
+
+/// One Carolina bay: a shallow elliptical depression with a sand rim.
+pub struct Bay {
+    pub center: course_world::math::Vec2,
+    /// Semi-major (NW–SE) and semi-minor axes, metres.
+    pub a_m: f64,
+    pub b_m: f64,
+    pub depth_m: f64,
+    /// Rim height, metres — carried on the SE side.
+    pub rim_m: f64,
+}
+
+/// Stamp 0–3 Carolina bays onto the finished surface.
+///
+/// The signature landform of the region and the reason the corpus tiles read
+/// as Carolina rather than as generic dissected sand: shallow elliptical
+/// basins, long axis NW–SE with striking consistency, a sand rim thrown up
+/// on the SE (downwind) side, floors that pond when the table is high.
+/// They sit on the INTERFLUVES — a bay that a creek has captured is no
+/// longer a bay — so placement is gated on the valley coordinate.
+pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
+            d: &Descriptors) -> Vec<Bay> {
+    let spec = height.spec;
+    let mut out: Vec<Bay> = Vec::new();
+    let n = d.n_bays;
+    if n == 0 {
+        return out;
+    }
+    // NW–SE, with a little spread: measured orientations cluster tightly but
+    // are not identical.
+    for _ in 0..n * 6 {
+        if out.len() >= n as usize {
+            break;
+        }
+        let a_m = rng.range_f64(80.0, 300.0);           // 160-600 m long
+        let b_m = a_m * rng.range_f64(0.55, 0.78);      // consistently oval
+        let c = course_world::math::Vec2::new(
+            rng.range_f64(a_m, course_world::world::EXTENT_M - a_m),
+            rng.range_f64(a_m, course_world::world::EXTENT_M - a_m));
+        // interfluve only, and clear of other bays
+        let uu = u_field.bilinear(c);
+        if uu < 0.55 {
+            continue;
+        }
+        if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_m) * 1.3) {
+            continue;
+        }
+        let depth = rng.range_f64(0.8, 2.6);
+        let rim = depth * rng.range_f64(0.28, 0.55);
+        let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
+        let (ct, st) = (math::cos(theta), math::sin(theta));
+        let s_edge = rng.next_u32();
+        let reach = a_m * 1.8;
+        let (cx, cy) = ((c.x / spec.cell_size).round() as i64,
+                        (c.y / spec.cell_size).round() as i64);
+        let rp = (reach / spec.cell_size).ceil() as i64 + 1;
+        for gy in (cy - rp).max(0)..=(cy + rp).min(spec.ny as i64 - 1) {
+            for gx in (cx - rp).max(0)..=(cx + rp).min(spec.nx as i64 - 1) {
+                let p = spec.world_of(gx as u32, gy as u32);
+                let (dx, dy) = (p.x - c.x, p.y - c.y);
+                // into the bay's own frame
+                let ax = dx * ct + dy * st;
+                let ay = -dx * st + dy * ct;
+                // a breathing edge: real bay outlines are smooth but not
+                // machined ellipses
+                let ang = math::atan2(ay, ax);
+                let wob = 1.0 + 0.06 * course_world::noise::perlin1(ang * 2.4, s_edge);
+                let r = ((ax / (a_m * wob)).powi(2) + (ay / (b_m * wob)).powi(2)).sqrt();
+                let i = spec.index(gx as u32, gy as u32);
+                // the basin: flat-ish floor, smooth wall
+                if r < 1.0 {
+                    let t = math::smoothstep(1.0, 0.55, r);
+                    height.data[i] -= depth * t;
+                }
+                // the rim: outside the rim line, strongest to the SE
+                if r >= 0.88 && r < 1.55 {
+                    let band = math::exp(-((r - 1.12) / 0.20).powi(2));
+                    // SE side = positive along the bay's own long axis
+                    let side = math::smoothstep(-0.35, 0.55, ax / a_m.max(1.0));
+                    height.data[i] += rim * band * (0.28 + 0.95 * side);
+                }
+            }
+        }
+        out.push(Bay { center: c, a_m, b_m, depth_m: depth, rim_m: rim });
+    }
+    out
+}
