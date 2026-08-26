@@ -171,8 +171,17 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
         }
         g
     };
+    let d2 = {
+        let mut g = Grid::filled(tex.spec, 0.0f64);
+        for y in 0..tex.spec.ny {
+            for x in 0..tex.spec.nx {
+                g.set(x, y, asm.dist.bilinear(tex.spec.world_of(x, y)));
+            }
+        }
+        g
+    };
     let mut br = rng::stream(id, rng::BLOWOUT);
-    let bays = blowout::bays(&mut br, &mut tex, &u2, &d);
+    let bays = blowout::bays(&mut br, &mut tex, &u2, &d2, &d);
 
     // X4 — water last, on the finished ground
     let mut wr2 = rng::stream(id, rng::WATER);

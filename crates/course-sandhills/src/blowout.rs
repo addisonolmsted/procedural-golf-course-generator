@@ -227,7 +227,7 @@ pub struct Bay {
 /// They sit on the INTERFLUVES — a bay that a creek has captured is no
 /// longer a bay — so placement is gated on the valley coordinate.
 pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
-            d: &Descriptors) -> Vec<Bay> {
+            chan_dist: &Grid<f64>, d: &Descriptors) -> Vec<Bay> {
     let spec = height.spec;
     let mut out: Vec<Bay> = Vec::new();
     let n = d.n_bays;
@@ -249,17 +249,45 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         let c = course_world::math::Vec2::new(
             rng.range_f64(a_m, course_world::world::EXTENT_M - a_m),
             rng.range_f64(a_m, course_world::world::EXTENT_M - a_m));
-        // interfluve only, and clear of other bays
+        // interfluve only, clear of other bays — and clear of the DRAINAGE:
+        // a bay a creek runs through is a bay the creek has captured, and it
+        // stops being one (review 2026-08-25). The whole footprint plus its
+        // rim has to sit between channels.
         let uu = u_field.bilinear(c);
         if uu < 0.55 {
             continue;
         }
+        let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
         if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_m) * 1.3) {
             continue;
         }
+        // The FOOTPRINT — not a bounding circle — has to be free of drainage.
+        // A channel that crossed the basin would have captured and drained
+        // it, and it would no longer be a bay. Any crossing channel must cut
+        // the rim, so sampling the rim (plus an inner ring, for a channel
+        // that merely grazes) decides it; a bounding-circle test rejected
+        // nine bays in ten for creeks that never touched them.
+        {
+            let (ct, st) = (math::cos(theta), math::sin(theta));
+            let mut hits = false;
+            'clear: for &rr in &[1.12f64, 0.62] {
+                for k in 0..24 {
+                    let ang = std::f64::consts::TAU * k as f64 / 24.0;
+                    let (lx, ly) = (a_m * rr * math::cos(ang), b_m * rr * math::sin(ang));
+                    let q = course_world::math::Vec2::new(
+                        c.x + lx * ct - ly * st, c.y + lx * st + ly * ct);
+                    if chan_dist.bilinear(q) < 22.0 {
+                        hits = true;
+                        break 'clear;
+                    }
+                }
+            }
+            if hits || chan_dist.bilinear(c) < 22.0 {
+                continue;
+            }
+        }
         let depth = rng.range_f64(0.9, 2.6);            // measured 0.7-2.6
         let rim = depth * rng.range_f64(0.18, 0.38);   // real rims are soft
-        let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
         let (ct, st) = (math::cos(theta), math::sin(theta));
         let s_edge = rng.next_u32();
         let reach = a_m * 1.8;

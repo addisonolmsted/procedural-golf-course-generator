@@ -906,11 +906,91 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let hw = if meander {
             rng.range_f64(2.0, 2.5)         // 4-5 m across, per review
         } else {
-            rng.range_f64(1.8, 3.0)         // 3.5-6 m: present, not a lake
+            // Review: trunk water may be short in LENGTH, but it must not be
+            // hairline in WIDTH. 1.8-3.0 gave a 4 m thread; a wet reach is a
+            // pool, so it is widened and made correspondingly rarer.
+            rng.range_f64(3.2, 5.0)         // 6.5-10 m across
         };
         let s_reach = rng.next_u32();
-        // a meandering creek runs continuously; a braided trunk does not
-        let reach_lo = if meander { -1.0 } else { rng.range_f64(-0.05, 0.20) };
+        // A meandering creek runs continuously; a braided trunk carries only
+        // OCCASIONAL wet reaches. The old floor (-0.05..0.20) passed about
+        // half the arc and printed a continuous ribbon; this passes roughly
+        // a fifth, in a couple of separated runs.
+        let reach_lo = if meander { -1.0 } else { rng.range_f64(0.30, 0.58) };
+
+        // --- a trunk wet reach is a POOL, not a thread --------------------
+        // Drawing the reach as a fixed-half-width ribbon gave a 5 m line: a
+        // hairline, which is exactly what the review rejected. A pool is
+        // instead FLOODED to a level and lets the valley floor decide its
+        // own width, so it comes out short and broad — "small length and
+        // width, but not hairline" — with a shoreline that belongs to the
+        // ground rather than to the centre-line.
+        if !meander {
+            let mut a0 = 0.0f64;
+            let mut run: Vec<(Vec2, f64)> = Vec::new();
+            let mut flush = |run: &mut Vec<(Vec2, f64)>, wet: &mut usize| {
+                let len: f64 = run.windows(2).map(|w| w[0].0.distance(w[1].0)).sum();
+                if run.len() < 2 || len < 150.0 {
+                    run.clear();
+                    return;
+                }
+                // "Small in length" (review): a wet reach is a pool, not a
+                // reservoir. A long run is trimmed to its DOWNSTREAM end,
+                // which is where the water would actually stand.
+                let mut back = 0.0f64;
+                let mut cut = 0usize;
+                for k in (1..run.len()).rev() {
+                    back += run[k - 1].0.distance(run[k].0);
+                    if back > 420.0 {
+                        cut = k - 1;
+                        break;
+                    }
+                }
+                if cut > 0 {
+                    run.drain(..cut);
+                }
+                // level set by the DOWNSTREAM lip: a pool is impounded from
+                // below, so it can never be deeper than its own outlet.
+                let lip = run.last().unwrap().1;
+                let lvl = lip + 0.75;
+                for (p, _) in run.iter() {
+                    let r = (95.0 / cell).ceil() as i64;
+                    let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+                    for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                        for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                            let q = spec.world_of(gx as u32, gy as u32);
+                            if q.distance(*p) > 95.0 {
+                                continue;
+                            }
+                            let i = spec.index(gx as u32, gy as u32);
+                            if height.data[i] >= lvl {
+                                continue;
+                            }
+                            if surface.data[i].is_nan() {
+                                *wet += 1;
+                                surface.data[i] = lvl;
+                            } else {
+                                surface.data[i] = surface.data[i].max(lvl);
+                            }
+                        }
+                    }
+                }
+                run.clear();
+            };
+            for k in 0..pts.len() {
+                if k > 0 {
+                    a0 += pts[k - 1].distance(pts[k]);
+                }
+                if course_world::noise::perlin1(a0 / 420.0, s_reach) < reach_lo {
+                    flush(&mut run, &mut wet_cells);
+                } else {
+                    run.push((pts[k], bed[k]));
+                }
+            }
+            flush(&mut run, &mut wet_cells);
+            continue;
+        }
+
         let mut arc = 0.0;
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
@@ -967,34 +1047,15 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
     }
 
-    // --- standing water ---------------------------------------------------
-    // Only where the table grazes a valley FLOOR: u below the floor band and
-    // ground below the drawn table. Everything else stays dry, which is what
-    // keeps the measured lake fraction near 0.047 instead of Nebraska's 0.26.
-    // calibrated to the measured NC lake fraction (0.047 against the
-    // Nebraska 0.26) — Carolina creek bottoms are swampy, but the
-    // uplands are dry
-    let table_depth = d.water_table_m.min(5.5) * 0.0;   // retired: see ponds
-    let mut floor_z: Vec<f64> = Vec::new();
-    for i in 0..spec.len() {
-        if u_field.data[i] < 0.14 {
-            floor_z.push(height.data[i]);
-        }
-    }
-    if !floor_z.is_empty() {
-        floor_z.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let lvl = floor_z[(floor_z.len() as f64 * 0.06) as usize] + table_depth;
-        for i in 0..spec.len() {
-            if u_field.data[i] < 0.30 && height.data[i] < lvl {
-                if surface.data[i].is_nan() {
-                    wet_cells += 1;
-                    surface.data[i] = lvl;
-                } else {
-                    surface.data[i] = surface.data[i].max(lvl);
-                }
-            }
-        }
-    }
+    // --- the water TABLE is retired ---------------------------------------
+    // It flooded every floor cell under a tile-wide 6th-percentile level, so
+    // the whole lower trunk went wet and grew a finger up each tributary
+    // mouth — the ragged full-trunk ribbon of the 2026-08-25 review, and the
+    // real source of the "hairlines connected to bigger lakes". A flat level
+    // against a graded floor cannot help but do this: the floor falls along
+    // the valley, so ONE level always drowns the downstream half. Standing
+    // water now comes only from closed depressions (below), which is where
+    // it comes from on the real tiles.
 
     // --- PONDS IN CLOSED DEPRESSIONS ---------------------------------------
     // Real Carolina interfluves DO hold standing water away from the trunk:
@@ -1154,6 +1215,8 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             }
         }
     }
+    let mut pond = vec![false; spec.len()];
+    let mut pond_lvl = vec![0.0f64; spec.len()];
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
@@ -1168,13 +1231,202 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let wp = spec.world_of(x, y);
             let lvl = lvl_at(wp.x, wp.y);
             if height.data[i] < lvl {
-                if surface.data[i].is_nan() {
-                    wet_cells += 1;
-                    surface.data[i] = lvl;
-                } else {
-                    surface.data[i] = surface.data[i].max(lvl);
+                pond[i] = true;
+                pond_lvl[i] = lvl;
+            }
+        }
+    }
+
+    // --- OPEN the pond mask ------------------------------------------------
+    // Filled depressions grow hairline fingers up every little draw, and
+    // some of them hang off otherwise good lakes (review). A morphological
+    // OPENING — erode, then dilate by the same radius — deletes anything
+    // narrower than the kernel and leaves everything wider untouched, which
+    // is exactly the distinction wanted, and it costs two passes rather than
+    // a boundary analysis. The CREEK is not opened: it is legitimately
+    // narrower than this and is added afterwards.
+    let orad = 4i64;                             // removes < ~16 m of width
+    let mut eroded = vec![false; spec.len()];
+    for y in 0..spec.ny as i64 {
+        for x in 0..spec.nx as i64 {
+            let mut all = true;
+            'e: for dy in -orad..=orad {
+                for dx in -orad..=orad {
+                    if dx * dx + dy * dy > orad * orad {
+                        continue;
+                    }
+                    let (a, b) = (x + dx, y + dy);
+                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64
+                        || !pond[spec.index(a as u32, b as u32)]
+                    {
+                        all = false;
+                        break 'e;
+                    }
                 }
             }
+            eroded[spec.index(x as u32, y as u32)] = all;
+        }
+    }
+    let mut opened = vec![false; spec.len()];
+    for y in 0..spec.ny as i64 {
+        for x in 0..spec.nx as i64 {
+            if !eroded[spec.index(x as u32, y as u32)] {
+                continue;
+            }
+            for dy in -orad..=orad {
+                for dx in -orad..=orad {
+                    if dx * dx + dy * dy > orad * orad {
+                        continue;
+                    }
+                    let (a, b) = (x + dx, y + dy);
+                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
+                        opened[spec.index(a as u32, b as u32)] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- COMPACTNESS: a pond is a basin, not a contour worm ----------------
+    // Opening removes what is thin everywhere, but a 25 m x 350 m ribbon
+    // wrapped around a hillside survives it and still is not a pond: it is a
+    // level line grazing a slope. The shape test is area against the biggest
+    // disk that fits inside — pi for a circle, ~4pi for a 4:1 ellipse, 30+
+    // for the worms on seed 105 — which separates basins from slope grazes
+    // without touching a compact lake of any size.
+    {
+        let big = 1e9f64;
+        let mut dt: Vec<f64> = opened.iter().map(|&w| if w { big } else { 0.0 }).collect();
+        let (dx1, dx2) = (cell, cell * std::f64::consts::SQRT_2);
+        for y in 0..spec.ny as i64 {
+            for x in 0..spec.nx as i64 {
+                let i = spec.index(x as u32, y as u32);
+                if dt[i] == 0.0 {
+                    continue;
+                }
+                let mut m = dt[i];
+                for (ox, oy, w) in [(-1i64, 0i64, dx1), (0, -1, dx1), (-1, -1, dx2), (1, -1, dx2)] {
+                    let (a, b) = (x + ox, y + oy);
+                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
+                        m = m.min(dt[spec.index(a as u32, b as u32)] + w);
+                    }
+                }
+                dt[i] = m;
+            }
+        }
+        for y in (0..spec.ny as i64).rev() {
+            for x in (0..spec.nx as i64).rev() {
+                let i = spec.index(x as u32, y as u32);
+                if dt[i] == 0.0 {
+                    continue;
+                }
+                let mut m = dt[i];
+                for (ox, oy, w) in [(1i64, 0i64, dx1), (0, 1, dx1), (1, 1, dx2), (-1, 1, dx2)] {
+                    let (a, b) = (x + ox, y + oy);
+                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
+                        m = m.min(dt[spec.index(a as u32, b as u32)] + w);
+                    }
+                }
+                dt[i] = m;
+            }
+        }
+        let mut seen = vec![false; spec.len()];
+        for start in 0..spec.len() {
+            if !opened[start] || seen[start] {
+                continue;
+            }
+            let mut stack = vec![start];
+            let mut comp = Vec::new();
+            seen[start] = true;
+            let mut rmax = 0.0f64;
+            while let Some(k) = stack.pop() {
+                comp.push(k);
+                rmax = rmax.max(dt[k]);
+                let (x, y) = ((k % spec.nx as usize) as i64, (k / spec.nx as usize) as i64);
+                for (ox, oy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                    let (a, b) = (x + ox, y + oy);
+                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
+                        continue;
+                    }
+                    let m = spec.index(a as u32, b as u32);
+                    if opened[m] && !seen[m] {
+                        seen[m] = true;
+                        stack.push(m);
+                    }
+                }
+            }
+            // rmax is ALSO the size floor: a pond that cannot hold a 36 m
+            // disk is a puddle, and a worm chopped into compact fragments by
+            // the opening becomes exactly such a string of beads — which is
+            // what seed 105 printed across its north-east interfluve.
+            let area = comp.len() as f64 * cell * cell;
+            if rmax < 18.0 || area < 6000.0 || area > 13.0 * rmax * rmax {
+                for k in comp {
+                    opened[k] = false;
+                }
+            }
+        }
+    }
+
+    // --- a meander valley keeps AT MOST ONE lake on its creek --------------
+    // Review: where the creek runs, one lake on it is a feature and three are
+    // a chain of ponds. Components touching the creek are found, the largest
+    // is kept, the rest are dropped; lakes away from the creek are untouched.
+    if meander {
+        let mut lab = vec![0u32; spec.len()];
+        let mut next = 1u32;
+        let mut touch: Vec<(u32, usize)> = Vec::new();
+        for start in 0..spec.len() {
+            if !opened[start] || lab[start] != 0 {
+                continue;
+            }
+            let mut stack = vec![start];
+            lab[start] = next;
+            let (mut size, mut hits) = (0usize, false);
+            while let Some(k) = stack.pop() {
+                size += 1;
+                if !surface.data[k].is_nan() {
+                    hits = true;             // creek water already here
+                }
+                let (x, y) = ((k % spec.nx as usize) as i64, (k / spec.nx as usize) as i64);
+                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                    let (a, b) = (x + dx, y + dy);
+                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
+                        continue;
+                    }
+                    let m = spec.index(a as u32, b as u32);
+                    if opened[m] && lab[m] == 0 {
+                        lab[m] = next;
+                        stack.push(m);
+                    }
+                }
+            }
+            if hits {
+                touch.push((next, size));
+            }
+            next += 1;
+        }
+        if touch.len() > 1 {
+            touch.sort_by_key(|(_, sz)| std::cmp::Reverse(*sz));
+            for (id, _) in touch.into_iter().skip(1) {
+                for i in 0..spec.len() {
+                    if lab[i] == id {
+                        opened[i] = false;
+                    }
+                }
+            }
+        }
+    }
+
+    for i in 0..spec.len() {
+        if !opened[i] {
+            continue;
+        }
+        if surface.data[i].is_nan() {
+            wet_cells += 1;
+            surface.data[i] = pond_lvl[i];
+        } else {
+            surface.data[i] = surface.data[i].max(pond_lvl[i]);
         }
     }
 
