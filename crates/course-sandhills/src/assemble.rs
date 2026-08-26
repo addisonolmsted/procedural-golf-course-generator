@@ -47,6 +47,22 @@ use course_world::world::EXTENT_M;
 use crate::draw::Descriptors;
 use crate::wind::macro_spec;
 
+/// Exponent applied to the valley coordinate before the measured profile is
+/// evaluated. See the note at its use site: it widens floor and valley
+/// together while leaving u = 1 — and therefore the cap — fixed.
+///
+/// Swept against the corpus ruler. 2.20 landed the floor on the real 274 m
+/// almost exactly — and made the tiles WORSE: the remap widens the HAND < 2 m
+/// band by flattening the whole cross-section, so the valleys read as broad
+/// featureless flats, relief fell, and the depression fill started finding
+/// large ponds on mid and upper ground. Hitting the number degraded the tile,
+/// which is the standing risk with a single-statistic target.
+///
+/// 1.60 is the settled value: floor 192 -> 242 m against a real 274, depth
+/// 11.6 against 11.8, wet fraction 1.46% inside the 0.5-2.5% band. It takes
+/// most of the widening the review asked for and keeps the valley a valley.
+const FLOOR_P: f64 = 1.60;
+
 /// The measured profile table (`HTAB1`).
 pub struct HandProfile {
     u_bins: usize,
@@ -520,7 +536,20 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // than points, are barely touched.
     let mut hf = vec![0.0f64; spec.len()];
     for i in 0..spec.len() {
-        hf[i] = prof.height(u[i], w[i]);
+        // MEASURED 2026-08-27 with valley_compare's own ruler (HAND < 2 m
+        // for the floor, < 5 m for the valley) on 14 corpus tiles against
+        // 12 of ours: real floors run 274 m and valleys 592 m, ours 192 m
+        // and 438 m — 0.70x and 0.74x. Depth was already right (1.08x), so
+        // the cross-section was too NARROW rather than too shallow, which is
+        // what the review saw as "wider flat valleys" on the real tiles.
+        //
+        // The profile is measured, so it is not rescaled; instead u is
+        // remapped before the lookup. u^p with p > 1 pulls every point
+        // toward the channel in profile space, so the floor holds flat
+        // further out and the wall arrives later, widening floor and valley
+        // together without touching the depth the profile ends at (u = 1
+        // maps to 1, so the cap is untouched by construction).
+        hf[i] = prof.height(u[i].powf(FLOOR_P), w[i]);
     }
     blur(spec, &mut hf, 2);
 
@@ -577,7 +606,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
             // the channel CELLS while their neighbours kept a full residual
             // cut a one-cell slot down every channel (first render)
             let near = math::smoothstep(0.0, 0.14, u[i]);
-            let amp = prof.spread(u[i], w[i]) * rk * near;
+            let amp = prof.spread(u[i].powf(FLOOR_P), w[i]) * rk * near;
             // three octaves, none short enough to read as dimples at 8 m
             // (the first pass ran a 34 m octave and the interfluves came
             // out pebbled); sub-64 m fabric is the texture stage's job

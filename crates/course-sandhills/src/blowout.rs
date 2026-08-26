@@ -236,9 +236,25 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
     if n == 0 {
         return out;
     }
+    // --- HIGH GROUND ONLY (review 2026-08-27) ---------------------------
+    // `u >= 0.55` says "far from a channel in planform", which is not the
+    // same as "high": a point can sit far from every channel and still be
+    // low, out on a broad flat interfluve or down a wide valley floor. Real
+    // Carolina bays sit on the upland flats, so the test is now on RELIEF as
+    // well, taken once from the surface before any bay is stamped.
+    let mut srt: Vec<f64> = height.data.clone();
+    srt.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let z_lo = srt[(srt.len() as f64 * 0.02) as usize];
+    let z_hi = srt[(srt.len() as f64 * 0.98) as usize];
+    let z_span = (z_hi - z_lo).max(1e-6);
+    // 0.52: high enough to keep bays off the valley floors and lower slopes,
+    // low enough that they still occur. At 0.58, stacked on the existing
+    // u >= 0.55 and the drainage-clearance test, six seeds produced one bay
+    // between them.
+    const BAY_RELIEF_MIN: f64 = 0.52;
     // NW–SE, with a little spread: measured orientations cluster tightly but
     // are not identical.
-    for _ in 0..n * 22 {
+    for _ in 0..n * 30 {
         if out.len() >= n as usize {
             break;
         }
@@ -262,6 +278,9 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         // rim has to sit between channels.
         let uu = u_field.bilinear(c);
         if uu < 0.55 {
+            continue;
+        }
+        if ((height.bilinear(c) - z_lo) / z_span) < BAY_RELIEF_MIN {
             continue;
         }
         let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);

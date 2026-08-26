@@ -959,15 +959,20 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                 }
                 // level set by the DOWNSTREAM lip: a pool is impounded from
                 // below, so it can never be deeper than its own outlet.
+                // Lowered 2026-08-27 with the wider floors. A pool is
+                // impounded to a LEVEL, so the area it covers is set by the
+                // floor it sits on: the same +0.75 m that made a tidy pool on
+                // a 192 m floor spreads across a 274 m one. The level and the
+                // reach both come down so the pool stays a pool.
                 let lip = run.last().unwrap().1;
-                let lvl = lip + 0.75;
+                let lvl = lip + 0.42;
                 for (p, _) in run.iter() {
-                    let r = (95.0 / cell).ceil() as i64;
+                    let r = (68.0 / cell).ceil() as i64;
                     let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
                     for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
                         for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
                             let q = spec.world_of(gx as u32, gy as u32);
-                            if q.distance(*p) > 95.0 {
+                            if q.distance(*p) > 68.0 {
                                 continue;
                             }
                             let i = spec.index(gx as u32, gy as u32);
@@ -1242,13 +1247,19 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // the area test the fill returns every texture-scale hollow and the tile
     // floods: measured, 7-11% of the tile against real tiles' 0.5-2.5% of
     // closed depression at the same depth threshold.
-    let pond_min = rng.range_f64(0.95, 1.45);
+    // Raised 2026-08-27 with the wider valley floors. Widening the floor to
+    // the corpus 274 m left far more flat low ground, and a fill-based pond
+    // test finds every shallow dip in it: measured wet fraction went to
+    // 1.4-5.0% against a corpus 0.5-2.5%. The gate is a DEPTH, so it is the
+    // right thing to raise — a 1 m dip on a 270 m floodplain is damp ground,
+    // not a lake.
+    let pond_min = rng.range_f64(1.55, 2.20);
     let mut pit = vec![false; nx8 * ny8];
     for i in 0..nx8 * ny8 {
         pit[i] = f[i] - z8[i] >= pond_min;
     }
     // connected-component area filter, 4-neighbour flood
-    let min_cells = 125usize;                    // ≈ 0.8 ha at 8 m
+    let min_cells = 190usize;                    // ≈ 1.2 ha at 8 m
     let mut keep = vec![false; nx8 * ny8];
     let mut seen = vec![false; nx8 * ny8];
     for start in 0..nx8 * ny8 {

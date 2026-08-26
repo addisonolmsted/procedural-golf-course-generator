@@ -786,6 +786,19 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
         min_gain: 0.008,
         wander: 0.10,
     };
+    // MEASURED 2026-08-27: extracted channel ENDS run 16.9 per km2 on our
+    // tiles against 21.8 on the corpus at the fine threshold (1.2e4 m2) —
+    // the review saw this as the real tiles carrying more "fingers" at the
+    // ends of tributaries. Tightening the fine tiers' spacing was tried
+    // first and was a bad trade: it bought only 16.9 -> 18.2 (the extra
+    // channels are too shallow to register in the extracted network), while
+    // costing 1.4 m of valley depth and pushing coverage-pass beds 12 m
+    // above the routing datum. Hanging fingers off TIER 4 was
+    // tried next and broke the same invariant, so the finger count is left
+    // alone: both routes put fine channels on ground the routing datum does
+    // not support, and forcing them there is how the old catena stamp
+    // produced knife trenches. Recorded as an open gap rather than papered
+    // over.
     let tips: Vec<u32> = (0..net.chans.len() as u32)
         .filter(|c| {
             let t = net.chans[*c as usize].tier;
