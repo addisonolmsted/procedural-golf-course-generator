@@ -373,12 +373,15 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // (measured — seed 9513 gained a hard-edged bay at a tributary head the
     // first time this was tried). Only the valley SHAPE uses the corrected
     // field.
-    const HEAD_ALPHA: f64 = 2.6;      // along-axis stretch beyond the tip
+    // Overridable for the ladder viewer (SAND_HEAD_ALPHA), in the same
+    // spirit as the other SAND_* diagnostic toggles. Read once, not per cell.
+    let head_alpha: f64 = std::env::var("SAND_HEAD_ALPHA").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(2.6);
     const HEAD_REACH: f64 = 260.0;    // no tip governs ground further than this
     let mut dist_v = dist.clone();
     for (ci, (pts, _)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
-        if tier < 2 || pts.len() < 2 {
+        if head_alpha <= 1.0 || tier < 2 || pts.len() < 2 {
             continue;                 // the trunk runs off-tile at both ends
         }
         let tip = pts[pts.len() - 1];
@@ -421,7 +424,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
                     continue;
                 }
                 let q = (de * de - s_ax * s_ax).max(0.0).sqrt();
-                let dn = ((HEAD_ALPHA * s_ax).powi(2) + q * q).sqrt();
+                let dn = ((head_alpha * s_ax).powi(2) + q * q).sqrt();
                 if dn > dist_v[i] {
                     dist_v[i] += wt * (dn - dist_v[i]);
                 }
