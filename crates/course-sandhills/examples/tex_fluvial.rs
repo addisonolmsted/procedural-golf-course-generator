@@ -18,8 +18,8 @@ fn main() {
         gridio::write_grid_f32(&out.join(format!("tex_{seed}.water.cgrid")),
                                &water.surface).unwrap();
         let bl: String = bays.iter()
-            .map(|b| format!("{:.0} {:.0} {:.0} {:.0} {:.2}\n",
-                             b.center.x, b.center.y, b.a_m, b.b_m, b.depth_m))
+            .map(|b| format!("{:.0} {:.0} {:.0} {:.0} {:.2} {:.4}\n",
+                             b.center.x, b.center.y, b.a_m, b.b_m, b.depth_m, b.theta))
             .collect();
         std::fs::write(out.join(format!("tex_{seed}.bays.txt")), bl).unwrap();
         println!("seed {seed}: {} bays, lake_frac {:.4}", bays.len(), water.lake_frac);

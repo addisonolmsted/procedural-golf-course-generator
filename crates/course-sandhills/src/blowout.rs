@@ -216,6 +216,8 @@ pub struct Bay {
     pub depth_m: f64,
     /// Rim height, metres — carried on the SE side.
     pub rim_m: f64,
+    /// Long-axis bearing, radians (NW–SE nominal).
+    pub theta: f64,
 }
 
 /// Stamp 0–3 Carolina bays onto the finished surface.
@@ -236,7 +238,7 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
     }
     // NW–SE, with a little spread: measured orientations cluster tightly but
     // are not identical.
-    for _ in 0..n * 6 {
+    for _ in 0..n * 22 {
         if out.len() >= n as usize {
             break;
         }
@@ -244,11 +246,16 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
         // upland depressions, and they run 173-256 m long, 88-116 m wide,
         // 0.7-2.6 m deep, with soft rims — much smaller and gentler than the
         // 440-506 m basins this was drawing. Sized to what the ground shows.
-        let a_m = rng.range_f64(85.0, 190.0);           // 170-380 m long
-        let b_m = a_m * rng.range_f64(0.42, 0.60);      // measured elongation ~2.2
+        // Review 2026-08-25: a bay is a signature feature of this terrain
+        // and is worth reading at a glance, so it is pitched between the
+        // measured corpus (173-256 m, 0.7-2.6 m) and the earlier oversized
+        // draw (440-506 m, 3.3-4.3 m) — deliberately above the measured
+        // band, on the user's call, for legibility.
+        let a_full = rng.range_f64(130.0, 255.0);       // 260-510 m before fit
+        let elong = rng.range_f64(0.42, 0.60);          // measured ~2.2
         let c = course_world::math::Vec2::new(
-            rng.range_f64(a_m, course_world::world::EXTENT_M - a_m),
-            rng.range_f64(a_m, course_world::world::EXTENT_M - a_m));
+            rng.range_f64(a_full, course_world::world::EXTENT_M - a_full),
+            rng.range_f64(a_full, course_world::world::EXTENT_M - a_full));
         // interfluve only, clear of other bays — and clear of the DRAINAGE:
         // a bay a creek runs through is a bay the creek has captured, and it
         // stops being one (review 2026-08-25). The whole footprint plus its
@@ -258,42 +265,123 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
             continue;
         }
         let theta = (-45.0f64).to_radians() + rng.range_f64(-0.22, 0.22);
-        if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_m) * 1.3) {
+        if out.iter().any(|o| o.center.distance(c) < (o.a_m + a_full) * 1.15) {
             continue;
         }
         // The FOOTPRINT — not a bounding circle — has to be free of drainage.
         // A channel that crossed the basin would have captured and drained
         // it, and it would no longer be a bay. Any crossing channel must cut
         // the rim, so sampling the rim (plus an inner ring, for a channel
-        // that merely grazes) decides it; a bounding-circle test rejected
-        // nine bays in ten for creeks that never touched them.
-        {
-            let (ct, st) = (math::cos(theta), math::sin(theta));
+        // that merely grazes) decides it.
+        //
+        // At the reviewed size a 470 m bay does not FIT between channels on
+        // an interfluve this wide, and outright rejection emptied every
+        // tile. So a candidate SHRINKS to its site instead: it is offered at
+        // full size and stepped down until it clears, which keeps bays on
+        // the ground and as large as the spot honestly allows.
+        let (ct, st) = (math::cos(theta), math::sin(theta));
+        // Prefer OPEN interfluve: shrink-to-fit alone pulled the median size
+        // below where it started, because most candidates land in a cramped
+        // spot and get cut down. Seeding the centre where there is room to
+        // begin with keeps bays at the reviewed size instead.
+        if chan_dist.bilinear(c) < 0.60 * a_full {
+            continue;
+        }
+        let mut a_m = 0.0f64;
+        for step in 0..4 {
+            let cand = a_full * (1.0 - 0.08 * step as f64);
             let mut hits = false;
             'clear: for &rr in &[1.12f64, 0.62] {
                 for k in 0..24 {
                     let ang = std::f64::consts::TAU * k as f64 / 24.0;
-                    let (lx, ly) = (a_m * rr * math::cos(ang), b_m * rr * math::sin(ang));
+                    let (lx, ly) = (cand * rr * math::cos(ang),
+                                    cand * elong * rr * math::sin(ang));
                     let q = course_world::math::Vec2::new(
                         c.x + lx * ct - ly * st, c.y + lx * st + ly * ct);
-                    if chan_dist.bilinear(q) < 22.0 {
+                    if chan_dist.bilinear(q) < 24.0 {
                         hits = true;
                         break 'clear;
                     }
                 }
             }
-            if hits || chan_dist.bilinear(c) < 22.0 {
-                continue;
+            if !hits {
+                a_m = cand;
+                break;
             }
         }
-        let depth = rng.range_f64(0.9, 2.6);            // measured 0.7-2.6
-        let rim = depth * rng.range_f64(0.18, 0.38);   // real rims are soft
-        let (ct, st) = (math::cos(theta), math::sin(theta));
+        if a_m <= 0.0 {
+            continue;
+        }
+        let b_m = a_m * elong;
+        let depth = rng.range_f64(1.5, 3.4);            // deepened for read
+        let rim = depth * rng.range_f64(0.22, 0.44);   // rims still soft
         let s_edge = rng.next_u32();
         let reach = a_m * 1.8;
         let (cx, cy) = ((c.x / spec.cell_size).round() as i64,
                         (c.y / spec.cell_size).round() as i64);
         let rp = (reach / spec.cell_size).ceil() as i64 + 1;
+
+        // --- a bay is a CLOSED depression with a LEVEL floor ---------------
+        // Subtracting a constant depth from sloping ground does not make a
+        // basin, it makes a tilted dish that still drains: measured realised
+        // depth ran from -4.08 m (floor ABOVE its surroundings) to +3.24 m,
+        // which is why the bays would not read at any size. The floor is now
+        // set to an ABSOLUTE level taken from the surrounding ring, so the
+        // hole is closed by construction.
+        //
+        // That only makes sense on ground flat enough to hold it, which is
+        // also where bays actually occur — flat interfluve, not hillside —
+        // so a candidate on steep ground is rejected rather than bulldozed.
+        // A LEVEL floor would be an earthwork on any sloping interfluve, and
+        // demanding flat ground emptied nine tiles in ten. So the datum is a
+        // plane least-squares-fitted to the surrounding ring with its slope
+        // DAMPED to a third: the floor still falls gently the way the ground
+        // does, but far less than the ground, so the hollow closes.
+        let mut ring: Vec<(f64, f64, f64)> = Vec::new();
+        for gy in (cy - rp).max(0)..=(cy + rp).min(spec.ny as i64 - 1) {
+            for gx in (cx - rp).max(0)..=(cx + rp).min(spec.nx as i64 - 1) {
+                let p = spec.world_of(gx as u32, gy as u32);
+                let (dx, dy) = (p.x - c.x, p.y - c.y);
+                let ax = dx * ct + dy * st;
+                let ay = -dx * st + dy * ct;
+                let r = ((ax / a_m).powi(2) + (ay / b_m).powi(2)).sqrt();
+                if (1.05..1.45).contains(&r) {
+                    ring.push((dx, dy, height.data[spec.index(gx as u32, gy as u32)]));
+                }
+            }
+        }
+        if ring.len() < 60 {
+            continue;
+        }
+        let nring = ring.len() as f64;
+        let (mut mx, mut my, mut mz) = (0.0, 0.0, 0.0);
+        for &(x, y, z) in &ring {
+            mx += x / nring;
+            my += y / nring;
+            mz += z / nring;
+        }
+        let (mut sxx, mut sxy, mut syy, mut sxz, mut syz) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for &(x, y, z) in &ring {
+            let (u, v, w) = (x - mx, y - my, z - mz);
+            sxx += u * u;
+            sxy += u * v;
+            syy += v * v;
+            sxz += u * w;
+            syz += v * w;
+        }
+        let det = sxx * syy - sxy * sxy;
+        let (gx_s, gy_s) = if det.abs() < 1e-6 {
+            (0.0, 0.0)
+        } else {
+            ((sxz * syy - syz * sxy) / det, (syz * sxx - sxz * sxy) / det)
+        };
+        let damp = 0.34;
+        // the plane must not out-run the basin, or the "hollow" drains
+        let tilt = (gx_s.hypot(gy_s)) * damp * a_m;
+        if tilt > depth * 0.85 {
+            continue;                       // too steep here for a bay to close
+        }
+
         for gy in (cy - rp).max(0)..=(cy + rp).min(spec.ny as i64 - 1) {
             for gx in (cx - rp).max(0)..=(cx + rp).min(spec.nx as i64 - 1) {
                 let p = spec.world_of(gx as u32, gy as u32);
@@ -307,11 +395,14 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
                 let wob = 1.0 + 0.06 * course_world::noise::perlin1(ang * 2.4, s_edge);
                 let r = ((ax / (a_m * wob)).powi(2) + (ay / (b_m * wob)).powi(2)).sqrt();
                 let i = spec.index(gx as u32, gy as u32);
-                // the basin: flat-ish floor, smooth wall
+                // the basin: LEVEL floor, smooth wall, feathered to the rim
                 if r < 1.0 {
-                    // flat-floored, steep-walled: a bay is a basin, not a dish
-                    let t = math::smoothstep(1.0, 0.72, r);
-                    height.data[i] -= depth * t;
+                    let datum = mz + damp * (gx_s * (dx - mx) + gy_s * (dy - my));
+                    // 0.86, not 1.0: a fully imposed floor is plastic, and
+                    // keeping a seventh of the original relief leaves the
+                    // basin its own fine texture without reopening a drain.
+                    let t = 0.86 * math::smoothstep(1.0, 0.70, r);
+                    height.data[i] = height.data[i] * (1.0 - t) + (datum - depth) * t;
                 }
                 // the rim: outside the rim line, strongest to the SE
                 if r >= 0.88 && r < 1.55 {
@@ -322,7 +413,7 @@ pub fn bays(rng: &mut DetRng, height: &mut Grid<f64>, u_field: &Grid<f64>,
                 }
             }
         }
-        out.push(Bay { center: c, a_m, b_m, depth_m: depth, rim_m: rim });
+        out.push(Bay { center: c, a_m, b_m, depth_m: depth, rim_m: rim, theta });
     }
     out
 }

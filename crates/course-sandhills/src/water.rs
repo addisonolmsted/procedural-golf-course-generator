@@ -991,56 +991,96 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             continue;
         }
 
+        // ---- MEANDER CREEK: one path, carved so it cannot break ----------
+        // Two faults broke the drawn creek into dashes (review 2026-08-25).
+        // The swing was accepted or rejected per SAMPLE, so a rejected
+        // sample teleported the creek back to the centre-line and left a gap
+        // up to a swing-width across; and every cell was gated on
+        // `s <= ground + 0.6`, which punched holes wherever the bank rose.
+        // The path is now built once with a SMOOTHED clamp — it can bend
+        // away from the valley wall but never jump — and the creek is
+        // CARVED, so the water is continuous by construction.
+        let mut pos: Vec<(Vec2, Vec2, f64)> = Vec::new();   // centre, perp, swing
+        let mut zs: Vec<f64> = Vec::new();
+        let mut fac: Vec<f64> = Vec::new();
         let mut arc = 0.0;
         for k in 0..pts.len().saturating_sub(1) {
             let (a, b) = (pts[k], pts[k + 1]);
             let seg = a.distance(b);
-            arc += seg;
-            // wet reaches: a few hundred metres on, a few hundred off
-            if course_world::noise::perlin1(arc / 420.0, s_reach) < reach_lo {
+            if seg <= 1e-6 {
                 continue;
             }
+            let tang = Vec2::new(b.x - a.x, b.y - a.y).normalized();
+            let perp = Vec2::new(-tang.y, tang.x);
             let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
-            for j in 0..=n {
+            for j in 0..n {
                 let t = j as f64 / n as f64;
-                let mut p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-                let z = bed[k] + (bed[k + 1] - bed[k]) * t;
-                if meander {
-                    // swing across the floor, bounded by the valley itself
-                    let s_here = arc - seg + seg * t;
-                    let lam_e = m_lam
-                        * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, m_seed));
-                    let off = m_swing * 26.0
-                        * (math::sin(std::f64::consts::TAU * s_here / lam_e + m_phase)
-                            + 0.35 * math::sin(std::f64::consts::TAU * s_here
-                                               / (lam_e * 2.7) + m_phase * 1.7));
-                    let tang = Vec2::new(b.x - a.x, b.y - a.y).normalized();
-                    let q = Vec2::new(p.x - tang.y * off, p.y + tang.x * off);
-                    // never leave the valley floor
+                let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                let s_here = arc + seg * t;
+                let lam_e = m_lam
+                    * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, m_seed));
+                let off = m_swing * 26.0
+                    * (math::sin(std::f64::consts::TAU * s_here / lam_e + m_phase)
+                        + 0.35 * math::sin(std::f64::consts::TAU * s_here
+                                           / (lam_e * 2.7) + m_phase * 1.7));
+                // the largest FRACTION of the swing that stays on the floor
+                let mut f = 0.0;
+                for step in 0..=8 {
+                    let cand = 1.0 - step as f64 / 8.0;
+                    let q = Vec2::new(p.x + perp.x * off * cand, p.y + perp.y * off * cand);
                     if u_field.bilinear(q) < 0.34 {
-                        p = q;
+                        f = cand;
+                        break;
                     }
                 }
-                let r = (hw / cell).ceil() as i64 + 1;
-                let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
-                for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
-                    for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
-                        let q = spec.world_of(gx as u32, gy as u32);
-                        if q.distance(p) > hw {
-                            continue;
+                pos.push((p, perp, off));
+                zs.push(bed[k] + (bed[k + 1] - bed[k]) * t);
+                fac.push(f);
+            }
+            arc += seg;
+        }
+        // smooth the clamp: the creek leans off the wall over ~50 m instead
+        // of snapping to the centre-line between one sample and the next
+        let src = fac.clone();
+        for i in 0..fac.len() {
+            let lo = i.saturating_sub(12);
+            let hi = (i + 13).min(src.len());
+            fac[i] = src[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
+        }
+        // a creek runs downhill; hold the bed monotone along the path
+        for i in 1..zs.len() {
+            if zs[i] > zs[i - 1] {
+                zs[i] = zs[i - 1];
+            }
+        }
+        let bank = 3.0f64;
+        for i in 0..pos.len() {
+            let (p0, perp, off) = pos[i];
+            let o = off * fac[i];
+            let p = Vec2::new(p0.x + perp.x * o, p0.y + perp.y * o);
+            let z = zs[i];
+            let r = ((hw + bank) / cell).ceil() as i64 + 1;
+            let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+            for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                    let idx = spec.index(gx as u32, gy as u32);
+                    let dd = spec.world_of(gx as u32, gy as u32).distance(p);
+                    if dd > hw + bank {
+                        continue;
+                    }
+                    if dd <= hw {
+                        // carve the slot, then fill it
+                        height.data[idx] = height.data[idx].min(z - 0.45);
+                        if surface.data[idx].is_nan() {
+                            wet_cells += 1;
+                            surface.data[idx] = z;
+                        } else {
+                            surface.data[idx] = surface.data[idx].min(z);
                         }
-                        let i = spec.index(gx as u32, gy as u32);
-                        // the creek surface sits just above its own bed, and
-                        // never above the ground beside it
-                        let s = z + 0.15;
-                        if s <= height.data[i] + 0.6
-                            && (surface.data[i].is_nan() || s < surface.data[i])
-                        {
-                            if surface.data[i].is_nan() {
-                                wet_cells += 1;
-                            }
-                            surface.data[i] = s;
-                        }
+                    } else {
+                        // a low bank, so the creek reads as incised
+                        let t = (dd - hw) / bank;
+                        height.data[idx] = height.data[idx].min(z + 0.30 + 0.60 * t);
                     }
                 }
             }
