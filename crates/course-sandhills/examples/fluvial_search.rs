@@ -1,10 +1,14 @@
 //! Search seeds for the fluvial macro window closest to a target signature.
 //!
 //! Args: <out.tsv> <seed_lo> <seed_hi> <f0..f5 target>
-//! Emits one line per seed: seed, best-window distance, then that window's
-//! six features. The macro stage only (8 m) — texture cannot move any of
-//! these statistics enough to matter, and it costs 40x more per tile.
-use course_sandhills::{assemble::HandProfile, build_fluvial_macro};
+//! Emits one line per seed: seed, best-window distance, that window's six
+//! features, then the DESCRIPTORS the seed drew. The descriptors are what
+//! makes the sweep a dial study rather than a lottery — regressing distance
+//! against them is how we find which dials carry the target signature.
+//!
+//! The macro stage only (8 m) — texture cannot move any of these statistics
+//! enough to matter, and it costs 40x more per tile.
+use course_sandhills::{assemble::HandProfile, build_fluvial_macro, draw, Mode};
 use std::io::Write;
 
 const WIN: usize = 174;          // 1392 m at 8 m, matching the atlas footprint
@@ -69,6 +73,7 @@ fn main() {
     let mut f = std::io::BufWriter::new(std::fs::File::create(out).unwrap());
     for seed in lo..hi {
         let id = course_seed::RunIdentity::from_seed(seed);
+        let dd = draw::site(&id, Some(Mode::Fluvial), None);
         let (_, _, asm) = build_fluvial_macro(&id, &prof);
         let nx = asm.height.spec.nx as usize;
         let ny = asm.height.spec.ny as usize;
@@ -88,8 +93,12 @@ fn main() {
             }
             oy += STEP;
         }
-        writeln!(f, "{seed}\t{:.4}\t{:.3}\t{:.3}\t{:.3}\t{:.4}\t{:.4}\t{:.4}",
+        writeln!(f, "{seed}\t{:.4}\t{:.3}\t{:.3}\t{:.3}\t{:.4}\t{:.4}\t{:.4}\
+                     \t{:.1}\t{:.2}\t{:.2}\t{:.1}\t{:.3}\t{:.0}\t{:.1}\t{:.3}",
                  best.0, best.1[0], best.1[1], best.1[2],
-                 best.1[3], best.1[4], best.1[5]).unwrap();
+                 best.1[3], best.1[4], best.1[5],
+                 dd.attach_m, dd.valley_depth_m, dd.upland_relief_m,
+                 dd.cap_relief_m, dd.cap_flat, dd.cap_wave_m,
+                 dd.divide_wander, dd.valley_sharp).unwrap();
     }
 }

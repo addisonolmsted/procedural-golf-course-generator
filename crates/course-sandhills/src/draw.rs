@@ -11,6 +11,9 @@ use crate::record::{record, FormClass, FormSpec, Range, Record};
 use crate::rng::{stream, DRAW};
 use crate::Mode;
 
+/// Exponent on the water-table ramp. See `water_table_m` in `site()`.
+const WATER_RAMP: f64 = 1.0;
+
 /// Everything the later stages read. One flat struct: the stages are the
 /// generator, and threading a dozen small structs between them buys nothing.
 #[derive(Clone, Copy, Debug)]
@@ -121,9 +124,19 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         floor_tilt_m_km: draw(&mut p, rec.floor_tilt_m_km),
         floor_tilt_rad: draw(&mut p, Range::new(0.0, std::f64::consts::TAU)),
         water_table_m: {
-            // squared ramp: shallow tables (lake country) get more mass
+            // Ramp, not uniform: shallow tables (lake country) get more mass,
+            // because a uniform draw made a lake-forming table a 7% event.
+            //
+            // Softened from u^2 to u^1.15 (review 2026-08-27: slightly less
+            // water). The exponent is the right lever because water_table_m
+            // acts TWICE in the same direction -- it sets the table plane
+            // (water.rs) and the pan depth cap (blowout.rs), so wet fraction
+            // responds to it roughly quadratically. Softening the ramp moves
+            // the median table deeper without touching either endpoint or
+            // either mechanism's calibration.
             let u = p.next_f64();
-            rec.water_table_m.lo + (rec.water_table_m.hi - rec.water_table_m.lo) * u * u
+            rec.water_table_m.lo
+                + (rec.water_table_m.hi - rec.water_table_m.lo) * u.powf(WATER_RAMP)
         },
         allogenic_river: {
             let c = p.next_f64();

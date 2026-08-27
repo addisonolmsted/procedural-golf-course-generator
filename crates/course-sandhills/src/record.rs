@@ -312,7 +312,13 @@ pub const SANDHILLS: Record = Record {
     train: FormSpec {
         orientation_order: Range::new(0.62, 0.86), // corpus: p50 .767, best tile .843
         wavelength_m: Range::new(1200.0, 1520.0),  // corpus lam_dom p50 1301
-        dune_relief_m: Range::new(14.0, 35.0),     // golf-bounded (lit: 41-150 m)
+        // MEASURED 2026-08-27 against tiles centred on real Sandhills
+        // courses: they carry 71-105 m of tile relief where ours carried
+        // 28-34 m. The old 14-35 band came from a golf ceiling that turned
+        // out to be far below the ground Sand Hills and Dismal River are
+        // actually built on, and it was the upstream blocker on the river
+        // gorge -- a valley cannot be deeper than its landscape is tall.
+        dune_relief_m: Range::new(32.0, 74.0),     // measured (course sites)
         wind_wander_rad: Range::new(0.20, 0.40),   // guess
         wind_wander_m: Range::new(1800.0, 3200.0), // guess
         // 8-20, raised from 5-12. The old floor admitted direction spreads
@@ -342,7 +348,9 @@ pub const SANDHILLS: Record = Record {
         hummock_spread: Range::new(0.50, 0.80),
         // Scaled WITH lambda: slope goes as relief/lambda, and shrinking
         // lambda alone took the golf proxy from 20/24 to 3/20.
-        hummock_relief_m: Range::new(8.0, 14.0),
+        // scaled 1.5x against the megaform's 2x, so the hummock tier does
+        // not start doing the megaform's job (surface.rs ablation test)
+        hummock_relief_m: Range::new(12.0, 21.0),
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
         // Per-class, like texture_floor: the SS12 0.30-0.50 was calibrated on
@@ -357,7 +365,7 @@ pub const SANDHILLS: Record = Record {
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
         wavelength_m: Range::new(1000.0, 1480.0),  // corpus lam_dom p50 1184
-        dune_relief_m: Range::new(10.0, 24.0),     // golf-bounded
+        dune_relief_m: Range::new(22.0, 50.0),     // measured (course sites)
         wind_wander_rad: Range::new(0.55, 1.10),   // guess — the low-A mode
         wind_wander_m: Range::new(700.0, 1500.0),  // guess
         kappa: Range::new(0.45, 1.40),             // near the 1/sqrt(8)
@@ -394,7 +402,7 @@ pub const SANDHILLS: Record = Record {
         belt_patchiness: Range::new(0.45, 0.85),
         belt_patch_m: Range::new(700.0, 1500.0),
         hummock_spread: Range::new(0.50, 0.80),
-        hummock_relief_m: Range::new(7.5, 13.0),
+        hummock_relief_m: Range::new(11.0, 19.0),
         hummock_kappa: Range::new(1.10, 2.70),
         hummock_gate: Range::new(0.26, 0.44),
         hummock_floor: Range::new(0.38, 0.55),
@@ -510,8 +518,10 @@ mod tests {
         assert!(r.relief_budget_m.lo >= 7.033, "under the proxy relief floor");
         assert!(r.relief_budget_m.hi <= 81.854, "over the proxy relief ceiling");
         for g in [&r.train, &r.mound] {
-            assert!(g.dune_relief_m.hi <= 35.0,
-                    "golf bounds playable dune relief to 35 m (04-landform-literature)");
+            assert!(g.dune_relief_m.hi <= 76.0,
+                    "measured 2026-08-27: real Sandhills course sites carry \
+                     71-105 m of tile relief; above ~70 m of dune relief the \
+                     tile stops being playable dune country");
         }
     }
 

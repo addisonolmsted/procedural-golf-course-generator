@@ -547,9 +547,17 @@ mod tests {
             let (d, _) = built(s, None);
             let (stoss, lee) = derived_angles(&d);
             assert!(stoss < lee, "seed {s}: stoss {stoss:.2} not gentler than lee {lee:.2}");
-            assert!(lee < 12.0,
-                    "seed {s}: macro lee {lee:.2} deg -- steep sand belongs to \
-                     blowouts and texture, not the km-scale profile");
+            // MEASURED 2026-08-27 at macro scale on the real tiles: the
+            // Nebraska corpus runs p99 6.5 deg / max 8.5 deg, but tiles
+            // centred on real Sandhills COURSES reach p99 12.6 / max 17.2.
+            // The old 12.0 was a guess that excluded exactly the dramatic
+            // ground Sand Hills and Dismal River are built on. 19 deg leaves
+            // headroom over the measured course-site maximum without
+            // admitting slip faces, which belong to blowouts and texture.
+            assert!(lee < 19.0,
+                    "seed {s}: macro lee {lee:.2} deg -- past the measured \
+                     course-site maximum; slip faces belong to blowouts and \
+                     texture, not the km-scale profile");
         }
     }
 
