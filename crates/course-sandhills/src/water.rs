@@ -27,8 +27,30 @@ pub struct Water {
 /// table. The table rides the regional datum (the Ogallala is unconfined
 /// here), so each lake takes ONE flat level — the 25th percentile of the
 /// table across its own extent — and cells above that level go dry again.
+/// What the table drawdown needs: a centre-line, its bed, and how far the
+/// influence reaches. Generalised from `&RiverPlan` so the gorge can supply
+/// it too — a 50 m canyon floor sits far below the regional table, and
+/// without the drawdown the whole valley floods.
+pub struct Drawdown<'a> {
+    pub line: &'a [Vec2],
+    pub bed: &'a [f64],
+    pub inner: f64,
+    pub reach: f64,
+}
+
+impl<'a> Drawdown<'a> {
+    pub fn from_plan(pl: &'a RiverPlan) -> Self {
+        Drawdown {
+            line: &pl.corr,
+            bed: &pl.bed,
+            inner: pl.floor_hw + pl.wall_m,
+            reach: (pl.floor_hw + pl.wall_m) * 1.4 + 220.0,
+        }
+    }
+}
+
 pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
-            river: Option<&RiverPlan>, blowouts: &[crate::blowout::Blowout]) -> Water {
+            river: Option<&Drawdown>, blowouts: &[crate::blowout::Blowout]) -> Water {
     let spec = height.spec;
     let mut surface = Grid::filled(spec, f64::NAN);
     let mut wet = vec![false; spec.len()];
@@ -59,8 +81,8 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
     let dspec = datum8.spec;
     let mut ddown = Grid::filled(dspec, 0.0f64);
     if let Some(pl) = river {
-        let reach = (pl.floor_hw + pl.wall_m) * 1.4 + 220.0;
-        for (i, q) in pl.corr.iter().enumerate().step_by(2) {
+        let reach = pl.reach;
+        for (i, q) in pl.line.iter().enumerate().step_by(2) {
             let bed_t = pl.bed[i] + 0.3;
             let x0 = ((q.x - reach) / dspec.cell_size).floor().max(0.0) as u32;
             let x1 = ((q.x + reach) / dspec.cell_size).ceil().min(dspec.nx as f64 - 1.0) as u32;
@@ -76,7 +98,7 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
                     let p2 = dspec.world_of(xx, yy);
                     let tab = datum8.bilinear(p2) + floor_off - d.water_table_m;
                     let full = (tab - bed_t).max(0.0);
-                    let f = 1.0 - math::smoothstep(pl.floor_hw + pl.wall_m, reach, dd);
+                    let f = 1.0 - math::smoothstep(pl.inner, reach, dd);
                     let li = dspec.index(xx, yy);
                     if full * f > ddown.data[li] {
                         ddown.data[li] = full * f;
@@ -243,7 +265,14 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         .map(|k| (counts[k], k as u32))
         .collect();
     let total = (1..=nid as usize).filter(|k| counts[*k] >= 125).count();
-    let keep_max = total * 2 / 3;
+    // Culling small ponds also shrinks `total`, so capping them at 2/3 of the
+    // count BEFORE the cull never actually reaches 2/3 after it — the ratio
+    // chases itself down. Solve it directly instead: we want
+    // small <= 2/3 (small + big), which is small <= 2 * big. Latent since the
+    // cap was written; doubling the dune relief exposed it by multiplying the
+    // small hollows (seed 9 measured 271 of 274 bodies small).
+    let big = total.saturating_sub(small.len());
+    let keep_max = 2 * big;
     if small.len() > keep_max {
         small.sort(); // smallest first
         let drop: std::collections::HashSet<u32> =
@@ -824,6 +853,52 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
 }
 
 /// The channel slot + water: cut at 2 m, AFTER texture — the one sharp piece.
+/// Cut the wet creek slot on a gorge floor and write its water surface.
+///
+/// The gorge's own line, rather than a `RiverPlan` — same job as
+/// `cut_channel`, but the gorge carries a plain centre-line and bed. Kept
+/// narrow (a Sandhills river is a few metres of water in a very large
+/// canyon) and cut into the ground so the wet ribbon is continuous by
+/// construction, which is the lesson from the Carolina meander creek.
+pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
+                 line: &[Vec2], bed: &[f64]) {
+    let spec = height.spec;
+    let cell = spec.cell_size;
+    let hw = 3.2;                     // ~6.5 m of water, per the review band
+    let bank = 4.0;
+    for (i, p) in line.iter().enumerate() {
+        let z = bed[i.min(bed.len() - 1)];
+        let r = ((hw + bank) / cell).ceil() as i64 + 1;
+        let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+        for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+            for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                let idx = spec.index(gx as u32, gy as u32);
+                let dd = spec.world_of(gx as u32, gy as u32).distance(*p);
+                if dd > hw + bank {
+                    continue;
+                }
+                // one-sided soft cut, as the Carolina creek does: full at the
+                // centre-line, nothing at the bank, and never a fill
+                let t = math::smoothstep(hw + bank, hw, dd);
+                let target = z - 0.35;
+                let over = (height.data[idx] - target).max(0.0);
+                let cand = height.data[idx] - t * over;
+                if cand < height.data[idx] {
+                    height.data[idx] = cand;
+                }
+                if dd <= hw {
+                    if water.surface.data[idx].is_nan() {
+                        water.lake_frac += 1.0 / spec.len() as f64;
+                        water.surface.data[idx] = z;
+                    } else {
+                        water.surface.data[idx] = water.surface.data[idx].min(z);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn cut_channel(height: &mut Grid<f64>, water: &mut Water, pl: &RiverPlan) {
     let spec = height.spec;
     // Width cheats slightly with the local planform (review): wider through
@@ -902,8 +977,12 @@ mod tests {
 
     #[test]
     fn small_ponds_never_dominate_the_count() {
+        // Seeds re-picked 2026-08-27. The water-table ramp went flat (W4), so
+        // seed 9 now draws a deep table and carries 4 water bodies in total —
+        // a 2-of-3 ratio over 4 bodies measures nothing. These three are
+        // pond-rich under the new draw (lake_frac 0.066 / 0.032 / 0.067).
         let Some(p) = pack() else { return };
-        for seed in [3u64, 9, 18] {
+        for seed in [3u64, 11, 14] {
             let t = build_full(&RunIdentity::from_seed(seed), &p, Some(FormClass::Train));
             let spec = t.water.spec;
             // count bodies by flood fill
@@ -947,8 +1026,11 @@ mod tests {
 
     #[test]
     fn shallow_tables_make_lakes_and_deep_tables_stay_dry() {
+        // The shallow example moved from seed 9 to seed 3 when the table ramp
+        // went flat (W4): seed 9 now draws a deep table, which is the rule
+        // working, not breaking. Seed 23 still draws a deep one.
         let Some(p) = pack() else { return };
-        let wet = build_full(&RunIdentity::from_seed(9), &p, Some(FormClass::Train));
+        let wet = build_full(&RunIdentity::from_seed(3), &p, Some(FormClass::Train));
         assert!(wet.lake_frac > 0.005, "shallow-table seed made no lakes");
         let dry = build_full(&RunIdentity::from_seed(23), &p, Some(FormClass::Train));
         assert!(dry.lake_frac < 0.01, "deep-table seed made lakes");
@@ -968,7 +1050,11 @@ mod tests {
         let r = yes.river.expect("seed 5 draws the coin");
         let spec = yes.water.spec;
         let wet = (0..spec.len()).filter(|i| yes.water.data[*i].is_finite()).count();
-        let len_m = r.len() as f64 * 4.0;
+        // Measure the polyline, do not assume its spacing. This read
+        // `r.len() * 4.0` for plan_river's 4 m step; the gorge creek comes off
+        // carve::beds at 6 m, which inflated the proxy by 1.5x and failed a
+        // creek that was in fact 6.3 m wide.
+        let len_m: f64 = r.windows(2).map(|w| w[0].distance(w[1])).sum();
         let mean_width = wet as f64 * spec.cell_size * spec.cell_size / len_m;
         assert!(mean_width < 9.0,
                 "river wet width proxy {mean_width:.1} m -- creek spec is ~6 m");

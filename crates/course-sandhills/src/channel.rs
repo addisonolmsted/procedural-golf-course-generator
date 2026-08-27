@@ -326,8 +326,29 @@ fn tier3(attach_m: f64) -> Tier {
 /// wobble + wander + downhill lean + border repulsion, inside an acceptance
 /// ladder that rejects self-approach AND proximity to already-placed systems.
 /// Returned MOUTH-FIRST with a strictly increasing bed.
+/// Trunk planform: meander wavelength and swing. Carried as a parameter so a
+/// Sandhills gorge trunk can run straighter than a Carolina one without
+/// changing how many draws `trunk` consumes — the ranges move, the transcript
+/// does not.
+#[derive(Clone, Copy)]
+pub struct TrunkPlan {
+    pub lam: (f64, f64),
+    pub swing: (f64, f64),
+}
+
+impl TrunkPlan {
+    /// Carolina: the reviewed values.
+    pub const CAROLINA: TrunkPlan =
+        TrunkPlan { lam: (750.0, 1000.0), swing: (0.45, 0.70) };
+    /// Sandhills gorge: a longer wave and a smaller swing. A river cutting a
+    /// dune field is confined by its own canyon, so the TRUNK is the straight
+    /// element and the wiggle lives in the creek on its floor (review).
+    pub const GORGE: TrunkPlan =
+        TrunkPlan { lam: (1500.0, 2200.0), swing: (0.16, 0.30) };
+}
+
 fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
-         slot: (f64, f64), idx: &Index, cardinal_only: bool)
+         slot: (f64, f64), idx: &Index, cardinal_only: bool, plan: TrunkPlan)
          -> Option<(Vec<Vec2>, Vec<f64>)> {
     let step = 8.0;
     let lim = EXTENT_M - 2.0;
@@ -388,8 +409,8 @@ fn trunk(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors,
     // Review 2026-08-24 ("squiggle too much ... the lambda floor should be
     // raised a lot"): sweeping wander, not creek-scale wiggle — the tier cut
     // prints this path into the ground and tight bends cut messy.
-    let lam = rng.range_f64(750.0, 1000.0);
-    let swing = rng.range_f64(0.45, 0.70);
+    let lam = rng.range_f64(plan.lam.0, plan.lam.1);
+    let swing = rng.range_f64(plan.swing.0, plan.swing.1);
     let (ph1, ph2) = (rng.range_f64(0.0, std::f64::consts::TAU),
                       rng.range_f64(0.0, std::f64::consts::TAU));
     let (s_noise, s_lam, s_swing) = (rng.next_u32(), rng.next_u32(), rng.next_u32());
@@ -685,6 +706,57 @@ fn walk(rng: &mut DetRng, start: Vec2, z0: f64, depart: Vec2, hold_m: f64,
 /// Grow the full network on the datum: trunks, then tier-2 tribs on trunks,
 /// tier-3 on everything, then density-fill passes until the drainage density
 /// lands in the corpus band (2.33 km/km² measured; band 2.0–2.7).
+/// A SPARSE network for the Sandhills gorge: one straight-ish trunk plus two
+/// short tributary orders, and nothing else.
+///
+/// Not a thinned `grow()`. `grow()` carries three separate mechanisms whose
+/// whole job is to guarantee the tile is drained everywhere — a polish fill,
+/// a coverage pass that walks channels at any ground more than 190 m from
+/// water, and a fallback fragment for underwatered tiles. Those exist because
+/// a Carolina interfluve really is drained everywhere, and because the
+/// assembled surface goes flat and creased where it is not.
+///
+/// A dune field is the opposite case. Sandhills sand is too permeable to shed
+/// surface flow, so channels exist ONLY where the water table is cut: along
+/// the trunk. The empty far field those three passes were written to
+/// eliminate is exactly what a dune field should have. So this shares the
+/// trunk, tier and walk primitives and runs none of the density machinery.
+pub fn grow_sparse(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
+    let mut net = Network { chans: Vec::new() };
+    let mut idx = Index::new();
+    let got = trunk(rng, datum, d, (0.25, 0.75), &idx, false, TrunkPlan::GORGE)
+        .or_else(|| trunk(rng, datum, d, (0.25, 0.75), &idx, true, TrunkPlan::GORGE));
+    if let Some((pts, z)) = got {
+        let c = Channel { pts, z, tier: 1, parent: None, sys: 0 };
+        idx.add_channel(&c, net.chans.len() as u32);
+        net.chans.push(c);
+    } else {
+        return net;
+    }
+    let k_rise = 0.55 * d.cap_relief_m / math::pow(800.0, 0.6);
+
+    // Two orders, both SHORT. A gorge tributary is a side draw a few hundred
+    // metres long, not a Carolina trunk-and-branch system: tier 2 comes down
+    // from 2000 m to 900, tier 3 from 900 to 380, and both claim more ground
+    // so walks die on their neighbours rather than threading between them.
+    let mut t2 = tier2(d.attach_m * 1.35);
+    t2.max_len = 900.0;
+    t2.claim = 260.0;
+    t2.min_len = 160.0;
+    let t2_targets: Vec<u32> =
+        (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 1).collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &t2, &t2_targets, 2);
+
+    let mut t3 = tier3(d.attach_m * 1.15);
+    t3.max_len = 380.0;
+    t3.claim = 190.0;
+    t3.min_len = 90.0;
+    let t3_targets: Vec<u32> =
+        (0..net.chans.len() as u32).filter(|c| net.chans[*c as usize].tier == 2).collect();
+    tier_pass(rng, &mut net, &mut idx, datum, k_rise, &t3, &t3_targets, 3);
+    net
+}
+
 pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     let mut net = Network { chans: Vec::new() };
     let mut idx = Index::new();
@@ -692,8 +764,9 @@ pub fn grow(rng: &mut DetRng, datum: &Grid<f64>, d: &Descriptors) -> Network {
     // --- the trunk: ONE per tile (review 2026-08-24 — every real NC tile
     // is single-trunked; the survey's extra "systems" are edge fragments).
     for s in 0..d.n_sys.min(1) {
-        let got = trunk(rng, datum, d, (0.25, 0.75), &idx, false)
-            .or_else(|| trunk(rng, datum, d, (0.25, 0.75), &idx, true));
+        let got = trunk(rng, datum, d, (0.25, 0.75), &idx, false, TrunkPlan::CAROLINA)
+            .or_else(|| trunk(rng, datum, d, (0.25, 0.75), &idx, true,
+                              TrunkPlan::CAROLINA));
         if let Some((pts, z)) = got {
             let c = Channel { pts, z, tier: 1, parent: None, sys: s };
             idx.add_channel(&c, net.chans.len() as u32);

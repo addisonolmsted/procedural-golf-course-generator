@@ -30,6 +30,7 @@ pub mod blowout;
 pub mod carve;
 pub mod channel;
 pub mod draw;
+pub mod gorge;
 pub mod mode;
 pub mod record;
 pub mod rng;
@@ -266,39 +267,43 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let mut pr = rng::stream(id, rng::BLOWOUT);
     let _pan = blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d);
 
-    // A6a: PLAN the river and carve its CORRIDOR into the macro, before
-    // texture — the corridor is a landform and belongs under the quilt
-    // (review: the corridor floor was "much too smooth"). The 6 m channel
-    // slot stays a sharp post-texture cut.
+    // A6a: the river GORGE, cut into the macro before texture — the valley
+    // is a landform and belongs under the quilt.
+    //
+    // Replaces the old plan_river / carve_corridor / carve_rim_draws stack
+    // (review 2026-08-26: those valleys read as painted on). That was a
+    // smooth per-station trough with a sinuous line in it; a real Sandhills
+    // river runs in a dissected canyon. See gorge.rs.
     let mut rr = rng::stream(id, rng::WATER);
-    let river_plan = if d.allogenic_river {
-        let pick = water::RiverStyle::PASSED[rr.below(water::RiverStyle::PASSED.len())];
-        water::plan_river(&mut rr, &sf.height, &d, pick)
+    let gorge = if d.allogenic_river {
+        gorge::build(&mut rr, &mut sf.height, &d)
     } else {
         None
     };
-    if let Some(pl) = &river_plan {
-        water::carve_corridor(&mut sf.height, pl);
-        // ...and dissect its rim. A Sandhills river canyon is crenulated by
-        // short draws; the dune field beside it carries none.
-        water::carve_rim_draws(&mut rr, &mut sf.height, pl);
-    }
 
     // T: texture at 2 m — now covering the corridor floor too
     let mut tr = rng::stream(id, rng::TEXTURE);
     let mut height = texture::quilt(&mut tr, pack, &sf.height, &d);
 
-    // A5b: blowouts over the texture
-    let avoid = river_plan.as_ref().map(|pl| {
-        (pl.corr.as_slice(), (pl.floor_hw + pl.wall_m) * 1.4 + 60.0)
-    });
+    // A5b: blowouts over the texture. A blowout inside the canyon would be
+    // a dune feature cut into a river valley, so the gorge keeps them out.
+    let avoid = gorge.as_ref().map(|g| (g.creek.as_slice(), 420.0));
     let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
 
-    // A6b: lakes on the finished ground, then the sharp channel slot
-    let mut water = water::find(&height, &sf.datum, &d, river_plan.as_ref(), &blowouts);
-    let river = if let Some(pl) = &river_plan {
-        water::cut_channel(&mut height, &mut water, pl);
-        Some(pl.pts.clone())
+    // A6b: lakes on the finished ground, then the sharp creek slot.
+    // The gorge supplies the table drawdown: its floor sits ~50 m below the
+    // regional table, and without the drawdown the whole canyon would read
+    // as one lake.
+    let dd = gorge.as_ref().map(|g| water::Drawdown {
+        line: &g.creek,
+        bed: &g.creek_z,
+        inner: 200.0,
+        reach: 620.0,
+    });
+    let mut water = water::find(&height, &sf.datum, &d, dd.as_ref(), &blowouts);
+    let river = if let Some(g) = &gorge {
+        water::cut_creek(&mut height, &mut water, &g.creek, &g.creek_z);
+        Some(g.creek.clone())
     } else {
         None
     };
