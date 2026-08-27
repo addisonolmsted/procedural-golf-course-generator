@@ -488,6 +488,14 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     let depth = 1.2;
     let floor_hw = rng.range_f64(10.0, 22.0);      // review: full effect ~200 m
     let wall_m = rng.range_f64(35.0, 75.0);        // review: full effect ~200 m
+    // MEASURED 2026-08-26: our river valleys sit 17-20 m below their rim
+    // with 5-8% walls, where the Dismal River is 54 m / 16.7% and Sand Hills
+    // GC 50 m / 10.4%. Raising these was TRIED and changed almost nothing
+    // (13-21 m, unchanged) for a reason worth recording: our tiles carry
+    // 28-34 m of total relief against 71-105 m for real Sandhills course
+    // sites, and a valley cannot be deeper than its landscape is tall. The
+    // corridor is not the binding constraint -- macro dune relief is. Left
+    // at the reviewed values until that is fixed upstream.
     let wall_rise = rng.range_f64(2.0, 3.5);       // lit: low dune-country relief
     let mut bed: Vec<f64> = pts.iter().map(|q| height.bilinear(*q) - depth).collect();
     // two smoothing passes so the bed does not chase every dune it crosses
@@ -511,7 +519,7 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     // Incised coin LAST among the shared draws, so non-incised seeds keep
     // byte-identical rivers; only a gorge seed consumes the override draws.
     let incised = rng.next_f64() < 0.12;
-    let (depth, floor_hw, wall_m, wall_rise) = if incised {
+    let (inc_depth, floor_hw, wall_m, wall_rise) = if incised {
         // the gorge: bed well below the dune surface, walls climbing hard --
         // deep, narrow, sharp. The Sand Hills CC setting.
         (rng.range_f64(4.5, 8.0), rng.range_f64(7.0, 14.0),
@@ -519,6 +527,20 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
     } else {
         (depth, floor_hw, wall_m, wall_rise)
     };
+    // BUG, found 2026-08-26: the gorge branch recomputed `depth`, but `bed`
+    // was already built above from the 1.2 m default and nothing re-read it,
+    // so the override was dead — the compiler had been reporting `depth`
+    // unused all along. Every "incised" seed therefore carried a 1.2 m bed
+    // with gorge WALLS, which is why measured valley depth came out at
+    // 17-20 m against 50-54 m for the real Dismal River and Sand Hills, and
+    // why the rim draws had nothing to cut into. The bed is lowered here,
+    // after grading, so the long profile it just built is preserved.
+    if incised {
+        let drop = inc_depth - depth;
+        for b in bed.iter_mut() {
+            *b -= drop;
+        }
+    }
 
     // In a GORGE the corridor is narrow enough that ordinary meander
     // amplitude swings the channel outside its own walls (review: incised
@@ -587,6 +609,115 @@ pub fn plan_river(rng: &mut DetRng, height: &Grid<f64>, d: &Descriptors, style: 
 /// are shaped independently — the cut-bank side is steeper and narrower, the
 /// slip-off side wider and gentler, the roles flipping slowly along the arc —
 /// and an intermittent shelf (a young terrace) rides the slip-off side.
+/// Short draws cutting into the river-corridor RIM.
+///
+/// Review 2026-08-26: our Sandhills river valleys read as painted-on. Against
+/// the real Dismal River the reason is plain — a real Sandhills river runs in
+/// a sharply DISSECTED canyon, its rim crenulated by dozens of short steep
+/// draws, while the dune field a few hundred metres away carries no drainage
+/// at all. Ours was a smooth trough with a sinuous line in it.
+///
+/// The asymmetry is real geology rather than an oversight to correct
+/// everywhere: Sandhills rivers are allogenic, fed by groundwater through
+/// sand too permeable to shed surface flow, so runoff channels exist ONLY
+/// where the water table is cut — along the trunk. That is why this is a rim
+/// treatment and not a drainage network: very low density overall, short
+/// tributaries, exactly as the review asked.
+///
+/// Each draw grades UP from its mouth at a fixed slope and stops where the
+/// ground falls below that grade — which is the rim by construction, since
+/// the wall climbs faster than the draw and the plateau does not. Nothing
+/// decides where the rim is; the draw finds it.
+pub fn carve_rim_draws(rng: &mut DetRng, height: &mut Grid<f64>, pl: &RiverPlan) -> usize {
+    let spec = height.spec;
+    let cell = spec.cell_size;
+    let step = 4.0;
+    let spacing = rng.range_f64(150.0, 260.0);
+    let n = pl.corr.len();
+    if n < 40 {
+        return 0;
+    }
+    let mut cut = 0usize;
+    let mut arc_next = rng.range_f64(60.0, spacing);
+    for i in 3..n - 3 {
+        let arc = i as f64 * step;
+        if arc < arc_next {
+            continue;
+        }
+        arc_next = arc + spacing * rng.range_f64(0.62, 1.45);
+        let a = pl.corr[i - 3];
+        let b = pl.corr[i + 3];
+        let tang = Vec2::new(b.x - a.x, b.y - a.y);
+        let tl = tang.length().max(1e-9);
+        let perp = Vec2::new(-tang.y / tl, tang.x / tl);
+        let side = if rng.next_f64() < 0.5 { 1.0 } else { -1.0 };
+        // start just outside the wet floor and head away from the river,
+        // with a little obliquity so draws are not a comb of normals
+        let obl = rng.range_f64(-0.55, 0.55);
+        let dir = Vec2::new(
+            perp.x * side * math::cos(obl) - perp.y * side * math::sin(obl),
+            perp.x * side * math::sin(obl) + perp.y * side * math::cos(obl),
+        );
+        let mouth = Vec2::new(pl.corr[i].x + dir.x * (pl.floor_hw + 6.0),
+                              pl.corr[i].y + dir.y * (pl.floor_hw + 6.0));
+        // The floor grades up from the CORRIDOR FLOOR, not from the ground at
+        // the mouth. Taking it from the mouth put the draw's floor level with
+        // the wall it was supposed to cut, so `floor_z >= g` held on the first
+        // step and every draw died at t = 0 — the pass ran and changed
+        // nothing. A tributary starts at the elevation of the water it joins.
+        let z_mouth = height.bilinear(pl.corr[i]);
+        let grade = rng.range_f64(0.030, 0.075);
+        let len = rng.range_f64(90.0, 300.0);
+        let hw0 = rng.range_f64(9.0, 22.0);
+        let s_w = rng.next_u32();
+        let mut t = 0.0f64;
+        let mut alive = false;
+        while t < len {
+            // a draw wanders as it climbs; straight ones read as scratches
+            let wob = 0.30 * course_world::noise::perlin1(t / 90.0, s_w);
+            let dx = dir.x * math::cos(wob) - dir.y * math::sin(wob);
+            let dy = dir.x * math::sin(wob) + dir.y * math::cos(wob);
+            let p = Vec2::new(mouth.x + dx * t, mouth.y + dy * t);
+            let g = height.bilinear(p);
+            let floor_z = z_mouth + grade * t;
+            if floor_z >= g - 0.25 {
+                break;                  // the grade has caught the ground: this is the rim
+            }
+            alive = true;
+            // width tapers to a point at the head
+            let f = 1.0 - t / len;
+            let hw = (hw0 * f.max(0.0).sqrt()).max(cell);
+            let r = (hw / cell).ceil() as i64 + 1;
+            let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+            for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                    let q = spec.world_of(gx as u32, gy as u32);
+                    let dd = q.distance(p);
+                    if dd > hw {
+                        continue;
+                    }
+                    let idx = spec.index(gx as u32, gy as u32);
+                    let here = height.data[idx];
+                    if here <= floor_z {
+                        continue;
+                    }
+                    // V section: floor at the centre, untouched at the lip
+                    let u = (dd / hw).clamp(0.0, 1.0);
+                    let target = floor_z + (here - floor_z) * u.powf(1.45);
+                    if target < here {
+                        height.data[idx] = target;
+                    }
+                }
+            }
+            t += step;
+        }
+        if alive {
+            cut += 1;
+        }
+    }
+    cut
+}
+
 pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
     let spec = height.spec;
     const OUT_GRADE: f64 = 0.015;

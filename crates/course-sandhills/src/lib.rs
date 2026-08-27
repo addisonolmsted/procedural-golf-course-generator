@@ -279,6 +279,9 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     };
     if let Some(pl) = &river_plan {
         water::carve_corridor(&mut sf.height, pl);
+        // ...and dissect its rim. A Sandhills river canyon is crenulated by
+        // short draws; the dune field beside it carries none.
+        water::carve_rim_draws(&mut rr, &mut sf.height, pl);
     }
 
     // T: texture at 2 m — now covering the corridor floor too
