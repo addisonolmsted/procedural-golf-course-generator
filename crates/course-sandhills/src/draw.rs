@@ -69,6 +69,15 @@ pub struct Descriptors {
     pub n_bays: u32,
     pub p_valley_creek: f64,
     pub allogenic_river: bool,
+    /// The steeper Pinehurst-end draw. See `Record::p_upland`.
+    pub upland: bool,
+    /// Exponent on the valley coordinate before the measured profile is read
+    /// (`assemble.rs`). Above 1 it holds the floor flat further out and the
+    /// wall arrives later, so it widens floor and valley WITHOUT changing the
+    /// depth the profile ends at. Lowering it is therefore the one lever that
+    /// steepens a tile without deepening it, which is exactly what the
+    /// Pinehurst gap needed once relief was already on target.
+    pub floor_p: f64,
 }
 
 fn draw(p: &mut DetRng, r: Range) -> f64 {
@@ -96,7 +105,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
     };
     let f: &FormSpec = rec.form(form);
 
-    Descriptors {
+    let mut ds = Descriptors {
         mode,
         form,
         orientation_order: draw(&mut p, f.orientation_order),
@@ -172,7 +181,33 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
             else if u < w[0] + w[1] + w[2] { 2 }
             else { 3 }
         },
+        upland: false,
+        floor_p: 1.60,
+    };
+
+    // --- the Pinehurst variant, appended at the transcript TAIL ------------
+    // One coin after every existing draw, so nothing above it re-keys. It
+    // shifts dials already drawn rather than drawing new ones, which keeps
+    // the addition to a single `next_f64()`.
+    //
+    // What it shifts is set by measurement, not by taste: over 19,714 seeds,
+    // distance to Pinehurst correlates with valley_depth_m (-0.20),
+    // cap_relief_m (-0.12) and valley_sharp (-0.12) and with nothing else
+    // (|r| < 0.03 for attach_m, cap_flat, cap_wave, divide_wander,
+    // upland_relief_m). Deeper valleys, more cap relief and a sharper valley
+    // edge are the three axes that carry it.
+    if p.next_f64() < rec.p_upland {
+        ds.valley_depth_m += 2.1;
+        ds.cap_relief_m += 10.0;
+        ds.valley_sharp = (ds.valley_sharp + 0.14).min(0.98);
+        // Relief was already within 0.4 m of Pinehurst after the three shifts
+        // above, but median slope was still half a point short. Dropping the
+        // floor exponent narrows the flat floor and brings the wall in, which
+        // raises slope at constant depth.
+        ds.floor_p = 1.18;
+        ds.upland = true;
     }
+    ds
 }
 
 #[cfg(test)]

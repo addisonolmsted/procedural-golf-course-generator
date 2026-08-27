@@ -525,8 +525,10 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // than points, are barely touched.
     // Floor-flattening strength and the valley-width window it ramps over.
     // Overridable for the ladder viewer.
+    // Descriptor-driven now (the Pinehurst variant lowers it); the env var
+    // stays as an override so the ladder viewer still works.
     let floor_p: f64 = std::env::var("SAND_FLOOR_P").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(1.60);
+        .and_then(|v| v.parse().ok()).unwrap_or(d.floor_p);
     let mut hf = vec![0.0f64; spec.len()];
     for i in 0..spec.len() {
         // MEASURED 2026-08-27 with valley_compare's own ruler (HAND < 2 m

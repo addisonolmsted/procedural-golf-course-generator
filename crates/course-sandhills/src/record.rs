@@ -298,6 +298,16 @@ pub struct Record {
     /// P(the trunk valley carries a MEANDERING creek instead of ponds).
     /// `review 2026-08-25`: about one tile in ten.
     pub p_valley_creek: f64,
+    /// P(the tile is drawn as the STEEPER Carolina — the Pinehurst end of
+    /// the range). `measured 2026-08-27`: against Pinehurst No. 2's own
+    /// terrain, four of our six signature features already sit within 0.6
+    /// sigma of it, but two are ~2 sigma off in the same direction — median
+    /// slope 4.58 against 5.15, and area under 5% slope 0.544 against 0.477.
+    /// We are systematically GENTLER than the ground Pinehurst sits on, which
+    /// is the same "too tame" result the course-site calibration found
+    /// (severe ground 0.11% against piedmont's 5.09%). This variant draws the
+    /// steep end of valley depth, cap relief and valley sharpness together.
+    pub p_upland: f64,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -433,6 +443,7 @@ pub const SANDHILLS: Record = Record {
     divide_wander: Range::new(28.0, 52.0),   // measured (ridge_diag2)
     bay_weights: [0.42, 0.30, 0.19, 0.09], // literature: many tiles carry none
     p_valley_creek: 0.10,                    // review: ~1 tile in 10
+    p_upland: 0.30,                          // review: 30% Pinehurst-like
     p_allogenic_river: 0.30,                 // literature
 };
 

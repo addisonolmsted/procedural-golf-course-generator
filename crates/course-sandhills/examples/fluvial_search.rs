@@ -94,11 +94,12 @@ fn main() {
             oy += STEP;
         }
         writeln!(f, "{seed}\t{:.4}\t{:.3}\t{:.3}\t{:.3}\t{:.4}\t{:.4}\t{:.4}\
-                     \t{:.1}\t{:.2}\t{:.2}\t{:.1}\t{:.3}\t{:.0}\t{:.1}\t{:.3}",
+                     \t{:.1}\t{:.2}\t{:.2}\t{:.1}\t{:.3}\t{:.0}\t{:.1}\t{:.3}\t{}",
                  best.0, best.1[0], best.1[1], best.1[2],
                  best.1[3], best.1[4], best.1[5],
                  dd.attach_m, dd.valley_depth_m, dd.upland_relief_m,
                  dd.cap_relief_m, dd.cap_flat, dd.cap_wave_m,
-                 dd.divide_wander, dd.valley_sharp).unwrap();
+                 dd.divide_wander, dd.valley_sharp,
+                 if dd.upland { 1 } else { 0 }).unwrap();
     }
 }
