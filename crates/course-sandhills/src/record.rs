@@ -375,7 +375,15 @@ pub const SANDHILLS: Record = Record {
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
         wavelength_m: Range::new(1000.0, 1480.0),  // corpus lam_dom p50 1184
-        dune_relief_m: Range::new(22.0, 50.0),     // measured (course sites)
+        // measured (mound corpus split, n=36, 2026-08-28): crest prominence_p50
+        // 9.82 m, tile relief 26-94 m. The previous 22-50 came off the mixed
+        // train+mound course-site figure and measured prominence at 15.5 m,
+        // 1.58x the mound population. 17-38 lands prominence at 10.3 (1.05x)
+        // with tile relief median 49 m. The steeper 14-32 cut was tried and
+        // MEASURED WORSE (14.1): at that relief the tracer keeps only the
+        // tallest crests, so the sample biases up -- a selection effect, not
+        // a physical one.
+        dune_relief_m: Range::new(17.0, 38.0),
         wind_wander_rad: Range::new(0.55, 1.10),   // guess — the low-A mode
         wind_wander_m: Range::new(700.0, 1500.0),  // guess
         kappa: Range::new(0.45, 1.40),             // near the 1/sqrt(8)
