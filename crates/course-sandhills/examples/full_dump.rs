@@ -21,6 +21,10 @@ fn main() {
                                  b.center.x, b.center.y, b.radius_m, b.depth_m))
                 .collect();
             std::fs::write(out.join(format!("{tag}_{seed}.blowouts.txt")), bl).unwrap();
+            if let Some(r) = &t.river {
+                let txt: String = r.iter().map(|p| format!("{:.2} {:.2}\n", p.x, p.y)).collect();
+                std::fs::write(out.join(format!("{tag}_{seed}.river.txt")), txt).unwrap();
+            }
             println!("  {tag} {seed}: {} blowouts, lake_frac {:.3}, river {}",
                      t.blowouts.len(), t.lake_frac, t.river.is_some());
         }

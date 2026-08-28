@@ -185,8 +185,17 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
         }
         g
     };
-    let mut br = rng::stream(id, rng::BLOWOUT);
-    let bays = blowout::bays(&mut br, &mut tex, &u2, &d2, &d);
+    // Bays retired at the reviewer's call (2026-08-26). The stream is still
+    // opened and `u2` still built, and the `n_bays` DRAW is still taken in
+    // draw.rs, so the transcript and every aeolian tile stay byte-stable --
+    // only the call that cut them into the ground is gone.
+    //
+    // This removal was lost once already: reverting round 9 with a
+    // `git checkout` of lib.rs took it with it, and seed 66331 came back
+    // carrying a bay. Caught by the gallery render, not by a test.
+    let _br = rng::stream(id, rng::BLOWOUT);
+    let _ = &u2;
+    let bays: Vec<blowout::Bay> = Vec::new();
 
     // X4 — water last, on the finished ground
     let mut wr2 = rng::stream(id, rng::WATER);
@@ -301,8 +310,13 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
         reach: 620.0,
     });
     let mut water = water::find(&height, &sf.datum, &d, dd.as_ref(), &blowouts);
+    // No standing lakes on the valley floor beside running water. Done
+    // BEFORE cut_creek so it cannot remove the river it just laid down.
+    if let Some(g) = &gorge {
+        water::clear_lakes_near(&mut water, &g.creek, &g.creek_z);
+    }
     let river = if let Some(g) = &gorge {
-        water::cut_creek(&mut height, &mut water, &g.creek, &g.creek_z);
+        water::cut_creek(&mut height, &mut water, &g.creek, &g.creek_z, d.river_w_m);
         Some(g.creek.clone())
     } else {
         None

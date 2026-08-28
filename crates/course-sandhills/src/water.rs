@@ -860,12 +860,27 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
 /// narrow (a Sandhills river is a few metres of water in a very large
 /// canyon) and cut into the ground so the wet ribbon is continuous by
 /// construction, which is the lesson from the Carolina meander creek.
+/// Cut the channel and fill it. `width_m` is the water surface width: a creek
+/// runs 3-5 m, a river 9-15 m (`Descriptors::river_w_m`).
+///
+/// The section is FLAT-BOTTOMED with a steep rise to the water surface, which
+/// is what the reviewer asked for and what the real channels do. It used to be
+/// a `smoothstep` from the centre-line out to a 4 m bank, which is a rounded
+/// gutter -- the water sat in a dish with no bank line anywhere.
 pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
-                 line: &[Vec2], bed: &[f64]) {
+                 line: &[Vec2], bed: &[f64], width_m: f64) {
     let spec = height.spec;
     let cell = spec.cell_size;
-    let hw = 3.2;                     // ~6.5 m of water, per the review band
-    let bank = 4.0;
+    let hw = (width_m * 0.5).max(1.2);
+    // Deeper for a wider channel, but shallow in absolute terms either way.
+    let depth = 0.30 + 0.045 * width_m;
+    // The rise from the flat bed to the surface, horizontally. Short, so the
+    // bank is steep; a hair over one 2 m cell so it still rasterises.
+    let rise = 2.4;
+    // Freeboard: the bank keeps climbing past the water surface, so the
+    // water's edge is a line on a slope rather than the lip of a pan.
+    let free = 0.45;
+    let bank = rise + 2.0;
     for (i, p) in line.iter().enumerate() {
         let z = bed[i.min(bed.len() - 1)];
         let r = ((hw + bank) / cell).ceil() as i64 + 1;
@@ -877,16 +892,26 @@ pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
                 if dd > hw + bank {
                     continue;
                 }
-                // one-sided soft cut, as the Carolina creek does: full at the
-                // centre-line, nothing at the bank, and never a fill
-                let t = math::smoothstep(hw + bank, hw, dd);
-                let target = z - 0.35;
-                let over = (height.data[idx] - target).max(0.0);
-                let cand = height.data[idx] - t * over;
+                // Flat bed out to `hw`, then a steep straight rise through
+                // the water surface to the bank. Never a fill.
+                let cand = if dd <= hw {
+                    z - depth
+                } else {
+                    let u = ((dd - hw) / rise).min(1.0);
+                    z - depth + (depth + free) * u
+                };
                 if cand < height.data[idx] {
                     height.data[idx] = cand;
                 }
-                if dd <= hw {
+                // A tolerance on the WETTING test only; the cut geometry
+                // above still uses the true half-width. A 3 m creek gives
+                // hw = 1.5 m against a 2 m cell, and testing cell centres
+                // against that radius alone leaves gaps -- seed 41423 came out
+                // as two bodies of 8948 and 2592 m2, which is one creek in two
+                // pieces, not a creek and a lake. 0.32 of a cell is the
+                // smallest that held every seed together; half a cell also
+                // worked but pushed the measured width a full cell over spec.
+                if dd <= hw + cell * 0.32 {
                     if water.surface.data[idx].is_nan() {
                         water.lake_frac += 1.0 / spec.len() as f64;
                         water.surface.data[idx] = z;
@@ -1846,4 +1871,96 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     }
 
     Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: None }
+}
+
+/// Drop every lake body that sits on the valley floor beside running water.
+///
+/// Review 2026-08-27: a river tile must not have standing lakes on the valley
+/// floor. The table drawdown already pulls the level down near the creek, but
+/// it cannot help a closed depression whose own floor dips below the drawn-down
+/// table, and those are exactly the ones that land on the floor.
+///
+/// The test is HEIGHT ABOVE THE CHANNEL, not distance from it. A plain radius
+/// was tried first and is the wrong criterion in both directions: at 300 m it
+/// left a 110 m-wide lake lying just outside the ring on seed 41418, and any
+/// radius wide enough to catch that one also deletes legitimate ponds sitting
+/// up on the apron, which the dune field is supposed to have.
+///
+/// Removal is by CONNECTED BODY. Clearing only the qualifying cells would
+/// leave the outer crescent of a lake behind as a ring, which is worse.
+pub fn clear_lakes_near(water: &mut Water, line: &[Vec2], bed: &[f64]) {
+    /// Inside this radius a lake is in the trench, whatever its level.
+    const R_TRENCH: f64 = 260.0;
+    /// Outside this one the river is not what is keeping the ground wet.
+    const R_REACH: f64 = 1100.0;
+    /// A body whose surface is within this of the channel bed is on the floor.
+    const H_FLOOR: f64 = 12.0;
+
+    let spec = water.surface.spec;
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let wet: Vec<bool> = water.surface.data.iter().map(|v| v.is_finite()).collect();
+    if line.is_empty() || !wet.iter().any(|&w| w) {
+        return;
+    }
+
+    // Distance to the channel and the bed elevation at the nearest point.
+    let mut dl = vec![f64::INFINITY; nx * ny];
+    let mut bl = vec![0.0f64; nx * ny];
+    let rc = (R_REACH / spec.cell_size).ceil() as i64;
+    for (k, p) in line.iter().enumerate().step_by(4) {
+        let bz = bed[k.min(bed.len() - 1)];
+        let (cx, cy) = ((p.x / spec.cell_size).round() as i64,
+                        (p.y / spec.cell_size).round() as i64);
+        for gy in (cy - rc).max(0)..=(cy + rc).min(ny as i64 - 1) {
+            for gx in (cx - rc).max(0)..=(cx + rc).min(nx as i64 - 1) {
+                let i = gy as usize * nx + gx as usize;
+                let d = (((gx - cx).pow(2) + (gy - cy).pow(2)) as f64).sqrt()
+                    * spec.cell_size;
+                if d < dl[i] {
+                    dl[i] = d;
+                    bl[i] = bz;
+                }
+            }
+        }
+    }
+
+    // Flood fill each wet body; drop it whole if any cell qualifies.
+    let mut seen = vec![false; nx * ny];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut body: Vec<usize> = Vec::new();
+    let mut dropped = 0usize;
+    for s in 0..nx * ny {
+        if !wet[s] || seen[s] {
+            continue;
+        }
+        stack.clear();
+        body.clear();
+        stack.push(s);
+        seen[s] = true;
+        let mut hit = false;
+        while let Some(i) = stack.pop() {
+            body.push(i);
+            hit |= dl[i] < R_TRENCH
+                || (dl[i] < R_REACH && water.surface.data[i] <= bl[i] + H_FLOOR);
+            let (x, y) = (i % nx, i / nx);
+            for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                let (jx, jy) = (x as i64 + dx, y as i64 + dy);
+                if jx < 0 || jy < 0 || jx >= nx as i64 || jy >= ny as i64 {
+                    continue;
+                }
+                let j = jy as usize * nx + jx as usize;
+                if wet[j] && !seen[j] {
+                    seen[j] = true;
+                    stack.push(j);
+                }
+            }
+        }
+        if hit {
+            for &i in &body {
+                water.surface.data[i] = f64::NAN;
+            }
+            dropped += body.len();
+        }
+    }
+    water.lake_frac = (water.lake_frac - dropped as f64 / spec.len() as f64).max(0.0);
 }

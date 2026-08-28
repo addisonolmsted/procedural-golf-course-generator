@@ -69,6 +69,11 @@ pub struct Descriptors {
     pub n_bays: u32,
     pub p_valley_creek: f64,
     pub allogenic_river: bool,
+    /// Nominal channel geometry width, metres. Two classes: a creek, which
+    /// may run in a deep gorge, and a river, which gets a correspondingly
+    /// shallower valley (`gorge::build`). The rendered water is ~1.2 m wider
+    /// than this -- see the draw site -- and lands on 3-5 m and 9-15 m.
+    pub river_w_m: f64,
     /// The steeper Pinehurst-end draw. See `Record::p_upland`.
     pub upland: bool,
     /// Exponent on the valley coordinate before the measured profile is read
@@ -147,6 +152,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
             rec.water_table_m.lo
                 + (rec.water_table_m.hi - rec.water_table_m.lo) * u.powf(WATER_RAMP)
         },
+        river_w_m: 4.0,          // set at the tail, after the upland block
         allogenic_river: {
             let c = p.next_f64();
             c < rec.p_allogenic_river
@@ -207,6 +213,19 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         ds.floor_p = 1.18;
         ds.upland = true;
     }
+
+    // Appended after the upland block, which is the current tail of the DRAW
+    // transcript. BOTH draws are taken on either branch -- a branch that took
+    // one draw and a branch that took two would slide every later descriptor
+    // by one on half the seeds.
+    let wide = p.next_f64() < 0.38;
+    let wu = p.next_f64();
+    // Nominal geometry, trimmed ~1.2 m below the target band: the wetting
+    // test carries a 0.32-cell tolerance each side to keep a narrow channel
+    // connected on the 2 m grid, so the RENDERED water runs that much wider
+    // than the number here. Measured on the output, not assumed.
+    ds.river_w_m = if wide { 7.8 + 6.0 * wu } else { 1.8 + 2.0 * wu };
+
     ds
 }
 

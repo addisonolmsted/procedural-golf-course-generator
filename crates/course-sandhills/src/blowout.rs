@@ -68,16 +68,23 @@ pub fn carve(rng: &mut DetRng, height: &mut Grid<f64>, tnorm8: &Grid<f64>,
         // ...and never in a river corridor: review caught seed 5's river
         // running straight over a bowl. Wind deflation does not persist on a
         // watered meadow floor.
+        // The exclusion is a RAMP, not a step. A hard radius leaves a zone of
+        // exactly zero density with a clean edge, and that edge reads as a
+        // dotted line running parallel to the creek at a constant offset --
+        // clearly visible on every river tile in the 2026-08-27 review. The
+        // draw is taken only when there is a river to avoid, so aeolian tiles
+        // without one keep their transcript and their output byte for byte.
         if let Some((line, r_excl)) = avoid {
-            let mut near = false;
+            let mut best = f64::INFINITY;
             for q in line.iter().step_by(4) {
                 let dd = ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
-                if dd < r_excl {
-                    near = true;
-                    break;
+                if dd < best {
+                    best = dd;
                 }
             }
-            if near {
+            let (r0, r1) = (r_excl * 0.55, r_excl * 1.40);
+            let take = ((best - r0) / (r1 - r0)).clamp(0.0, 1.0);
+            if rng.next_f64() >= take {
                 continue;
             }
         }
