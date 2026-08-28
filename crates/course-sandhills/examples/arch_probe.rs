@@ -15,6 +15,7 @@ fn main() {
     let (mut river, mut wide, mut narrow) = (0u64, 0u64, 0u64);
     let (mut river_train, mut river_mound) = (0u64, 0u64);
     let mut upland = 0u64;
+    let mut regular = 0u64;
     let mut wsum = 0.0f64;
 
     for s in 0..n {
@@ -24,6 +25,7 @@ fn main() {
         if is_aeo {
             aeo += 1;
             if is_train { train_a += 1; }
+            if d.regular { regular += 1; }
             if d.allogenic_river {
                 river += 1;
                 if d.river_w_m > 7.0 { wide += 1; } else { narrow += 1; }
@@ -53,6 +55,7 @@ fn main() {
              pc(narrow, aeo), pc(narrow, river));
     println!("  no running water       {:6.2}%   (lakes only, or dry)",
              pc(aeo - river, aeo));
+    println!("  regular mound sub-type {:6.2}% of mounds", pc(regular, aeo - train_a));
     println!("  mean drawn width       {:6.2} m\n", wsum / river.max(1) as f64);
 
     println!("NEBRASKA, the four combinations");

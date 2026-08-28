@@ -308,6 +308,9 @@ pub struct Record {
     /// (severe ground 0.11% against piedmont's 5.09%). This variant draws the
     /// steep end of valley depth, cap relief and valley sharpness together.
     pub p_upland: f64,
+    /// Chance a mound seed is the "regular" sub-type (t04184/t04187
+    /// character). Reviewer-set frequency, 2026-08-28.
+    pub p_regular: f64,
     /// P(a spring-fed river crosses the tile). `literature`: the Dismal,
     /// Middle Loup and Snake are groundwater-sourced and cut ACROSS the dune
     /// field; they do not drain it. Sand Hills CC sits near the Middle Loup.
@@ -482,6 +485,7 @@ pub const SANDHILLS: Record = Record {
     bay_weights: [0.42, 0.30, 0.19, 0.09], // literature: many tiles carry none
     p_valley_creek: 0.10,                    // review: ~1 tile in 10
     p_upland: 0.30,                          // review: 30% Pinehurst-like
+    p_regular: 0.10,                         // review: ~1 mound in 10
     p_allogenic_river: 0.30,                 // literature
 };
 

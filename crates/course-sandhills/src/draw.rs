@@ -88,6 +88,10 @@ pub struct Descriptors {
     /// interdune ground -- see `surface::shape_body`. Set per form class,
     /// NOT drawn, so the transcript is untouched.
     pub body_p: f64,
+    /// The "regular" mound sub-type: the t04184/t04187 reference character --
+    /// subdued megaform (tile relief 23-38 m), dense small aligned dune
+    /// bodies covering the whole tile including the lows. ~10% of mounds.
+    pub regular: bool,
 }
 
 fn draw(p: &mut DetRng, r: Range) -> f64 {
@@ -195,6 +199,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         upland: false,
         floor_p: 1.60,
         body_p: match form { FormClass::Mound => 1.6, FormClass::Train => 1.0 },
+        regular: false,
     };
 
     // --- the Pinehurst variant, appended at the transcript TAIL ------------
@@ -231,6 +236,29 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
     // connected on the 2 m grid, so the RENDERED water runs that much wider
     // than the number here. Measured on the output, not assumed.
     ds.river_w_m = if wide { 7.8 + 6.0 * wu } else { 1.8 + 2.0 * wu };
+
+    // The "regular" mound sub-type, appended at the tail (2026-08-28).
+    // Measured on the five reference tiles (t04184_10033/10037,
+    // t04187_10029/10033/10037): tile relief 23-38 m (median 27) against the
+    // class's 26-94, band relief 8.4 vs 19.1, ridge spacing 296 vs 351 m,
+    // and -- the signature -- fine texture in the LOWS at 0.70x the highs
+    // where the class median is 0.35x: small dune bodies cover the whole
+    // tile rather than clustering on sparse masses. The coin is drawn for
+    // every seed (both branches, transcript alignment) and applied on mounds.
+    let reg = p.next_f64();
+    if form == FormClass::Mound && reg < rec.p_regular {
+        ds.dune_relief_m *= 0.45;          // 15-31 -> ~7-14: megaform subdued
+        ds.wavelength_m *= 0.80;           // lam_dom 922 vs 1184
+        ds.hummock_gate = 0.04;            // bodies everywhere, not belt-gated
+        ds.hummock_floor = 0.58;           // lows carry 0.70x of the highs
+        ds.texture_floor = 0.45;
+        ds.belt_patchiness = ds.belt_patchiness.min(0.45);
+        ds.body_p = 1.15;                  // shaping is a belt tool; mostly off
+        // The reference lenses run PARALLEL -- one aligned family, tighter
+        // than the class draw. Stiffen the wavelet directions further.
+        ds.hummock_kappa = (ds.hummock_kappa * 1.9).min(12.0);
+        ds.regular = true;
+    }
 
     ds
 }
@@ -273,8 +301,17 @@ mod tests {
             let d = site(&id(s), None, None);
             let f = rec.form(d.form);
             assert!(f.orientation_order.contains(d.orientation_order));
-            assert!(f.wavelength_m.contains(d.wavelength_m));
-            assert!(f.dune_relief_m.contains(d.dune_relief_m));
+            if d.regular {
+                // The regular sub-type scales wavelength x0.80 and relief
+                // x0.45 off the drawn value -- assert the scaled bounds.
+                assert!(d.wavelength_m >= f.wavelength_m.lo * 0.80 - 1e-9
+                    && d.wavelength_m <= f.wavelength_m.hi * 0.80 + 1e-9);
+                assert!(d.dune_relief_m >= f.dune_relief_m.lo * 0.45 - 1e-9
+                    && d.dune_relief_m <= f.dune_relief_m.hi * 0.45 + 1e-9);
+            } else {
+                assert!(f.wavelength_m.contains(d.wavelength_m));
+                assert!(f.dune_relief_m.contains(d.dune_relief_m));
+            }
             assert!(f.stoss_deg.contains(d.stoss_deg));
             assert!(f.lee_deg.contains(d.lee_deg));
             assert!(f.stoss_share.contains(d.stoss_share));
