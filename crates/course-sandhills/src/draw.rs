@@ -83,6 +83,11 @@ pub struct Descriptors {
     /// steepens a tile without deepening it, which is exactly what the
     /// Pinehurst gap needed once relief was already on target.
     pub floor_p: f64,
+    /// Megaform body-shaping exponent (aeolian). 1.0 = the raw normalised
+    /// field; above 1 narrows the sand bodies laterally and flattens the
+    /// interdune ground -- see `surface::shape_body`. Set per form class,
+    /// NOT drawn, so the transcript is untouched.
+    pub body_p: f64,
 }
 
 fn draw(p: &mut DetRng, r: Range) -> f64 {
@@ -189,6 +194,7 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         },
         upland: false,
         floor_p: 1.60,
+        body_p: match form { FormClass::Mound => 1.6, FormClass::Train => 1.0 },
     };
 
     // --- the Pinehurst variant, appended at the transcript TAIL ------------

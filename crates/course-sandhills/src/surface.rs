@@ -141,6 +141,37 @@ fn advect(z: &Grid<f64>, tnorm: &[f64], wind_rad: f64, offset_m: f64) -> Grid<f6
     out
 }
 
+/// Monotone shaping of the normalised megaform (mound round, 2026-08-28).
+///
+/// The reviewer put our mounds next to the real reference tiles
+/// (t04184_10033..t04187_10037): real mound rows are chains of SLENDER
+/// bodies -- 300-800 m long, 50-150 m wide -- separated by broad flat
+/// meadows, while our rows were continuous sinuous belts ~lambda/2 wide with
+/// lowlands as busy as the highs. No wander or kappa dial reaches that: the
+/// per-wave profile spans the whole cycle, so body width is locked to the
+/// wavelength by construction. Raising the field to a power unlocks it --
+/// the high ground narrows laterally, the mid-level contour bands that read
+/// as connected "worms" drop into the floor, and the lowlands flatten, which
+/// is the same defect the reviewer called out separately.
+///
+/// Piecewise C1: `t^p` on [0,1] (fixed points 0 and 1, so the p5/p95
+/// calibration of `dune_relief_m` survives); linear continuation with slope
+/// `p` above 1 (the unclamped crest tails keep climbing, no plateau); slope
+/// 0.15 below 0 (sub-datum tails stay slightly expressed rather than
+/// printing a hard flat at exactly the datum).
+fn shape_body(t: f64, p: f64) -> f64 {
+    if p <= 1.0 {
+        return t;
+    }
+    if t < 0.0 {
+        0.15 * t
+    } else if t <= 1.0 {
+        t.powf(p)
+    } else {
+        1.0 + p * (t - 1.0)
+    }
+}
+
 /// Half-width of the crest rounding, as a fraction of the dune cycle.
 /// Slope jump at the crest falls from ~5.2 to ~0.02 at this value.
 const CREST_ROUND: f64 = 0.10;
@@ -233,7 +264,7 @@ pub fn build(rng: &mut DetRng, w: &WindField, hw: &WindField, d: &Descriptors) -
             // polygonal edges -- visible as straight-sided flats in the
             // render. The scale still makes p95-p5 equal the drawn relief;
             // the tails simply run past it, which is what a real crest does.
-            let t = (raw[spec.index(x, y)] - lo) / span;
+            let t = shape_body((raw[spec.index(x, y)] - lo) / span, d.body_p);
             tnorm[spec.index(x, y)] = t;
             belts.set(x, y, datum.get(x, y) + d.dune_relief_m * t);
         }

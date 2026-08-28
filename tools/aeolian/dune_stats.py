@@ -285,6 +285,43 @@ def defect_stats(ridges, tile_area_km2: float, join_m: float = 120.0) -> dict:
             "defect_km2": (term + junc) / tile_area_km2}
 
 
+def crest_linearity(ridges, min_len_m: float = 300.0) -> dict:
+    """How straight are the crest paths? (mound round, 2026-08-28)
+
+    The reviewer read our mound crests as sinusoidal where the real reference
+    tiles run almost-linear paths. The generator's wander term predicts a
+    crest's lateral RMS in closed form (0.68 * wander_rad * wander_m / TAU),
+    so this metric inverts directly into the `wind_wander_*` dials -- which
+    are the last two `guess`-provenance dials in the aeolian record.
+
+    Per crest of at least `min_len_m` (shorter fragments are tracer noise --
+    the same bias `orientation_coherence` documents):
+      lateral_rms_m  RMS perpendicular deviation from the total-least-squares
+                     line through the centerline (PCA minor-axis spread).
+      sinuosity      arc length / chord length.
+    """
+    lat, sin = [], []
+    for r in ridges:
+        cl = np.asarray(r.centerline, float)
+        if r.length_m < min_len_m or len(cl) < 8:
+            continue
+        c = cl - cl.mean(axis=0)
+        # minor singular value^2 / n = variance off the TLS line
+        w = np.linalg.svd(c, compute_uv=False)
+        lat.append(float(w[-1] / math.sqrt(len(c))))
+        seg = np.hypot(*np.diff(cl, axis=0).T)
+        chord = float(np.hypot(*(cl[-1] - cl[0])))
+        if chord > 1e-6:
+            sin.append(float(seg.sum() / chord))
+    out = {"n_crest_lin": len(lat)}
+    if lat:
+        out["lateral_rms_p50"] = float(np.median(lat))
+        out["lateral_rms_p90"] = float(np.percentile(lat, 90))
+    if sin:
+        out["sinuosity_p50"] = float(np.median(sin))
+    return out
+
+
 def flank_asymmetry(ridges) -> float:
     """Median |flank_l - flank_r| / mean(|flank|) — the stoss/lee signature.
 
@@ -401,6 +438,7 @@ def measure_tile(path: pathlib.Path, with_variogram: bool = True) -> dict:
             "coherence": orientation_coherence(ridges),
             "crest_axis_deg": orientation_axis_deg(ridges),
         })
+        out.update(crest_linearity(ridges))
         out.update(ridgepipe.spacing_stats(ridges))
         out.update(defect_stats(ridges, area_km2))
     A, lam_dom, band_relief = spectral_order(z, cell)

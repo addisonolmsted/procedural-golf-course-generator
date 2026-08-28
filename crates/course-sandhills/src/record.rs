@@ -375,17 +375,24 @@ pub const SANDHILLS: Record = Record {
     mound: FormSpec {
         orientation_order: Range::new(0.22, 0.48), // corpus: p50 .356
         wavelength_m: Range::new(1000.0, 1480.0),  // corpus lam_dom p50 1184
-        // measured (mound corpus split, n=36, 2026-08-28): crest prominence_p50
-        // 9.82 m, tile relief 26-94 m. The previous 22-50 came off the mixed
-        // train+mound course-site figure and measured prominence at 15.5 m,
-        // 1.58x the mound population. 17-38 lands prominence at 10.3 (1.05x)
-        // with tile relief median 49 m. The steeper 14-32 cut was tried and
-        // MEASURED WORSE (14.1): at that relief the tracer keeps only the
-        // tallest crests, so the sample biases up -- a selection effect, not
-        // a physical one.
-        dune_relief_m: Range::new(17.0, 38.0),
-        wind_wander_rad: Range::new(0.55, 1.10),   // guess — the low-A mode
-        wind_wander_m: Range::new(700.0, 1500.0),  // guess
+        // measured (mound corpus split, n=36, 2026-08-28): prominence_p50
+        // 9.82 m, tile relief 26-94 m. The old 22-50 came off the mixed
+        // train+mound course-site figure and stood crests 1.58x too proud.
+        // Re-balanced twice during the round: 17-38 was right for the old
+        // continuous belts, but once `body_p` isolated the sand bodies on
+        // flat ground nothing masked them and prominence jumped to 2.39x --
+        // 15-31 lands 0.83-0.95x across two 8-12 seed batches with tile
+        // relief median 40 m.
+        dune_relief_m: Range::new(15.0, 31.0),
+        // measured (crest_linearity, dune_stats.py, 2026-08-28): real mound
+        // crests deviate 36.6 m RMS from their fitted line at sinuosity 1.22
+        // (n=30 tiles with >=300 m crests). The old 0.55-1.10 guess measured
+        // in-band at segment scale but the RENDER read as sinusoidal worms;
+        // the train-band amplitude keeps the paths near-linear (measured
+        // 34.9 m / 1.23 on the final batch) and the mound identity now lives
+        // in kappa, patchiness and the body shaping, not the wander.
+        wind_wander_rad: Range::new(0.22, 0.45),
+        wind_wander_m: Range::new(700.0, 1500.0),  // period kept; see rad
         kappa: Range::new(0.45, 1.40),             // near the 1/sqrt(8)
         // isotropic floor of 0.354, which IS the mound target -- N_WAVES was
         // chosen to put the floor there (wind.rs::N_WAVES). Sits ABOVE the
@@ -418,14 +425,37 @@ pub const SANDHILLS: Record = Record {
         // their own and measured A 0.127 against a 0.291 target.
         hummock_lambda_m: Range::new(160.0, 230.0),
         belt_patchiness: Range::new(0.45, 0.85),
-        belt_patch_m: Range::new(700.0, 1500.0),
+        // 700-1500 halved (review 2026-08-28): at the old patch scale the
+        // supply field kept whole belts, which read as few large blobby
+        // masses; 420-900 grains the on/off at the size of the real discrete
+        // bodies (300-800 m on t04184/t04187).
+        belt_patch_m: Range::new(420.0, 900.0),
         hummock_spread: Range::new(0.50, 0.80),
         hummock_relief_m: Range::new(11.0, 19.0),
-        hummock_kappa: Range::new(1.10, 2.70),
+        // 1.10-2.70 -> 3.50-7.00 (review 2026-08-28): the wormy wiggle the
+        // review called out was substantially THIS tier -- near-isotropic
+        // hummock wave directions superpose into wandering iso-bands. High
+        // concentration elongates the hummocks along the wind into the
+        // slender aligned bodies the real reference tiles show. Stays below
+        // the train kappa floor (8.0) per the record assert.
+        hummock_kappa: Range::new(3.50, 7.00),
         hummock_gate: Range::new(0.26, 0.44),
-        hummock_floor: Range::new(0.38, 0.55),
-        texture_gain: Range::new(1.10, 1.35),
-        texture_floor: Range::new(0.48, 0.65),      // corpus: mound floors 0.566
+        // measured (relief-band RMS, 2026-08-28): real mound lowlands carry
+        // 0.308 m fine RMS, 0.35x their highs; the old 0.38-0.55 floor put
+        // ours at 0.523 m (0.58x ratio) -- the "lowlands too rough" review
+        // note, confirmed by instrument. 0.20-0.34 lands bottom-third RMS at
+        // 0.92x real (top 1.00x). Went as low as 0.10-0.22 first, which
+        // measured 0.76x -- flatter than reality -- and pushed playability
+        // packing further above the course-site band, so it came back up.
+        hummock_floor: Range::new(0.20, 0.34),
+        // raised with the floors down (2026-08-28): the floor cut removed
+        // amplitude everywhere, dropping BOTH relief bands ~25% below real;
+        // gain restores the absolute level (top-third 1.00x real).
+        texture_gain: Range::new(1.45, 1.75),
+        // same relief-band measurement as hummock_floor: the corpus 0.566
+        // figure the old 0.48-0.65 cited was a position-gate ratio, not the
+        // bottom-third fine RMS the review was about.
+        texture_floor: Range::new(0.20, 0.32),      // corpus: mound floors 0.566
     },
 
     relief_budget_m: Range::new(18.0, 48.0), // golf: proxy band 7.0-81.9
