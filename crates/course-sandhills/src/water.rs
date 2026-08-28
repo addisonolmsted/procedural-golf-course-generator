@@ -253,6 +253,10 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             lake_cells -= 1;
         }
     }
+    // At most this many lake bodies survive on a tile; see the count cap
+    // below. The largest are kept -- a tile reads by its biggest water.
+    const MAX_LAKES: usize = 3;
+
     // SMALL-POND CAP (review, 2026-08-23): small ponds (< 2500 m2) may be at
     // most 2/3 of the body count. Measured tiles already sit at 9-24%, so
     // this is an invariant against a bad draw rather than a correction --
@@ -284,6 +288,35 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             }
         }
     }
+    // HARD COUNT CAP (review, 2026-08-28): at most MAX_LAKES bodies per tile,
+    // and the ones kept are the LARGEST. The small-pond ratio above bounds the
+    // pond/lake MIX but not the absolute number, so a wet draw could still
+    // speckle a tile with a dozen bodies that each passed their own gates.
+    // This runs after that cull so the ratio rule decides which ponds survive
+    // to compete on size, and it is a no-op on the great majority of tiles.
+    let mut live_counts = vec![0usize; nid as usize + 1];
+    for i in 0..spec.len() {
+        if surface.data[i].is_finite() && final_lab[i] != 0 {
+            live_counts[final_lab[i] as usize] += 1;
+        }
+    }
+    let mut live: Vec<(usize, u32)> = (1..=nid as usize)
+        .filter(|k| live_counts[*k] > 0)
+        .map(|k| (live_counts[k], k as u32))
+        .collect();
+    if live.len() > MAX_LAKES {
+        // Largest first; everything past the cap goes.
+        live.sort_by(|a, b| b.0.cmp(&a.0));
+        let drop: std::collections::HashSet<u32> =
+            live[MAX_LAKES..].iter().map(|(_, k)| *k).collect();
+        for i in 0..spec.len() {
+            if final_lab[i] != 0 && drop.contains(&final_lab[i]) {
+                surface.data[i] = f64::NAN;
+                lake_cells -= 1;
+            }
+        }
+    }
+
     let lake_frac = lake_cells as f64 / spec.len() as f64;
     Water { surface, lake_frac, river: None }
 }
@@ -1800,6 +1833,61 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             surface.data[i] = pond_lvl[i];
         } else {
             surface.data[i] = surface.data[i].max(pond_lvl[i]);
+        }
+    }
+
+    // LAKE COUNT CAP (review, 2026-08-28): at most MAX_LAKES standing bodies
+    // per tile, largest kept.
+    //
+    // Applied to the FINISHED surface, not to any one producer. Carolina fills
+    // standing water from two independent places -- valley pools impounded
+    // behind a downstream lip, and ponds found in closed depressions -- and a
+    // cap on either alone misses the other: capping `opened` measured "1 body
+    // before cap" on seed 500063 while the render showed nine pools strung
+    // along the valleys. Creek cells are exempt by the `creek` mask, so a
+    // wet channel is never counted as a lake nor culled as one.
+    {
+        const MAX_LAKES: usize = 3;
+        let mut lab = vec![0u32; spec.len()];
+        let mut sizes: Vec<(usize, u32)> = Vec::new();
+        let mut nid = 0u32;
+        let mut stack: Vec<usize> = Vec::new();
+        for start in 0..spec.len() {
+            if surface.data[start].is_nan() || creek[start] || lab[start] != 0 {
+                continue;
+            }
+            nid += 1;
+            lab[start] = nid;
+            stack.clear();
+            stack.push(start);
+            let mut count = 0usize;
+            while let Some(i) = stack.pop() {
+                count += 1;
+                let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                    let (jx, jy) = (x + dx, y + dy);
+                    if jx < 0 || jy < 0 || jx >= spec.nx as i64 || jy >= spec.ny as i64 {
+                        continue;
+                    }
+                    let j = spec.index(jx as u32, jy as u32);
+                    if !surface.data[j].is_nan() && !creek[j] && lab[j] == 0 {
+                        lab[j] = nid;
+                        stack.push(j);
+                    }
+                }
+            }
+            sizes.push((count, nid));
+        }
+        if sizes.len() > MAX_LAKES {
+            sizes.sort_by(|a, b| b.0.cmp(&a.0));      // largest first
+            let drop: std::collections::HashSet<u32> =
+                sizes[MAX_LAKES..].iter().map(|(_, k)| *k).collect();
+            for i in 0..spec.len() {
+                if lab[i] != 0 && drop.contains(&lab[i]) {
+                    surface.data[i] = f64::NAN;
+                    wet_cells -= 1;
+                }
+            }
         }
     }
 
