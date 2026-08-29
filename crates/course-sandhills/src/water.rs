@@ -1376,13 +1376,24 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let o = off * fac[i];
             qs.push(Vec2::new(p0.x + perp.x * o, p0.y + perp.y * o));
         }
-        // Ground-following bed with a CUT CAP. Strict monotonicity plus a
-        // single low ground sample locked the bed down for the rest of the
-        // path, so every later point had to cut metres to reach it — the
-        // skirt then spread a 50 m cut over 26 m and gave 510% slopes 20 m
-        // from the water. The bed still prefers to fall, but it may climb
-        // rather than cut deeper than CUT_CAP, which no eye can read on a
-        // creek and which bounds the carve by construction.
+        // Ground-following bed with a CUT CAP, and the bed RISES with the
+        // index because index 0 is the mouth (`carve::beds` builds every
+        // channel mouth-first; `zs` is that bed interpolated along the path).
+        //
+        // This constraint used to be `.min(zs[i - 1])`, which forced the bed
+        // to FALL going upstream -- backwards. It dragged the whole profile
+        // down to the mouth elevation, and the note that used to sit here
+        // blamed monotonicity for the resulting trench ("strict monotonicity
+        // ... every later point had to cut metres ... 510% slopes"). It was
+        // the direction, not the monotonicity: measured on seed 500030,
+        // descending-upstream needs a median cut of 8.25 m and up to 16.6,
+        // while rising-upstream needs 1.08 m and 7.2. The CUT_CAP override
+        // then had to fight it, and what came out was a ground-following
+        // ditch -- 46.5% of Carolina creek cells sat impounded behind a ridge
+        // in their own water surface, with up to 5.93 m of climb.
+        //
+        // Order matters: the monotone floor is applied first, the cut cap
+        // second. The cap only ever RAISES, so it cannot reintroduce a fall.
         const CUT_CAP: f64 = 2.2;
         let mut gr: Vec<f64> = Vec::with_capacity(qs.len());
         for i in 0..qs.len() {
@@ -1390,8 +1401,18 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
         zs[0] = zs[0].min(gr[0] - 0.35);
         for i in 1..zs.len() {
-            let want = zs[i].min(gr[i] - 0.35).min(zs[i - 1]);
-            zs[i] = want.max(gr[i] - CUT_CAP).min(gr[i] - 0.35);
+            let want = zs[i].min(gr[i] - 0.35).max(zs[i - 1]);
+            zs[i] = want.max(gr[i] - CUT_CAP);
+        }
+        // The invariant, asserted where it is established. This is a few
+        // thousand comparisons against a 1.6 s tile build, and the bug it
+        // guards against shipped: an inverted comparison here is invisible in
+        // every render and only shows up as water that cannot leave.
+        for i in 1..zs.len() {
+            debug_assert!(zs[i] >= zs[i - 1] - 1e-9,
+                "creek bed falls upstream at {i}: {} -> {}", zs[i - 1], zs[i]);
+            assert!(zs[i] >= zs[i - 1] - 1e-6,
+                "creek bed falls upstream at {i}: {} -> {}", zs[i - 1], zs[i]);
         }
         // The cut is taken against a SNAPSHOT of the ground and combined by
         // MIN, not applied in sequence. Path points sit ~1 m apart and the

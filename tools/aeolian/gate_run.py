@@ -130,6 +130,49 @@ def main():
     print(f"  all tiles          {dd_all:7.3f} km/km2")
     print(f"  no-water tiles     {dd_dry:7.3f} km/km2   (n={len(dry)})")
 
+    print("\n--- flow direction: does any channel climb? ---")
+    import heapq
+    worst = 0.0
+    nch = 0
+    for p in tiles:
+        wp = p.with_suffix(".water.cgrid")
+        if not wp.exists():
+            continue
+        surf, (_, _, c) = cgrid.read_f32(wp)
+        lab, n = ndimage.label(np.isfinite(surf))
+        for k in range(1, n + 1):
+            m = lab == k
+            if m.sum() < 25:
+                continue
+            ys, xs = np.where(m)
+            e = surf[ys, xs]
+            dt = ndimage.distance_transform_edt(m, sampling=c)
+            wd = 2 * max(np.percentile(dt[m], 85), c * 0.5)
+            if (m.sum() * c * c / wd) / wd < 12:
+                continue                      # a lake is flat by definition
+            nch += 1
+            idx = {(int(y), int(x)): i for i, (y, x) in enumerate(zip(ys, xs))}
+            st = int(np.argmin(e))
+            lvl = np.full(len(e), np.inf); lvl[st] = e[st]
+            pq = [(e[st], st)]; seen = np.zeros(len(e), bool)
+            while pq:
+                L, i = heapq.heappop(pq)
+                if seen[i]:
+                    continue
+                seen[i] = True
+                y, x = int(ys[i]), int(xs[i])
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    j = idx.get((y + dy, x + dx))
+                    if j is None or seen[j]:
+                        continue
+                    nl = max(L, e[j])
+                    if nl < lvl[j]:
+                        lvl[j] = nl
+                        heapq.heappush(pq, (nl, j))
+            worst = max(worst, float((lvl - e).max()))
+    print(f"  {nch} channel bodies; worst impounded climb {worst:6.3f} m   "
+          f"{'PASS' if worst <= 0.25 else 'FAIL'}")
+
     print("\n--- descriptive, NOT gated (02-dune-targets §6) ---")
     for k in ("coherence", "crest_len_p50", "ridge_spacing_m", "prominence_p50",
               "defect_km2", "flank_asym"):
