@@ -66,7 +66,7 @@ Fixed, and it moves no world constant.
 |---|---|
 | World extent | 3000 m (`EXTENT_M`) |
 | Search region | the core, `[750, 2250]²` (`CORE_MIN_M`/`CORE_MAX_M`, `in_core`) |
-| Play window | axis-aligned square, side = **`ScorerPreset::play_m`** — per-biome: **1200 m** sandhills & great plains, **800 m** the rest; bounds `PLAY_M_MIN`/`PLAY_M_MAX` = 600–1400 |
+| Play window | axis-aligned rectangle **`play_long_m × play_short_m`**, either orientation — per-biome: **1450×950** sandhills & great plains, **1150×600** the rest |
 | Window centre freedom | **±(1500 − play_m)/2 per axis** — implied by core containment, not a separate constant |
 | Minimum terrain margin | **750 m** from any played point to the world edge |
 

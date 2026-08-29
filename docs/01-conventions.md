@@ -37,12 +37,16 @@ Do not redefine these; import them.
   (`CORE_MIN_M`, `CORE_MAX_M`, `in_core`). The **search region** for site
   selection; the surrounding margin exists so that landforms enter and leave
   the frame instead of terminating at it.
-- **Play window**: an axis-aligned square chosen inside the core by
-  [S5](stages/stage-05-siting-substrate.md), its side **per-biome data** in
-  `ScorerPreset::play_m` — **1200 m** for the sprawling biomes (sandhills,
-  great plains), **800 m** for the compact four — bounded by
-  `PLAY_M_MIN`/`PLAY_M_MAX` (600–1400) in C2. The course is routed inside
-  *this*, not the whole core.
+- **Play window**: an axis-aligned RECTANGLE chosen inside the core by
+  [S5](stages/stage-05-siting-substrate.md), placed in either orientation;
+  dims are **per-biome data** in `ScorerPreset::{play_long_m, play_short_m}`
+  — **1450 × 950 m** for the sprawling biomes (sandhills, great plains),
+  **1150 × 600 m** for the compact four — bounded in C2. The course is
+  routed inside *this*, not the whole core. Shape is measured: the three
+  true 9-hole courses in the real corpus are RIBBONS (1517×487, 1222×304,
+  1357×628 m; median aspect 1.70 across 20 courses), and a square cannot
+  contain them. Not the rotation the docs reject — still axis-aligned,
+  translation-only.
 
   Measured (2026-08-28, corridor packing over 12 seeds/archetype): a 600 m
   window fits a 9-hole route on only 2/12 aeolian-sandhills seeds (median 6

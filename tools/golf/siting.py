@@ -225,9 +225,9 @@ def _sat(a: np.ndarray) -> np.ndarray:
     return s
 
 
-def _win_mean(sat: np.ndarray, w: int) -> np.ndarray:
-    """Mean of every w x w window; output [ny-w+1, nx-w+1]."""
-    return (sat[w:, w:] - sat[:-w, w:] - sat[w:, :-w] + sat[:-w, :-w]) / (w * w)
+def _win_mean(sat: np.ndarray, h: int, w: int) -> np.ndarray:
+    """Mean of every h x w window; output [ny-h+1, nx-w+1]."""
+    return (sat[h:, w:] - sat[:-h, w:] - sat[h:, :-w] + sat[:-h, :-w]) / (h * w)
 
 
 def trapezoid(v: np.ndarray, lo: float, hi: float,
@@ -249,40 +249,44 @@ def trapezoid(v: np.ndarray, lo: float, hi: float,
 class WindowScan:
     score: np.ndarray               # per top-left position, 8 m grid
     ij0: tuple[int, int]            # grid offset of position (0,0)
-    w: int                          # window side, cells
+    h: int                          # window height, cells (y)
+    w: int                          # window width, cells (x)
     terms: dict = field(default_factory=dict)
 
 
-def scan_windows(f: Fields, m: Morphology, play_m: float) -> WindowScan:
+def scan_windows_one(f: Fields, m: Morphology, h_m: float, w_m: float
+                     ) -> WindowScan:
+    """One orientation of the per-biome rectangle. The window is a RECT, not
+    a square: the three real 9-hole courses measure 1517x487, 1222x304 and
+    1357x628 -- ribbons -- and a square can never contain them."""
     cell = f.cell
-    w = int(round(play_m / cell))
+    h = int(round(h_m / cell))
+    w = int(round(w_m / cell))
     lo = int(round(CORE_MIN_M / cell))
     hi = int(round(CORE_MAX_M / cell))
     core = np.s_[lo:hi, lo:hi]
 
     z = f.z8[core]
-    calm = _win_mean(_sat((f.slope[core] <= FAIRWAY_SLOPE_RR).astype(float)), w)
-    posm = _win_mean(_sat(f.relief_pos[core]), w)
-    padg = _win_mean(_sat(f.pad_green[core].astype(float)), w)
-    padf = _win_mean(_sat(f.pad_fair[core].astype(float)), w)
-    wat = _win_mean(_sat(f.wet8[core].astype(float)), w)
-    rough = _win_mean(_sat(f.subgrid_rough[core]), w)
+    calm = _win_mean(_sat((f.slope[core] <= FAIRWAY_SLOPE_RR).astype(float)), h, w)
+    posm = _win_mean(_sat(f.relief_pos[core]), h, w)
+    padg = _win_mean(_sat(f.pad_green[core].astype(float)), h, w)
+    padf = _win_mean(_sat(f.pad_fair[core].astype(float)), h, w)
+    wat = _win_mean(_sat(f.wet8[core].astype(float)), h, w)
+    rough = _win_mean(_sat(f.subgrid_rough[core]), h, w)
     # window relief via rect max/min filters (exact, cheap)
-    zmax = ndimage.maximum_filter(z, size=w)[w // 2:w // 2 + calm.shape[0],
-                                             w // 2:w // 2 + calm.shape[1]]
-    zmin = ndimage.minimum_filter(z, size=w)[w // 2:w // 2 + calm.shape[0],
-                                             w // 2:w // 2 + calm.shape[1]]
+    zmax = ndimage.maximum_filter(z, size=(h, w))[h // 2:h // 2 + calm.shape[0],
+                                                  w // 2:w // 2 + calm.shape[1]]
+    zmin = ndimage.minimum_filter(z, size=(h, w))[h // 2:h // 2 + calm.shape[0],
+                                                  w // 2:w // 2 + calm.shape[1]]
     relief = zmax - zmin
 
-    # morphology mix: fraction of window carrying each green-relevant class
     def frac(mask):
-        return _win_mean(_sat(mask[core].astype(float)), w)
+        return _win_mean(_sat(mask[core].astype(float)), h, w)
     f_shoulder = frac(m.cls240 == 4)
     f_spur = frac(m.cls240 == 5)
     f_hollow = frac(m.cls80 == 7)
     f_saddle = frac(m.saddle)
 
-    # FLOORS as trapezoids (the d6w finding), CHARACTER as the maximand.
     banded = (trapezoid(calm, *CALM_BAND)
               * trapezoid(relief, *RELIEF_BAND_M)
               * trapezoid(posm, *POS_BAND))
@@ -290,27 +294,49 @@ def scan_windows(f: Fields, m: Morphology, play_m: float) -> WindowScan:
                  + 3.0 * (f_shoulder + f_spur + f_hollow + 2.0 * f_saddle)
                  - 1.5 * wat - 0.8 * np.clip(rough / 0.6, 0, 1))
     score = banded * (0.2 + character)
-    return WindowScan(score, (lo, lo), w,
+    return WindowScan(score, (lo, lo), h, w,
                       terms=dict(calm=calm, relief=relief, pos=posm,
                                  padg=padg, banded=banded))
 
 
-def shortlist(scan: WindowScan, cell: float, n: int = 30,
-              min_sep_m: float = 200.0) -> list[tuple[int, int]]:
-    """Top-n positions after NMS. Total order: (-score, i, j)."""
-    s = scan.score
+def scan_windows(f: Fields, m: Morphology, long_m: float, short_m: float
+                 ) -> list[WindowScan]:
+    """Both axis-aligned orientations; S5 picks across them. Terrain grain is
+    random per seed, so two orientations recover most of what free rotation
+    would have bought -- rotation itself stays rejected (nesting ladder,
+    deliverable format)."""
+    if abs(long_m - short_m) < 1e-9:
+        return [scan_windows_one(f, m, long_m, long_m)]
+    return [scan_windows_one(f, m, short_m, long_m),   # landscape
+            scan_windows_one(f, m, long_m, short_m)]   # portrait
+
+
+def shortlist(scans: list[WindowScan], cell: float, n: int = 30,
+              min_sep_m: float = 200.0) -> list[tuple[int, int, int]]:
+    """Top-n (orientation, i, j) after NMS across BOTH orientations.
+    Total order: (-score, orient, i, j)."""
     sep = max(1, int(round(min_sep_m / cell)))
-    order = np.argsort(s.ravel(), kind="stable")[::-1]
-    kept: list[tuple[int, int]] = []
-    occ = np.zeros(s.shape, bool)
-    for k in order:
-        i, j = int(k // s.shape[1]), int(k % s.shape[1])
-        if occ[i, j] or not np.isfinite(s[i, j]):
+    entries = []
+    for oi, scan in enumerate(scans):
+        s = scan.score
+        for k in np.argsort(s.ravel(), kind="stable")[::-1][:4 * n]:
+            i, j = int(k // s.shape[1]), int(k % s.shape[1])
+            if np.isfinite(s[i, j]):
+                entries.append((-float(s[i, j]), oi, i, j))
+    entries.sort()
+    kept: list[tuple[int, int, int]] = []
+    centres: list[tuple[float, float]] = []
+    for negs, oi, i, j in entries:
+        scan = scans[oi]
+        cy = (i + scan.h / 2.0) * cell
+        cx = (j + scan.w / 2.0) * cell
+        if any((cy - a) ** 2 + (cx - b) ** 2 < min_sep_m ** 2
+               for (a, b) in centres):
             continue
-        kept.append((i, j))
+        kept.append((oi, i, j))
+        centres.append((cy, cx))
         if len(kept) >= n:
             break
-        occ[max(0, i - sep):i + sep + 1, max(0, j - sep):j + sep + 1] = True
     return kept
 
 
@@ -371,10 +397,10 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
     cell = f.cell
     i0 = scan.ij0[0] + win_ij[0]
     j0 = scan.ij0[1] + win_ij[1]
-    w = scan.w
+    h, w = scan.h, scan.w
     # clubhouse may sit in the window or within 100 m outside it
     halo = int(round(100.0 / cell))
-    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + w + halo)
+    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + h + halo)
     b0, b1 = max(0, j0 - halo), min(f.z8.shape[1], j0 + w + halo)
 
     cand = np.zeros(f.z8.shape, bool)
@@ -384,15 +410,16 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
         return None
 
     ys, xs = np.where(cand)
-    zwin = f.z8[i0:i0 + w, j0:j0 + w]
+    zwin = f.z8[i0:i0 + h, j0:j0 + w]
     zlo, zhi = zwin.min(), zwin.max()
     rel = max(zhi - zlo, 1e-9)
-    cy, cx = i0 + w / 2.0, j0 + w / 2.0
+    cy, cx = i0 + h / 2.0, j0 + w / 2.0
 
     prospect = np.clip((f.z8[ys, xs] - zlo) / rel, 0, 1)
     p_term = trapezoid(prospect, 0.3, 0.8)
     d_centre = np.hypot(ys - cy, xs - cx) * cell
-    e_term = trapezoid(d_centre, 0.25 * scan.w * cell, 0.45 * scan.w * cell)
+    half_min = 0.5 * min(h, w) * cell
+    e_term = trapezoid(d_centre, 0.5 * half_min, 0.9 * half_min)
     # departure spread: fairway ground at 150-250 m in >= 3 of 8 sectors
     spread = np.zeros(len(ys))
     for k in range(8):
@@ -413,7 +440,7 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
 
     # reserve the loop anchors: nearest green pad and tee pad inside the radius
     def nearest(mask):
-        my, mx = np.where(mask & cand_window_or_halo(f, i0, j0, w, halo))
+        my, mx = np.where(mask & cand_window_or_halo(f, i0, j0, h, w, halo))
         if len(my) == 0:
             my, mx = np.where(mask)
         d = np.hypot(my - y, mx - x)
@@ -424,9 +451,9 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
     return Clubhouse((y * cell, x * cell), float(total[bi]), g, t)
 
 
-def cand_window_or_halo(f, i0, j0, w, halo):
+def cand_window_or_halo(f, i0, j0, h, w, halo):
     m = np.zeros(f.z8.shape, bool)
-    m[max(0, i0 - halo):i0 + w + halo, max(0, j0 - halo):j0 + w + halo] = True
+    m[max(0, i0 - halo):i0 + h + halo, max(0, j0 - halo):j0 + w + halo] = True
     return m
 
 
@@ -458,11 +485,11 @@ def loop_probe(f: Fields, ch: Clubhouse, hole_lengths: np.ndarray,
     return closed
 
 
-def preview_sites(f: Fields, i0: int, j0: int, w: int, cap: int = 40
+def preview_sites(f: Fields, i0: int, j0: int, h: int, w: int, cap: int = 40
                   ) -> np.ndarray:
     """Fast green-pad preview inside a window (for the loop probe only)."""
     sub = np.zeros(f.z8.shape, bool)
-    sub[i0:i0 + w, j0:j0 + w] = True
+    sub[i0:i0 + h, j0:j0 + w] = True
     mask = f.pad_green & sub
     room = np.where(mask, f.room, 0.0)
     ys, xs = np.where(room > 0)
@@ -486,43 +513,48 @@ def preview_sites(f: Fields, i0: int, j0: int, w: int, cap: int = 40
 @dataclass
 class Siting:
     window_ij: tuple[int, int]      # top-left, 8 m indices into the full grid
-    window_m: tuple[float, float, float]   # (min_y, min_x, side) world metres
+    window_m: tuple[float, float, float, float]   # (min_y, min_x, h, w) world metres
     clubhouse: Clubhouse
     pair_score: float
     shortlist: list                 # [(ij, win_score, ch_score, loop_closed)]
 
 
-def run_siting(z2, cell2, wet2, play_m: float,
+def run_siting(z2, cell2, wet2, play_long_m: float, play_short_m: float = None,
                hole_lengths=None, flow_accum8=None) -> tuple[Siting, Fields, Morphology, Persistence]:
+    if play_short_m is None:
+        play_short_m = play_long_m
     if hole_lengths is None:
         hole_lengths = np.array([350., 360., 160., 480., 370., 170., 355., 490., 365.])
     f = build_fields(z2, cell2, wet2, flow_accum8)
     m = build_morphology(f)
     p = build_persistence(f)
-    scan = scan_windows(f, m, play_m)
+    scans = scan_windows(f, m, play_long_m, play_short_m)
     cf = build_clubhouse_fields(f)
-    cands = shortlist(scan, f.cell)
+    cands = shortlist(scans, f.cell)
 
     rows = []
     best = None
-    for (i, j) in cands:
+    for (oi, i, j) in cands:
+        scan = scans[oi]
         gi, gj = scan.ij0[0] + i, scan.ij0[1] + j
         ch = site_clubhouse(f, (i, j), scan, cf)
         if ch is None:
-            rows.append(((i, j), float(scan.score[i, j]), None, 0))
+            rows.append(((oi, i, j), float(scan.score[i, j]), None, 0))
             continue
-        sites = preview_sites(f, gi, gj, scan.w)
+        sites = preview_sites(f, gi, gj, scan.h, scan.w)
         closed = loop_probe(f, ch, hole_lengths, sites)
         wscore = float(scan.score[i, j])
         pair = wscore * (0.5 + ch.score / 4.0) * (0.4 + 0.6 * closed / 9.0)
-        rows.append(((i, j), wscore, ch.score, closed))
+        rows.append(((oi, i, j), wscore, ch.score, closed))
         if best is None or pair > best[0]:
-            best = (pair, (i, j), ch)
+            best = (pair, oi, (i, j), ch)
     if best is None:
         raise RuntimeError("no window admits a clubhouse")
-    pair, (i, j), ch = best
+    pair, oi, (i, j), ch = best
+    scan = scans[oi]
     gi, gj = scan.ij0[0] + i, scan.ij0[1] + j
     sit = Siting((gi, gj),
-                 (gi * f.cell, gj * f.cell, scan.w * f.cell),
+                 (gi * f.cell, gj * f.cell, scan.h * f.cell, scan.w * f.cell),
                  ch, pair, rows)
+    sit.scans = scans
     return sit, f, m, p

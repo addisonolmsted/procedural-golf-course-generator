@@ -57,6 +57,28 @@ NAT_RELIEF_M = 1.6
 GRADED_SLOPE_RR = 0.08
 GRADED_RELIEF_M = 2.2
 
+# SURROUND relief band (25-90 m annulus, p90-p10 of elevation), measured on
+# the 519 real greens 2026-08-29: median 6.8 m (NE) / 6.1 m (NC); real
+# greens essentially never sit in dead-flat surrounds (< 2 m happens 3-5% of
+# the time, < 1 m almost never). Our pools were skewing dull -- 34-36% of
+# candidates below the real p25 (~3.7-4.3 m). A green should be locally
+# buildable but CONTEXTUALLY interesting: flat pad, non-flat world around it.
+SURROUND_R0_M, SURROUND_R1_M = 25.0, 90.0
+SURROUND_LO_M = 1.5      # below: dead flat, heavy penalty ramp
+SURROUND_OK_M = 3.5      # real p25; full credit from here
+SURROUND_HI_M = 14.0     # soft cap; a wall of dune face stops helping
+
+
+def surround_relief(z8: np.ndarray, cell: float, y: int, x: int) -> float:
+    n = int(SURROUND_R1_M / cell)
+    if y - n < 0 or x - n < 0 or y + n >= z8.shape[0] or x + n >= z8.shape[1]:
+        return 0.0
+    yy, xx = np.mgrid[-n:n + 1, -n:n + 1] * cell
+    d = np.hypot(yy, xx)
+    m = (d >= SURROUND_R0_M) & (d <= SURROUND_R1_M)
+    zz = z8[y - n:y + n + 1, x - n:x + n + 1][m]
+    return float(np.percentile(zz, 90) - np.percentile(zz, 10))
+
 TYPES = ("bench", "spur", "saddle", "punchbowl", "plateau", "dell",
          "valley_flat", "knoll", "generic")
 
@@ -78,11 +100,11 @@ class Candidate:
 
 
 def _seed_typed(f: Fields, m: Morphology, p: Persistence,
-                i0: int, j0: int, w: int) -> list[tuple[int, int, str]]:
+                i0: int, j0: int, h: int, w: int) -> list[tuple[int, int, str]]:
     """(i, j, type) seeds inside the window+halo, gated hard only where
     physically necessary."""
     halo = int(round(120.0 / f.cell))
-    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + w + halo)
+    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + h + halo)
     b0, b1 = max(0, j0 - halo), min(f.z8.shape[1], j0 + w + halo)
     box = np.zeros(f.z8.shape, bool)
     box[a0:a1, b0:b1] = True
@@ -252,9 +274,10 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
     if hole_lengths is None:
         hole_lengths = np.array([350., 360., 160., 480., 370., 170., 355., 490., 365.])
     i0, j0 = sit.window_ij
-    w = int(round(sit.window_m[2] / f.cell))
+    h = int(round(sit.window_m[2] / f.cell))
+    w = int(round(sit.window_m[3] / f.cell))
 
-    seeds = _seed_typed(f, m, p, i0, j0, w)
+    seeds = _seed_typed(f, m, p, i0, j0, h, w)
     if not seeds:
         return []
 
@@ -298,9 +321,21 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
         tab = approach_table(f, y, x, grad)
         vis = tab[:, 0].max()
         recept = np.clip(tab[:, 1], -0.05, 0.05).max() / 0.05
+        sur = surround_relief(f.z8, f.cell, y, x)
+        # trapezoid: heavy penalty in dead-flat surrounds, full credit across
+        # the real band, mild fade above it
+        if sur <= SURROUND_LO_M:
+            sur_t = -1.0
+        elif sur < SURROUND_OK_M:
+            sur_t = (sur - SURROUND_OK_M) / (SURROUND_OK_M - SURROUND_LO_M)
+        elif sur <= SURROUND_HI_M:
+            sur_t = 1.0
+        else:
+            sur_t = max(0.4, 1.0 - (sur - SURROUND_HI_M) / 10.0)
         score = (s0 + 1.2 * vis + 0.8 * recept
                  + 0.4 * np.clip(tab[:, 2], 0, 8).max() / 8.0
                  + 0.6 * tab[:, 3].max()
+                 + 1.0 * sur_t
                  - 2.0 * resid
                  - (0.5 if build == "graded" else 0.0))
         cands.append(Candidate((y_m, x_m), kind, float(score), grad,

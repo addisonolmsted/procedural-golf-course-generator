@@ -76,8 +76,8 @@ Geometry — the shape rules are invariant, the size is per-biome data:
 
 | Quantity | Value |
 |---|---|
-| Side | **`preset.play_m`** — 1200 m sandhills/great plains, 800 m the rest; bounds `PLAY_M_MIN`/`PLAY_M_MAX` = 600–1400 |
-| Centre freedom | **±(1500 − play_m)/2** per axis — implied by core containment |
+| Sides | **`preset.play_long_m × play_short_m`**, either orientation — 1450×950 sandhills/great plains, 1150×600 the rest; long ∈ [600, 1450], short ∈ [300, long] |
+| Centre freedom | **±(1500 − side)/2** per axis — implied by core containment |
 | Always inside | the core, `[750, 2250]²` |
 | Terrain margin beyond any played point | **≥ 750 m** |
 
@@ -225,11 +225,11 @@ change ever wants a `match biome`, the fix is a new preset field.
    dependency graph and should be.
 3. **Two hard masks, everything else soft.** `protected` and `out_of_bounds`
    are the only fields that can make a cell impossible.
-4. **`play_window` is a `preset.play_m` square, axis-aligned, and inside the
-   core** (`play_m` is per-biome data, bounded 600–1400 m; sandhills and
-   great plains carry 1200, the rest 800). Core containment is the whole
-   check — it bounds the centre by ±(1500 − play_m)/2 and makes the 750 m
-   terrain-margin guarantee structural. Asserted at construction.
+4. **`play_window` is the biome's `play_long_m × play_short_m` rectangle in
+   either axis-aligned orientation, inside the core.** Core containment is
+   the whole check — it bounds each centre coordinate by ±(1500 − side)/2
+   and makes the 750 m terrain-margin guarantee structural. Asserted at
+   construction.
 5. **Costs are non-negative and finite.** No infinities — an infinity is a hard
    constraint smuggled into a soft field, and it reintroduces the failure mode
    that requires retries.

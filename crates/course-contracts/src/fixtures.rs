@@ -78,14 +78,17 @@ pub fn c1(seed: u64) -> PrimitiveField {
 }
 
 /// The centred play window (the fixture default; siting varies it).
-/// Fixture window size: the fluvial 800 m. Aeolian biome records carry 1200.
-pub const FIXTURE_PLAY_M: f64 = 800.0;
+/// Fixture window dims: the compact-biome rectangle, landscape orientation.
+pub const FIXTURE_PLAY_LONG_M: f64 = 1150.0;
+pub const FIXTURE_PLAY_SHORT_M: f64 = 600.0;
 
 pub fn centered_window() -> Rect {
     let mid = EXTENT_M / 2.0;
     Rect {
-        min: Vec2::new(mid - FIXTURE_PLAY_M / 2.0, mid - FIXTURE_PLAY_M / 2.0),
-        max: Vec2::new(mid + FIXTURE_PLAY_M / 2.0, mid + FIXTURE_PLAY_M / 2.0),
+        min: Vec2::new(mid - FIXTURE_PLAY_LONG_M / 2.0,
+                       mid - FIXTURE_PLAY_SHORT_M / 2.0),
+        max: Vec2::new(mid + FIXTURE_PLAY_LONG_M / 2.0,
+                       mid + FIXTURE_PLAY_SHORT_M / 2.0),
     }
 }
 
@@ -101,7 +104,8 @@ pub fn preset() -> ScorerPreset {
         target_grade_green: 0.02,
         hole_length_m: [350.0, 360.0, 160.0, 480.0, 370.0, 170.0, 355.0, 490.0, 365.0],
         feasibility_strictness: 0.5,
-        play_m: FIXTURE_PLAY_M,
+        play_long_m: FIXTURE_PLAY_LONG_M,
+        play_short_m: FIXTURE_PLAY_SHORT_M,
     }
 }
 

@@ -9,7 +9,7 @@
 //! pipeline defaults.
 
 use crate::biome::{BiomeId, ExemplarId, StructureClass};
-use crate::contracts::routing_substrate::{check_play_window, Rect, PLAY_M_MAX, PLAY_M_MIN};
+use crate::contracts::routing_substrate::{check_play_window, Rect, PLAY_LONG_MAX_M, PLAY_SHORT_MIN_M};
 use crate::error::ContractError;
 use crate::units::check_direction;
 use serde::{Deserialize, Serialize};
@@ -109,11 +109,13 @@ impl CourseManifest {
             ));
         }
         // C0 does not carry the biome preset, so validate the window against
-        // its own side length -- the bounds check inside catches nonsense.
+        // its own side lengths -- the bounds check inside catches nonsense.
         {
-            let side = (self.play_window.max.x - self.play_window.min.x)
-                .clamp(PLAY_M_MIN, PLAY_M_MAX);
-            check_play_window(&self.play_window, side)?;
+            let sx = self.play_window.max.x - self.play_window.min.x;
+            let sy = self.play_window.max.y - self.play_window.min.y;
+            let long = sx.max(sy).clamp(PLAY_SHORT_MIN_M, PLAY_LONG_MAX_M);
+            let short = sx.min(sy).clamp(PLAY_SHORT_MIN_M, long);
+            check_play_window(&self.play_window, long, short)?;
         }
         const RUNGS: [f64; 3] = [8.0, 2.0, 0.5];
         for l in &self.layers {

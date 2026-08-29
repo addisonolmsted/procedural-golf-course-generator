@@ -400,20 +400,20 @@ fn derive_dials(
 
 fn derive_preset(biome: BiomeId, d: &SiteDescriptors) -> ScorerPreset {
     let p = d.plasticity.value();
-    // Play-window side, per-biome data (S0 is the biome-record reader, so the
-    // biome key belongs here and nowhere downstream). Measured 2026-08-28 by
-    // corridor packing over 12 seeds/archetype: aeolian dune country fits a
-    // 9-hole route in a 600 m window on only 2/12 seeds (median 6 holes) and
-    // reaches 11/12 at 1200 m, while compact fluvial terrain fits 11/12 at
-    // 600 m already -- matching reality, where minimalist dune courses sprawl
-    // because grading between the dunes is not affordable (plasticity is the
-    // lowest of the six) and parkland courses are compact. Sandhills IS the
-    // aeolian biome (docs/biomes/sandhills.md: "stabilized aeolian dune
-    // trains"); Great Plains roams for the same low-cost-everywhere reason.
-    // Bounds asserted by C2 (`PLAY_M_MIN`/`PLAY_M_MAX`).
-    let play_m = match biome {
-        BiomeId::Sandhills | BiomeId::GreatPlains => 1200.0,
-        _ => 800.0,
+    // Play-window RECTANGLE, per-biome data (S0 is the biome-record reader,
+    // so the biome key belongs here and nowhere downstream). Area from the
+    // corridor-packing measurement (2026-08-28: a 600 m square fits a 9-hole
+    // route on 2/12 aeolian seeds; ~140 ha reaches 11/12); shape from the
+    // real 9-hole footprints (2026-08-29: PCA boxes 1517x487, 1222x304,
+    // 1357x628 -- ribbons, median aspect 1.70 across 20 courses). S5 places
+    // the rectangle in either axis-aligned orientation; rotation stays
+    // rejected. Bounds asserted by C2.
+    let (play_long_m, play_short_m) = match biome {
+        // ~140 ha, matching the packed-area measurement; long side sized to
+        // the real 9-hole ribbons (1222-1517 m PCA length).
+        BiomeId::Sandhills | BiomeId::GreatPlains => (1450.0, 950.0),
+        // ~69 ha; Pinehurst-area nines run ~1150-1360 x 500-630.
+        _ => (1150.0, 600.0),
     };
     ScorerPreset {
         w_earthwork: 1.0 - 0.5 * p,
@@ -425,6 +425,7 @@ fn derive_preset(biome: BiomeId, d: &SiteDescriptors) -> ScorerPreset {
         target_grade_green: 0.025,
         hole_length_m: [350.0, 360.0, 160.0, 480.0, 370.0, 170.0, 355.0, 490.0, 365.0],
         feasibility_strictness: 1.0 - p,
-        play_m,
+        play_long_m,
+        play_short_m,
     }
 }

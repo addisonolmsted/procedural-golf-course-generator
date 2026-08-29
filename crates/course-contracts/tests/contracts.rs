@@ -7,7 +7,7 @@
 use course_contracts::contracts::corridor_graph::CorridorGraph;
 use course_contracts::contracts::primitive_field::PrimitiveField;
 use course_contracts::contracts::routing_substrate::{
-    check_play_window, play_center_range_m, Rect, RoutingSubstrate, PLAY_M_MAX, PLAY_M_MIN,
+    check_play_window, play_center_range_m, Rect, RoutingSubstrate, PLAY_LONG_MAX_M,
 };
 use course_contracts::fixtures;
 use course_contracts::ContractError;
@@ -136,49 +136,46 @@ fn c1_load_is_loud_on_tampering() {
 fn c2_play_window_arithmetic() {
     // The centred window and the four extreme corners are all legal…
     let mid = 1500.0;
-    // Every size in the legal band, at each extreme of its own centre range,
-    // keeps the 750 m margin -- the guarantee is core containment, so it must
-    // hold for the fluvial 800 and the aeolian 1200 alike.
-    for play_m in [PLAY_M_MIN, 800.0, 1200.0, PLAY_M_MAX] {
-        let r = play_center_range_m(play_m);
-        for (cx, cy) in [
-            (mid, mid),
-            (mid - r, mid - r),
-            (mid + r, mid - r),
-            (mid - r, mid + r),
-            (mid + r, mid + r),
-        ] {
+    // Every legal rectangle, in both orientations, at each extreme of its
+    // own per-axis centre range, keeps the 750 m margin -- the guarantee is
+    // core containment, so it holds for the aeolian 1450x950 and the compact
+    // 1150x600 alike.
+    for (long, short) in [(1450.0, 950.0), (1150.0, 600.0), (800.0, 800.0)] {
+        for (sx, sy) in [(long, short), (short, long)] {
+            let (rx, ry) = (play_center_range_m(sx), play_center_range_m(sy));
+            for (cx, cy) in [
+                (mid, mid),
+                (mid - rx, mid - ry),
+                (mid + rx, mid - ry),
+                (mid - rx, mid + ry),
+                (mid + rx, mid + ry),
+            ] {
+                let w = Rect {
+                    min: Vec2::new(cx - sx / 2.0, cy - sy / 2.0),
+                    max: Vec2::new(cx + sx / 2.0, cy + sy / 2.0),
+                };
+                check_play_window(&w, long, short).unwrap();
+                let margin = [w.min.x, w.min.y, 3000.0 - w.max.x, 3000.0 - w.max.y]
+                    .into_iter()
+                    .fold(f64::INFINITY, f64::min);
+                assert!(margin >= 750.0 - 1e-9, "{long}x{short}: margin {margin}");
+            }
+            // One metre past the centre range leaves the core.
             let w = Rect {
-                min: Vec2::new(cx - play_m / 2.0, cy - play_m / 2.0),
-                max: Vec2::new(cx + play_m / 2.0, cy + play_m / 2.0),
+                min: Vec2::new(mid + rx + 1.0 - sx / 2.0, mid - sy / 2.0),
+                max: Vec2::new(mid + rx + 1.0 + sx / 2.0, mid + sy / 2.0),
             };
-            check_play_window(&w, play_m).unwrap();
-            // …and every legal window keeps >= 750 m of terrain beyond any edge.
-            let margin = [
-                w.min.x,
-                w.min.y,
-                3000.0 - w.max.x,
-                3000.0 - w.max.y,
-            ]
-            .into_iter()
-            .fold(f64::INFINITY, f64::min);
-            assert!(margin >= 750.0 - 1e-9, "play_m {play_m}: margin {margin}");
+            assert!(check_play_window(&w, long, short).is_err());
         }
-        // One metre past that size's own centre range leaves the core.
-        let w = Rect {
-            min: Vec2::new(mid + r + 1.0 - play_m / 2.0, mid - play_m / 2.0),
-            max: Vec2::new(mid + r + 1.0 + play_m / 2.0, mid + play_m / 2.0),
-        };
-        assert!(check_play_window(&w, play_m).is_err(), "play_m {play_m}");
     }
-    // A size below the band is rejected even as a perfect square.
+    // A window whose shape matches NEITHER orientation is rejected.
     let w = Rect {
-        min: Vec2::new(mid - 200.0, mid - 200.0),
-        max: Vec2::new(mid + 200.0, mid + 200.0),
+        min: Vec2::new(mid - 500.0, mid - 500.0),
+        max: Vec2::new(mid + 500.0, mid + 500.0),
     };
-    assert!(check_play_window(&w, 400.0).is_err());
-    // And a window whose shape disagrees with the declared size is rejected.
-    assert!(check_play_window(&w, 800.0).is_err());
+    assert!(check_play_window(&w, 1450.0, 950.0).is_err());
+    // Long side above the bound is rejected.
+    assert!(check_play_window(&w, PLAY_LONG_MAX_M + 100.0, 1000.0).is_err());
 }
 
 #[test]
@@ -293,7 +290,10 @@ fn c0_manifest_validates_wind_and_window() {
     let mut man = fixtures::c0_manifest(1);
     man.prevailing_wind.speed_mps = f64::NAN;
     assert!(man.validate().is_err());
+    // C0 carries no biome dims, so a shape change alone is not detectable
+    // there (C2 catches it against the preset). What C0 CAN still refuse is
+    // a window that leaves the core -- which is the margin guarantee.
     let mut man = fixtures::c0_manifest(1);
-    man.play_window.max.x += 100.0;
+    man.play_window.max.x += 900.0;
     assert!(man.validate().is_err());
 }

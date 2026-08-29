@@ -70,8 +70,9 @@ def to_uri(img_arr, upscale=1):
     return "data:image/webp;base64," + base64.b64encode(b.getvalue()).decode()
 
 
-def draw_rect(img, y0, x0, side, color, thick=2):
-    y1, x1 = y0 + side, x0 + side
+def draw_rect(img, y0, x0, hw, color, thick=2):
+    h, w = hw if isinstance(hw, tuple) else (hw, hw)
+    y1, x1 = y0 + h, x0 + w
     for t in range(thick):
         img[np.clip(y0 + t, 0, img.shape[0] - 1), np.clip(x0, 0, img.shape[1] - 1):np.clip(x1, 0, img.shape[1] - 1)] = color
         img[np.clip(y1 - t, 0, img.shape[0] - 1), np.clip(x0, 0, img.shape[1] - 1):np.clip(x1, 0, img.shape[1] - 1)] = color
@@ -94,13 +95,14 @@ def contact_sheet(z2, c2, wet2, sit, f, pool):
     # shortlisted windows, faint (shortlist ij are core-relative; the core
     # starts at cell 750/8)
     core0 = int(round(750.0 / f.cell))
-    for (ij, ws, cs, loop) in sit.shortlist:
-        i = core0 + ij[0]
-        j = core0 + ij[1]
-        draw_rect(img, i, j, int(round(sit.window_m[2] / f.cell)), (200, 200, 200), 1)
+    for (oij, ws, cs, loop) in sit.shortlist:
+        oi, i, j = oij
+        scan = sit.scans[oi]
+        draw_rect(img, core0 + i, core0 + j, (scan.h, scan.w), (200, 200, 200), 1)
     # the chosen window, bold
     draw_rect(img, sit.window_ij[0], sit.window_ij[1],
-              int(round(sit.window_m[2] / f.cell)), (255, 255, 255), 2)
+              (int(round(sit.window_m[2] / f.cell)),
+               int(round(sit.window_m[3] / f.cell))), (255, 255, 255), 2)
     # clubhouse
     cy, cx = int(sit.clubhouse.yx[0] / f.cell), int(sit.clubhouse.yx[1] / f.cell)
     draw_disc(img, cy, cx, 4, (230, 40, 40))
@@ -145,11 +147,11 @@ def main():
     entries = []
     for spec in sys.argv[3:]:
         seed, mode = spec.split(":")
-        play_m = 1200.0 if mode == "aeolian" else 800.0
+        dims = (1450.0, 950.0) if mode == "aeolian" else (1150.0, 600.0)
         z2, (_, _, c2) = cgrid.read_f32(dump / f"{seed}.cgrid")
         wp = dump / f"{seed}.water.cgrid"
         wet2 = ~np.isnan(cgrid.read_f32(wp)[0]) if wp.exists() else np.zeros(z2.shape, bool)
-        sit, f, m, p = siting.run_siting(z2, c2, wet2, play_m)
+        sit, f, m, p = siting.run_siting(z2, c2, wet2, *dims)
         pool = greens_mod.generate(z2, c2, wet2, sit, f, m, p)
         sheet = contact_sheet(z2, c2, wet2, sit, f, pool)
         ranked = sorted(pool, key=lambda c: -c.score)
@@ -157,7 +159,8 @@ def main():
         roses = [(c.kind, f"{c.score:.2f}", rose_card(z2, c2, wet2, c, f))
                  for c in picks]
         from collections import Counter
-        entries.append(dict(seed=seed, mode=mode, play_m=play_m, sheet=sheet,
+        entries.append(dict(seed=seed, mode=mode,
+                            play_m=f"{dims[0]:.0f}x{dims[1]:.0f}", sheet=sheet,
                             roses=roses, n=len(pool),
                             types=dict(Counter(c.kind for c in pool)),
                             loop=max(r[3] for r in sit.shortlist)))
@@ -173,7 +176,7 @@ def main():
             f'<figcaption>{k} · {s}</figcaption></figure>'
             for k, s, u in e["roses"])
         body += f"""<section>
-<h2>seed {e['seed']} — {e['mode']}, {e['play_m']:.0f} m window</h2>
+<h2>seed {e['seed']} — {e['mode']}, {e['play_m']} m window</h2>
 <p>{e['n']} candidates · loop closure {e['loop']}/9 · {e['types']}</p>
 <div class="row"><figure class="sheet"><img src="{e['sheet']}">
 <figcaption>core · shortlisted windows grey, chosen white, clubhouse red</figcaption></figure>
