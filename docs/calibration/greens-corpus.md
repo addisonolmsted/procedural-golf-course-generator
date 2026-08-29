@@ -60,7 +60,35 @@ outside pooled CI): only `sandhills_nc` fired (+0.042), but on **3 held-out
 courses** — recorded provisional, not shipped. Fame weighting is currently
 inert (unweighted fit also 0.7928); kept, reported honestly.
 
-## Recall (the gate that matters)
+## Recall — CORRECTED 2026-08-29 (evening)
+
+**The whole-pool recall numbers below are density-confounded and must not be
+quoted as evidence of matching.** A RANDOM dry pool of the same size scores
+83% within-100 m (our pool: 80%) — 135 points at ~60 m spacing carpet the
+window. The old-vs-new *delta* stands (same density both sides), the absolute
+level does not. Density-controlled measurements (18 held-out courses):
+
+| selection | within-100 m | random null |
+|---|---|---|
+| top-9 by score | 7% | 17% |
+| top-30 by score | 23–32% | 46% |
+| top-9, 200 m spacing | 11% | 19% |
+
+Score-ordered selection is *below* random — yet the diagnosis is NOT the
+score: real greens score at the **100th percentile of our own pool's score
+distribution** (median; p25 = 87) and 98% pass `confirm_2m`. The score knows
+exactly where greens belong; **the seeding never proposes those cells**. The
+pool is proposed by the old typed-family detectors + room, and only scored
+afterwards — the fitted score's maxima are simply absent from the pool.
+Quadratic terms were added (`FIT_COEF_SQ`, held-out AUC 0.7928 → 0.8319,
+inverted-U optima near the real-green p90) but cannot fix what seeding never
+proposes. **Next round: score-driven seeding** — a cheap field-only score at
+8 m proposes the top ~400 spaced cells; approach terms + confirm refine.
+(One verification owed first: corpus features use the real course polygon
+and polygon-bbox persistence where generate uses window-edge and window
+persistence — confirm the percentile result survives that definition gap.)
+
+## Recall (the original A/B — deltas valid, levels density-confounded)
 
 Full generate→confirm→thin A/B on 72 held-out keeper courses — same window,
 same seeding/thinning, only the score differs:

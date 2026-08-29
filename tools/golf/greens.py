@@ -81,18 +81,61 @@ W_SURROUND = 1.0         # score weight; set 0 to ablate (see overlay3.py A/B)
 # Provenance: tools/golf/corpus/out/fitted/coeffs.json; fit.py BUILD_FEATURES.
 # Per the pre-registered archetype test only sandhills_nc earned an override,
 # on 3 held-out courses -- recorded as provisional, NOT shipped.
-FIT_B0 = 0.6071
+FIT_B0 = -0.1964
+# Linear + QUADRATIC terms. The linear-only fit (AUC 0.7928) was right in the
+# middle of its range and wrong at the top tail: every term monotone, so the
+# score maximized at EXTREMES (the biggest tpi60 knob, the most convex spur)
+# while real greens sit on moderate rises -- measured 2026-08-29: our top-9
+# candidates hit real greens at 7% within-100 m vs 17% for RANDOM 9 points.
+# Quadratics let moderation be expressed (held-out AUC 0.8319); peaks land
+# near the real-green p90 (tpi60 optimum +2.5 m, surround ~15 m). Note the
+# old hand design had the right SHAPE (trapezoid bands, d6w "floors not
+# maximands") with wrong weights; the linear fit had right weights, wrong
+# shape. Provenance: corpus/out/fitted/coeffs_quad.json.
 FIT_COEF = {
-    "vis_best": -0.5261, "vis_mean": -1.1901, "recept_best": -2.5290,
-    "backdrop_best": 0.1592, "backdrop_far": 0.0378,
-    "aroom_best": -0.2393, "aroom_mean": 0.6528,
-    "tpi60": 0.8420, "tpi200": -0.2452, "relief_pos": 0.0998,
-    "surround": 0.0104, "room": -0.0972,
-    "pit": -0.4882, "peak": 0.1048, "saddle": 0.0,
-    "cls240_flat": -0.5786, "cls240_convex": 0.2874, "cls240_concave": -0.4500,
-    "cls80_flat": -0.3680, "cls80_convex": 0.6436, "cls80_concave": -0.6361,
-    "aspect_sin": 0.1285, "aspect_cos": 0.1554,
-    "d_water_band": 0.0003, "d_boundary_norm": -0.2645,
+    "aroom_best": -2.9673,
+    "aroom_mean": -1.1311,
+    "aspect_cos": 0.1579,
+    "aspect_sin": 0.1231,
+    "backdrop_best": -0.5791,
+    "backdrop_far": 0.0661,
+    "cls240_concave": -0.3858,
+    "cls240_convex": 0.1913,
+    "cls240_flat": -0.4549,
+    "cls80_concave": -0.5068,
+    "cls80_convex": 0.5415,
+    "cls80_flat": 0.0673,
+    "d_boundary_norm": -2.3707,
+    "d_water_band": -0.0031,
+    "peak": 0.7923,
+    "pit": -1.2377,
+    "recept_best": 7.7403,
+    "relief_pos": 0.9862,
+    "room": -0.1759,
+    "saddle": 0.0,
+    "surround": 0.0922,
+    "tpi200": -0.2507,
+    "tpi60": 1.2256,
+    "vis_best": -1.6782,
+    "vis_mean": -3.6503
+}
+FIT_COEF_SQ = {
+    "aroom_best": 2.196199,
+    "aroom_mean": 1.348049,
+    "backdrop_best": 1.160808,
+    "backdrop_far": -0.001514,
+    "d_boundary_norm": 7.052632,
+    "d_water_band": 6e-06,
+    "peak": -0.376947,
+    "pit": 0.739331,
+    "recept_best": -8.726523,
+    "relief_pos": -0.835471,
+    "room": 0.002634,
+    "surround": -0.003025,
+    "tpi200": 0.011071,
+    "tpi60": -0.240789,
+    "vis_best": 1.311408,
+    "vis_mean": 2.243136
 }
 # geomorphon 10-class groupings (corpus/features.py)
 _CLS_CONVEX = {2, 3, 4, 5}
@@ -407,6 +450,8 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
             "d_boundary_norm": float(d_edge / win_sqrt_area),
         }
         score = (FIT_B0 + sum(FIT_COEF[k] * v for k, v in feats.items())
+                 + sum(FIT_COEF_SQ[k] * feats[k] * feats[k]
+                       for k in FIT_COEF_SQ)
                  - (W_GRADED if build == "graded" else 0.0))
         cands.append(Candidate((y_m, x_m), kind, float(score), grad,
                                float(max(p.pit[y, x], p.peak[y, x])), tab,
