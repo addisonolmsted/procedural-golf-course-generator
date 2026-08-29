@@ -69,6 +69,37 @@ SURROUND_OK_M = 3.5      # real p25; full credit from here
 SURROUND_HI_M = 14.0     # soft cap; a wall of dune face stops helping
 W_SURROUND = 1.0         # score weight; set 0 to ablate (see overlay3.py A/B)
 
+# FITTED SCORE -- fame-weighted logistic on the 2026-08-29 corpus:
+# 429 US courses, 9119 real greens vs 36476 matched same-property controls,
+# by-course 80/20 split (corpus/holdout.json). Held-out AUC 0.7928 vs 0.4716
+# for the previous hand weights -- which ranked real greens WORSE than random
+# ground (room/vis/recept/aroom all carried the wrong sign). Coefficients are
+# raw-unit, setting-features only: the 6 construction-signature features
+# (subgrid_rough, resid, slope, graded, curvatures) are deliberately EXCLUDED
+# -- on a post-construction DEM they detect "already bulldozed" (rough alone
+# scores 0.700) and invert under Carolina pine canopy (full model 0.464 there).
+# Provenance: tools/golf/corpus/out/fitted/coeffs.json; fit.py BUILD_FEATURES.
+# Per the pre-registered archetype test only sandhills_nc earned an override,
+# on 3 held-out courses -- recorded as provisional, NOT shipped.
+FIT_B0 = 0.6071
+FIT_COEF = {
+    "vis_best": -0.5261, "vis_mean": -1.1901, "recept_best": -2.5290,
+    "backdrop_best": 0.1592, "backdrop_far": 0.0378,
+    "aroom_best": -0.2393, "aroom_mean": 0.6528,
+    "tpi60": 0.8420, "tpi200": -0.2452, "relief_pos": 0.0998,
+    "surround": 0.0104, "room": -0.0972,
+    "pit": -0.4882, "peak": 0.1048, "saddle": 0.0,
+    "cls240_flat": -0.5786, "cls240_convex": 0.2874, "cls240_concave": -0.4500,
+    "cls80_flat": -0.3680, "cls80_convex": 0.6436, "cls80_concave": -0.6361,
+    "aspect_sin": 0.1285, "aspect_cos": 0.1554,
+    "d_water_band": 0.0003, "d_boundary_norm": -0.2645,
+}
+# geomorphon 10-class groupings (corpus/features.py)
+_CLS_CONVEX = {2, 3, 4, 5}
+_CLS_CONCAVE = {7, 8, 9, 10}
+W_GRADED = 0.5   # construction-cost term, DESIGN CHOICE not fitted: the fit
+                 # measures where greens sit, not what they cost to build
+
 
 def surround_relief(z8: np.ndarray, cell: float, y: int, x: int) -> float:
     n = int(SURROUND_R1_M / cell)
@@ -198,6 +229,21 @@ def confirm_2m(z2: np.ndarray, cell2: float, wet2: np.ndarray,
 # P8 — approach vectors
 
 
+def _backdrop_far(f: Fields, y: int, x: int) -> float:
+    """Best mean rise 80-160 m beyond the green over all bearings (fitted
+    term; corpus/features.py is the reference implementation)."""
+    bs = np.arange(1, int(160.0 / f.cell) + 1)
+    zg = f.z8[y, x]
+    best = -1e9
+    for k in range(N_BEARINGS):
+        th = 2.0 * np.pi * k / N_BEARINGS
+        by = np.clip((y - np.sin(th) * bs).astype(int), 0, f.z8.shape[0] - 1)
+        bx = np.clip((x - np.cos(th) * bs).astype(int), 0, f.z8.shape[1] - 1)
+        mm = bs * f.cell >= 80.0
+        best = max(best, float((f.z8[by, bx] - zg)[mm].mean()))
+    return best
+
+
 def approach_table(f: Fields, y: int, x: int,
                    grad: tuple[float, float]) -> np.ndarray:
     """(N_BEARINGS, 4): visible_frac, receptivity, backdrop, corridor room.
@@ -313,6 +359,12 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
             if n_took >= 90:
                 break
 
+    from scipy import ndimage as _ndi
+    tpi60 = f.z8 - _ndi.uniform_filter(f.z8, int(round(60.0 / f.cell)) | 1)
+    win_y0, win_x0 = sit.window_m[0], sit.window_m[1]
+    win_h_m, win_w_m = sit.window_m[2], sit.window_m[3]
+    win_sqrt_area = float(np.sqrt(max(win_h_m * win_w_m, 1.0)))
+
     cands: list[Candidate] = []
     for (y, x), (s0, kind) in ranked:
         y_m, x_m = y * f.cell, x * f.cell
@@ -320,25 +372,42 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
         if not ok:
             continue
         tab = approach_table(f, y, x, grad)
-        vis = tab[:, 0].max()
-        recept = np.clip(tab[:, 1], -0.05, 0.05).max() / 0.05
-        sur = surround_relief(f.z8, f.cell, y, x)
-        # trapezoid: heavy penalty in dead-flat surrounds, full credit across
-        # the real band, mild fade above it
-        if sur <= SURROUND_LO_M:
-            sur_t = -1.0
-        elif sur < SURROUND_OK_M:
-            sur_t = (sur - SURROUND_OK_M) / (SURROUND_OK_M - SURROUND_LO_M)
-        elif sur <= SURROUND_HI_M:
-            sur_t = 1.0
-        else:
-            sur_t = max(0.4, 1.0 - (sur - SURROUND_HI_M) / 10.0)
-        score = (s0 + 1.2 * vis + 0.8 * recept
-                 + 0.4 * np.clip(tab[:, 2], 0, 8).max() / 8.0
-                 + 0.6 * tab[:, 3].max()
-                 + W_SURROUND * sur_t
-                 - 2.0 * resid
-                 - (0.5 if build == "graded" else 0.0))
+        gy, gx = grad
+        gmag = float(np.hypot(gy, gx))
+        c240 = int(m.cls240[y, x])
+        c80 = int(m.cls80[y, x])
+        # window-edge distance stands in for the fitted course-boundary term
+        d_edge = min(y_m - win_y0, win_y0 + win_h_m - y_m,
+                     x_m - win_x0, win_x0 + win_w_m - x_m)
+        feats = {
+            "vis_best": float(tab[:, 0].max()),
+            "vis_mean": float(tab[:, 0].mean()),
+            "recept_best": float(np.clip(tab[:, 1], -0.05, 0.05).max() / 0.05),
+            "backdrop_best": float(np.clip(tab[:, 2], 0, 8).max() / 8.0),
+            "backdrop_far": float(np.clip(_backdrop_far(f, y, x), -10, 10)),
+            "aroom_best": float(tab[:, 3].max()),
+            "aroom_mean": float(tab[:, 3].mean()),
+            "tpi60": float(tpi60[y, x]),
+            "tpi200": float(f.tpi200[y, x]),
+            "relief_pos": float(f.relief_pos[y, x]),
+            "surround": surround_relief(f.z8, f.cell, y, x),
+            "room": float(min(f.room[y, x], 60.0)),
+            "pit": float(np.log1p(min(p.pit[y, x], 10.0))),
+            "peak": float(np.log1p(min(p.peak[y, x], 20.0))),
+            "saddle": float(m.saddle[y, x]),
+            "cls240_flat": float(c240 == 1),
+            "cls240_convex": float(c240 in _CLS_CONVEX),
+            "cls240_concave": float(c240 in _CLS_CONCAVE),
+            "cls80_flat": float(c80 == 1),
+            "cls80_convex": float(c80 in _CLS_CONVEX),
+            "cls80_concave": float(c80 in _CLS_CONCAVE),
+            "aspect_sin": float(gy / gmag) if gmag > 1e-6 else 0.0,
+            "aspect_cos": float(gx / gmag) if gmag > 1e-6 else 0.0,
+            "d_water_band": float(min(f.d_water[y, x], 400.0)),
+            "d_boundary_norm": float(d_edge / win_sqrt_area),
+        }
+        score = (FIT_B0 + sum(FIT_COEF[k] * v for k, v in feats.items())
+                 - (W_GRADED if build == "graded" else 0.0))
         cands.append(Candidate((y_m, x_m), kind, float(score), grad,
                                float(max(p.pit[y, x], p.peak[y, x])), tab,
                                build=build))

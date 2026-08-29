@@ -210,3 +210,97 @@ and no metric would catch it.</p>
     dest = path or (config.OUT / "phase2.html")
     dest.write_text(html)
     return str(dest)
+
+
+def phase5(n_sample: int = 16, path=None) -> str:
+    """Recall A/B overlays: real greens vs old and new pools, held-out only."""
+    import pathlib
+    from . import eval_recall, registry as reg
+    from .features import greens_local
+    import sys
+    _T = pathlib.Path(__file__).resolve().parents[2]
+    if str(_T / "macro_campaign") not in sys.path:
+        sys.path.insert(0, str(_T / "macro_campaign"))
+    from macro_campaign import cgrid
+
+    d = json.loads((config.OUT / "recall_eval.json").read_text())
+    rows = sorted(d["courses"], key=lambda r: r["old"]["w100"] - r["new"]["w100"])
+    # biggest improvements, biggest regressions, plus both sandhills
+    pick = (rows[:6] + rows[-4:]
+            + [r for r in rows if r["region"].startswith("sandhills")])
+    seen, sample = set(), []
+    for r in pick:
+        if r["course_id"] not in seen:
+            seen.add(r["course_id"])
+            sample.append(r)
+        if len(sample) >= n_sample:
+            break
+    cards = ""
+    for row in sample:
+        rec = reg.load(row["course_id"])
+        t = rec["tile"]
+        z, (_, _, cell) = cgrid.read_f32(pathlib.Path(t["path"]))
+        wp = pathlib.Path(t["path"]).with_suffix(".water.npy")
+        wet = np.load(wp) if wp.exists() else None
+        res = eval_recall.one_course(row["course_id"], keep_pools=True)
+        uri, k = _hillshade(z, cell, wet)
+        sc = cell * k
+        n = int(np.ceil(z.shape[0] / k))
+        wy, wx, HH, WW = row["window"]
+        P = lambda ym, xm: (xm / sc, n - ym / sc)
+        wr = (f'<rect x="{wx/sc:.1f}" y="{n-(wy+HH)/sc:.1f}" '
+              f'width="{WW/sc:.1f}" height="{HH/sc:.1f}" fill="none" '
+              f'stroke="#ffffff" stroke-width="1.4" stroke-dasharray="6 3"/>')
+        marks = ""
+        for (y, x) in res["pool_old"]:
+            px, py = P(y, x)
+            marks += (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2.0" '
+                      f'fill="#f5963c" opacity="0.55"/>')
+        for (y, x) in res["pool_new"]:
+            px, py = P(y, x)
+            marks += (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2.2" '
+                      f'fill="#3cd7eb"/>')
+        for (y, x) in greens_local(rec):
+            px, py = P(y, x)
+            marks += (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.6" '
+                      f'fill="none" stroke="#faf03c" stroke-width="1.7"/>')
+        dw = row["new"]["w100"] - row["old"]["w100"]
+        cards += f"""<figure>
+<div class="ov"><img src="{uri}" width="{n}" height="{n}">
+<svg viewBox="0 0 {n} {n}">{wr}{marks}</svg></div>
+<figcaption><b>{rec['name'][:34]}</b> · {row['region']} ·
+{row['n_in']} greens in window<br>
+within-100 m: old {row['old']['w100']:.0f}% → new
+<b>{row['new']['w100']:.0f}%</b> ({dw:+.0f}) · median
+{row['old']['med']:.0f} → {row['new']['med']:.0f} m</figcaption></figure>"""
+    a = d["agg"]
+    html = f"""<title>Corpus phase 5 — fitted scorer vs hand scorer</title>
+<style>
+:root{{--bg:#f3f1ea;--ink:#1c1a16;--dim:#6d675b;--line:#dcd6c7;--card:#fffdf7}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme=light]){{--bg:#12120e;--ink:#e9e5da;--dim:#948d7f;--line:#2f2b23;--card:#1b1a15}}}}
+:root[data-theme=dark]{{--bg:#12120e;--ink:#e9e5da;--dim:#948d7f;--line:#2f2b23;--card:#1b1a15}}
+*{{box-sizing:border-box}}body{{background:var(--bg);color:var(--ink);margin:0;
+padding:2rem 1.4rem 4rem;font:15px/1.6 ui-sans-serif,system-ui}}
+main{{max-width:1200px;margin:0 auto}}h1{{font-size:1.5rem;margin:0 0 .3rem}}
+p{{color:var(--dim);max-width:70ch}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:1rem;margin-top:1.4rem}}
+figure{{margin:0;background:var(--card);border:1px solid var(--line);
+border-radius:4px;overflow:hidden}}
+.ov{{position:relative;line-height:0}}
+.ov img,.ov svg{{width:100%;height:auto;display:block}}
+.ov svg{{position:absolute;inset:0}}
+figcaption{{padding:.5rem .6rem;font-size:12px;color:var(--dim)}}
+b{{color:var(--ink)}}
+</style>
+<main><h1>Fitted scorer vs hand scorer — held-out courses</h1>
+<p>Yellow rings = real greens · cyan = fitted-scorer pool · faint orange =
+old hand-scorer pool · dashed white = fitted window. Medians over all
+{d['n']} held-out courses: within 60 m {a['old']['w60']:.0f}% →
+<b>{a['new']['w60']:.0f}%</b>, within 100 m {a['old']['w100']:.0f}% →
+<b>{a['new']['w100']:.0f}%</b>, median distance {a['old']['med']:.0f} →
+<b>{a['new']['med']:.0f} m</b>. Cards below are the biggest movers in both
+directions plus every sandhills course.</p>
+<div class="grid">{cards}</div></main>"""
+    dest = path or (config.OUT / "phase5.html")
+    dest.write_text(html)
+    return str(dest)
