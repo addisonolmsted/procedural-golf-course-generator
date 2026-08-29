@@ -22,7 +22,8 @@ for region, names in PICK.items():
         if c["name"] not in names: continue
         z, (_, _, cell) = cgrid.read_f32(c["tile"])
         z = np.where(np.isfinite(z), z, np.nanmean(z)).astype(np.float64)
-        wet = np.zeros(z.shape, bool)
+        wp = pathlib.Path(c["tile"]).with_suffix(".water.npy")
+        wet = np.load(wp) if wp.exists() else np.zeros(z.shape, bool)
         gs = np.array(c["greens"])
         f = siting.build_fields(z, cell, wet)
         m = siting.build_morphology(f); p = siting.build_persistence(f)
