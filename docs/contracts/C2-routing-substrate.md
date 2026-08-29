@@ -72,20 +72,22 @@ vertex must fall within it.
 Rect { min: Vec2, max: Vec2 }   // world metres, axis-aligned
 ```
 
-Fixed geometry, all of it invariant:
+Geometry — the shape rules are invariant, the size is per-biome data:
 
 | Quantity | Value |
 |---|---|
-| Side | **600 m** (`PLAY_M`) |
-| Centre freedom | **±450 m** per axis from world centre |
+| Side | **`preset.play_m`** — 1200 m sandhills/great plains, 800 m the rest; bounds `PLAY_M_MIN`/`PLAY_M_MAX` = 600–1400 |
+| Centre freedom | **±(1500 − play_m)/2** per axis — implied by core containment |
 | Always inside | the core, `[750, 2250]²` |
 | Terrain margin beyond any played point | **≥ 750 m** |
 
-The arithmetic closes exactly — a 600 m window whose centre ranges ±450 m spans
-precisely the core — so the margin holds by construction and no world constant
-moves. **That margin is a product requirement**: a hole at the edge of play
-must still have terrain running out past it, and the player must never see the
-world end.
+Core containment is the whole check: it bounds the centre and makes the margin
+hold by construction for every legal size, and no world constant moves. The
+sizes are measured, not chosen — a corridor-packing test (2026-08-28, 12
+seeds/archetype) showed a 600 m window fits a 9-hole route on 2/12 aeolian
+seeds against 11/12 fluvial, and 11/12 aeolian at 1200 m. **The margin is a
+product requirement**: a hole at the edge of play must still have terrain
+running out past it, and the player must never see the world end.
 
 The fields and cost grids still cover the whole core, not just the window. That
 is deliberate: 376² at 8 m is trivial, and it means S6 can reason about what is
@@ -223,9 +225,11 @@ change ever wants a `match biome`, the fix is a new preset field.
    dependency graph and should be.
 3. **Two hard masks, everything else soft.** `protected` and `out_of_bounds`
    are the only fields that can make a cell impossible.
-4. **`play_window` is 600 m, axis-aligned, and inside the core**, with its
-   centre within ±450 m of the world centre. Asserted at construction, which
-   is what makes the 750 m terrain-margin guarantee structural.
+4. **`play_window` is a `preset.play_m` square, axis-aligned, and inside the
+   core** (`play_m` is per-biome data, bounded 600–1400 m; sandhills and
+   great plains carry 1200, the rest 800). Core containment is the whole
+   check — it bounds the centre by ±(1500 − play_m)/2 and makes the 750 m
+   terrain-margin guarantee structural. Asserted at construction.
 5. **Costs are non-negative and finite.** No infinities — an infinity is a hard
    constraint smuggled into a soft field, and it reintroduces the failure mode
    that requires retries.

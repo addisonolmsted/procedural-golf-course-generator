@@ -11,19 +11,33 @@ use crate::metadata::{StructureMeta, WaterPlaneOrigin};
 use crate::plasticity::Plasticity;
 use crate::units::check_direction;
 use course_world::math::Vec2;
-use course_world::world::{CORE_MAX_M, CORE_MIN_M, EXTENT_M};
+use course_world::world::{CORE_MAX_M, CORE_MIN_M};
 use course_world::{Grid, GridSpec};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-pub const C2_VERSION: u32 = 1;
+pub const C2_VERSION: u32 = 2;
 
-/// The play window side (`PLAY_M`): a 600 m axis-aligned square.
-pub const PLAY_M: f64 = 600.0;
-/// The window centre may range ±450 m per axis from the world centre — which
-/// makes the window span exactly the core, so the 750 m terrain margin holds
-/// by construction.
-pub const PLAY_CENTER_RANGE_M: f64 = 450.0;
+/// Bounds on the play-window side. The size itself is PER-BIOME data carried
+/// in `ScorerPreset::play_m` — measured 2026-08-28 with a corridor-packing
+/// test over 12 seeds per archetype, a 600 m window fits a 9-hole routing on
+/// only 2/12 aeolian-sandhills seeds (median 6 holes packed) while fluvial
+/// fits 11/12; at 1200 m aeolian reaches 11/12. Minimalist dune courses
+/// genuinely sprawl; parkland courses are compact. A biome is a data record,
+/// so a per-biome size is config, not a stage branch.
+///
+/// The 750 m terrain margin stays structural for ANY size in these bounds:
+/// the window must lie inside the core `[750, 2250]^2`, so the margin is
+/// enforced by containment, not by a separate centre-range constant. The
+/// centre freedom follows from the size: ±(1500 − play_m)/2 per axis.
+pub const PLAY_M_MIN: f64 = 600.0;
+pub const PLAY_M_MAX: f64 = 1400.0;
+
+/// Centre freedom per axis implied by a window size: the window spans the
+/// core exactly when `play_m` = 1500, and roams ±450 m at the old 600 m.
+pub fn play_center_range_m(play_m: f64) -> f64 {
+    ((CORE_MAX_M - CORE_MIN_M) - play_m) / 2.0
+}
 
 /// An axis-aligned rect in world metres. Never rotated — deliverable
 /// heightmaps are plain grids with no transform attached.
@@ -46,17 +60,25 @@ impl Rect {
     }
 }
 
-/// Validate a play window: 600 m square, inside the core, centre within
-/// ±450 m of the world centre. The arithmetic that keeps the 750 m terrain
-/// margin structural (`docs/contracts/C2-routing-substrate.md`).
-pub fn check_play_window(w: &Rect) -> Result<(), ContractError> {
+/// Validate a play window against the biome's declared size: a `play_m`
+/// square inside the core. Core containment IS the 750 m terrain-margin
+/// guarantee and also bounds the centre by `play_center_range_m(play_m)`,
+/// so no separate centre check exists to drift out of sync
+/// (`docs/contracts/C2-routing-substrate.md`).
+pub fn check_play_window(w: &Rect, play_m: f64) -> Result<(), ContractError> {
     let tol = 1e-6;
-    let side_x = w.max.x - w.min.x;
-    let side_y = w.max.y - w.min.y;
-    if (side_x - PLAY_M).abs() > tol || (side_y - PLAY_M).abs() > tol {
+    if !(PLAY_M_MIN - tol..=PLAY_M_MAX + tol).contains(&play_m) {
         return Err(ContractError::invariant(
             "play_window",
-            format!("must be a {PLAY_M} m square, got {side_x} x {side_y}"),
+            format!("play_m {play_m} outside [{PLAY_M_MIN}, {PLAY_M_MAX}]"),
+        ));
+    }
+    let side_x = w.max.x - w.min.x;
+    let side_y = w.max.y - w.min.y;
+    if (side_x - play_m).abs() > tol || (side_y - play_m).abs() > tol {
+        return Err(ContractError::invariant(
+            "play_window",
+            format!("must be a {play_m} m square, got {side_x} x {side_y}"),
         ));
     }
     if w.min.x < CORE_MIN_M - tol
@@ -67,16 +89,6 @@ pub fn check_play_window(w: &Rect) -> Result<(), ContractError> {
         return Err(ContractError::invariant(
             "play_window",
             "must lie inside the core [750, 2250]^2",
-        ));
-    }
-    let c = w.center();
-    let mid = EXTENT_M / 2.0;
-    if (c.x - mid).abs() > PLAY_CENTER_RANGE_M + tol
-        || (c.y - mid).abs() > PLAY_CENTER_RANGE_M + tol
-    {
-        return Err(ContractError::invariant(
-            "play_window",
-            format!("centre must be within ±{PLAY_CENTER_RANGE_M} m of world centre"),
         ));
     }
     Ok(())
@@ -146,6 +158,9 @@ pub struct ScorerPreset {
     pub hole_length_m: [f64; 9],
     /// `[0, 1]`, plasticity-derived.
     pub feasibility_strictness: f64,
+    /// Play-window side in metres — per-biome data (aeolian sandhills 1200,
+    /// fluvial 800; see the packing measurement on `PLAY_M_MIN`'s doc).
+    pub play_m: f64,
 }
 
 impl ScorerPreset {
@@ -158,6 +173,7 @@ impl ScorerPreset {
             ("preset.w_fit", self.w_fit),
             ("preset.target_grade_fairway", self.target_grade_fairway),
             ("preset.target_grade_green", self.target_grade_green),
+            ("preset.play_m", self.play_m),
         ] {
             check_finite(name, v)?;
             if v < 0.0 {
@@ -257,7 +273,7 @@ impl RoutingSubstrate {
         if self.height.data.iter().any(|v| !v.is_finite()) {
             return Err(ContractError::invariant("height", "contains non-finite"));
         }
-        check_play_window(&self.play_window)?;
+        check_play_window(&self.play_window, self.preset.play_m)?;
 
         let at_cost = |name: &'static str, spec: &GridSpec| -> Result<(), ContractError> {
             if spec != c {

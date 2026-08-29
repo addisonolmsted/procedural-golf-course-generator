@@ -66,19 +66,23 @@ Fixed, and it moves no world constant.
 |---|---|
 | World extent | 3000 m (`EXTENT_M`) |
 | Search region | the core, `[750, 2250]²` (`CORE_MIN_M`/`CORE_MAX_M`, `in_core`) |
-| Play window | **600 m axis-aligned square** (`PLAY_M`) |
-| Window centre freedom | **±450 m per axis** from world centre |
+| Play window | axis-aligned square, side = **`ScorerPreset::play_m`** — per-biome: **1200 m** sandhills & great plains, **800 m** the rest; bounds `PLAY_M_MIN`/`PLAY_M_MAX` = 600–1400 |
+| Window centre freedom | **±(1500 − play_m)/2 per axis** — implied by core containment, not a separate constant |
 | Minimum terrain margin | **750 m** from any played point to the world edge |
 
-The arithmetic closes exactly: a 600 m window whose centre ranges ±450 m spans
-`[750, 2250]²` — precisely the existing core. So the core becomes the *search
-region* rather than the routable area, `in_core` still bounds everything, and
-the margin guarantee holds by construction.
+The window must lie inside the core; that single containment check bounds the
+centre and IS the margin guarantee, for every legal size. The size is biome
+data (2026-08-28): a corridor-packing measurement over 12 seeds/archetype
+showed a 600 m window fits a 9-hole route on only 2/12 aeolian seeds (median 6
+holes packed) against 11/12 fluvial, and 11/12 aeolian at 1200 m — matching
+reality, where minimalist dune courses sprawl because grading between dunes is
+unaffordable. Since a biome is a data record, a per-biome size is config, not
+a stage branch.
 
 **That 750 m margin is a product requirement, not an accident.** A hole at the
 edge of the played area must still have terrain running out beyond it; the
-player must never see the world end. Any future change to `PLAY_M` or the
-centre range must preserve it.
+player must never see the world end. Any future change to the `play_m` bounds
+must preserve it.
 
 ### Translation only — no rotation
 
@@ -224,8 +228,8 @@ course grids. The criteria below are the correctness axis of that gate.
 ## Acceptance criteria
 
 - [ ] Same seed ⇒ byte-identical C2, cross-platform.
-- [ ] **The siting arithmetic is asserted as a test**: `PLAY_M = 600`, centre
-      range ±450 m, selected window always within `[750, 2250]²`, minimum
+- [ ] **The siting arithmetic is asserted as a test**: window side =
+  `preset.play_m` within its bounds, core containment, and the implied
       distance from any window edge to the world edge ≥ 750 m.
 - [ ] Window selection is exhaustive over the candidate grid and totally
       ordered; no float-equality tie-breaks.

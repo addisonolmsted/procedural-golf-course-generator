@@ -45,7 +45,7 @@ manifest.json {
   seed: u64, pipeline_version: u32,
   biome: BiomeId, structure_class: StructureClass,
 
-  play_window: Rect,            // world metres; the 600 m square
+  play_window: Rect,            // world metres; side = the biome's play_m (800/1200)
   world: { extent_m: 3000.0, origin: "SW", x: "east", y: "north" },
   datum_note: "elevations are metres in a local datum; 0 = core reference",
 

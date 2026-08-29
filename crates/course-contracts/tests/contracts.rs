@@ -7,7 +7,7 @@
 use course_contracts::contracts::corridor_graph::CorridorGraph;
 use course_contracts::contracts::primitive_field::PrimitiveField;
 use course_contracts::contracts::routing_substrate::{
-    check_play_window, Rect, RoutingSubstrate, PLAY_M,
+    check_play_window, play_center_range_m, Rect, RoutingSubstrate, PLAY_M_MAX, PLAY_M_MIN,
 };
 use course_contracts::fixtures;
 use course_contracts::ContractError;
@@ -136,41 +136,49 @@ fn c1_load_is_loud_on_tampering() {
 fn c2_play_window_arithmetic() {
     // The centred window and the four extreme corners are all legal…
     let mid = 1500.0;
-    for (cx, cy) in [
-        (mid, mid),
-        (mid - 450.0, mid - 450.0),
-        (mid + 450.0, mid - 450.0),
-        (mid - 450.0, mid + 450.0),
-        (mid + 450.0, mid + 450.0),
-    ] {
+    // Every size in the legal band, at each extreme of its own centre range,
+    // keeps the 750 m margin -- the guarantee is core containment, so it must
+    // hold for the fluvial 800 and the aeolian 1200 alike.
+    for play_m in [PLAY_M_MIN, 800.0, 1200.0, PLAY_M_MAX] {
+        let r = play_center_range_m(play_m);
+        for (cx, cy) in [
+            (mid, mid),
+            (mid - r, mid - r),
+            (mid + r, mid - r),
+            (mid - r, mid + r),
+            (mid + r, mid + r),
+        ] {
+            let w = Rect {
+                min: Vec2::new(cx - play_m / 2.0, cy - play_m / 2.0),
+                max: Vec2::new(cx + play_m / 2.0, cy + play_m / 2.0),
+            };
+            check_play_window(&w, play_m).unwrap();
+            // …and every legal window keeps >= 750 m of terrain beyond any edge.
+            let margin = [
+                w.min.x,
+                w.min.y,
+                3000.0 - w.max.x,
+                3000.0 - w.max.y,
+            ]
+            .into_iter()
+            .fold(f64::INFINITY, f64::min);
+            assert!(margin >= 750.0 - 1e-9, "play_m {play_m}: margin {margin}");
+        }
+        // One metre past that size's own centre range leaves the core.
         let w = Rect {
-            min: Vec2::new(cx - PLAY_M / 2.0, cy - PLAY_M / 2.0),
-            max: Vec2::new(cx + PLAY_M / 2.0, cy + PLAY_M / 2.0),
+            min: Vec2::new(mid + r + 1.0 - play_m / 2.0, mid - play_m / 2.0),
+            max: Vec2::new(mid + r + 1.0 + play_m / 2.0, mid + play_m / 2.0),
         };
-        check_play_window(&w).unwrap();
-        // …and every legal window keeps >= 750 m of terrain beyond any edge.
-        let margin = [
-            w.min.x,
-            w.min.y,
-            3000.0 - w.max.x,
-            3000.0 - w.max.y,
-        ]
-        .into_iter()
-        .fold(f64::INFINITY, f64::min);
-        assert!(margin >= 750.0 - 1e-9, "margin {margin}");
+        assert!(check_play_window(&w, play_m).is_err(), "play_m {play_m}");
     }
-    // One metre past the range is rejected.
-    let w = Rect {
-        min: Vec2::new(mid + 451.0 - PLAY_M / 2.0, mid - PLAY_M / 2.0),
-        max: Vec2::new(mid + 451.0 + PLAY_M / 2.0, mid + PLAY_M / 2.0),
-    };
-    assert!(check_play_window(&w).is_err());
-    // Wrong size is rejected.
+    // A size below the band is rejected even as a perfect square.
     let w = Rect {
         min: Vec2::new(mid - 200.0, mid - 200.0),
         max: Vec2::new(mid + 200.0, mid + 200.0),
     };
-    assert!(check_play_window(&w).is_err());
+    assert!(check_play_window(&w, 400.0).is_err());
+    // And a window whose shape disagrees with the declared size is rejected.
+    assert!(check_play_window(&w, 800.0).is_err());
 }
 
 #[test]

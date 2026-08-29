@@ -214,7 +214,7 @@ impl SiteSpec {
         };
 
         let dials = derive_dials(env, &structure_class, &descriptors);
-        let preset = derive_preset(&descriptors);
+        let preset = derive_preset(biome, &descriptors);
 
         SiteSpec {
             spec_version: SPEC_V2_VERSION,
@@ -398,8 +398,23 @@ fn derive_dials(
     m
 }
 
-fn derive_preset(d: &SiteDescriptors) -> ScorerPreset {
+fn derive_preset(biome: BiomeId, d: &SiteDescriptors) -> ScorerPreset {
     let p = d.plasticity.value();
+    // Play-window side, per-biome data (S0 is the biome-record reader, so the
+    // biome key belongs here and nowhere downstream). Measured 2026-08-28 by
+    // corridor packing over 12 seeds/archetype: aeolian dune country fits a
+    // 9-hole route in a 600 m window on only 2/12 seeds (median 6 holes) and
+    // reaches 11/12 at 1200 m, while compact fluvial terrain fits 11/12 at
+    // 600 m already -- matching reality, where minimalist dune courses sprawl
+    // because grading between the dunes is not affordable (plasticity is the
+    // lowest of the six) and parkland courses are compact. Sandhills IS the
+    // aeolian biome (docs/biomes/sandhills.md: "stabilized aeolian dune
+    // trains"); Great Plains roams for the same low-cost-everywhere reason.
+    // Bounds asserted by C2 (`PLAY_M_MIN`/`PLAY_M_MAX`).
+    let play_m = match biome {
+        BiomeId::Sandhills | BiomeId::GreatPlains => 1200.0,
+        _ => 800.0,
+    };
     ScorerPreset {
         w_earthwork: 1.0 - 0.5 * p,
         w_clearing: 0.5,
@@ -410,5 +425,6 @@ fn derive_preset(d: &SiteDescriptors) -> ScorerPreset {
         target_grade_green: 0.025,
         hole_length_m: [350.0, 360.0, 160.0, 480.0, 370.0, 170.0, 355.0, 490.0, 365.0],
         feasibility_strictness: 1.0 - p,
+        play_m,
     }
 }

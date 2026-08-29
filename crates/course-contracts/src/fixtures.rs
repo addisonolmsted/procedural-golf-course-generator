@@ -14,7 +14,7 @@ use crate::contracts::corridor_graph::{
 use crate::contracts::delivery::{CourseManifest, PrevailingWind, Provenance, WorldDesc};
 use crate::contracts::primitive_field::PrimitiveField;
 use crate::contracts::routing_substrate::{
-    CostFields, ExclusionMasks, Rect, RoutingSubstrate, ScorerPreset, SubstrateMeta, PLAY_M,
+    CostFields, ExclusionMasks, Rect, RoutingSubstrate, ScorerPreset, SubstrateMeta,
 };
 use crate::metadata::{BaseLevel, Edge, StructureMeta, WaterPlaneOrigin};
 use crate::plasticity::Plasticity;
@@ -78,11 +78,14 @@ pub fn c1(seed: u64) -> PrimitiveField {
 }
 
 /// The centred play window (the fixture default; siting varies it).
+/// Fixture window size: the fluvial 800 m. Aeolian biome records carry 1200.
+pub const FIXTURE_PLAY_M: f64 = 800.0;
+
 pub fn centered_window() -> Rect {
     let mid = EXTENT_M / 2.0;
     Rect {
-        min: Vec2::new(mid - PLAY_M / 2.0, mid - PLAY_M / 2.0),
-        max: Vec2::new(mid + PLAY_M / 2.0, mid + PLAY_M / 2.0),
+        min: Vec2::new(mid - FIXTURE_PLAY_M / 2.0, mid - FIXTURE_PLAY_M / 2.0),
+        max: Vec2::new(mid + FIXTURE_PLAY_M / 2.0, mid + FIXTURE_PLAY_M / 2.0),
     }
 }
 
@@ -98,6 +101,7 @@ pub fn preset() -> ScorerPreset {
         target_grade_green: 0.02,
         hole_length_m: [350.0, 360.0, 160.0, 480.0, 370.0, 170.0, 355.0, 490.0, 365.0],
         feasibility_strictness: 0.5,
+        play_m: FIXTURE_PLAY_M,
     }
 }
 

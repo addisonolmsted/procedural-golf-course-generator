@@ -37,16 +37,26 @@ Do not redefine these; import them.
   (`CORE_MIN_M`, `CORE_MAX_M`, `in_core`). The **search region** for site
   selection; the surrounding margin exists so that landforms enter and leave
   the frame instead of terminating at it.
-- **Play window**: a **600 m axis-aligned square** (`PLAY_M`) chosen inside the
-  core by [S5](stages/stage-05-siting-substrate.md), its centre free within
-  ±450 m of the world centre. The course is routed inside *this*, not the whole
-  core.
+- **Play window**: an axis-aligned square chosen inside the core by
+  [S5](stages/stage-05-siting-substrate.md), its side **per-biome data** in
+  `ScorerPreset::play_m` — **1200 m** for the sprawling biomes (sandhills,
+  great plains), **800 m** for the compact four — bounded by
+  `PLAY_M_MIN`/`PLAY_M_MAX` (600–1400) in C2. The course is routed inside
+  *this*, not the whole core.
 
-  The arithmetic closes exactly — 600 m ± 450 m spans `[750, 2250]²` — so the
-  core is unchanged and the **750 m minimum terrain margin** holds by
-  construction. That margin is a product requirement: a hole at the edge of
-  play must still have ground running out past it, and the player must never
-  see the world end.
+  Measured (2026-08-28, corridor packing over 12 seeds/archetype): a 600 m
+  window fits a 9-hole route on only 2/12 aeolian-sandhills seeds (median 6
+  holes packed) but 11/12 fluvial seeds; at 1200 m aeolian reaches 11/12.
+  Minimalist dune courses genuinely sprawl — grading between the dunes is not
+  affordable — while parkland routes compactly. A biome is a data record, so a
+  per-biome size is config, not a stage branch.
+
+  The window must lie inside the core, and that containment IS the **750 m
+  minimum terrain margin** — no separate centre-range constant exists to
+  drift out of sync. Centre freedom follows from the size:
+  ±(1500 − play_m)/2 per axis (±450 m at 600 m, ±150 m at 1200 m). The margin
+  is a product requirement: a hole at the edge of play must still have ground
+  running out past it, and the player must never see the world end.
 
   **Axis-aligned, never rotated.** Deliverable heightmaps are plain grids with
   no transform attached. Rotation would also break the nesting property below,
