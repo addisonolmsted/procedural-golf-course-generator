@@ -147,7 +147,7 @@ def main():
     entries = []
     for spec in sys.argv[3:]:
         seed, mode = spec.split(":")
-        dims = (1450.0, 950.0) if mode == "aeolian" else (1150.0, 600.0)
+        dims = (1450.0, 950.0) if mode == "aeolian" else (1000.0, 700.0)
         z2, (_, _, c2) = cgrid.read_f32(dump / f"{seed}.cgrid")
         wp = dump / f"{seed}.water.cgrid"
         wet2 = ~np.isnan(cgrid.read_f32(wp)[0]) if wp.exists() else np.zeros(z2.shape, bool)

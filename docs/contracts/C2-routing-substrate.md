@@ -76,7 +76,7 @@ Geometry — the shape rules are invariant, the size is per-biome data:
 
 | Quantity | Value |
 |---|---|
-| Sides | **`preset.play_long_m × play_short_m`**, either orientation — 1450×950 sandhills/great plains, 1150×600 the rest; long ∈ [600, 1450], short ∈ [300, long] |
+| Sides | **`preset.play_long_m × play_short_m`**, either orientation — 1450×950 sandhills/great plains, 1000×700 the rest; long ∈ [600, 1450], short ∈ [300, long] |
 | Centre freedom | **±(1500 − side)/2** per axis — implied by core containment |
 | Always inside | the core, `[750, 2250]²` |
 | Terrain margin beyond any played point | **≥ 750 m** |

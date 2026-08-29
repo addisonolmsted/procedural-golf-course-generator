@@ -412,8 +412,18 @@ fn derive_preset(biome: BiomeId, d: &SiteDescriptors) -> ScorerPreset {
         // ~140 ha, matching the packed-area measurement; long side sized to
         // the real 9-hole ribbons (1222-1517 m PCA length).
         BiomeId::Sandhills | BiomeId::GreatPlains => (1450.0, 950.0),
-        // ~69 ha; Pinehurst-area nines run ~1150-1360 x 500-630.
-        _ => (1150.0, 600.0),
+        // ~70 ha. The footprint of a Pinehurst-area nine is a ~1.9-aspect
+        // ribbon, but siting the window that thin MEASURABLY costs green
+        // recall on the real Carolina tiles (2026-08-29 aspect sweep, six
+        // courses, intersection target set: real greens found within 100 m
+        // runs 73% at 800x800, 76% at 1000x700, 69% at 1100x650, then falls
+        // off a cliff to 53% at 1150x600 and 50% at 1350x520, while window
+        // coverage of the real course is flat at 56-58% past 1000x700). So
+        // the window takes the shape that RECALLS the ground, not the shape
+        // the finished routing traces through it. Nebraska has no such cliff
+        // (69% at every aspect from 1.24 to 1.88) -- dune courses sprawl, and
+        // 1450x950 is kept there for its 92% coverage.
+        _ => (1000.0, 700.0),
     };
     ScorerPreset {
         w_earthwork: 1.0 - 0.5 * p,

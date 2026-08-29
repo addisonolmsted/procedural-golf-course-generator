@@ -79,8 +79,8 @@ pub fn c1(seed: u64) -> PrimitiveField {
 
 /// The centred play window (the fixture default; siting varies it).
 /// Fixture window dims: the compact-biome rectangle, landscape orientation.
-pub const FIXTURE_PLAY_LONG_M: f64 = 1150.0;
-pub const FIXTURE_PLAY_SHORT_M: f64 = 600.0;
+pub const FIXTURE_PLAY_LONG_M: f64 = 1000.0;
+pub const FIXTURE_PLAY_SHORT_M: f64 = 700.0;
 
 pub fn centered_window() -> Rect {
     let mid = EXTENT_M / 2.0;

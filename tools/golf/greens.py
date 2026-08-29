@@ -67,6 +67,7 @@ SURROUND_R0_M, SURROUND_R1_M = 25.0, 90.0
 SURROUND_LO_M = 1.5      # below: dead flat, heavy penalty ramp
 SURROUND_OK_M = 3.5      # real p25; full credit from here
 SURROUND_HI_M = 14.0     # soft cap; a wall of dune face stops helping
+W_SURROUND = 1.0         # score weight; set 0 to ablate (see overlay3.py A/B)
 
 
 def surround_relief(z8: np.ndarray, cell: float, y: int, x: int) -> float:
@@ -335,7 +336,7 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
         score = (s0 + 1.2 * vis + 0.8 * recept
                  + 0.4 * np.clip(tab[:, 2], 0, 8).max() / 8.0
                  + 0.6 * tab[:, 3].max()
-                 + 1.0 * sur_t
+                 + W_SURROUND * sur_t
                  - 2.0 * resid
                  - (0.5 if build == "graded" else 0.0))
         cands.append(Candidate((y_m, x_m), kind, float(score), grad,

@@ -139,8 +139,8 @@ fn c2_play_window_arithmetic() {
     // Every legal rectangle, in both orientations, at each extreme of its
     // own per-axis centre range, keeps the 750 m margin -- the guarantee is
     // core containment, so it holds for the aeolian 1450x950 and the compact
-    // 1150x600 alike.
-    for (long, short) in [(1450.0, 950.0), (1150.0, 600.0), (800.0, 800.0)] {
+    // 1000x700 alike.
+    for (long, short) in [(1450.0, 950.0), (1000.0, 700.0), (800.0, 800.0)] {
         for (sx, sy) in [(long, short), (short, long)] {
             let (rx, ry) = (play_center_range_m(sx), play_center_range_m(sy));
             for (cx, cy) in [

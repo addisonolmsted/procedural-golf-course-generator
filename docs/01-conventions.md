@@ -41,7 +41,7 @@ Do not redefine these; import them.
   [S5](stages/stage-05-siting-substrate.md), placed in either orientation;
   dims are **per-biome data** in `ScorerPreset::{play_long_m, play_short_m}`
   — **1450 × 950 m** for the sprawling biomes (sandhills, great plains),
-  **1150 × 600 m** for the compact four — bounded in C2. The course is
+  **1000 × 700 m** for the compact four — bounded in C2. The course is
   routed inside *this*, not the whole core. Shape is measured: the three
   true 9-hole courses in the real corpus are RIBBONS (1517×487, 1222×304,
   1357×628 m; median aspect 1.70 across 20 courses), and a square cannot
