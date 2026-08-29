@@ -1,0 +1,4 @@
+out/*
+!out/courses.jsonl
+!out/assign_report.json
+!out/fitted/

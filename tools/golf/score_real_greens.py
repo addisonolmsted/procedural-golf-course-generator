@@ -23,7 +23,9 @@ for region, courses in data.items():
             continue
         z, (_, _, cell) = cgrid.read_f32(c["tile"])
         z = np.where(np.isfinite(z), z, np.nanmean(z)).astype(np.float64)
-        wet = np.zeros(z.shape, bool)          # real DEMs carry no water mask
+        wp = pathlib.Path(c["tile"]).with_suffix(".water.npy")
+        has_water = wp.exists()
+        wet = np.load(wp) if has_water else np.zeros(z.shape, bool)
         f = siting.build_fields(z, cell, wet)
         m = siting.build_morphology(f)
         p = siting.build_persistence(f)
@@ -40,12 +42,14 @@ for region, courses in data.items():
                 yi, xi = int(ym / f.cell), int(xm / f.cell)
                 if not (0 <= yi < f.z8.shape[0] and 0 <= xi < f.z8.shape[1]):
                     continue
-                ok, grad, resid = G.confirm_2m(z, cell, wet, ym, xm)
+                ok, grad, resid, build = G.confirm_2m(z, cell, wet, ym, xm)
                 tab = G.approach_table(f, yi, xi, grad)
                 rows[key].append(dict(
                     course=c["name"],
+                    water=has_water,
                     pad=bool(f.pad_green[yi, xi]),
                     confirm=bool(ok),
+                    build=build,
                     cls240=CLS.get(int(m.cls240[yi, xi]), "edge"),
                     cls80=CLS.get(int(m.cls80[yi, xi]), "edge"),
                     relief_pos=float(f.relief_pos[yi, xi]),
