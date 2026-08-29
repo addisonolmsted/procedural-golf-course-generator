@@ -358,6 +358,66 @@ def _stamp_thin(cands: list[Candidate], cell: float, shape,
     return out
 
 
+def field_score(f: Fields, m, p, sit, tpi60: np.ndarray,
+                i0: int, i1: int, j0: int, j1: int) -> np.ndarray:
+    """The fitted score restricted to its FIELD-computable terms, evaluated
+    over [i0:i1, j0:j1] at 8 m. This is the PROPOSER (2026-08-29): measured
+    on held-out courses, real greens score at the 100th percentile of the
+    pool the typed detectors used to propose -- the score knew where greens
+    belong and seeding never offered those cells. Approach-table terms
+    (vis/recept/backdrop/aroom) are omitted here and refine the survivors.
+    Aspect uses the 8 m gradient as a stand-in for the confirm-plane fit.
+    Returns -inf outside the slab so callers can argmax over full shape."""
+    from scipy import ndimage as _ndi
+    sl = np.s_[i0:i1, j0:j1]
+    out = np.full(f.z8.shape, -np.inf)
+    # surround relief: p90-p10 of z8 over the 25-90 m annulus, exact
+    rr0 = int(round(SURROUND_R0_M / f.cell))
+    rr1 = int(round(SURROUND_R1_M / f.cell))
+    yy, xx = np.mgrid[-rr1:rr1 + 1, -rr1:rr1 + 1]
+    ring = (yy * yy + xx * xx >= rr0 * rr0) & (yy * yy + xx * xx <= rr1 * rr1)
+    zs = f.z8[max(0, i0 - rr1):i1 + rr1, max(0, j0 - rr1):j1 + rr1]
+    p90 = _ndi.percentile_filter(zs, 90, footprint=ring, mode="nearest")
+    p10 = _ndi.percentile_filter(zs, 10, footprint=ring, mode="nearest")
+    oy, ox = i0 - max(0, i0 - rr1), j0 - max(0, j0 - rr1)
+    sur = (p90 - p10)[oy:oy + (i1 - i0), ox:ox + (j1 - j0)]
+    gy8, gx8 = np.gradient(f.z8[sl], f.cell)
+    gm = np.hypot(gy8, gx8)
+    gm[gm < 1e-6] = 1.0
+    win_y0, win_x0, win_h, win_w = sit.window_m
+    ys = (np.arange(i0, i1) * f.cell)[:, None]
+    xs = (np.arange(j0, j1) * f.cell)[None, :]
+    d_edge = np.minimum(np.minimum(ys - win_y0, win_y0 + win_h - ys),
+                        np.minimum(xs - win_x0, win_x0 + win_w - xs))
+    sqa = float(np.sqrt(max(win_h * win_w, 1.0)))
+    c240 = m.cls240[sl]
+    c80 = m.cls80[sl]
+    feats = {
+        "tpi60": tpi60[sl], "tpi200": f.tpi200[sl],
+        "relief_pos": f.relief_pos[sl],
+        "surround": sur, "room": np.minimum(f.room[sl], 60.0),
+        "pit": np.log1p(np.minimum(p.pit[sl], 10.0)),
+        "peak": np.log1p(np.minimum(p.peak[sl], 20.0)),
+        "saddle": m.saddle[sl].astype(float),
+        "cls240_flat": (c240 == 1).astype(float),
+        "cls240_convex": np.isin(c240, (2, 3, 4, 5)).astype(float),
+        "cls240_concave": np.isin(c240, (7, 8, 9, 10)).astype(float),
+        "cls80_flat": (c80 == 1).astype(float),
+        "cls80_convex": np.isin(c80, (2, 3, 4, 5)).astype(float),
+        "cls80_concave": np.isin(c80, (7, 8, 9, 10)).astype(float),
+        "aspect_sin": gy8 / gm, "aspect_cos": gx8 / gm,
+        "d_water_band": np.minimum(f.d_water[sl], 400.0),
+        "d_boundary_norm": d_edge / sqa,
+    }
+    acc = np.full(sur.shape, FIT_B0)
+    for k, v in feats.items():
+        acc += FIT_COEF[k] * v
+        if k in FIT_COEF_SQ:
+            acc += FIT_COEF_SQ[k] * v * v
+    out[sl] = acc
+    return out
+
+
 def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
              p: Persistence, n_target: int = 100,
              hole_lengths=None) -> list[Candidate]:
@@ -368,6 +428,34 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
     w = int(round(sit.window_m[3] / f.cell))
 
     seeds = _seed_typed(f, m, p, i0, j0, h, w)
+
+    # PROPOSER (2026-08-29): the typed detectors alone never offered the
+    # cells the fitted score rates highest (real greens sat at the pool's
+    # 100th score percentile). The field score now (a) contributes "hot"
+    # seeds -- its top cells regardless of type -- and (b) replaces the old
+    # room/40 heuristic as the pre-confirm thinning key.
+    from scipy import ndimage as _ndi2
+    halo = int(round(120.0 / f.cell))
+    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + h + halo)
+    b0, b1 = max(0, j0 - halo), min(f.z8.shape[1], j0 + w + halo)
+    tpi60 = f.z8 - _ndi2.uniform_filter(f.z8, int(round(60.0 / f.cell)) | 1)
+    fscore = field_score(f, m, p, sit, tpi60, a0, a1, b0, b1)
+    fs = fscore[a0:a1, b0:b1].copy()
+    fs[f.wet8[a0:a1, b0:b1]] = -np.inf
+    order = np.argsort(fs.ravel(), kind="stable")[::-1]
+    sep_h = max(1, int(round(40.0 / f.cell)))
+    occ_h = np.zeros(fs.shape, bool)
+    n_hot = 0
+    for idx in order:
+        if n_hot >= 150 or not np.isfinite(fs.ravel()[idx]):
+            break
+        yy, xx = divmod(int(idx), fs.shape[1])
+        if occ_h[yy, xx]:
+            continue
+        occ_h[max(0, yy - sep_h):yy + sep_h + 1,
+              max(0, xx - sep_h):xx + sep_h + 1] = True
+        seeds.append((a0 + yy, b0 + xx, "hot"))
+        n_hot += 1
     if not seeds:
         return []
 
@@ -379,9 +467,7 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
     # diverse, then confirm.
     pre: dict[tuple[int, int], tuple[float, str]] = {}
     for (y, x, kind) in seeds:
-        s = f.room[y, x] / 40.0
-        if kind != "generic":
-            s += 0.6                        # exotic ground earns its look
+        s = float(fscore[y, x]) if np.isfinite(fscore[y, x]) else -1e9
         old = pre.get((y, x))
         if old is None or s > old[0]:
             pre[(y, x)] = (s, kind)
@@ -402,8 +488,6 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
             if n_took >= 90:
                 break
 
-    from scipy import ndimage as _ndi
-    tpi60 = f.z8 - _ndi.uniform_filter(f.z8, int(round(60.0 / f.cell)) | 1)
     win_y0, win_x0 = sit.window_m[0], sit.window_m[1]
     win_h_m, win_w_m = sit.window_m[2], sit.window_m[3]
     win_sqrt_area = float(np.sqrt(max(win_h_m * win_w_m, 1.0)))
