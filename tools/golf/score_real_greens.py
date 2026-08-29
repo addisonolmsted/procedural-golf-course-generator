@@ -1,4 +1,7 @@
-"""Score REAL green locations with our green instrument, vs random controls
+"""DEPRECATED (2026-08-29): superseded by tools/golf/corpus/features.py
++ fit.py (matched controls, 45k rows). See docs/calibration/greens-corpus.md.
+
+Score REAL green locations with our green instrument, vs random controls
 on the same property. Writes real_green_scores.json."""
 import sys, os, json, pathlib
 import numpy as np

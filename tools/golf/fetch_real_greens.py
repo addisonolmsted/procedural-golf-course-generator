@@ -1,4 +1,8 @@
-"""Fetch OSM golf=green centroids for the cached real-course tiles, projected
+"""DEPRECATED (2026-08-29): superseded by tools/golf/corpus/
+(collision-safe ids, per-course green assignment, cached clients).
+Kept runnable for the 22-tile study. See docs/calibration/greens-corpus.md.
+
+Fetch OSM golf=green centroids for the cached real-course tiles, projected
 into each tile's local metres. Writes real_greens.json."""
 import sys, json, pathlib, math
 ROOT = pathlib.Path("/Users/davisolmsted/Documents/GitHub/GolfProceduralGenerator")

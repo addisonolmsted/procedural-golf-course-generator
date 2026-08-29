@@ -142,6 +142,18 @@ def one_course(cid: str, keep_pools: bool = False) -> dict | None:
                         med=float(np.median(d)))
         if keep_pools:
             out[f"pool_{tag}"] = [list(a.yx) for a in pool]
+        # standing dispersion gate (P7): the pool must make every part of the
+        # window REACHABLE. Measured 2026-08-29 on 14 held-out courses the
+        # new-scorer pool already exceeds the real-greens targets (hull 0.86
+        # vs real p25 0.30, sectors 8/8) -- the planned sector-quota thinning
+        # was NOT built because the problem it solved no longer measures.
+        # These numbers keep it that way.
+        if tag == "new" and len(q):
+            from .dispersion import per_course as _disp
+            inw = q[(q[:, 0] >= wy) & (q[:, 0] <= wy + HH)
+                    & (q[:, 1] >= wx) & (q[:, 1] <= wx + WW)]
+            if len(inw) >= 10:
+                out["pool_dispersion"] = _disp(inw, HH * WW)
     return out
 
 
@@ -167,6 +179,16 @@ def run(procs: int = 4) -> dict:
             w100=float(np.median([r[tag]["w100"] for r in res])),
             med=float(np.median([r[tag]["med"] for r in res])),
             pool=float(np.median([r[tag]["n_pool"] for r in res])))
+    disp = [r["pool_dispersion"] for r in res if "pool_dispersion" in r]
+    if disp:
+        agg["pool_dispersion"] = {
+            k: float(np.median([d[k] for d in disp]))
+            for k in ("hull_frac", "sectors", "nn_p10")}
+        # real-greens targets from corpus/out/dispersion.json (2026-08-29):
+        # hull_frac p25 0.299, sectors med 7, nn_p10 p25 53 m
+        agg["dispersion_gate"] = bool(
+            agg["pool_dispersion"]["hull_frac"] >= 0.30
+            and agg["pool_dispersion"]["sectors"] >= 6)
     out = dict(courses=res, agg=agg, n=len(res))
     (config.OUT / "recall_eval.json").write_text(json.dumps(out, indent=1))
     return out

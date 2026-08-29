@@ -1,7 +1,7 @@
 """The golfability proxy (workplan B5).
 
 "Will this ground take a golf course" — measurable from a surface alone,
-with thresholds that come from REALITY: the 64 real golf-course grids in
+with thresholds that come from REALITY: the 58 unique real golf-course grids in
 `macro_campaign/out/courses/` define what routable ground measures as.
 No router required; usable at G-SKELETON on base surfaces, as the siting
 score's backbone at S5, and as a sanity check at G-TERRAIN.
