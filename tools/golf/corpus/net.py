@@ -51,12 +51,21 @@ def overpass(query: str, tries: int = 4) -> dict:
                               timeout=180)
             if r.status_code == 200:
                 out = r.json()
-                cp.write_text(json.dumps(out))
-                return out
-            last = f"{r.status_code} @ {ep}"
+                # Overpass sometimes 200s with zero elements and no remark
+                # under load (verified: the Long Island box cached 0 elements,
+                # a fresh identical query returned 76). Never cache empties;
+                # retry them, and return uncached if they persist.
+                if out.get("elements") or out.get("remark"):
+                    cp.write_text(json.dumps(out))
+                    return out
+                last = f"empty-200 @ {ep}"
+            else:
+                last = f"{r.status_code} @ {ep}"
         except (requests.RequestException, ValueError) as e:
             last = f"{e} @ {ep}"
         time.sleep(3.0 * (attempt + 1))
+    if last and last.startswith("empty-200"):
+        return {"elements": []}
     raise FetchError(f"overpass failed: {last}")
 
 

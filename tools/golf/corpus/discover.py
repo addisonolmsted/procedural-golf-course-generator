@@ -81,7 +81,8 @@ def _jaccard(a: str, b: str) -> float:
     ta = {w for w in a.lower().replace("&", " ").split() if w not in STOP}
     tb = {w for w in b.lower().replace("&", " ").split() if w not in STOP}
     if not ta or not tb:
-        return 0.0
+        # stopword-only names ("The Country Club") -- exact-string fallback
+        return 1.0 if a.lower().strip() == b.lower().strip() and a.strip() else 0.0
     return len(ta & tb) / len(ta | tb)
 
 
@@ -148,6 +149,14 @@ def run_curated(limit: int | None = None) -> tuple[int, int]:
     got = miss = 0
     for (key, label, geocode, arch) in curated_list()[:limit]:
         hits = net.nominatim(geocode)
+        if not hits:
+            # over-specific strings miss ("Bay Hill Club and Lodge, Orlando,
+            # Florida, USA"); retry name + last two locality tokens
+            parts = [t.strip() for t in geocode.split(",")]
+            if len(parts) >= 3:
+                hits = net.nominatim(", ".join([parts[0]] + parts[-2:]))
+        if not hits and "," in geocode:
+            hits = net.nominatim(geocode.split(",")[0] + ", USA")
         if not hits:
             miss += 1
             continue
