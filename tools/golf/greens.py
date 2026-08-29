@@ -39,6 +39,24 @@ N_BEARINGS = 16
 APPROACH_LO_M, APPROACH_HI_M = 60.0, 200.0
 EYE_M = 1.6
 
+# Pad-confirmation calibration, MEASURED against 519 OSM golf=green centroids
+# on the 22 cached real-course tiles (2026-08-29). The original gate
+# (r=16 m disc, 5% slope, 1.4 m relief -- playability.py's constants) passes
+# only 28% of real Nebraska greens and 23% of real Carolina ones: a real
+# green is a ~20 m flattish kernel inside SHAPED surrounds, not a 32 m flat
+# circle. Sweep:
+#     r16 5% 1.4m -> 28 / 23 %      r10 6% 1.6m -> 83 / 51 %
+#     r10 8% 2.2m -> 95 / 74 %  (Carolina stays lower: crowned Pinehurst
+#                                greens carry deliberate falloff)
+# NATURAL sites use the middle calibration; the GRADED class uses the loose
+# one and carries an earthwork cost -- "buildable with a bulldozer's help",
+# the second lever behind making every seed routable.
+SITE_R_M = 10.0
+NAT_SLOPE_RR = 0.06
+NAT_RELIEF_M = 1.6
+GRADED_SLOPE_RR = 0.08
+GRADED_RELIEF_M = 2.2
+
 TYPES = ("bench", "spur", "saddle", "punchbowl", "plateau", "dell",
          "valley_flat", "knoll", "generic")
 
@@ -52,6 +70,7 @@ class Candidate:
     persistence: float
     approach: np.ndarray            # (N_BEARINGS, 4): visible, recept, backdrop, room
     reserved: bool = False          # the loop-closure anchor slot
+    build: str = "natural"          # "natural" | "graded" (needs earthwork)
 
 
 # --------------------------------------------------------------------------
@@ -124,31 +143,32 @@ def confirm_2m(z2: np.ndarray, cell2: float, wet2: np.ndarray,
     prefilter over-admits (its slope is smoothed); this is the authoritative
     gate, run only on survivors — 400 x 32^2 cells instead of 1501^2.
     """
-    r = int(round(32.0 / cell2))
+    r = int(round(24.0 / cell2))
     y, x = int(round(y_m / cell2)), int(round(x_m / cell2))
     if y - r < 0 or x - r < 0 or y + r >= z2.shape[0] or x + r >= z2.shape[1]:
-        return False, (0.0, 0.0), 0.0
+        return False, (0.0, 0.0), 0.0, "none"
     zc = z2[y - r:y + r, x - r:x + r]
     wc = wet2[y - r:y + r, x - r:x + r]
-    n = int(round(play.GREEN_R / cell2))
+    n = int(round(SITE_R_M / cell2))
     yy, xx = np.mgrid[-r:r, -r:r]
     disc = (yy * yy + xx * xx) <= n * n
     if wc[disc].any():
-        return False, (0.0, 0.0), 0.0
+        return False, (0.0, 0.0), 0.0, "none"
     zd = zc[disc]
-    if zd.max() - zd.min() > play.GREEN_RELIEF:
-        return False, (0.0, 0.0), 0.0
-    # plane fit over the disc
+    relief = zd.max() - zd.min()
     A = np.stack([yy[disc] * cell2, xx[disc] * cell2,
                   np.ones(disc.sum())], 1)
     coef, *_ = np.linalg.lstsq(A, zd, rcond=None)
     gy, gx = float(coef[0]), float(coef[1])
-    if np.hypot(gy, gx) > GREEN_SLOPE_RR:
-        return False, (gy, gx), 0.0
+    grade = float(np.hypot(gy, gx))
     resid = float(np.sqrt(np.mean((zd - A @ coef) ** 2)))
-    if resid > 0.45:
-        return False, (gy, gx), resid
-    return True, (gy, gx), resid
+    if relief <= NAT_RELIEF_M and grade <= NAT_SLOPE_RR and resid <= 0.45:
+        return True, (gy, gx), resid, "natural"
+    if relief <= GRADED_RELIEF_M and grade <= GRADED_SLOPE_RR and resid <= 0.65:
+        # buildable with bounded cut/fill; the earthwork is roughly the
+        # residual volume over the pad
+        return True, (gy, gx), resid, "graded"
+    return False, (gy, gx), resid, "none"
 
 
 # --------------------------------------------------------------------------
@@ -272,7 +292,7 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
     cands: list[Candidate] = []
     for (y, x), (s0, kind) in ranked:
         y_m, x_m = y * f.cell, x * f.cell
-        ok, grad, resid = confirm_2m(z2, cell2, wet2, y_m, x_m)
+        ok, grad, resid, build = confirm_2m(z2, cell2, wet2, y_m, x_m)
         if not ok:
             continue
         tab = approach_table(f, y, x, grad)
@@ -281,9 +301,11 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
         score = (s0 + 1.2 * vis + 0.8 * recept
                  + 0.4 * np.clip(tab[:, 2], 0, 8).max() / 8.0
                  + 0.6 * tab[:, 3].max()
-                 - 2.0 * resid)
+                 - 2.0 * resid
+                 - (0.5 if build == "graded" else 0.0))
         cands.append(Candidate((y_m, x_m), kind, float(score), grad,
-                               float(max(p.pit[y, x], p.peak[y, x])), tab))
+                               float(max(p.pit[y, x], p.peak[y, x])), tab,
+                               build=build))
 
     # reserve the loop anchor: the candidate nearest the clubhouse's
     # reserved green, protected from thinning
@@ -295,7 +317,7 @@ def generate(z2, cell2, wet2, sit: Siting, f: Fields, m: Morphology,
             cands[k].reserved = True
         else:
             # no confirmed candidate near home: force-add the reserved pad
-            ok, grad, resid = confirm_2m(z2, cell2, wet2, gy, gx)
+            ok, grad, resid, build = confirm_2m(z2, cell2, wet2, gy, gx)
             tab = approach_table(f, int(round(gy / f.cell)),
                                  int(round(gx / f.cell)), grad)
             cands.append(Candidate((gy, gx), "generic", 0.5, grad, 0.0,
