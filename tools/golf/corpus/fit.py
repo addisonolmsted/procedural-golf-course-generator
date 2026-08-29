@@ -19,6 +19,24 @@ from . import config
 from .features import FEATURES
 
 FIT_FEATURES = [f for f in FEATURES if f not in ("pad_green", "confirm")]
+
+# CONSTRUCTION-SIGNATURE FEATURES — measured 2026-08-29, 429 courses.
+# The corpus DEM is POST-construction: a real green is a graded, smoothed,
+# plane-fitted surface, so these features detect "this ground was already
+# bulldozed" rather than "this is a good site". subgrid_rough ALONE scores
+# held-out AUC 0.700; the 6 build features together 0.772, against 0.793 for
+# the 25 setting features and 0.850 for all 31. Shipping the full model would
+# aim the generator at ground that is already smooth -- i.e. flat and dull,
+# the exact failure the surround-relief term was added to fix.
+# The clincher: in sandhills_nc (pine canopy, noisy bare-earth returns) the
+# smoothness signature is absent -- greens 0.116 vs controls 0.143 rough,
+# against 0.070 vs 0.169 in sandhills_ne -- and the full model there scores
+# 0.464, WORSE than chance, while setting-only scores 0.538. A feature that
+# inverts where the DEM is noisy is not a site-selection signal.
+BUILD_FEATURES = ["subgrid_rough", "resid", "slope", "graded",
+                  "curv_plan", "curv_prof"]
+# What ships: only what a site selector could see on virgin ground.
+SHIP_FEATURES = [f for f in FIT_FEATURES if f not in BUILD_FEATURES]
 SEED = 20260829
 
 
@@ -150,31 +168,49 @@ def run(l2=1.0) -> dict:
     train_c, held_c = split_courses(rows)
     tr = [r for r in rows if r["course_id"] in train_c]
     he = [r for r in rows if r["course_id"] in held_c]
-    X, y, w = design(tr)
+    y_he = [r["label"] for r in he]
+    # the SHIPPED model: setting features only (see BUILD_FEATURES above)
+    X, y, w = design(tr, SHIP_FEATURES)
     beta, mu, sd = irls_logistic(X, y, w, l2=l2)
-    coeffs, b0 = raw_units(beta, mu, sd, FIT_FEATURES)
+    coeffs, b0 = raw_units(beta, mu, sd, SHIP_FEATURES)
+    # the full model, kept for the leakage record only
+    Xf, yf, wf = design(tr, FIT_FEATURES)
+    bf, muf, sdf = irls_logistic(Xf, yf, wf, l2=l2)
+    cf, b0f = raw_units(bf, muf, sdf, FIT_FEATURES)
 
     res = dict(n_train_rows=len(tr), n_held_rows=len(he),
                n_train_courses=len(train_c), n_held_courses=len(held_c),
                coeffs=coeffs, intercept=b0, l2=l2, seed=SEED,
-               features=FIT_FEATURES)
-    res["auc_held_fitted"] = auc(score_rows(he, coeffs, b0),
-                                 [r["label"] for r in he])
+               features=SHIP_FEATURES,
+               leakage=dict(note="build features excluded from the shipped "
+                            "model; see BUILD_FEATURES in fit.py",
+                            full_coeffs=cf, full_intercept=b0f,
+                            auc_held_full=auc(score_rows(he, cf, b0f,
+                                                         FIT_FEATURES), y_he),
+                            auc_held_build_only=None))
+    Xb, yb, wb = design(tr, BUILD_FEATURES)
+    bb, mub, sdb = irls_logistic(Xb, yb, wb, l2=l2)
+    cb, b0b = raw_units(bb, mub, sdb, BUILD_FEATURES)
+    res["leakage"]["auc_held_build_only"] = auc(
+        score_rows(he, cb, b0b, BUILD_FEATURES), y_he)
+    res["auc_held_fitted"] = auc(score_rows(he, coeffs, b0, SHIP_FEATURES),
+                                 y_he)
     res["auc_held_hand"] = auc(hand_score(he), [r["label"] for r in he])
-    res["auc_train_fitted"] = auc(score_rows(tr, coeffs, b0),
+    res["auc_train_fitted"] = auc(score_rows(tr, coeffs, b0, SHIP_FEATURES),
                                   [r["label"] for r in tr])
     # unweighted-fame ablation (fame effect must be visible, plan rule)
     beta_u, mu_u, sd_u = irls_logistic(X, y, np.ones(len(y)), l2=l2)
-    cu, b0u = raw_units(beta_u, mu_u, sd_u, FIT_FEATURES)
-    res["auc_held_unweighted"] = auc(score_rows(he, cu, b0u),
-                                     [r["label"] for r in he])
+    cu, b0u = raw_units(beta_u, mu_u, sd_u, SHIP_FEATURES)
+    res["auc_held_unweighted"] = auc(score_rows(he, cu, b0u, SHIP_FEATURES),
+                                     y_he)
     # per-region held-out AUC
     regs = sorted({r["region"] for r in he})
     res["auc_held_by_region"] = {
-        g: auc(score_rows([r for r in he if r["region"] == g], coeffs, b0),
+        g: auc(score_rows([r for r in he if r["region"] == g], coeffs, b0,
+                          SHIP_FEATURES),
                [r["label"] for r in he if r["region"] == g])
         for g in regs if sum(r["region"] == g for r in he) > 40}
-    res["ci90"] = bootstrap_ci(tr, FIT_FEATURES, l2=l2)
+    res["ci90"] = bootstrap_ci(tr, SHIP_FEATURES, l2=l2)
     out = config.OUT / "fitted"
     out.mkdir(parents=True, exist_ok=True)
     (out / "coeffs.json").write_text(json.dumps(res, indent=1, sort_keys=True))

@@ -95,3 +95,118 @@ window fitting; greens still feed the scorer). Yellow dots = assigned greens.</p
     dest = path or (config.OUT / "phase1.html")
     dest.write_text(html)
     return str(dest)
+
+
+def _hillshade(z, cell, wet=None, px=420):
+    """Tinted hillshade, branch-standard params (course-lab::render_terrain)."""
+    import io, base64
+    from PIL import Image
+    k = max(1, int(round(z.shape[0] / px)))
+    z = z[::k, ::k].astype(np.float64)
+    if wet is not None:
+        wet = wet[::k, ::k][:z.shape[0], :z.shape[1]]
+    cell = cell * k
+    z = np.where(np.isfinite(z), z, np.nanmean(z))
+    az, alt = np.radians(315.0), np.radians(45.0)
+    L = (np.cos(az) * np.cos(alt), np.sin(az) * np.cos(alt), np.sin(alt))
+    gy, gx = np.gradient(z * 2.4, cell)
+    lam = ((-gx) * L[0] + (-gy) * L[1] + L[2]) / np.sqrt(gx**2 + gy**2 + 1.0)
+    shade = np.clip(lam, 0, None) ** 1.15
+    lo, hi = np.percentile(z, 2), np.percentile(z, 98)
+    t = np.clip((z - lo) / max(hi - lo, 1e-6), 0, 1)
+    ramp = [(0.00, (0.34, 0.50, 0.29)), (0.40, (0.62, 0.62, 0.38)),
+            (0.75, (0.78, 0.68, 0.44)), (1.00, (0.87, 0.79, 0.60))]
+    rgb = np.zeros(z.shape + (3,))
+    for i in range(len(ramp) - 1):
+        a, ca = ramp[i]; b, cb = ramp[i + 1]
+        m = (t >= a) & (t <= b)
+        f = np.where(m, (t - a) / (b - a), 0)
+        for c in range(3):
+            rgb[..., c] = np.where(m, ca[c] + (cb[c] - ca[c]) * f, rgb[..., c])
+    img = np.clip((rgb * 0.85 + 0.15) * (0.25 + 0.95 * shade)[..., None] * 235,
+                  0, 255)
+    if wet is not None and wet.any():
+        img[wet] = img[wet] * 0.3 + np.array([38, 86, 140]) * 0.7
+    im = Image.fromarray(np.flipud(img.astype(np.uint8)))
+    b = io.BytesIO(); im.save(b, "WEBP", quality=86)
+    return ("data:image/webp;base64,"
+            + base64.b64encode(b.getvalue()).decode()), k
+
+
+def phase2(per_region: int = 3, path=None) -> str:
+    """Georeferencing gate: greens + boundary drawn ON the hillshade.
+
+    The check a human makes here is whether the yellow dots sit on the pale
+    smooth ovals. Four transforms stack between OSM lat/lon and a tile pixel
+    (UTM, origin snap, north/south row flip, shoelace centroid); if any is
+    wrong the fit learns noise while reporting a healthy AUC."""
+    import pathlib
+    from . import geo
+    _T = pathlib.Path(__file__).resolve().parents[2]
+    import sys
+    if str(_T / "macro_campaign") not in sys.path:
+        sys.path.insert(0, str(_T / "macro_campaign"))
+    from macro_campaign import cgrid
+
+    recs = [r for r in registry.all_records()
+            if r["status"] == "keeper" and r.get("tile", {}).get("path")]
+    by_region = {}
+    for r in sorted(recs, key=lambda r: (-r.get("fame_tier", 1),
+                                         r["course_id"])):
+        by_region.setdefault(r["region_tag"], []).append(r)
+    cards = ""
+    for reg in sorted(by_region):
+        for rec in by_region[reg][:per_region]:
+            t = rec["tile"]
+            z, (_, _, cell) = cgrid.read_f32(pathlib.Path(t["path"]))
+            wp = pathlib.Path(t["path"]).with_suffix(".water.npy")
+            wet = np.load(wp) if wp.exists() else None
+            uri, k = _hillshade(z, cell, wet)
+            sc = cell * k                      # metres per rendered pixel
+            n = int(np.ceil(z.shape[0] / k))
+            ring = np.array(rec["osm"]["ring_ll"], float)
+            rm = geo.ll_to_m(ring[:, 0], ring[:, 1], rec["utm"]["zone"])
+            rl = rm - np.array([t["n0"], t["e0"]])
+            poly = " ".join(f"{x / sc:.1f},{n - y / sc:.1f}" for (y, x) in rl)
+            gs = np.array([[g["yx_utm"][0] - t["n0"], g["yx_utm"][1] - t["e0"]]
+                           for g in rec["greens"]], float)
+            dots = "".join(
+                f'<circle cx="{x / sc:.1f}" cy="{n - y / sc:.1f}" r="3.4" '
+                f'fill="none" stroke="#faf03c" stroke-width="1.6"/>'
+                for (y, x) in gs)
+            cards += f"""<figure>
+<div class="ov" style="--n:{n}">
+<img src="{uri}" width="{n}" height="{n}">
+<svg viewBox="0 0 {n} {n}"><polygon points="{poly}" fill="none"
+stroke="#e85d3d" stroke-width="1.6" stroke-dasharray="5 3"/>{dots}</svg></div>
+<figcaption><b>{rec['name'][:34]}</b><br>{reg} · tier
+{rec.get('fame_tier',1)} · {len(gs)} greens · {t['side_m']:.0f} m tile
+· water {(wet.mean()*100 if wet is not None else 0):.1f}%</figcaption>
+</figure>"""
+    html = f"""<title>Corpus phase 2 — georeferencing gate</title>
+<style>
+:root{{--bg:#f3f1ea;--ink:#1c1a16;--dim:#6d675b;--line:#dcd6c7;--card:#fffdf7}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme=light]){{--bg:#12120e;--ink:#e9e5da;--dim:#948d7f;--line:#2f2b23;--card:#1b1a15}}}}
+:root[data-theme=dark]{{--bg:#12120e;--ink:#e9e5da;--dim:#948d7f;--line:#2f2b23;--card:#1b1a15}}
+*{{box-sizing:border-box}}body{{background:var(--bg);color:var(--ink);margin:0;
+padding:2rem 1.4rem 4rem;font:15px/1.6 ui-sans-serif,system-ui}}
+main{{max-width:1200px;margin:0 auto}}h1{{font-size:1.5rem;margin:0 0 .3rem}}
+p{{color:var(--dim);max-width:66ch}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem;margin-top:1.5rem}}
+figure{{margin:0;background:var(--card);border:1px solid var(--line);
+border-radius:4px;overflow:hidden}}
+.ov{{position:relative;line-height:0}}
+.ov img,.ov svg{{width:100%;height:auto;display:block}}
+.ov svg{{position:absolute;inset:0}}
+figcaption{{padding:.5rem .6rem;font-size:12px;color:var(--dim)}}
+</style>
+<main><h1>Phase 2 — do the greens land on the greens?</h1>
+<p>Yellow rings are OSM green centroids projected through UTM → tile origin →
+row flip; the dashed red line is the course boundary. The check: rings should
+sit on the pale, smooth, faintly raised ovals. A systematic offset, mirror, or
+rotation here means every downstream feature is measured at the wrong place —
+and no metric would catch it.</p>
+<div class="grid">{cards}</div></main>"""
+    dest = path or (config.OUT / "phase2.html")
+    dest.write_text(html)
+    return str(dest)

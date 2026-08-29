@@ -32,7 +32,12 @@ def osm_water(rec: dict, shape, cell: float) -> tuple[np.ndarray, int]:
     lat, lon = rec["centroid_ll"]
     half_deg = (t["side_m"] / 2 + 400.0) / 111_000.0
     bbox = f"{lat-half_deg},{lon-half_deg},{lat+half_deg},{lon+half_deg}"
-    els = net.overpass(QUERY.format(b=bbox)).get("elements", [])
+    # Water queries over lake-dense regions (Michigan moraine) return
+    # megabyte responses and the mirrors time out; a stalled run cost 24
+    # minutes on one course. OSM water is an ENHANCEMENT over the flat-plane
+    # detector, not a prerequisite -- fail fast and let the caller fall back.
+    els = net.overpass(QUERY.format(b=bbox), tries=2,
+                       timeout=60).get("elements", [])
     im = Image.new("1", (shape[1], shape[0]), 0)
     dr = ImageDraw.Draw(im)
     n_poly = 0
@@ -50,7 +55,8 @@ def osm_water(rec: dict, shape, cell: float) -> tuple[np.ndarray, int]:
 
 
 def run(limit: int | None = None) -> dict:
-    stats = {"written": 0, "cached": 0, "skipped": 0, "failed": 0}
+    stats = {"written": 0, "cached": 0, "skipped": 0, "failed": 0,
+             "flat_only": 0}
     seen = set()
     for rec in registry.all_records()[:limit]:
         t = rec.get("tile")
@@ -67,13 +73,21 @@ def run(limit: int | None = None) -> dict:
             continue
         try:
             z, (_, _, cell) = cgrid.read_f32(tile)
-            mask, n_poly = osm_water(rec, z.shape, cell)
             zz = np.where(np.isfinite(z), z, np.nanmean(z)).astype(np.float64)
-            union = mask | flat_water(zz, cell)
-            np.save(dest, union)
+            try:
+                mask, _ = osm_water(rec, z.shape, cell)
+                src = "osm+flat"
+            except Exception as exc:                  # noqa: BLE001
+                print(f"  [osm-skip] {rec['course_id']}: {exc}", flush=True)
+                mask = np.zeros(z.shape, bool)
+                src = "flat"
+                stats["flat_only"] += 1
+            np.save(dest, mask | flat_water(zz, cell))
+            rec["water_mask"] = dict(path=str(dest), source=src)
+            registry.write(rec)
             stats["written"] += 1
         except Exception as exc:                      # noqa: BLE001
-            print(f"  [fail] {rec['course_id']}: {exc}")
+            print(f"  [fail] {rec['course_id']}: {exc}", flush=True)
             stats["failed"] += 1
     (config.OUT / "water_report.json").write_text(json.dumps(stats, indent=1))
     return stats

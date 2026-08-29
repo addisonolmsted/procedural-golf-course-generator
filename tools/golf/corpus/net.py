@@ -38,7 +38,7 @@ def _cache_path(kind: str, key: str) -> pathlib.Path:
     return d / f"{h}.json"
 
 
-def overpass(query: str, tries: int = 4) -> dict:
+def overpass(query: str, tries: int = 4, timeout: int = 180) -> dict:
     cp = _cache_path("overpass", query)
     if cp.exists():
         return json.loads(cp.read_text())
@@ -48,7 +48,7 @@ def overpass(query: str, tries: int = 4) -> dict:
         _sleep("overpass", config.COURTESY_SLEEP_S)
         try:
             r = requests.post(ep, data={"data": query}, headers=config.UA,
-                              timeout=180)
+                              timeout=timeout)
             if r.status_code == 200:
                 out = r.json()
                 # Overpass sometimes 200s with zero elements and no remark

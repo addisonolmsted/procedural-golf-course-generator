@@ -42,6 +42,9 @@ def main():
     elif cmd == "report1":
         from . import report
         print(report.phase1())
+    elif cmd == "report2":
+        from . import report
+        print(report.phase2())
     elif cmd == "index":
         print(registry.write_index())
     else:
