@@ -55,16 +55,30 @@ def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
 
 
 def classify(z: np.ndarray, cell: float, lookup_m: float = 500.0,
-             skip_m: float = 20.0, flat_deg: float = 1.0) -> np.ndarray:
-    """Geomorphon class raster (uint8, 0 = undefined/nodata edge)."""
+             skip_m: float = 20.0, flat_deg: float = 1.0,
+             return_dirs: bool = False):
+    """Geomorphon class raster (uint8, 0 = undefined/nodata edge).
+
+    With `return_dirs`, also returns the per-direction ternary as two uint8
+    bitmasks `(plus_bits, minus_bits)`, bit k = direction `_DIRS[k]`. The
+    class lookup indexes only the COUNTS and throws the arrangement away —
+    but the arrangement is where saddles live (two opposed rising directions
+    crossing two opposed falling ones), and it is a free by-product here.
+
+    EDGE CAUTION: rays that leave the array see nothing, so cells within
+    `lookup_m` of the edge classify toward `flat` — an artifact of the mask,
+    not the terrain. Use `collar_px(lookup_m, cell)` to exclude them.
+    """
     z = z.astype(np.float64)
     t = np.tan(np.radians(flat_deg))
     n_steps_max = max(int(round(lookup_m / cell)), 2)
     step0 = max(int(round(skip_m / cell)), 1)
     n_plus = np.zeros(z.shape, np.uint8)
     n_minus = np.zeros(z.shape, np.uint8)
+    plus_bits = np.zeros(z.shape, np.uint8)
+    minus_bits = np.zeros(z.shape, np.uint8)
     valid = np.isfinite(z)
-    for dy, dx in _DIRS:
+    for k, (dy, dx) in enumerate(_DIRS):
         diag = np.hypot(dy, dx)
         A = np.full(z.shape, -np.inf)   # max elevation tangent
         B = np.full(z.shape, -np.inf)   # max depression tangent
@@ -82,9 +96,64 @@ def classify(z: np.ndarray, cell: float, lookup_m: float = 500.0,
         minus = seen & ((Af - Bf) > t)  # land rises -> locally low
         n_plus += plus.astype(np.uint8)
         n_minus += minus.astype(np.uint8)
+        plus_bits |= (plus.astype(np.uint8) << k)
+        minus_bits |= (minus.astype(np.uint8) << k)
     cls = LOOKUP[n_plus.ravel(), n_minus.ravel()].reshape(z.shape)
     cls[~valid] = 0
+    if return_dirs:
+        return cls, plus_bits, minus_bits
     return cls
+
+
+def collar_px(lookup_m: float, cell: float) -> int:
+    """Edge collar inside which classes are mask artifacts (see `classify`)."""
+    return int(np.ceil(lookup_m / cell))
+
+
+# Direction angles for `_DIRS[k]`, radians, y NORTH-up world convention:
+# _DIRS is (dy, dx) in ARRAY rows, so world bearing = atan2(-dy, dx) if row 0
+# is north. Our grids are row 0 = SOUTH (origin SW), so bearing = atan2(dy, dx).
+DIR_ANGLES = np.array([np.arctan2(dy, dx) for dy, dx in _DIRS])
+
+
+def saddle_axes(plus_bits: np.ndarray, minus_bits: np.ndarray,
+                axial_min: float = 0.8):
+    """Saddles from the per-direction ternary, with their two axes.
+
+    A saddle is >= 2 rising directions and >= 2 falling directions, each set
+    axially aligned (antipodal pairs), the two axes roughly perpendicular.
+    Doubling the angle makes antipodal directions coincide, so axial
+    alignment is just the resultant length of `e^{i 2 theta}` over the set.
+
+    Returns `(saddle_mask, fall_axis_rad, rise_axis_rad)`; the axes are in
+    `[0, pi)` and are the OPEN (fall-away) and BLOCKED (ridge) axes — the
+    free approach-bearing prior.
+    """
+    e2 = np.exp(2j * DIR_ANGLES)
+    shape = plus_bits.shape
+    P = np.zeros(shape, np.complex128)
+    M = np.zeros(shape, np.complex128)
+    n_p = np.zeros(shape, np.int16)
+    n_m = np.zeros(shape, np.int16)
+    for k in range(8):
+        pb = (plus_bits >> k) & 1
+        mb = (minus_bits >> k) & 1
+        P += pb * e2[k]
+        M += mb * e2[k]
+        n_p += pb
+        n_m += mb
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ax_p = np.abs(P) / np.maximum(n_p, 1)
+        ax_m = np.abs(M) / np.maximum(n_m, 1)
+    fall = np.mod(np.angle(P) / 2.0, np.pi)
+    rise = np.mod(np.angle(M) / 2.0, np.pi)
+    # perpendicularity of the two axes, in axial space
+    d = np.mod(fall - rise, np.pi)
+    perp = np.minimum(d, np.pi - d)          # [0, pi/2]
+    saddle = ((n_p >= 2) & (n_m >= 2)
+              & (ax_p > axial_min) & (ax_m > axial_min)
+              & (perp > np.pi / 2 - np.pi / 6))   # within 30 deg of square
+    return saddle, fall, rise
 
 
 def class_fractions(cls: np.ndarray, collar_px: int = 0) -> dict:
