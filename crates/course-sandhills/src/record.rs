@@ -467,7 +467,17 @@ pub const SANDHILLS: Record = Record {
     // Sandhills' lake districts sit where the table grazes the floors, and a
     // uniform draw over the full range made a lake-forming table (< 2 m) a
     // 7% event -- measured 0/40 draws. Deep-table dry tiles stay common.
-    water_table_m: Range::new(0.4, 14.0),    // literature: Ogallala intersects
+    // Floor raised 0.4 -> 3.0 (measured, 100-seed pass 2026-08-28). The
+    // SHALLOW end of this range is what produces the wet tail: at 0.4 m the
+    // flat table plane floods three interdune corridors at once on the
+    // wettest seeds (7.3% water on seed 500024, against an aeolian median of
+    // 0.44%), and the long land spits that read as odd are a consequence of
+    // THAT, not of the lake geometry -- which measured inside the real
+    // envelope (neck 16 m against a real median of 8 m; spit straightness
+    // 0.099 against 0.081, i.e. ours is less straight than real).
+    // Trims the tail without moving the median: max wet 7.30 -> 4.95%,
+    // p90 4.04 -> 3.34, median 0.44 -> 0.36.
+    water_table_m: Range::new(3.0, 14.0),    // literature: Ogallala intersects
     cap_relief_m: Range::new(36.0, 54.0),    // corpus: 46.9
     cap_wave_m: Range::new(750.0, 1300.0),   // guess, d2c-bounded
     cap_flat: Range::new(0.35, 0.7),         // guess
