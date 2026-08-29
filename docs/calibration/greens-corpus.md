@@ -82,11 +82,15 @@ pool is proposed by the old typed-family detectors + room, and only scored
 afterwards — the fitted score's maxima are simply absent from the pool.
 Quadratic terms were added (`FIT_COEF_SQ`, held-out AUC 0.7928 → 0.8319,
 inverted-U optima near the real-green p90) but cannot fix what seeding never
-proposes. **Next round: score-driven seeding** — a cheap field-only score at
-8 m proposes the top ~400 spaced cells; approach terms + confirm refine.
-(One verification owed first: corpus features use the real course polygon
-and polygon-bbox persistence where generate uses window-edge and window
-persistence — confirm the percentile result survives that definition gap.)
+proposes. **Fixed same evening (b624e8b): score-driven proposer** — `field_score()`
+hotspot seeds + score-keyed pre-thinning. Top-9 7→16% (random parity),
+top-30 23→38%, green percentile within pool 100→84 (p25 51) — verified
+under generate's own d_boundary/persistence definitions. Full 72-course
+eval: within-60 36→53%, within-100 78→86% (density-confounded levels, but
+the per-course tally is 43 wins / 14 ties / 15 losses), dispersion gate
+PASS. The residual top-K gap to the random null is coverage-vs-precision,
+not scorer failure: a window holds many sites as good as the architect's
+routable subset.
 
 ## Recall (the original A/B — deltas valid, levels density-confounded)
 
