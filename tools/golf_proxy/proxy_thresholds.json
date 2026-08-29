@@ -1,23 +1,27 @@
 {
- "version": 1,
- "n_courses": 64,
- "source": "macro_campaign/out/courses (real 3DEP course grids)",
+ "version": 2,
+ "n_courses": 58,
+ "window_m": null,
+ "source": "macro_campaign/out/courses (real 3DEP course grids, deduped)",
  "cap_rise_over_run": 0.08,
  "steep_rise_over_run": 0.15,
  "thresholds": {
   "frac_under_cap": {
-   "floor": 0.40870293333333335
+   "floor": 0.40314
   },
   "frac_under_steep": {
-   "floor": 0.7134725777777778
+   "floor": 0.6954787111111111
   },
   "largest_contig_ha": {
-   "floor": 123.67632
+   "floor": 116.6934
+  },
+  "largest_contig_frac": {
+   "floor": 0.12965933333333332
   },
   "relief_p95_p5": {
    "band": [
-    7.0330064773559515,
-    81.85365749359126
+    6.545932040214534,
+    83.25618232727045
    ]
   }
  },
@@ -439,60 +443,12 @@
    "course": "036005_080157"
   },
   {
-   "frac_under_cap": 0.7375862222222223,
-   "frac_under_steep": 0.9572928888888889,
-   "largest_contig_ha": 598.6212,
-   "relief_p95_p5": 29.428689575195307,
-   "archetype": "sandhills",
-   "course": "035164_079438"
-  },
-  {
-   "frac_under_cap": 0.746604,
-   "frac_under_steep": 0.9634173333333333,
-   "largest_contig_ha": 627.224,
-   "relief_p95_p5": 44.74032783508301,
-   "archetype": "sandhills",
-   "course": "035167_079450"
-  },
-  {
-   "frac_under_cap": 0.6648453333333333,
-   "frac_under_steep": 0.9527342222222223,
-   "largest_contig_ha": 527.4212,
-   "relief_p95_p5": 39.1063087463379,
-   "archetype": "sandhills",
-   "course": "035171_079568"
-  },
-  {
    "frac_under_cap": 0.750428,
    "frac_under_steep": 0.9561982222222222,
    "largest_contig_ha": 621.6348,
    "relief_p95_p5": 47.91772346496579,
    "archetype": "sandhills",
    "course": "035186_079423"
-  },
-  {
-   "frac_under_cap": 0.7273866666666666,
-   "frac_under_steep": 0.97162,
-   "largest_contig_ha": 616.516,
-   "relief_p95_p5": 33.508874511718744,
-   "archetype": "sandhills",
-   "course": "035204_079512"
-  },
-  {
-   "frac_under_cap": 0.7126324444444444,
-   "frac_under_steep": 0.9564017777777778,
-   "largest_contig_ha": 593.1548,
-   "relief_p95_p5": 43.80089759826657,
-   "archetype": "sandhills",
-   "course": "035218_079440"
-  },
-  {
-   "frac_under_cap": 0.6930164444444444,
-   "frac_under_steep": 0.9587422222222223,
-   "largest_contig_ha": 532.0492,
-   "relief_p95_p5": 35.73411788940429,
-   "archetype": "sandhills",
-   "course": "035225_079420"
   },
   {
    "frac_under_cap": 0.6620991111111111,

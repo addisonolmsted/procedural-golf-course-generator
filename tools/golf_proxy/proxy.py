@@ -92,10 +92,20 @@ def score_surface(z: np.ndarray, cell: float, thresholds: dict) -> dict:
 
 # ----------------------------------------------------------------- commands
 
-def cmd_measure() -> int:
+def cmd_measure(window_m: float | None = None) -> int:
+    """Measure the real-course floors; with `window_m`, measure the CENTRED
+    window crop of each course instead of the full grid and write the
+    parallel `proxy_thresholds_window<w>.json`.
+
+    The window variant exists because the full-grid `largest_contig_ha`
+    floor (123.7 ha, fitted on 900 ha grids) is UNSATISFIABLE on a play
+    window -- an 800 m window is 64 ha total -- so applying it there
+    silently disabled the term. Same instrument, honest scale.
+    """
     from macro_campaign import cgrid
 
     rows = []
+    seen: set[str] = set()
     for arch in sorted(os.listdir(COURSES)):
         d = os.path.join(COURSES, arch)
         if not os.path.isdir(d):
@@ -103,11 +113,24 @@ def cmd_measure() -> int:
         for f in sorted(os.listdir(d)):
             if not f.endswith(".cgrid"):
                 continue
+            # DEDUPE by course id. Six Carolina tiles are filed under both
+            # `piedmont` and `sandhills`; the old floors counted them twice
+            # (n_courses said 64, the unique count is 58).
+            cid = f[:-6]
+            if cid in seen:
+                print(f"  {arch}/{cid}: duplicate of an earlier archetype, skipped")
+                continue
+            seen.add(cid)
             z, (_ox, _oy, cell) = cgrid.read_f32(os.path.join(d, f))
+            if window_m is not None:
+                n = int(round(window_m / cell))
+                y0 = (z.shape[0] - n) // 2
+                x0 = (z.shape[1] - n) // 2
+                z = z[y0:y0 + n, x0:x0 + n]
             q = quantities(z.astype(np.float64), cell)
-            q.update(archetype=arch, course=f[:-6])
+            q.update(archetype=arch, course=cid)
             rows.append(q)
-            print(f"  {arch}/{f[:-6]}: cap {q['frac_under_cap']:.2f}  "
+            print(f"  {arch}/{cid}: cap {q['frac_under_cap']:.2f}  "
                   f"contig {q['largest_contig_ha']:.0f} ha  "
                   f"relief {q['relief_p95_p5']:.1f} m")
     if not rows:
@@ -119,23 +142,34 @@ def cmd_measure() -> int:
 
     # Floors at the REAL p10: 90% of real course sites clear them. Relief is
     # a band (p5..p95): golf wants some relief, not unlimited relief.
+    area_ha = None
+    if window_m is not None:
+        area_ha = window_m * window_m / 1e4
     out = {
-        "version": 1,
+        "version": 2,
         "n_courses": len(rows),
-        "source": "macro_campaign/out/courses (real 3DEP course grids)",
+        "window_m": window_m,
+        "source": "macro_campaign/out/courses (real 3DEP course grids, deduped)",
         "cap_rise_over_run": CAP,
         "steep_rise_over_run": STEEP,
         "thresholds": {
             "frac_under_cap": {"floor": float(np.percentile(col("frac_under_cap"), 10))},
             "frac_under_steep": {"floor": float(np.percentile(col("frac_under_steep"), 10))},
             "largest_contig_ha": {"floor": float(np.percentile(col("largest_contig_ha"), 10))},
+            # As a FRACTION of the measured area, so the floor survives a
+            # window-size change (percolation means it is still only valid at
+            # the scale it was measured -- re-measure, don't rescale).
+            "largest_contig_frac": {"floor": float(np.percentile(
+                col("largest_contig_ha"), 10) / (area_ha if area_ha else 900.0))},
             "relief_p95_p5": {"band": [float(np.percentile(col("relief_p95_p5"), 5)),
                                         float(np.percentile(col("relief_p95_p5"), 95))]},
         },
         "per_course": rows,
     }
-    json.dump(out, open(THRESHOLDS, "w"), indent=1)
-    print(f"\nwrote {THRESHOLDS} from {len(rows)} real courses")
+    dest = THRESHOLDS if window_m is None else os.path.join(
+        HERE, f"proxy_thresholds_window{int(window_m)}.json")
+    json.dump(out, open(dest, "w"), indent=1)
+    print(f"\nwrote {dest} from {len(rows)} real courses")
     t = out["thresholds"]
     print(f"  floors: cap>={t['frac_under_cap']['floor']:.2f}  "
           f"steep>={t['frac_under_steep']['floor']:.2f}  "
@@ -172,7 +206,8 @@ def cmd_score(path: str) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "measure":
-        raise SystemExit(cmd_measure())
+        w = float(sys.argv[2]) if len(sys.argv) >= 3 else None
+        raise SystemExit(cmd_measure(w))
     if len(sys.argv) >= 3 and sys.argv[1] == "score":
         raise SystemExit(cmd_score(sys.argv[2]))
     print(__doc__)

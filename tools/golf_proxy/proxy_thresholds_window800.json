@@ -1,0 +1,494 @@
+{
+ "version": 2,
+ "n_courses": 58,
+ "window_m": 800.0,
+ "source": "macro_campaign/out/courses (real 3DEP course grids, deduped)",
+ "cap_rise_over_run": 0.08,
+ "steep_rise_over_run": 0.15,
+ "thresholds": {
+  "frac_under_cap": {
+   "floor": 0.38838125
+  },
+  "frac_under_steep": {
+   "floor": 0.6599962500000001
+  },
+  "largest_contig_ha": {
+   "floor": 5.65648
+  },
+  "largest_contig_frac": {
+   "floor": 0.0883825
+  },
+  "relief_p95_p5": {
+   "band": [
+    3.247956638336184,
+    51.47994910240172
+   ]
+  }
+ },
+ "per_course": [
+  {
+   "frac_under_cap": 0.82129375,
+   "frac_under_steep": 0.949675,
+   "largest_contig_ha": 44.684,
+   "relief_p95_p5": 2.2075810909271247,
+   "archetype": "florida_lowland",
+   "course": "027443_081316"
+  },
+  {
+   "frac_under_cap": 0.8968125,
+   "frac_under_steep": 0.9784125,
+   "largest_contig_ha": 54.8016,
+   "relief_p95_p5": 2.1172138214111342,
+   "archetype": "florida_lowland",
+   "course": "027538_081521"
+  },
+  {
+   "frac_under_cap": 0.70729375,
+   "frac_under_steep": 0.85711875,
+   "largest_contig_ha": 25.5824,
+   "relief_p95_p5": 15.468356704711915,
+   "archetype": "florida_lowland",
+   "course": "027680_081938"
+  },
+  {
+   "frac_under_cap": 0.8535875,
+   "frac_under_steep": 0.9544375,
+   "largest_contig_ha": 51.6896,
+   "relief_p95_p5": 5.4056033134460435,
+   "archetype": "florida_lowland",
+   "course": "027889_082207"
+  },
+  {
+   "frac_under_cap": 0.8675375,
+   "frac_under_steep": 0.95021875,
+   "largest_contig_ha": 51.9776,
+   "relief_p95_p5": 3.2945854187011747,
+   "archetype": "florida_lowland",
+   "course": "028011_081647"
+  },
+  {
+   "frac_under_cap": 0.84435625,
+   "frac_under_steep": 0.943525,
+   "largest_contig_ha": 46.8156,
+   "relief_p95_p5": 2.9837268829345724,
+   "archetype": "florida_lowland",
+   "course": "028138_081470"
+  },
+  {
+   "frac_under_cap": 0.82683125,
+   "frac_under_steep": 0.9375375,
+   "largest_contig_ha": 35.7604,
+   "relief_p95_p5": 7.232093715667727,
+   "archetype": "florida_lowland",
+   "course": "028214_081548"
+  },
+  {
+   "frac_under_cap": 0.6478375,
+   "frac_under_steep": 0.82463125,
+   "largest_contig_ha": 25.4264,
+   "relief_p95_p5": 15.011882686614989,
+   "archetype": "florida_lowland",
+   "course": "028272_081591"
+  },
+  {
+   "frac_under_cap": 0.678025,
+   "frac_under_steep": 0.87581875,
+   "largest_contig_ha": 33.26,
+   "relief_p95_p5": 11.107408332824708,
+   "archetype": "florida_lowland",
+   "course": "028442_081626"
+  },
+  {
+   "frac_under_cap": 0.7886125,
+   "frac_under_steep": 0.934775,
+   "largest_contig_ha": 40.3796,
+   "relief_p95_p5": 7.6931539535522475,
+   "archetype": "florida_lowland",
+   "course": "028483_081527"
+  },
+  {
+   "frac_under_cap": 0.8249,
+   "frac_under_steep": 0.942125,
+   "largest_contig_ha": 48.2856,
+   "relief_p95_p5": 3.620248889923097,
+   "archetype": "florida_lowland",
+   "course": "028530_081177"
+  },
+  {
+   "frac_under_cap": 0.5622875,
+   "frac_under_steep": 0.72640625,
+   "largest_contig_ha": 16.2288,
+   "relief_p95_p5": 51.23034496307372,
+   "archetype": "florida_lowland",
+   "course": "028557_081706"
+  },
+  {
+   "frac_under_cap": 0.5072125,
+   "frac_under_steep": 0.69975625,
+   "largest_contig_ha": 24.4516,
+   "relief_p95_p5": 52.894372558593716,
+   "archetype": "glacial_moraine",
+   "course": "042737_088432"
+  },
+  {
+   "frac_under_cap": 0.7194125,
+   "frac_under_steep": 0.89889375,
+   "largest_contig_ha": 41.4824,
+   "relief_p95_p5": 20.8679229736328,
+   "archetype": "glacial_moraine",
+   "course": "042864_088225"
+  },
+  {
+   "frac_under_cap": 0.55975625,
+   "frac_under_steep": 0.834325,
+   "largest_contig_ha": 20.2064,
+   "relief_p95_p5": 26.327418518066395,
+   "archetype": "glacial_moraine",
+   "course": "043005_088351"
+  },
+  {
+   "frac_under_cap": 0.512425,
+   "frac_under_steep": 0.7403875,
+   "largest_contig_ha": 12.0884,
+   "relief_p95_p5": 35.581265258789074,
+   "archetype": "glacial_moraine",
+   "course": "043140_088366"
+  },
+  {
+   "frac_under_cap": 0.7881875,
+   "frac_under_steep": 0.955025,
+   "largest_contig_ha": 47.4076,
+   "relief_p95_p5": 13.627857971191418,
+   "archetype": "glacial_moraine",
+   "course": "043244_087956"
+  },
+  {
+   "frac_under_cap": 0.61979375,
+   "frac_under_steep": 0.87193125,
+   "largest_contig_ha": 28.1916,
+   "relief_p95_p5": 24.98743896484376,
+   "archetype": "glacial_moraine",
+   "course": "043245_088203"
+  },
+  {
+   "frac_under_cap": 0.57938125,
+   "frac_under_steep": 0.82969375,
+   "largest_contig_ha": 13.1328,
+   "relief_p95_p5": 12.928265380859386,
+   "archetype": "glacial_moraine",
+   "course": "043246_088402"
+  },
+  {
+   "frac_under_cap": 0.71605,
+   "frac_under_steep": 0.8632375,
+   "largest_contig_ha": 19.1748,
+   "relief_p95_p5": 18.056504058837902,
+   "archetype": "glacial_moraine",
+   "course": "043712_087810"
+  },
+  {
+   "frac_under_cap": 0.59205625,
+   "frac_under_steep": 0.7572875,
+   "largest_contig_ha": 5.456,
+   "relief_p95_p5": 18.33880615234375,
+   "archetype": "glacial_moraine",
+   "course": "043730_087771"
+  },
+  {
+   "frac_under_cap": 0.78098125,
+   "frac_under_steep": 0.91288125,
+   "largest_contig_ha": 44.174,
+   "relief_p95_p5": 12.376479339599598,
+   "archetype": "glacial_moraine",
+   "course": "043749_088481"
+  },
+  {
+   "frac_under_cap": 0.64215,
+   "frac_under_steep": 0.878675,
+   "largest_contig_ha": 28.5368,
+   "relief_p95_p5": 14.571177673339832,
+   "archetype": "glacial_moraine",
+   "course": "043792_088375"
+  },
+  {
+   "frac_under_cap": 0.45835625,
+   "frac_under_steep": 0.64489375,
+   "largest_contig_ha": 8.192,
+   "relief_p95_p5": 17.24738311767578,
+   "archetype": "glacial_moraine",
+   "course": "043851_087733"
+  },
+  {
+   "frac_under_cap": 0.16581875,
+   "frac_under_steep": 0.38561875,
+   "largest_contig_ha": 1.516,
+   "relief_p95_p5": 53.63458709716798,
+   "archetype": "mountain_bench",
+   "course": "035747_084234"
+  },
+  {
+   "frac_under_cap": 0.64420625,
+   "frac_under_steep": 0.8816625,
+   "largest_contig_ha": 24.5836,
+   "relief_p95_p5": 18.578895568847656,
+   "archetype": "mountain_bench",
+   "course": "035861_084189"
+  },
+  {
+   "frac_under_cap": 0.60060625,
+   "frac_under_steep": 0.8572125,
+   "largest_contig_ha": 30.9928,
+   "relief_p95_p5": 20.108605957031273,
+   "archetype": "mountain_bench",
+   "course": "035877_084190"
+  },
+  {
+   "frac_under_cap": 0.31160625,
+   "frac_under_steep": 0.60013125,
+   "largest_contig_ha": 3.1096,
+   "relief_p95_p5": 36.969383239746094,
+   "archetype": "mountain_bench",
+   "course": "035890_084082"
+  },
+  {
+   "frac_under_cap": 0.46811875,
+   "frac_under_steep": 0.7563875,
+   "largest_contig_ha": 15.5888,
+   "relief_p95_p5": 35.222338867187545,
+   "archetype": "mountain_bench",
+   "course": "035892_085009"
+  },
+  {
+   "frac_under_cap": 0.45828125,
+   "frac_under_steep": 0.67389375,
+   "largest_contig_ha": 14.6296,
+   "relief_p95_p5": 50.39410552978515,
+   "archetype": "mountain_bench",
+   "course": "035975_084331"
+  },
+  {
+   "frac_under_cap": 0.3503625,
+   "frac_under_steep": 0.80589375,
+   "largest_contig_ha": 6.1088,
+   "relief_p95_p5": 42.3566833496094,
+   "archetype": "mountain_bench",
+   "course": "035999_084888"
+  },
+  {
+   "frac_under_cap": 0.247575,
+   "frac_under_steep": 0.464475,
+   "largest_contig_ha": 1.1388,
+   "relief_p95_p5": 48.222251892089844,
+   "archetype": "mountain_bench",
+   "course": "036013_084177"
+  },
+  {
+   "frac_under_cap": 0.48109375,
+   "frac_under_steep": 0.75188125,
+   "largest_contig_ha": 19.108,
+   "relief_p95_p5": 38.44807128906251,
+   "archetype": "mountain_bench",
+   "course": "036038_084883"
+  },
+  {
+   "frac_under_cap": 0.203775,
+   "frac_under_steep": 0.3738625,
+   "largest_contig_ha": 3.6736,
+   "relief_p95_p5": 95.67917785644528,
+   "archetype": "mountain_bench",
+   "course": "036347_084006"
+  },
+  {
+   "frac_under_cap": 0.6714125,
+   "frac_under_steep": 0.9389,
+   "largest_contig_ha": 24.0916,
+   "relief_p95_p5": 20.23990287780761,
+   "archetype": "piedmont",
+   "course": "035164_079438"
+  },
+  {
+   "frac_under_cap": 0.86215625,
+   "frac_under_steep": 0.973575,
+   "largest_contig_ha": 53.7668,
+   "relief_p95_p5": 14.28319778442382,
+   "archetype": "piedmont",
+   "course": "035167_079450"
+  },
+  {
+   "frac_under_cap": 0.80351875,
+   "frac_under_steep": 0.9855,
+   "largest_contig_ha": 47.6348,
+   "relief_p95_p5": 17.180609893798817,
+   "archetype": "piedmont",
+   "course": "035171_079568"
+  },
+  {
+   "frac_under_cap": 0.88735,
+   "frac_under_steep": 0.98808125,
+   "largest_contig_ha": 56.1876,
+   "relief_p95_p5": 14.68436508178712,
+   "archetype": "piedmont",
+   "course": "035204_079512"
+  },
+  {
+   "frac_under_cap": 0.75931875,
+   "frac_under_steep": 0.9737125,
+   "largest_contig_ha": 43.558,
+   "relief_p95_p5": 16.16194496154786,
+   "archetype": "piedmont",
+   "course": "035218_079440"
+  },
+  {
+   "frac_under_cap": 0.60215,
+   "frac_under_steep": 0.8641125,
+   "largest_contig_ha": 17.0376,
+   "relief_p95_p5": 18.90787124633789,
+   "archetype": "piedmont",
+   "course": "035221_080691"
+  },
+  {
+   "frac_under_cap": 0.47131875,
+   "frac_under_steep": 0.8994625,
+   "largest_contig_ha": 10.0764,
+   "relief_p95_p5": 20.60596008300783,
+   "archetype": "piedmont",
+   "course": "035225_079420"
+  },
+  {
+   "frac_under_cap": 0.8437,
+   "frac_under_steep": 0.96003125,
+   "largest_contig_ha": 52.7544,
+   "relief_p95_p5": 22.854550933837885,
+   "archetype": "piedmont",
+   "course": "035396_080633"
+  },
+  {
+   "frac_under_cap": 0.32334375,
+   "frac_under_steep": 0.58801875,
+   "largest_contig_ha": 3.932,
+   "relief_p95_p5": 32.946851348876976,
+   "archetype": "piedmont",
+   "course": "035409_080767"
+  },
+  {
+   "frac_under_cap": 0.5435625,
+   "frac_under_steep": 0.81875625,
+   "largest_contig_ha": 6.5052,
+   "relief_p95_p5": 22.198357391357433,
+   "archetype": "piedmont",
+   "course": "035431_080823"
+  },
+  {
+   "frac_under_cap": 0.74629375,
+   "frac_under_steep": 0.89200625,
+   "largest_contig_ha": 24.7184,
+   "relief_p95_p5": 11.836180114746071,
+   "archetype": "piedmont",
+   "course": "035468_080802"
+  },
+  {
+   "frac_under_cap": 0.46268125,
+   "frac_under_steep": 0.7369,
+   "largest_contig_ha": 5.7424,
+   "relief_p95_p5": 27.561646270751908,
+   "archetype": "piedmont",
+   "course": "035574_080833"
+  },
+  {
+   "frac_under_cap": 0.404675,
+   "frac_under_steep": 0.66646875,
+   "largest_contig_ha": 9.9084,
+   "relief_p95_p5": 32.45357666015627,
+   "archetype": "piedmont",
+   "course": "035747_080870"
+  },
+  {
+   "frac_under_cap": 0.5335875,
+   "frac_under_steep": 0.76780625,
+   "largest_contig_ha": 20.4264,
+   "relief_p95_p5": 22.894808959960926,
+   "archetype": "piedmont",
+   "course": "035976_080387"
+  },
+  {
+   "frac_under_cap": 0.53780625,
+   "frac_under_steep": 0.7939,
+   "largest_contig_ha": 11.528,
+   "relief_p95_p5": 24.82769165039062,
+   "archetype": "piedmont",
+   "course": "035982_080438"
+  },
+  {
+   "frac_under_cap": 0.60659375,
+   "frac_under_steep": 0.82670625,
+   "largest_contig_ha": 24.628,
+   "relief_p95_p5": 20.386965179443365,
+   "archetype": "piedmont",
+   "course": "035994_080431"
+  },
+  {
+   "frac_under_cap": 0.71215625,
+   "frac_under_steep": 0.93000625,
+   "largest_contig_ha": 39.1164,
+   "relief_p95_p5": 23.396752929687494,
+   "archetype": "piedmont",
+   "course": "036003_080425"
+  },
+  {
+   "frac_under_cap": 0.4649625,
+   "frac_under_steep": 0.72471875,
+   "largest_contig_ha": 8.1996,
+   "relief_p95_p5": 27.143934631347634,
+   "archetype": "piedmont",
+   "course": "036005_080157"
+  },
+  {
+   "frac_under_cap": 0.64663125,
+   "frac_under_steep": 0.93053125,
+   "largest_contig_ha": 17.6776,
+   "relief_p95_p5": 23.884175109863264,
+   "archetype": "sandhills",
+   "course": "035186_079423"
+  },
+  {
+   "frac_under_cap": 0.6239375,
+   "frac_under_steep": 0.9620875,
+   "largest_contig_ha": 32.8084,
+   "relief_p95_p5": 18.15598068237304,
+   "archetype": "sandhills",
+   "course": "035235_079426"
+  },
+  {
+   "frac_under_cap": 0.614625,
+   "frac_under_steep": 0.9376875,
+   "largest_contig_ha": 32.3664,
+   "relief_p95_p5": 18.67129898071289,
+   "archetype": "sandhills",
+   "course": "035250_079616"
+  },
+  {
+   "frac_under_cap": 0.6141125,
+   "frac_under_steep": 0.92505625,
+   "largest_contig_ha": 28.0228,
+   "relief_p95_p5": 23.482713317871088,
+   "archetype": "sandhills",
+   "course": "035290_078970"
+  },
+  {
+   "frac_under_cap": 0.52869375,
+   "frac_under_steep": 0.810325,
+   "largest_contig_ha": 10.1404,
+   "relief_p95_p5": 37.43104553222656,
+   "archetype": "sandhills",
+   "course": "035411_079110"
+  },
+  {
+   "frac_under_cap": 0.555225,
+   "frac_under_steep": 0.84505,
+   "largest_contig_ha": 26.218,
+   "relief_p95_p5": 33.08952560424804,
+   "archetype": "sandhills",
+   "course": "035424_079108"
+  }
+ ]
+}
