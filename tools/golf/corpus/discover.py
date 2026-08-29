@@ -148,6 +148,20 @@ def region_for(lat: float, lon: float) -> str:
 def run_curated(limit: int | None = None) -> tuple[int, int]:
     got = miss = 0
     for (key, label, geocode, arch) in curated_list()[:limit]:
+        try:
+            got_one = _curated_one(key, label, geocode, arch)
+        except net.FetchError as ex:
+            print(f"  [net] {key}: {ex}")
+            miss += 1
+            continue
+        if got_one:
+            got += 1
+        else:
+            miss += 1
+    return got, miss
+
+
+def _curated_one(key, label, geocode, arch) -> bool:
         hits = net.nominatim(geocode)
         if not hits:
             # over-specific strings miss ("Bay Hill Club and Lodge, Orlando,
@@ -158,8 +172,7 @@ def run_curated(limit: int | None = None) -> tuple[int, int]:
         if not hits and "," in geocode:
             hits = net.nominatim(geocode.split(",")[0] + ", USA")
         if not hits:
-            miss += 1
-            continue
+            return False
         lat, lon = float(hits[0]["lat"]), float(hits[0]["lon"])
         pad = 0.03
         q = ("[out:json][timeout:90];("
@@ -175,18 +188,15 @@ def run_curated(limit: int | None = None) -> tuple[int, int]:
         if best is None and len(polys) == 1:
             best = (0.0, polys[0])   # unnamed sole polygon at the geocode point
         if best is None:
-            miss += 1
-            continue
+            return False
         rec = _stub(best[1], "curated", region_for(lat, lon))
         if rec is None:
-            miss += 1
-            continue
+            return False
         rec["name"] = label
         rec["architect"] = arch
         rec["curated_key"] = key
         registry.write(rec)
-        got += 1
-    return got, miss
+        return True
 
 
 def run_boxes() -> int:
@@ -200,7 +210,12 @@ def run_boxes() -> int:
              f'way["leisure"="golf_course"]({la-h},{lo-h},{la+h},{lo+h});'
              f'relation["leisure"="golf_course"]({la-h},{lo-h},{la+h},{lo+h});'
              ");out geom tags;")
-        for p in _polys_from_overpass(net.overpass(q)):
+        try:
+            data = net.overpass(q)
+        except net.FetchError as ex:
+            print(f"  [net] box {tag}: {ex}")
+            continue
+        for p in _polys_from_overpass(data):
             if (p["osm_type"], p["osm_id"]) in seen:
                 continue
             rec = _stub(p, "discovered", tag)

@@ -1,0 +1,55 @@
+# tier-2 suggestions (architect match) — edit fame_tiers.json
+atlantaathleticclub-w34768247                tier 2?  Robert Trent Jones, 1967
+bartonhillscountryclub-w294882606            tier 2?  Donald Ross, 1919
+bellerivecountryclub-w617944761              tier 2?  Robert Trent Jones, 1960
+braeburncountryclub-w29871734                tier 2?  Donald Ross, 1921
+bridgeportcountryclub-w263142731             tier 2?  Pete Dye, 1994
+camargoclub-w30678974                        tier 2?  Seth Raynor, 1925
+canoebrookcountryclubsou-w39680957           tier 2?  Devereux Emmet, 1901
+charlottecountryclub-w120522552              tier 2?  Donald Ross, 1925
+chicagogolfclub-w281979769                   tier 2?  C.B. Macdonald, 1895
+countryclubofbuffalo-w139666699              tier 2?  Donald Ross, 1926
+countryclubofdetroit-w294968619              tier 2?  Harry Colt, 1914
+creekclub-w955922341                         tier 2?  C.B. Macdonald, 1923
+crookedstickgolfclub-w295549584              tier 2?  Pete Dye, 1964
+crystaldownscountryclub-w293247450           tier 2?  Alister MacKenzie, 1929
+essexcountyclub-w29689626                    tier 2?  Donald Ross, 1917
+fairchildwheelergolfcour-w38332769           tier 2?  A.W. Tillinghast, 1920
+franklinhillscountryclub-w294269497          tier 2?  Donald Ross, 1926
+gardencitycountryclub-w60775752              tier 2?  Walter Travis, 1899
+glenviewclub-w24720710                       tier 2?  Donald Ross, 1899
+hollywoodgolfclub-w670131086                 tier 2?  Walter Travis, 1917
+houstoncountryclub-w123670178                tier 2?  Robert Trent Jones, 1957
+huntingdonvalleycountryc-w90945616           tier 2?  William Flynn, 1927
+interlachencountryclub-w45396323             tier 2?  Donald Ross, 1919
+invernessclub-w91905528                      tier 2?  Donald Ross, 1919
+knollwoodclubgolfcourse-w195246185           tier 2?  Charles Alison, 1924
+lehighcountryclub-w270271002                 tier 2?  William Flynn, 1920
+morainecountryclub-w674843366                tier 2?  Alister MacKenzie, 1930
+mountainridgecountryclub-w39831264           tier 2?  Donald Ross, 1929
+oldtowncountryclub-w31274551                 tier 2?  Perry Maxwell, 1939
+pawtucketcountryclub-w29871703               tier 2?  Donald Ross, 1914
+peachtreegolfclub-w34772911                  tier 2?  Robert Trent Jones, 1948
+plainfieldcountryclub-w39847755              tier 2?  Donald Ross, 1921
+quakerridgegolfclub-w122734578               tier 2?  A.W. Tillinghast, 1918
+rollinggreengolfclub-w29472936               tier 2?  William Flynn, 1926
+salemcountryclub-w701973533                  tier 2?  Donald Ross, 1925
+sandvalleygolfresort-w1304407129             tier 2?  Coore Crenshaw, 2017
+sanfranciscogolfclub-w16753994               tier 2?  A.W. Tillinghast, 1915
+sciotocountryclub-w234844122                 tier 2?  Donald Ross, 1916
+shoreacres-w190967170                        tier 2?  Seth Raynor, 1921
+skokiecountryclub-w31823863                  tier 2?  Donald Ross, 1914
+sleepyhollowcountryclub-w786897140           tier 2?  A.W. Tillinghast, 1911
+somersethillscountryclub-w40376254           tier 2?  A.W. Tillinghast, 1918
+southcourse-w676149839                       tier 2?  Donald Ross, 1916
+spyglasshillgolfcourse-w281477606            tier 2?  Robert Trent Jones, 1966
+sunnehannacountryclub-w69962450              tier 2?  A.W. Tillinghast, 1920
+thebullatpinehurstfarms-w292388774           tier 2?  Pete Dye, 1988
+thecountryclubatcastlepi-w1481663617         tier 2?  Jack Nicklaus, 1981
+thehonorscourse-w285129325                   tier 2?  Pete Dye, 1983
+theridgewoodcountryclub-w44108723            tier 2?  A.W. Tillinghast, 1929
+wampanoagcountryclub-w28430836               tier 2?  Donald Ross, 1924
+westchestercountryclub-w1441532032           tier 2?  Walter Travis, 1922
+wilmingtoncountryclub-w297943960             tier 2?  Robert Trent Jones, 1960
+woodhillcountryclub-w334115193               tier 2?  Donald Ross, 1916
+worcestercountryclub-w87279910               tier 2?  Donald Ross, 1914

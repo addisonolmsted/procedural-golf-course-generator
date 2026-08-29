@@ -47,7 +47,10 @@ MAX_NODATA_FRAC = 0.02
 # --- corpus gates -----------------------------------------------------------
 MIN_COURSE_AREA_M2 = 2.0e5    # same floor as macro_campaign discovery
 MIN_GREENS_KEEP = 7           # admits 9-holers with 2 unmapped greens
-MULTI_COURSE_GREENS = 22      # >22 greens w/o sub-polygons -> unsplit property
+MULTI_COURSE_GREENS = 26      # >26 greens w/o sub-polygons -> unsplit property
+# 22 was too tight: single 18s carry practice greens (Riviera holds 24 OSM
+# greens = 18 + 6 practice; Quail Hollow 25), and excluding them from window
+# fitting threw away prime fame-tier boundary evidence.
 GREEN_ASSIGN_NEAR_M = 150.0   # unassigned green adopted by nearest boundary
 
 # --- fame -------------------------------------------------------------------
@@ -57,12 +60,12 @@ FAME_WEIGHTS = {3: 3.0, 2: 2.0, 1: 1.0}
 # macro_campaign/courses.py:50-57 records the Pinehurst double-count bug that
 # overlapping boxes caused. Checked by discover.assert_disjoint().
 SEARCH_BOXES = [
-    ("sandhills_ne",  42.20, -100.90, 1.30),
+    ("sandhills_ne",  42.20, -100.90, 1.80),  # widened: 7 keepers at 1.30
     ("sandhills_nc",  35.20,  -79.40, 0.55),
     ("piedmont",      35.60,  -81.20, 0.90),
     ("piedmont_va",   37.60,  -78.60, 0.90),
     ("great_plains",  37.20,  -98.40, 1.20),
-    ("river_valley",  32.70,  -91.60, 0.90),
+    ("river_valley",  32.70,  -91.60, 1.30),  # widened: 3 keepers at 0.90
     ("moraine_mi",    43.80,  -85.40, 1.00),
     ("heathland_nj",  40.00,  -74.50, 0.55),
     ("long_island",   40.85,  -72.85, 0.45),

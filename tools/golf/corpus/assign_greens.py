@@ -51,10 +51,21 @@ def _green_rings(data: dict) -> list[tuple[int, np.ndarray]]:
 def fetch_greens() -> list[tuple[int, np.ndarray]]:
     """Bulk per search box + per-course for curated records outside boxes."""
     greens: dict[int, np.ndarray] = {}
+    failures = 0
+    # quadrant-split the box queries: golf=green over a 2.6-degree box is a
+    # heavy query and the mirrors 504 it under load
     for (tag, la, lo, h) in config.SEARCH_BOXES:
-        for gid, ring in _green_rings(net.overpass(
-                _greens_query(la - h, lo - h, la + h, lo + h))):
-            greens[gid] = ring
+        for (qa, qo) in ((la - h / 2, lo - h / 2), (la - h / 2, lo + h / 2),
+                         (la + h / 2, lo - h / 2), (la + h / 2, lo + h / 2)):
+            try:
+                data = net.overpass(_greens_query(qa - h / 2, qo - h / 2,
+                                                  qa + h / 2, qo + h / 2))
+            except net.FetchError as ex:
+                print(f"  [net] greens {tag} quad: {ex}")
+                failures += 1
+                continue
+            for gid, ring in _green_rings(data):
+                greens[gid] = ring
     for r in registry.all_records():
         if r["region_tag"] != "other":
             continue
@@ -62,8 +73,15 @@ def fetch_greens() -> list[tuple[int, np.ndarray]]:
         pad = 0.01
         s, w = ring[:, 0].min() - pad, ring[:, 1].min() - pad
         n, e = ring[:, 0].max() + pad, ring[:, 1].max() + pad
-        for gid, gr in _green_rings(net.overpass(_greens_query(s, w, n, e))):
+        try:
+            data = net.overpass(_greens_query(s, w, n, e))
+        except net.FetchError as ex:
+            print(f"  [net] greens {r['course_id']}: {ex}")
+            failures += 1
+            continue
+        for gid, gr in _green_rings(data):
             greens[gid] = gr
+    print(f"  greens fetched: {len(greens)} ({failures} query failures)")
     return sorted(greens.items())
 
 
@@ -128,12 +146,18 @@ def run() -> dict:
                 contains_subs.add(a["rec"]["course_id"])
 
     stats = {"keeper": 0, "few_greens": 0, "multi_course_unsplit": 0}
+    from .discover import region_for
     for c in courses:
         r = c["rec"]
+        # keep tags consistent when SEARCH_BOXES change between runs
+        r["region_tag"] = region_for(*r["centroid_ll"])
         gs = sorted(assigned[r["course_id"]], key=lambda g: g["osm_id"])
         r["greens"] = gs
         n = len(gs)
-        r["holes_estimate"] = min((9, 18, 27, 36), key=lambda h: abs(h - n)) if n else 0
+        # thresholds, not nearest-multiple: practice greens pad every count
+        # (Riviera 24 = 18 holes + 6 practice), so 24 must read 18, not 27
+        r["holes_estimate"] = (0 if n == 0 else 9 if n <= 13 else
+                               18 if n <= 26 else 27 if n <= 31 else 36)
         if n > config.MULTI_COURSE_GREENS and r["course_id"] not in contains_subs:
             r["status"] = "multi_course_unsplit"
         elif n >= config.MIN_GREENS_KEEP:

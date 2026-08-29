@@ -1,4 +1,3 @@
-out/*
-!out/courses.jsonl
-!out/assign_report.json
-!out/fitted/
+out/fetch_cache/
+out/tiles/
+out/*.html
