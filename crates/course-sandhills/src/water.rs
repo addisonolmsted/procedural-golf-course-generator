@@ -253,9 +253,13 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             lake_cells -= 1;
         }
     }
-    // At most this many lake bodies survive on a tile; see the count cap
-    // below. The largest are kept -- a tile reads by its biggest water.
-    const MAX_LAKES: usize = 3;
+    // At most this many lake bodies survive on a tile, and never two whose
+    // banks come within MIN_LAKE_GAP_M. Largest are kept -- a tile reads by
+    // its biggest water. Raised 3 -> 8 with the spacing rule (review
+    // 2026-08-28): a flat count culled well-separated lakes that were doing
+    // no harm, while the thing worth removing was always clustered speckle.
+    const MAX_LAKES: usize = 8;
+    const MIN_LAKE_GAP_M: f64 = 50.0;
 
     // SMALL-POND CAP (review, 2026-08-23): small ponds (< 2500 m2) may be at
     // most 2/3 of the body count. Measured tiles already sit at 9-24%, so
@@ -304,13 +308,17 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         .filter(|k| live_counts[*k] > 0)
         .map(|k| (live_counts[k], k as u32))
         .collect();
-    if live.len() > MAX_LAKES {
-        // Largest first; everything past the cap goes.
-        live.sort_by(|a, b| b.0.cmp(&a.0));
-        let drop: std::collections::HashSet<u32> =
-            live[MAX_LAKES..].iter().map(|(_, k)| *k).collect();
+    {
+        // Only cells still wet carry a live label into the selection.
+        let mut live_lab = vec![0u32; spec.len()];
         for i in 0..spec.len() {
-            if final_lab[i] != 0 && drop.contains(&final_lab[i]) {
+            if surface.data[i].is_finite() {
+                live_lab[i] = final_lab[i];
+            }
+        }
+        let drop = pick_spaced(&spec, &live_lab, &mut live, MAX_LAKES, MIN_LAKE_GAP_M);
+        for i in 0..spec.len() {
+            if live_lab[i] != 0 && drop.contains(&live_lab[i]) {
                 surface.data[i] = f64::NAN;
                 lake_cells -= 1;
             }
@@ -1847,7 +1855,8 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // along the valleys. Creek cells are exempt by the `creek` mask, so a
     // wet channel is never counted as a lake nor culled as one.
     {
-        const MAX_LAKES: usize = 3;
+        const MAX_LAKES: usize = 8;
+        const MIN_LAKE_GAP_M: f64 = 50.0;
         let mut lab = vec![0u32; spec.len()];
         let mut sizes: Vec<(usize, u32)> = Vec::new();
         let mut nid = 0u32;
@@ -1878,15 +1887,11 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             }
             sizes.push((count, nid));
         }
-        if sizes.len() > MAX_LAKES {
-            sizes.sort_by(|a, b| b.0.cmp(&a.0));      // largest first
-            let drop: std::collections::HashSet<u32> =
-                sizes[MAX_LAKES..].iter().map(|(_, k)| *k).collect();
-            for i in 0..spec.len() {
-                if lab[i] != 0 && drop.contains(&lab[i]) {
-                    surface.data[i] = f64::NAN;
-                    wet_cells -= 1;
-                }
+        let drop = pick_spaced(&spec, &lab, &mut sizes, MAX_LAKES, MIN_LAKE_GAP_M);
+        for i in 0..spec.len() {
+            if lab[i] != 0 && drop.contains(&lab[i]) {
+                surface.data[i] = f64::NAN;
+                wet_cells -= 1;
             }
         }
     }
@@ -2051,4 +2056,106 @@ pub fn clear_lakes_near(water: &mut Water, line: &[Vec2], bed: &[f64]) {
         }
     }
     water.lake_frac = (water.lake_frac - dropped as f64 / spec.len() as f64).max(0.0);
+}
+
+/// Choose which lake bodies survive: largest first, at most `max_n`, and never
+/// two whose banks come within `min_gap_m` of each other.
+///
+/// Returns the labels to DROP. Both archetypes call this -- Nebraska on the
+/// label field it already built, Carolina on the finished surface -- so the
+/// rule lives in one place rather than being written twice with two subtly
+/// different tie-breaks.
+///
+/// Spacing is measured bank to bank on BOUNDARY cells: the minimum distance
+/// between two disjoint sets is the minimum distance between their boundaries,
+/// and a lake's boundary is a small fraction of its area, so the pairwise test
+/// stays cheap while staying exact.
+///
+/// Do NOT subsample the boundary in raster order. That was the first version
+/// and it is silently wrong: a lake has exactly two boundary cells on most
+/// rows, its left and its right, so taking every other one in scan order keeps
+/// one whole side of the lake and discards the other. Measured on seed 500025,
+/// two lakes 36 m apart were reported 113.7 m apart and both kept. Bounding
+/// boxes do the cheap rejection instead, which costs nothing and cannot lie.
+fn pick_spaced(spec: &course_world::grid::GridSpec, lab: &[u32],
+               sizes: &mut Vec<(usize, u32)>, max_n: usize, min_gap_m: f64)
+    -> std::collections::HashSet<u32> {
+    let mut drop: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    if sizes.is_empty() {
+        return drop;
+    }
+    let mut bank: std::collections::HashMap<u32, Vec<(f64, f64)>> =
+        std::collections::HashMap::new();
+    // (min_x, min_y, max_x, max_y) per body, for the cheap rejection.
+    let mut bbox: std::collections::HashMap<u32, (f64, f64, f64, f64)> =
+        std::collections::HashMap::new();
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    for y in 0..ny {
+        for x in 0..nx {
+            let i = spec.index(x as u32, y as u32);
+            let k = lab[i];
+            if k == 0 {
+                continue;
+            }
+            let edge = [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)].iter().any(|(dx, dy)| {
+                let (jx, jy) = (x + dx, y + dy);
+                jx < 0 || jy < 0 || jx >= nx || jy >= ny
+                    || lab[spec.index(jx as u32, jy as u32)] != k
+            });
+            if edge {
+                let p = spec.world_of(x as u32, y as u32);
+                bank.entry(k).or_default().push((p.x, p.y));
+                let b = bbox.entry(k).or_insert((p.x, p.y, p.x, p.y));
+                b.0 = b.0.min(p.x);
+                b.1 = b.1.min(p.y);
+                b.2 = b.2.max(p.x);
+                b.3 = b.3.max(p.y);
+            }
+        }
+    }
+
+    sizes.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));   // largest first, stable
+    let gap2 = min_gap_m * min_gap_m;
+    let mut kept: Vec<u32> = Vec::new();
+    for &(_, k) in sizes.iter() {
+        if kept.len() >= max_n {
+            drop.insert(k);
+            continue;
+        }
+        let (mine, mb) = match (bank.get(&k), bbox.get(&k)) {
+            (Some(v), Some(b)) if !v.is_empty() => (v, *b),
+            _ => {
+                drop.insert(k);
+                continue;
+            }
+        };
+        let too_close = kept.iter().any(|o| {
+            let ob = match bbox.get(o) {
+                Some(b) => *b,
+                None => return false,
+            };
+            // Box-to-box gap first: if the boxes are already far enough
+            // apart the bodies certainly are, and this skips almost every
+            // pair on a tile whose lakes are spread out.
+            let dx = (ob.0 - mb.2).max(mb.0 - ob.2).max(0.0);
+            let dy = (ob.1 - mb.3).max(mb.1 - ob.3).max(0.0);
+            if dx * dx + dy * dy >= gap2 {
+                return false;
+            }
+            bank.get(o).map_or(false, |theirs| {
+                mine.iter().any(|(ax, ay)| {
+                    theirs.iter().any(|(bx, by)| {
+                        let (ddx, ddy) = (ax - bx, ay - by);
+                        ddx * ddx + ddy * ddy < gap2
+                    })
+                })
+            })
+        });
+        if too_close {
+            drop.insert(k);
+        } else {
+            kept.push(k);
+        }
+    }
+    drop
 }
