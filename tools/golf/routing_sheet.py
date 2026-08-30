@@ -127,6 +127,8 @@ def main():
         walk_med = float(np.median([h.walk_from_prev.length_m
                                     for h in route.holes]))
         net_dzs = [h.terms.get("net_dz_m", 0) for h in route.holes]
+        ch_intr = max(routing.ch_intrusion(h.spine, route.clubhouse_yx)
+                      for h in route.holes)
         dogs = []
         for h in route.holes:
             sp = h.spine
@@ -147,6 +149,7 @@ def main():
             walk_med=walk_med, ncross=len(route.crossings),
             nbridge=n_bridge, score=route.score,
             dz=" ".join(f"{v:+.0f}" for v in net_dzs),
+            ch_intr=float(ch_intr),
             dog_med=float(np.median(dogs)) if dogs else 0.0,
             dog_max=float(max(dogs)) if dogs else 0.0,
             abmax=max(aboves),
@@ -163,6 +166,8 @@ def main():
 <p>hole lengths {e['lens']} m · net dz {e['dz']} m (max above-chord
 {e['abmax']:.1f} m; real p90 1.7) · walk total {e['walk']:.0f} m (median
 {e['walk_med']:.0f}) · play crossings {e['ncross']} · bridges {e['nbridge']}
+· clubhouse keep-out intrusion {e['ch_intr']:.2f} (0 = no line of play
+inside 45 m of the clubhouse pad)
 · doglegs med {e['dog_med']:.0f}° max {e['dog_max']:.0f}° (real par-4/5
 p50 18-20°, p90 44-46°)
 · worst clearance intrusion {e['terms'].get('worst_clear', 0):.2f}

@@ -79,7 +79,9 @@ def test_creek():
     for h in r.holes:
         for b in h.bridges + h.walk_from_prev.bridges:
             n_bridges += 1
-            assert b.span_m <= 60.0, b
+            # span >= strip width always; oblique crossings run longer
+            # (an 80 m bridge over a 20 m strip is a 14-degree crossing)
+            assert 15.0 <= b.span_m <= 150.0, b
     # every spine leg that spans the strip must carry a bridge
     missing = 0
     for h in r.holes:

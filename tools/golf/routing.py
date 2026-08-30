@@ -288,8 +288,8 @@ def lz_probe(rf: RouteFields, f: Fields, tee_yx, green_yx, par: int) -> float:
 
 def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
              r_band: tuple[float, float], remainder_band: tuple[float, float],
-             avoid_spines=(), avoid_walks=(), avoid_lzs=()
-             ) -> tuple[tuple[float, float, float], float] | None:
+             avoid_spines=(), avoid_walks=(), avoid_lzs=(),
+             ch_keepout_yx=None) -> tuple[tuple[float, float, float], float] | None:
     """Best landing zone on an annulus around from_yx, bearing within
     DOGLEG_MAX of the direct line to the green. Returns ((y,x,r), score)."""
     a = np.asarray(from_yx, float)
@@ -336,6 +336,9 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
             pick_walk_clean = k
         if any(polyline_crossings(legs, sp) for sp in avoid_spines):
             continue
+        if ch_keepout_yx is not None and \
+                ch_intrusion(legs, ch_keepout_yx) > 0.0:
+            continue
         if pick_play_clean is None:
             pick_play_clean = k
         # SHARED LZ AVOIDANCE (owner, 2026-08-30): landing zones of
@@ -360,7 +363,8 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
 
 def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
               clubhouse_yx=None, avoid_spines=(), avoid_walks=(),
-              n_options: int = 6, hi_cap: float | None = None) -> list | None:
+              n_options: int = 6, hi_cap: float | None = None,
+              ch_keepout_yx=None) -> list | None:
     """Best back-tee cell: inside the walk disc of prev_yx (or the clubhouse
     disc for hole 1), hole length in band, tee-grade ground preferred."""
     lo, hi = PAR_BANDS[par]
@@ -440,6 +444,8 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
             # into a walk-crossing fallback (score 2.37, worst_clear 0.97).
             viol = max((clearance_violation(spine_seg, sp)
                         for sp in avoid_spines), default=0.0)
+            if ch_keepout_yx is not None:
+                viol = max(viol, ch_intrusion(spine_seg, ch_keepout_yx))
             if viol <= 0.55:
                 tier0.append(entry)
                 if len(tier0) >= n_options:
@@ -604,6 +610,7 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                         if kind2 == "walk" and polyline_crossings(
                                 np.array([new_spine[0], new_spine[1]]), A):
                             pen -= 4.0
+                    pen -= 2.0 * ch_intrusion(ns_arr, home) ** 2
                     c2 = list(counts)
                     c2[{3: 0, 4: 1, 5: 2}[par]] += 1
                     nxt.append((sc + s_hole + pen, used | {gi}, tuple(c2),
@@ -736,6 +743,33 @@ def clearance_violation(A: np.ndarray, B: np.ndarray,
     return float(v.max())
 
 
+# --- clubhouse keep-out ------------------------------------------------------
+# Owner (2026-08-30): "the clubhouse sits right in front of the green
+# locations" on some seeds. Holes 1 and 9 are REQUIRED to come within 120 m
+# of the clubhouse, so proximity alone is not the crime -- a LINE OF PLAY
+# passing over the clubhouse pad is. Keep-out disc CH_KEEPOUT_M (the pad
+# gate is a 25-60 m buildable disc; 45 m covers it), measured against every
+# spine with its endpoints trimmed 20 m so tee-1-beside-the-clubhouse and
+# green-9-beside-the-clubhouse stay legal. Walks are exempt -- walking past
+# the clubhouse is what a clubhouse is for.
+CH_KEEPOUT_M = 45.0
+
+
+def ch_intrusion(spine: np.ndarray, ch_yx, trim_m: float = 20.0) -> float:
+    """Fractional intrusion of the clubhouse point into the trimmed spine's
+    keep-out corridor: 0 = line stays >= CH_KEEPOUT_M away, 1 = dead over."""
+    sp = _trim(np.asarray(spine, float), trim_m)
+    c = np.asarray(ch_yx, float)
+    best = np.inf
+    for i in range(len(sp) - 1):
+        a2 = sp[i]
+        b2 = sp[i + 1]
+        ab = b2 - a2
+        t = np.clip(np.dot(c - a2, ab) / max(np.dot(ab, ab), 1e-9), 0, 1)
+        best = min(best, float(np.hypot(*(a2 + t * ab - c))))
+    return float(np.clip((CH_KEEPOUT_M - best) / CH_KEEPOUT_M, 0, 1))
+
+
 # --- detail placement + exact rescore --------------------------------------
 
 def _walk(f: Fields, a_yx, b_yx, wet2, cell2, hole: int) -> Walk:
@@ -779,7 +813,7 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         opts = place_tee(rf, f, pos, g, par,
                          clubhouse_yx=home if h == 0 else None,
                          avoid_spines=spines, avoid_walks=walks,
-                         hi_cap=hi_cap)
+                         hi_cap=hi_cap, ch_keepout_yx=home)
         if not opts:
             # saturating fallback: tee at the walk-disc edge toward the green
             v = g - pos
@@ -801,7 +835,7 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 r1 = place_lz(rf, f, tee_yx, g, DRIVE_R_M,
                               (90.0, 200.0) if par == 4 else (300.0, 999.0),
                               avoid_spines=spines, avoid_walks=walks,
-                              avoid_lzs=lz_seen)
+                              avoid_lzs=lz_seen, ch_keepout_yx=home)
                 if r1 is not None:
                     lzs.append(r1[0])
                     lz_score = r1[1]
@@ -810,7 +844,7 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 r2 = place_lz(rf, f, (lzs[0][0], lzs[0][1]), g, SECOND_R_M,
                               (120.0, 200.0),
                               avoid_spines=spines, avoid_walks=walks,
-                              avoid_lzs=lz_seen)
+                              avoid_lzs=lz_seen, ch_keepout_yx=home)
                 if r2 is not None:
                     lzs.append(r2[0])
                     lz_score = 0.5 * (lz_score + r2[1])
@@ -853,6 +887,7 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                   for b in bridges + walk.bridges)),
             b2b=-0.6 if (h and par in (3, 5) and seq[h - 1][1] == par) else 0.0,
         )
+        terms["ch_keepout"] = -6.0 * ch_intrusion(spine, home)
         pt = profile_terms(f, spine)
         terms.update({k: v for k, v in pt.items() if not k.startswith("_")})
         terms["net_dz_m"] = round(pt["_net_dz"], 1)
