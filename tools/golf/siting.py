@@ -429,6 +429,20 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
     cand = np.zeros(f.z8.shape, bool)
     cand[a0:a1, b0:b1] = True
     cand &= (cf.pad_room >= CH_PAD_MIN_M) & cf.near_green & cf.near_tee
+    # CENTRAL MASK (owner, 2026-08-30): a clubhouse deep in the middle of
+    # the property makes a returning nine hard to fit -- the route must
+    # thread around its own origin twice. The soft edge term was not enough
+    # (it competed against prospect/pad quality); the central 30%-box of the
+    # window is now excluded outright, with a soft fallback if that empties
+    # the candidate set (never a hard failure on a cramped window).
+    ci_lo = i0 + int(0.35 * h)
+    ci_hi = i0 + int(0.65 * h)
+    cj_lo = j0 + int(0.35 * w)
+    cj_hi = j0 + int(0.65 * w)
+    central = np.zeros(f.z8.shape, bool)
+    central[ci_lo:ci_hi, cj_lo:cj_hi] = True
+    if (cand & ~central).any():
+        cand &= ~central
     if not cand.any():
         return None
 
@@ -454,7 +468,20 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
     drain = 1.0 - np.clip(f.subgrid_rough[ys, xs] / 0.8, 0, 1)
     padq = np.clip((cf.pad_room[ys, xs] - CH_PAD_MIN_M)
                    / (CH_PAD_GOOD_M - CH_PAD_MIN_M), 0, 1)
-    total = p_term * 0.8 + e_term * 1.0 + s_term * 1.0 + drain * 0.4 + padq * 0.8
+    # ROUND CLIMAX (owner, 2026-08-30): cheat the clubhouse slightly AWAY
+    # from the richest green ground so the best sites are reached mid-round
+    # rather than spent on holes 1 and 9. "Richest" at siting time = the
+    # peak of the pad_green density smoothed at 300 m (the pool does not
+    # exist yet); the term rewards distance from that peak, saturating at
+    # half the window -- a nudge, not a banishment.
+    dens = ndimage.uniform_filter(f.pad_green[i0:i0 + h, j0:j0 + w]
+                                  .astype(float),
+                                  max(int(300.0 / cell) | 1, 3))
+    pk = np.unravel_index(int(np.argmax(dens)), dens.shape)
+    d_rich = np.hypot(ys - (i0 + pk[0]), xs - (j0 + pk[1])) * cell
+    climax = np.clip(d_rich / (0.5 * max(h, w) * cell), 0, 1)
+    total = (p_term * 0.8 + e_term * 1.0 + s_term * 1.0 + drain * 0.4
+             + padq * 0.8 + climax * 0.6)
 
     # total order
     order = np.lexsort((xs, ys, -total))

@@ -52,7 +52,7 @@ TEE_SIZE_M = 7.0
 
 BEAM_W = 48
 EXPAND_TOP = 20
-N_FINAL = 3
+N_FINAL = 8
 
 
 # --- data model ------------------------------------------------------------
@@ -310,14 +310,23 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
     score = np.where(ok, score, score - 1.0)     # tight LZ: penalized, never vetoed
     order = np.lexsort((np.arange(score.size), -score))
     yr, xr = ys.ravel(), xs.ravel()
+    # tiered like place_tee: walk-crossing freedom is the hard rule, play
+    # crossing freedom the strong preference, dirty last resort
     pick = int(order[0])
-    for k in order:                    # full scan; fallback only if NOTHING is clean
+    pick_walk_clean = None
+    for k in order:
         k = int(k)
         legs = np.array([[a[0], a[1]], [yr[k], xr[k]], [g[0], g[1]]])
-        if not any(polyline_crossings(legs, sp) for sp in avoid_spines) and \
-           not any(polyline_crossings(legs, wk) for wk in avoid_walks):
+        if any(polyline_crossings(legs, wk) for wk in avoid_walks):
+            continue
+        if pick_walk_clean is None:
+            pick_walk_clean = k
+        if not any(polyline_crossings(legs, sp) for sp in avoid_spines):
             pick = k
             break
+    else:
+        if pick_walk_clean is not None:
+            pick = pick_walk_clean
     y, x = float(yr[pick]), float(xr[pick])
     legs = np.array([[a[0], a[1]], [y, x], [g[0], g[1]]])
     clean = not any(polyline_crossings(legs, sp) for sp in avoid_spines) \
@@ -369,7 +378,14 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
         # and only a DIFFERENT TEE could fix it). Returns up to n_options
         # clean candidates so the caller can retry tee+LZ jointly; the last
         # entry is the best-scored fallback (possibly dirty, saturating).
-        options = []
+        # TIERED cleanliness (2026-08-30). Walk-crossing freedom is the
+        # owner's hard rule; play x play freedom is a strong preference
+        # (~1% of courses). Demanding both at once starved the option list
+        # and the fallback then violated the HARD rule -- measured: adding
+        # the play x play test naively took the gentle tile from 0 to 5
+        # walk crossings. Tier 1: fully clean. Tier 2: walk-clean only.
+        # Tier 3 (last resort): best-scored, possibly dirty.
+        tier1, tier2 = [], []
         fallback = None
         for q in order[:200]:
             y, x = int(ys[q]), int(xs[q])
@@ -379,16 +395,25 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
                             float(sc[y, x]), graded)
             walk_seg = np.array([np.asarray(prev_yx, float), cell_yx])
             spine_seg = np.array([cell_yx, np.asarray(green_yx, float)])
-            bad = any(polyline_crossings(walk_seg, sp) for sp in avoid_spines)
-            bad = bad or any(polyline_crossings(spine_seg, wk)
-                             for wk in avoid_walks)
-            if not bad:
-                options.append(((float(cell_yx[0]), float(cell_yx[1])),
-                                float(sc[y, x]), graded))
-                if len(options) >= n_options:
+            walk_bad = any(polyline_crossings(walk_seg, sp)
+                           for sp in avoid_spines)
+            walk_bad = walk_bad or any(polyline_crossings(spine_seg, wk)
+                                       for wk in avoid_walks)
+            if walk_bad:
+                continue
+            play_bad = any(polyline_crossings(spine_seg, sp)
+                           for sp in avoid_spines)
+            entry = ((float(cell_yx[0]), float(cell_yx[1])),
+                     float(sc[y, x]), graded)
+            if not play_bad:
+                tier1.append(entry)
+                if len(tier1) >= n_options:
                     break
-        if options or fallback:
-            return options if options else [fallback]
+            elif len(tier2) < n_options:
+                tier2.append(entry)
+        opts = tier1 if tier1 else tier2
+        if opts or fallback:
+            return opts if opts else [fallback]
     return None
 
 
@@ -518,7 +543,7 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                             pen -= 4.0
                         if kind2 == "spine" and polyline_crossings(
                                 np.array([new_spine[0], new_spine[1]]), A):
-                            pen -= 3.0
+                            pen -= 6.0
                         if kind2 == "walk" and polyline_crossings(
                                 np.array([new_spine[0], new_spine[1]]), A):
                             pen -= 4.0
@@ -541,6 +566,58 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         if r is not None and (best is None or r.score > best.score):
             best = r
     return best
+
+
+# --- longitudinal profile scoring (measured 2026-08-30) ---------------------
+# 5,201 real holes on 307 corpus courses (OSM golf=hole lines sampled on the
+# 2 m tiles, 15 m edge-replicated smoothing). The mean real hole is a shallow
+# U: tee ~2-3 m above mid-hole, green climbing ~1-2 m at the end. Medians:
+# net_dz -0.4 m (p5 -12.7, p25 -3.9, p75 +2.5, p95 +10.1); 44% downhill.
+# Climb 1.24 m per 100 m (p90 3.35). THE HARD FACT: max height above the
+# tee->green chord is p50 0.1 m, p90 1.7 m, p99 5.6 m -- real holes go
+# AROUND high ground, they do not play over it; ground BELOW the chord
+# (gully carries) is unconstrained, which is the shot model's whole point.
+PROF_NET_BAND = (-12.7, 10.1)      # p5-p95; trapezoid, ramp per siting rules
+PROF_CHORD_FREE_M = 1.7            # p90: no penalty below
+PROF_CHORD_SAT_M = 5.6             # p99: penalty saturates here
+PROF_CLIMB_100_FREE = 1.6          # ~p60 climb per 100 m
+PROF_CLIMB_100_SAT = 3.4           # p90
+
+
+def spine_profile(f: Fields, spine: np.ndarray, step_m: float = 8.0):
+    """net_dz, max_above_chord, climb_per_100m along a spine at 8 m."""
+    segs = np.diff(spine, axis=0)
+    seglen = np.hypot(segs[:, 0], segs[:, 1])
+    L = float(seglen.sum())
+    if L < 40.0:
+        return 0.0, 0.0, 0.0
+    cum = np.r_[0.0, np.cumsum(seglen)]
+    ss = np.linspace(0.0, L, max(int(L / step_m), 4) + 1)
+    ys = np.interp(ss, cum, spine[:, 0])
+    xs = np.interp(ss, cum, spine[:, 1])
+    yi = np.clip((ys / f.cell).astype(int), 0, f.z8.shape[0] - 1)
+    xi = np.clip((xs / f.cell).astype(int), 0, f.z8.shape[1] - 1)
+    z = f.z8[yi, xi]
+    net_dz = float(z[-1] - z[0])
+    chord = np.linspace(z[0], z[-1], len(z))
+    above = float((z - chord).max())
+    dz = np.diff(z)
+    climb100 = float(dz[dz > 0].sum() / L * 100.0)
+    return net_dz, above, climb100
+
+
+def profile_terms(f: Fields, spine: np.ndarray) -> dict[str, float]:
+    net_dz, above, climb100 = spine_profile(f, spine)
+    net_t = float(trapezoid(np.array([net_dz]), *PROF_NET_BAND)[0])
+    above_pen = float(np.clip((above - PROF_CHORD_FREE_M)
+                              / (PROF_CHORD_SAT_M - PROF_CHORD_FREE_M), 0, 1))
+    climb_pen = float(np.clip((climb100 - PROF_CLIMB_100_FREE)
+                              / (PROF_CLIMB_100_SAT - PROF_CLIMB_100_FREE),
+                              0, 1))
+    return dict(prof_net=0.4 * net_t,
+                prof_chord=-0.8 * above_pen,
+                prof_climb=-0.4 * climb_pen,
+                _net_dz=net_dz, _above=above, _climb100=climb100)
 
 
 # --- detail placement + exact rescore --------------------------------------
@@ -647,7 +724,12 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                   for b in bridges + walk.bridges)),
             b2b=-0.6 if (h and par in (3, 5) and seq[h - 1][1] == par) else 0.0,
         )
-        hole_scores += sum(terms.values())
+        pt = profile_terms(f, spine)
+        terms.update({k: v for k, v in pt.items() if not k.startswith("_")})
+        terms["net_dz_m"] = round(pt["_net_dz"], 1)
+        terms["above_chord_m"] = round(pt["_above"], 1)
+        hole_scores += sum(v for k, v in terms.items()
+                           if k not in ("net_dz_m", "above_chord_m"))
         holes.append(Hole(h, par, int(gi), (float(g[0]), float(g[1])),
                           tee_boxes(rf, f, tee_yx, pts[1], g), lzs, spine,
                           length, ab, bridges, walk, terms))
@@ -664,7 +746,10 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         for j in range(i + 1, 9):
             for pt in polyline_crossings(spines[i], spines[j]):
                 crossings.append((i, j, (float(pt[0]), float(pt[1]))))
-    cross_pen += max(-6.0, -3.0 * len(crossings))
+    # play x play: near-veto (owner, 2026-08-30: possible but VERY rare,
+    # ~1% of courses -- the first 20-seed round produced crossings on 8/20
+    # at -3.0, so the price doubles and the cap loosens)
+    cross_pen += max(-18.0, -6.0 * len(crossings))
     walk_cross = 0
     for i in range(9):
         for j in range(9):

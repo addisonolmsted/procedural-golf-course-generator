@@ -121,6 +121,8 @@ def main():
         uri = to_uri(np.flipud(img), upscale=1)
         walk_med = float(np.median([h.walk_from_prev.length_m
                                     for h in route.holes]))
+        net_dzs = [h.terms.get("net_dz_m", 0) for h in route.holes]
+        aboves = [h.terms.get("above_chord_m", 0) for h in route.holes]
         n_bridge = sum(len(h.bridges) + len(h.walk_from_prev.bridges)
                        for h in route.holes)
         entries.append(dict(
@@ -130,6 +132,8 @@ def main():
             total=route.total_length_m, walk=route.total_walk_m,
             walk_med=walk_med, ncross=len(route.crossings),
             nbridge=n_bridge, score=route.score,
+            dz=" ".join(f"{v:+.0f}" for v in net_dzs),
+            abmax=max(aboves),
             terms={k: round(v, 2) for k, v in route.terms.items()}))
         print(f"  {seed} ({mode}): pars {entries[-1]['pars']} "
               f"total {route.total_length_m:.0f} m walk-med {walk_med:.0f} m "
@@ -140,7 +144,8 @@ def main():
     for e in entries:
         cards += f"""<section>
 <h2>seed {e['seed']} — {e['mode']} · par {e['pars']} · {e['total']:.0f} m</h2>
-<p>hole lengths {e['lens']} m · walk total {e['walk']:.0f} m (median
+<p>hole lengths {e['lens']} m · net dz {e['dz']} m (max above-chord
+{e['abmax']:.1f} m; real p90 1.7) · walk total {e['walk']:.0f} m (median
 {e['walk_med']:.0f}) · play crossings {e['ncross']} · bridges {e['nbridge']}
 · score {e['score']:.2f} · {e['terms']}</p>
 <figure><img src="{e['img']}"></figure>
