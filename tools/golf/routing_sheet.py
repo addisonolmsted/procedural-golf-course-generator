@@ -27,8 +27,39 @@ from siting_sheet import hillshade_rgb, to_uri, draw_disc  # noqa: E402
 PAR_COLORS = {3: (80, 200, 255), 4: (255, 255, 255), 5: (255, 160, 40)}
 
 
+def _clip_seg(a, b, H, W):
+    """Liang-Barsky clip of segment a->b to the image rect, or None.
+
+    VISUAL BUG FIX (owner, 2026-08-30): elements slightly outside the crop
+    were WRAPPING -- np.clip pinned out-of-frame line endpoints to the
+    border (painting junk runs along the edge), and raw slice indexing on
+    tee boxes let negative indices wrap to the far side of the image,
+    printing a band clear across the tile."""
+    t0, t1 = 0.0, 1.0
+    dy, dx = b[0] - a[0], b[1] - a[1]
+    for p_, q_ in ((-dy, a[0]), (dy, H - 1 - a[0]),
+                   (-dx, a[1]), (dx, W - 1 - a[1])):
+        if abs(p_) < 1e-12:
+            if q_ < 0:
+                return None
+            continue
+        t = q_ / p_
+        if p_ < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1:
+            return None
+    return ((a[0] + t0 * dy, a[1] + t0 * dx),
+            (a[0] + t1 * dy, a[1] + t1 * dx))
+
+
 def draw_line(img, a, b, color, dash=None, thick=1):
-    """Raster-stamp a segment in IMAGE coords (row, col)."""
+    """Raster-stamp a segment in IMAGE coords (row, col), rect-clipped."""
+    cl = _clip_seg(a, b, img.shape[0], img.shape[1])
+    if cl is None:
+        return
+    a, b = cl
     n = max(int(np.hypot(b[0] - a[0], b[1] - a[1])) * 2, 2)
     ts = np.linspace(0, 1, n)
     ys = (a[0] + ts * (b[0] - a[0])).astype(int)
@@ -57,6 +88,9 @@ def draw_route(img, route, f, i0, j0, scale):
         for i in range(len(h.spine) - 1):
             draw_line(img, P(*h.spine[i]), P(*h.spine[i + 1]), col, thick=2)
         for (y, x, r) in h.lzs:
+            py0, px0 = P(y, x)
+            if not (0 <= py0 < img.shape[0] and 0 <= px0 < img.shape[1]):
+                continue
             rr = max(int(r * scale), 2)
             yy, xx = np.mgrid[-rr:rr + 1, -rr:rr + 1]
             ring = (yy**2 + xx**2 <= rr**2) & (yy**2 + xx**2 >= (rr - 1)**2)
@@ -67,9 +101,14 @@ def draw_route(img, route, f, i0, j0, scale):
         for b in h.tee_boxes:
             py, px = P(*b.yx)
             s = max(int(b.size_m * scale / 2), 1)
-            img[max(0, py - s):py + s + 1, max(0, px - s):px + s + 1] = \
-                (150, 240, 150) if not b.graded else (240, 210, 120)
+            y0s, y1s = max(0, py - s), min(img.shape[0], py + s + 1)
+            x0s, x1s = max(0, px - s), min(img.shape[1], px + s + 1)
+            if y0s < y1s and x0s < x1s:      # off-crop boxes draw nothing
+                img[y0s:y1s, x0s:x1s] = \
+                    (150, 240, 150) if not b.graded else (240, 210, 120)
         gy, gx = P(*h.green_yx)
+        if not (0 <= gy < img.shape[0] and 0 <= gx < img.shape[1]):
+            continue
         draw_disc(img, gy, gx, 4, col)
         draw_disc(img, gy, gx, 1, (20, 20, 20))
         for b in h.bridges + w.bridges:
