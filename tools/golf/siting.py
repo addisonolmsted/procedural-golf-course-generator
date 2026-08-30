@@ -290,9 +290,32 @@ def scan_windows_one(f: Fields, m: Morphology, h_m: float, w_m: float
     banded = (trapezoid(calm, *CALM_BAND)
               * trapezoid(relief, *RELIEF_BAND_M)
               * trapezoid(posm, *POS_BAND))
+    # WATER IS AMENITY IN THE MEASURED BAND, not a defect (corpus 2026-08-29).
+    # Softening the old -1.5*wat to -0.5 was NOT enough and the measurement
+    # said so: with the softer penalty only 26% of sited windows still held
+    # any water against 93% of real Carolina courses, because water suppresses
+    # the score through THREE channels, not one -- the explicit term plus
+    # pad_green and pad_fair, both of which exclude wet cells. A pure penalty
+    # can only ever push siting away.
+    # So water gets a trapezoid, the same shape as the surround-relief term
+    # and for the same reason ("floors not maximands", d6w): no credit when
+    # dry (38% of real Nebraska courses carry none, so dry must stay viable),
+    # full credit across the real in-course band 0.5-4.5%, and a real penalty
+    # only past 12% where water starts eating routable land.
+    wat_t = np.where(wat < 0.005, 0.0,
+             np.where(wat <= 0.045, 0.45,
+              np.where(wat <= 0.12, 0.45 - 0.45 * (wat - 0.045) / 0.075,
+                       -1.5 * np.clip((wat - 0.12) / 0.10, 0, 1))))
+    # Grounding: real Carolina sandhills courses carry a median 1.7% water
+    # inside the course polygon (p75 3.5%) and 93% hold at least one body, so
+    # a window with a couple of ponds is normal ground. The fitted green score
+    # puts water proximity at ~zero (d_water_band coef 0.0003) and greens ON
+    # water are excluded by a hard gate elsewhere, so nothing downstream needs
+    # this term to be defensive. Measured effect of the trapezoid: fluvial
+    # sited windows holding any water 26% -> 76%, median 0.00% -> 0.60%.
     character = (2.0 * padg + 1.0 * padf
                  + 3.0 * (f_shoulder + f_spur + f_hollow + 2.0 * f_saddle)
-                 - 1.5 * wat - 0.8 * np.clip(rough / 0.6, 0, 1))
+                 + wat_t - 0.8 * np.clip(rough / 0.6, 0, 1))
     score = banded * (0.2 + character)
     return WindowScan(score, (lo, lo), h, w,
                       terms=dict(calm=calm, relief=relief, pos=posm,

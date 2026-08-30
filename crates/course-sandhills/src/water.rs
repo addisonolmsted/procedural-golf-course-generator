@@ -1984,6 +1984,84 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
     }
 
+    // --- IMPOUNDMENTS ON THE TRUNK (measured, 2026-08-29) ------------------
+    // The corpus says our Carolina water was ~4x too dry: real Sandhills-NC
+    // courses carry a median 1.7% water INSIDE the course polygon (p75 3.5%),
+    // 93% of them have at least one body, typically 2 bodies of 0.2-4 ha
+    // (Asheboro 12.9%, Pinehurst No.7 7.5%). Ours ran 0.4% with a single
+    // body. The missing feature is not scattered ponds: it is the DAMMED
+    // CREEK REACH -- a flat pond in the valley floor with the drainage
+    // running through it, plus irrigation ponds cut off the same line.
+    //
+    // This is the sanctioned exception to `clear_lakes_near` (2026-08-27,
+    // "no standing lakes on the valley floor beside running water"). That
+    // rule stays for OFF-CHANNEL bodies, which is what it was written for;
+    // an ON-CHANNEL impoundment is the region's commonest water feature and
+    // outlawing it was a measurement error, corrected here with the owner's
+    // sign-off. Ponds are built from the creek's own bed, which cut_creek
+    // has already forced monotone, so a pond can never run uphill.
+    //
+    // Draws are appended at the TAIL of the WATER stream per the transcript
+    // discipline: every earlier draw keeps its position and its value.
+    if let Some((pts, bed)) = beds.iter().zip(tiers.iter())
+        .find(|(_, t)| **t == 1).map(|(b, _)| b)
+    {
+        let n_pond = {
+            let u = rng.next_f64();
+            if u < 0.18 { 0 } else if u < 0.62 { 1 } else if u < 0.92 { 2 } else { 3 }
+        };
+        let mut made = 0usize;
+        for k in 0..n_pond {
+            // dam station: spread along the trunk, never in the last eighth
+            let frac = rng.range_f64(0.12 + 0.24 * k as f64, 0.32 + 0.24 * k as f64);
+            let di = ((pts.len() - 1) as f64 * frac.min(0.88)) as usize;
+            let dam_z = bed[di.min(bed.len() - 1)];
+            // pond depth over the bed at the dam: 0.8-2.6 m -> 0.2-4 ha
+            let rise = rng.range_f64(0.8, 2.6);
+            let lvl = dam_z + rise;
+            // flood UPSTREAM from the dam while the bed stays below level
+            let mut up = di;
+            while up > 0 && bed[(up - 1).min(bed.len() - 1)] < lvl {
+                up -= 1;
+            }
+            if di.saturating_sub(up) < 6 {
+                continue;             // too short to read as a pond
+            }
+            // half-width from the valley: widen until the ground rises above
+            // the level, capped so a pond never becomes a lake
+            let cap = rng.range_f64(38.0, 105.0);
+            for si in up..=di {
+                let p = pts[si.min(pts.len() - 1)];
+                let r = (cap / cell).ceil() as i64;
+                let (cx, cy) = ((p.x / cell).round() as i64,
+                                (p.y / cell).round() as i64);
+                for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
+                    for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
+                        let d = (((gx - cx).pow(2) + (gy - cy).pow(2)) as f64)
+                            .sqrt() * cell;
+                        if d > cap {
+                            continue;
+                        }
+                        let i = gy as usize * spec.nx as usize + gx as usize;
+                        if height.data[i] >= lvl {
+                            continue;      // above the pond surface: dry bank
+                        }
+                        if surface.data[i].is_nan() {
+                            wet_cells += 1;
+                            surface.data[i] = lvl;
+                        } else {
+                            surface.data[i] = surface.data[i].max(lvl);
+                        }
+                    }
+                }
+            }
+            made += 1;
+        }
+        if std::env::var("NET_DEBUG").is_ok() {
+            eprintln!("  impoundments: {made}/{n_pond}");
+        }
+    }
+
     Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: None }
 }
 
