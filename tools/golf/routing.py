@@ -44,10 +44,17 @@ WALK_FREE_M = 150.0      # a walk this short costs ~nothing
 WALK_MAX_M = 300.0       # beyond this the tee simply isn't placed (geometric)
 DRIVE_R_M = (190.0, 250.0)     # tee -> LZ1 annulus
 SECOND_R_M = (160.0, 220.0)    # LZ1 -> LZ2 annulus (par 5)
-DOGLEG_MAX_RAD = np.radians(35.0)
+# Real max-dogleg (9,248 hole lines): par4/5 p50 18-20 deg, p90 44-46, and
+# 57-60% of holes bend >15 deg; the bend sits at t=0.63 (the LZ). Par 3s are
+# dead straight (sinuosity p50 1.000). 45 deg = the real p90.
+DOGLEG_MAX_RAD = np.radians(45.0)
 LZ_R_M = 22.0            # target landing-zone radius
 LZ_ROOM_MIN_M = 15.0     # tight-but-playable floor (penalized, never vetoed)
-TEE_STAGGER_M = (0.0, 12.0, 26.0, 41.0, 57.0)
+# Measured 2026-08-30 (196 corpus holes with >=2 mapped golf=tee): spread
+# along the play axis is roughly CONSTANT across par classes -- p25/50/75 =
+# 52/77/105 (par3), 48/69/93 (par4), 63/78/102 (par5). 75 m sits between the
+# medians and p75; the old 57 m was short of every class median.
+TEE_STAGGER_M = (0.0, 18.0, 36.0, 54.0, 75.0)
 TEE_SIZE_M = 7.0
 
 BEAM_W = 48
@@ -293,7 +300,7 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
         return None
     th0 = np.arctan2(v[0], v[1])
     radii = np.linspace(r_band[0], r_band[1], 5)
-    bears = th0 + np.radians(np.arange(-35, 36, 4))
+    bears = th0 + np.radians(np.arange(-45, 46, 4))
     R, TH = np.meshgrid(radii, bears)
     ys = a[0] + R * np.sin(TH)
     xs = a[1] + R * np.cos(TH)
@@ -303,10 +310,15 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
     rem = np.hypot(g[0] - ys.ravel(), g[1] - xs.ravel())
     rem_t = trapezoid(rem, remainder_band[0], remainder_band[1])
     dog = np.abs((TH - th0).ravel())
-    dog_pen = np.clip((np.degrees(dog) - 20.0) / 15.0, 0, 1)
+    # free to 15 deg, saturating at the real p90 of 45. First cut freed to
+    # 20 deg at weight 0.3 and our routed median came out 32 deg vs the real
+    # p50 of 18-20 -- the LZ room/flat rewards outbid a penalty that mild,
+    # so the ramp starts at the real "most holes bend this little" point
+    # and the weight doubles.
+    dog_pen = np.clip((np.degrees(dog) - 15.0) / 30.0, 0, 1)
     score = (0.5 * room_q + 0.3 * (1 - np.clip(slope / 0.08, 0, 1))
              + 0.1 * trapezoid(dwat, 20.0, 80.0)
-             + 0.4 * rem_t - 0.3 * dog_pen)
+             + 0.4 * rem_t - 0.6 * dog_pen)
     score = np.where(ok, score, score - 1.0)     # tight LZ: penalized, never vetoed
     order = np.lexsort((np.arange(score.size), -score))
     yr, xr = ys.ravel(), xs.ravel()
@@ -500,10 +512,10 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     # state gains a running length so the beam feels PACE, not just bands:
     # without it the clearance term buys spacing with length and totals ran
     # 3.5-3.6 km (band-top holes all the way); target pace ~322 m/hole
-    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0)]
+    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0, 0.0)]
     for h in range(9):
         nxt = []
-        for (sc, used, counts, pos, seq, segs, cum) in states:
+        for (sc, used, counts, pos, seq, segs, cum, cum_mid) in states:
             pars = legal_pars(counts, h)
             D = np.hypot(yx[:, 0] - pos[0], yx[:, 1] - pos[1])
             d_home = np.hypot(yx[:, 0] - home[0], yx[:, 1] - home[1])
@@ -539,7 +551,8 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                     yx[idxs][:, 1] - tee_est[:, 1])
                 lo_i = lo + 0.15 * (hi - lo)
                 hi_i = hi - 0.15 * (hi - lo)
-                pace = np.abs((cum + hole_len) - 322.0 * (h + 1))
+                mid_par = (PAR_BANDS[par][0] + PAR_BANDS[par][1]) / 2.0
+                pace = np.abs((cum + hole_len) - (cum_mid + mid_par))
                 cheap = (1.5 * pct[idxs]
                          + 0.9 * trapezoid(hole_len, lo_i, hi_i, tail=0.1)
                          - 1.0 * np.clip(pace / 450.0, 0, 1)
@@ -596,7 +609,8 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                     nxt.append((sc + s_hole + pen, used | {gi}, tuple(c2),
                                 yx[gi], seq + ((gi, par, tuple(tee)),),
                                 segs + (new_walk, new_spine),
-                                cum + float(hole_len[list(idxs).index(gi)])))
+                                cum + float(hole_len[list(idxs).index(gi)]),
+                                cum_mid + mid_par))
         if not nxt:
             return None
         nxt.sort(key=lambda s: (round(-s[0], 6),
@@ -741,7 +755,7 @@ def _walk(f: Fields, a_yx, b_yx, wet2, cell2, hole: int) -> Walk:
 
 def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                  wet2: np.ndarray, cell2: float, state) -> Route | None:
-    _, _, counts, _, seq, _, _cum = state
+    _, _, counts, _, seq, _, _cum, _cm = state
     home = np.asarray(sit.clubhouse.yx, float)
     holes: list[Hole] = []
     spines: list[np.ndarray] = []
@@ -912,6 +926,15 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     tot_t = float(trapezoid(np.array([total_len]), *TOTAL_BAND_M,
                             tail=0.05)[0])
 
+    # PAR-5 POSITIONAL SPREAD (owner, 2026-08-30): the length budget was
+    # banking yardage for the end and the fives all landed on holes 7-9.
+    # Reward fives whose indices span the round; -0.8 when they bunch in
+    # any 3-hole stretch.
+    idx5 = [hh.index for hh in holes if hh.par == 5]
+    if len(idx5) >= 2 and (max(idx5) - min(idx5)) < 3:
+        spread -= 0.8
+    elif len(idx5) >= 2 and (max(idx5) - min(idx5)) >= 4:
+        spread += 0.3
     rterms = dict(entropy=0.6 * entropy, spread=spread, total=2.5 * tot_t,
                   crossings=cross_pen, clearance=clear_pen, lz_sep=lz_pen,
                   worst_clear=0.0)
@@ -924,7 +947,26 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                  rterms, crossings)
 
 
-def run_routing(z2, cell2, wet2, sit: Siting, f: Fields, pool) -> Route | None:
-    """Entry point: route nine holes on an already-sited window + pool."""
+def run_routing(z2, cell2, wet2, sit: Siting, f: Fields, pool,
+                pool_fn=None) -> Route | None:
+    """Entry point: route nine holes on an already-sited window + pool.
+
+    ROUTING PICKS THE CLUBHOUSE (owner, 2026-08-30): siting proposes up to
+    three spatially distinct clubhouse candidates; a route is auditioned
+    from each and the best-scoring route wins -- the routing is what
+    matters, the clubhouse serves it. `pool_fn(clubhouse) -> pool`
+    regenerates the pool per candidate (the pool's reserved loop anchor
+    depends on the clubhouse); when absent the given pool is reused.
+    """
     rf = build_route_fields(f)
-    return beam_route(f, rf, sit, pool, wet2, cell2)
+    alts = getattr(sit.clubhouse, "alternates", None) or [sit.clubhouse]
+    best = None
+    primary = sit.clubhouse
+    for ch in alts:
+        sit.clubhouse = ch
+        p_ch = pool_fn(ch) if pool_fn is not None else pool
+        r = beam_route(f, rf, sit, p_ch, wet2, cell2)
+        if r is not None and (best is None or r.score > best.score):
+            best = r
+    sit.clubhouse = primary
+    return best

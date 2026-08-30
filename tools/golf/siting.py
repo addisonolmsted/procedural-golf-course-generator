@@ -373,6 +373,7 @@ class Clubhouse:
     score: float
     reserved_green: tuple[float, float]
     reserved_tee: tuple[float, float]
+    alternates: list = field(default_factory=list)   # spatially distinct picks
 
 
 def _disc(f: Fields, r_m: float) -> np.ndarray:
@@ -485,20 +486,34 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
 
     # total order
     order = np.lexsort((xs, ys, -total))
-    bi = order[0]
-    y, x = int(ys[bi]), int(xs[bi])
 
-    # reserve the loop anchors: nearest green pad and tee pad inside the radius
-    def nearest(mask):
+    def nearest(mask, y, x):
         my, mx = np.where(mask & cand_window_or_halo(f, i0, j0, h, w, halo))
         if len(my) == 0:
             my, mx = np.where(mask)
         d = np.hypot(my - y, mx - x)
         k = int(np.argmin(d))
         return (my[k] * cell, mx[k] * cell)
-    g = nearest(f.pad_green)
-    t = nearest(f.pad_tee)
-    return Clubhouse((y * cell, x * cell), float(total[bi]), g, t)
+
+    # ALTERNATES (owner, 2026-08-30): what matters most is the ROUTING, not
+    # the clubhouse -- so siting proposes up to three spatially distinct
+    # clubhouse candidates (NMS 250 m) and the router auditions a route from
+    # each, keeping the best. The primary (best soft score) still decides
+    # the window pair score, so window choice is unchanged.
+    picks = []
+    for q in order:
+        y, x = int(ys[q]), int(xs[q])
+        if any(np.hypot(y - py, x - px) * cell < 250.0 for (py, px) in
+               [(int(c.yx[0] / cell), int(c.yx[1] / cell)) for c in picks]):
+            continue
+        picks.append(Clubhouse((y * cell, x * cell), float(total[q]),
+                               nearest(f.pad_green, y, x),
+                               nearest(f.pad_tee, y, x)))
+        if len(picks) >= 3:
+            break
+    ch = picks[0]
+    ch.alternates = picks
+    return ch
 
 
 def cand_window_or_halo(f, i0, j0, h, w, halo):

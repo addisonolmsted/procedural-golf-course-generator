@@ -101,7 +101,12 @@ def main():
                 else np.zeros(z2.shape, bool))
         sit, f, m, p = siting.run_siting(z2, c2, wet2, *dims)
         pool = greens_mod.generate(z2, c2, wet2, sit, f, m, p)
-        route = routing.run_routing(z2, c2, wet2, sit, f, pool)
+
+        def pool_for(ch, _z=z2, _c=c2, _w=wet2, _sit=sit, _f=f, _m=m, _p=p):
+            _sit.clubhouse = ch
+            return greens_mod.generate(_z, _c, _w, _sit, _f, _m, _p)
+        route = routing.run_routing(z2, c2, wet2, sit, f, pool,
+                                    pool_fn=pool_for)
         if route is None:
             print(f"  {seed} ({mode}): NO ROUTE")
             continue
@@ -122,6 +127,15 @@ def main():
         walk_med = float(np.median([h.walk_from_prev.length_m
                                     for h in route.holes]))
         net_dzs = [h.terms.get("net_dz_m", 0) for h in route.holes]
+        dogs = []
+        for h in route.holes:
+            sp = h.spine
+            for i in range(1, len(sp) - 1):
+                u, v = sp[i] - sp[i-1], sp[i+1] - sp[i]
+                nu, nv = np.hypot(*u), np.hypot(*v)
+                if nu > 20 and nv > 20:
+                    dogs.append(float(np.degrees(np.arccos(np.clip(
+                        np.dot(u, v) / (nu * nv), -1, 1)))))
         aboves = [h.terms.get("above_chord_m", 0) for h in route.holes]
         n_bridge = sum(len(h.bridges) + len(h.walk_from_prev.bridges)
                        for h in route.holes)
@@ -133,6 +147,8 @@ def main():
             walk_med=walk_med, ncross=len(route.crossings),
             nbridge=n_bridge, score=route.score,
             dz=" ".join(f"{v:+.0f}" for v in net_dzs),
+            dog_med=float(np.median(dogs)) if dogs else 0.0,
+            dog_max=float(max(dogs)) if dogs else 0.0,
             abmax=max(aboves),
             terms={k: round(v, 2) for k, v in route.terms.items()}))
         print(f"  {seed} ({mode}): pars {entries[-1]['pars']} "
@@ -147,6 +163,8 @@ def main():
 <p>hole lengths {e['lens']} m · net dz {e['dz']} m (max above-chord
 {e['abmax']:.1f} m; real p90 1.7) · walk total {e['walk']:.0f} m (median
 {e['walk_med']:.0f}) · play crossings {e['ncross']} · bridges {e['nbridge']}
+· doglegs med {e['dog_med']:.0f}° max {e['dog_max']:.0f}° (real par-4/5
+p50 18-20°, p90 44-46°)
 · worst clearance intrusion {e['terms'].get('worst_clear', 0):.2f}
 (0 = full measured spacing kept) · score {e['score']:.2f} · {e['terms']}</p>
 <figure><img src="{e['img']}"></figure>
