@@ -72,6 +72,85 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         .collect();
     above.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let floor_off = above[above.len() / 12];
+
+    // --- THE TABLE FOLLOWS THE LAND, IT IS NOT ONE PLANE (2026-08-29) ------
+    // `floor_off` above is a SINGLE GLOBAL SCALAR and `datum8` is a plane, so
+    // the mapped table was one tilted plane across 3 km. The interdune floors
+    // do NOT all sit at the same height above that plane -- the megaform has
+    // structure at its own 0.9-1.2 km wavelength -- so a single plane
+    // intersects only whichever floor happens to be globally lowest. With
+    // ~3 valleys per tile that is winner-take-all, and the winner is rarely
+    // in the middle: MEASURED, only 2.2% of aeolian pond cells fell in the
+    // 1.5 km core, which is 25% of the tile area -- an 11x deficit, and the
+    // reviewer saw it as "ponds always at the edge, out of routing's reach".
+    //
+    // A real water table is not a plane over 3 km; it is a SUBDUED REPLICA of
+    // the land surface, following regional topography with damped amplitude.
+    // So the floor offset becomes a broad local field: the same low-percentile
+    // statistic, measured in a ~700 m neighbourhood, then damped back toward
+    // the global value so the table stays flatter than the ground (a table
+    // that copied the surface exactly would flood every valley equally, which
+    // is the opposite error).
+    const FLOOR_R_M: f64 = 700.0;
+    const FLOOR_DAMP: f64 = 1.00;   // fully local; the area fix below sets the level
+    let dspec0 = datum8.spec;
+    let mut above8 = vec![0.0f64; dspec0.len()];
+    for y in 0..dspec0.ny {
+        for x in 0..dspec0.nx {
+            let p = dspec0.world_of(x, y);
+            let hx = ((p.x / spec.cell_size).round() as i64)
+                .clamp(0, spec.nx as i64 - 1) as u32;
+            let hy = ((p.y / spec.cell_size).round() as i64)
+                .clamp(0, spec.ny as i64 - 1) as u32;
+            above8[dspec0.index(x, y)] =
+                *height.get(hx, hy) - *datum8.get(x, y);
+        }
+    }
+    let rr = (FLOOR_R_M / dspec0.cell_size).round() as i64;
+    let mut floor_f = Grid::filled(dspec0, floor_off);
+    let mut buf: Vec<f64> = Vec::new();
+    for y in 0..dspec0.ny {
+        for x in 0..dspec0.nx {
+            buf.clear();
+            let (cx, cy) = (x as i64, y as i64);
+            // MIRROR at the boundary, never clip. A clipped neighbourhood is
+            // a smaller sample, so the local floor estimate is noisier at the
+            // tile edge and |ground - floor| reaches its extremes there --
+            // which would rebuild, in the fix, exactly the edge bias the fix
+            // exists to remove. Reflection gives every node a full-size
+            // window. (The same trap bit the analysis that found this bug:
+            // a mode="nearest" smooth put 97% of minima at the edge.)
+            let refl = |v: i64, n: i64| -> u32 {
+                let mut t = v;
+                while t < 0 || t >= n {
+                    if t < 0 { t = -t; }
+                    if t >= n { t = 2 * (n - 1) - t; }
+                }
+                t as u32
+            };
+            let mut gy = cy - rr;
+            while gy <= cy + rr {
+                let mut gx = cx - rr;
+                while gx <= cx + rr {
+                    let dd = (((gx - cx).pow(2) + (gy - cy).pow(2)) as f64).sqrt()
+                        * dspec0.cell_size;
+                    if dd <= FLOOR_R_M {
+                        let ry = refl(gy, dspec0.ny as i64);
+                        let rx = refl(gx, dspec0.nx as i64);
+                        buf.push(above8[dspec0.index(rx, ry)]);
+                    }
+                    gx += 3;
+                }
+                gy += 3;
+            }
+            if buf.len() < 8 {
+                continue;
+            }
+            buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let local = buf[buf.len() / 12];
+            floor_f.set(x, y, floor_off + FLOOR_DAMP * (local - floor_off));
+        }
+    }
     // RIVER DRAWDOWN. A river drains its corridor: the local water table is
     // depressed toward the river's own bed, easing back to the regional
     // table over a few hundred metres. Without this, shallow-table seeds
@@ -96,7 +175,8 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
                         continue;
                     }
                     let p2 = dspec.world_of(xx, yy);
-                    let tab = datum8.bilinear(p2) + floor_off - d.water_table_m;
+                    let tab = datum8.bilinear(p2) + floor_f.bilinear(p2)
+                        - d.water_table_m;
                     let full = (tab - bed_t).max(0.0);
                     let f = 1.0 - math::smoothstep(pl.inner, reach, dd);
                     let li = dspec.index(xx, yy);
@@ -113,9 +193,48 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         for x in 0..spec.nx {
             let li = spec.index(x, y);
             let p = spec.world_of(x, y);
-            table[li] = datum8.bilinear(p) + floor_off - d.water_table_m
-                - ddown.bilinear(p);
+            table[li] = datum8.bilinear(p) + floor_f.bilinear(p)
+                - d.water_table_m - ddown.bilinear(p);
             margin[li] = height.data[li] - table[li];
+        }
+    }
+    // AREA-PRESERVING LEVEL. Referencing the table to the LOCAL floor also
+    // raises the bar everywhere -- the ground must now dip below its own
+    // neighbourhood rather than below the whole tile -- so the same
+    // water_table_m draw wets less ground (measured: tiles with any water
+    // 16/30 -> 12/30). The draw is a calibrated dial and its meaning must not
+    // shift under a change that was only ever about WHERE the water sits, so
+    // the table is offset by one global constant chosen to reproduce the wet
+    // AREA the single-plane rule would have produced. Location redistributes;
+    // amount is held fixed.
+    // NOT on river tiles: there the drawdown already sets the corridor level,
+    // and re-levelling to match a global area target raises the table into the
+    // creek -- caught by aeolian_mode_still_grows_no_channels, which measured
+    // the wet width blowing out to 44 m against a ~6 m creek spec.
+    if river.is_none() {
+        let mut old_margin: Vec<f64> = Vec::with_capacity(spec.len());
+        for y in 0..spec.ny {
+            for x in 0..spec.nx {
+                let li = spec.index(x, y);
+                let p = spec.world_of(x, y);
+                old_margin.push(height.data[li]
+                    - (datum8.bilinear(p) + floor_off - d.water_table_m
+                       - ddown.bilinear(p)));
+            }
+        }
+        let want = old_margin.iter().filter(|m| **m < 0.0).count();
+        if want > 0 {
+            let mut sorted = margin.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let delta = sorted[(want - 1).min(sorted.len() - 1)];
+            if delta > 0.0 {
+                for m in margin.iter_mut() {
+                    *m -= delta;
+                }
+                for t in table.iter_mut() {
+                    *t += delta;
+                }
+            }
         }
     }
     // three 1-2-1 passes ~ a 6 m Gaussian on the margin field
