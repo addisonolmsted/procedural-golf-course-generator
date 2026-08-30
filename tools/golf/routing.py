@@ -281,7 +281,7 @@ def lz_probe(rf: RouteFields, f: Fields, tee_yx, green_yx, par: int) -> float:
 
 def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
              r_band: tuple[float, float], remainder_band: tuple[float, float],
-             avoid_spines=(), avoid_walks=()
+             avoid_spines=(), avoid_walks=(), avoid_lzs=()
              ) -> tuple[tuple[float, float, float], float] | None:
     """Best landing zone on an annulus around from_yx, bearing within
     DOGLEG_MAX of the direct line to the green. Returns ((y,x,r), score)."""
@@ -314,6 +314,7 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
     # crossing freedom the strong preference, dirty last resort
     pick = int(order[0])
     pick_walk_clean = None
+    pick_play_clean = None
     for k in order:
         k = int(k)
         legs = np.array([[a[0], a[1]], [yr[k], xr[k]], [g[0], g[1]]])
@@ -321,12 +322,21 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
             continue
         if pick_walk_clean is None:
             pick_walk_clean = k
-        if not any(polyline_crossings(legs, sp) for sp in avoid_spines):
+        if any(polyline_crossings(legs, sp) for sp in avoid_spines):
+            continue
+        if pick_play_clean is None:
+            pick_play_clean = k
+        # SHARED LZ AVOIDANCE (owner, 2026-08-30): landing zones of
+        # different holes stay LZ_SEP_M apart -- the full-clean tier also
+        # requires separation from every already-placed LZ
+        if all(np.hypot(yr[k] - ly, xr[k] - lx) >= LZ_SEP_M
+               for (ly, lx) in avoid_lzs):
             pick = k
             break
     else:
-        if pick_walk_clean is not None:
-            pick = pick_walk_clean
+        pick = (pick_play_clean if pick_play_clean is not None
+                else pick_walk_clean if pick_walk_clean is not None
+                else pick)
     y, x = float(yr[pick]), float(xr[pick])
     legs = np.array([[a[0], a[1]], [y, x], [g[0], g[1]]])
     clean = not any(polyline_crossings(legs, sp) for sp in avoid_spines) \
@@ -338,10 +348,12 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
 
 def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
               clubhouse_yx=None, avoid_spines=(), avoid_walks=(),
-              n_options: int = 6) -> list | None:
+              n_options: int = 6, hi_cap: float | None = None) -> list | None:
     """Best back-tee cell: inside the walk disc of prev_yx (or the clubhouse
     disc for hole 1), hole length in band, tee-grade ground preferred."""
     lo, hi = PAR_BANDS[par]
+    if hi_cap is not None:
+        hi = max(lo + 20.0, min(hi, hi_cap))
     centre = np.asarray(clubhouse_yx if clubhouse_yx is not None else prev_yx,
                         float)
     # the hole-1 disc keeps 14 m of margin: the box slide (+-10 m lateral)
@@ -364,9 +376,10 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
             continue
         walk_t = 1.0 - np.clip((d_prev - WALK_FREE_M) / (WALK_MAX_M - WALK_FREE_M),
                                0, 1)
-        band_t = trapezoid(d_green, lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo))
+        band_t = trapezoid(d_green, lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo),
+                           tail=0.05)
         padq = 1.0 - np.clip(f.slope[i0:i1, j0:j1] / 0.065, 0, 1)
-        sc = np.where(cand, 0.9 * walk_t + 0.6 * band_t + 0.5 * padq, -1e9)
+        sc = np.where(cand, 0.9 * walk_t + 1.1 * band_t + 0.5 * padq, -1e9)
         ys, xs = np.where(cand)
         order = np.lexsort((xs, ys, -sc[ys, xs]))
         # CROSSING AVOIDANCE (2026-08-30): the beam scores crossings on
@@ -385,7 +398,7 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
         # the play x play test naively took the gentle tile from 0 to 5
         # walk crossings. Tier 1: fully clean. Tier 2: walk-clean only.
         # Tier 3 (last resort): best-scored, possibly dirty.
-        tier1, tier2 = [], []
+        tier0, tier1, tier2 = [], [], []
         fallback = None
         for q in order[:200]:
             y, x = int(ys[q]), int(xs[q])
@@ -405,13 +418,23 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
                            for sp in avoid_spines)
             entry = ((float(cell_yx[0]), float(cell_yx[1])),
                      float(sc[y, x]), graded)
-            if not play_bad:
-                tier1.append(entry)
-                if len(tier1) >= n_options:
+            if play_bad:
+                if len(tier2) < n_options:
+                    tier2.append(entry)
+                continue
+            # clearance tier: keep >= ~2/3 of the measured radius profile.
+            # A THRESHOLD inside the tier order, not a primary sort -- the
+            # first attempt sorted options by clearance and starved hole 8
+            # into a walk-crossing fallback (score 2.37, worst_clear 0.97).
+            viol = max((clearance_violation(spine_seg, sp)
+                        for sp in avoid_spines), default=0.0)
+            if viol <= 0.55:
+                tier0.append(entry)
+                if len(tier0) >= n_options:
                     break
-            elif len(tier2) < n_options:
-                tier2.append(entry)
-        opts = tier1 if tier1 else tier2
+            elif len(tier1) < n_options:
+                tier1.append(entry)
+        opts = tier0 if tier0 else (tier1 if tier1 else tier2)
         if opts or fallback:
             return opts if opts else [fallback]
     return None
@@ -474,10 +497,13 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
 
     # state: (score, used frozenset, (n3,n4,n5), pos, seq tuple, segs tuple)
     # seq entries: (green_idx, par, est_tee_yx)
-    states = [(0.0, frozenset(), (0, 0, 0), home, (), ())]
+    # state gains a running length so the beam feels PACE, not just bands:
+    # without it the clearance term buys spacing with length and totals ran
+    # 3.5-3.6 km (band-top holes all the way); target pace ~322 m/hole
+    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0)]
     for h in range(9):
         nxt = []
-        for (sc, used, counts, pos, seq, segs) in states:
+        for (sc, used, counts, pos, seq, segs, cum) in states:
             pars = legal_pars(counts, h)
             D = np.hypot(yx[:, 0] - pos[0], yx[:, 1] - pos[1])
             d_home = np.hypot(yx[:, 0] - home[0], yx[:, 1] - home[1])
@@ -511,8 +537,12 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                     pos[None, :])
                 hole_len = np.hypot(yx[idxs][:, 0] - tee_est[:, 0],
                                     yx[idxs][:, 1] - tee_est[:, 1])
+                lo_i = lo + 0.15 * (hi - lo)
+                hi_i = hi - 0.15 * (hi - lo)
+                pace = np.abs((cum + hole_len) - 322.0 * (h + 1))
                 cheap = (1.5 * pct[idxs]
-                         + 0.5 * trapezoid(hole_len, *PAR_BANDS[par])
+                         + 0.9 * trapezoid(hole_len, lo_i, hi_i, tail=0.1)
+                         - 1.0 * np.clip(pace / 450.0, 0, 1)
                          - 1.2 * np.clip((walk_est[idxs] - WALK_FREE_M)
                                          / (WALK_MAX_M - WALK_FREE_M), 0, 1)
                          - 0.3 * np.clip(walk_est[idxs] / WALK_MAX_M, 0, 1))
@@ -536,14 +566,28 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                     pen = 0.0
                     new_spine = (tuple(tee), tuple(yx[gi]), "spine")
                     new_walk = (tuple(pos), tuple(tee), "walk")
+                    ns_arr = np.array([new_spine[0], new_spine[1]])
+                    n_sp = sum(1 for sg in segs if sg[2] == "spine")
+                    sp_i = 0
                     for (a2, b2, kind2) in segs:
                         A = np.array([a2, b2])
                         if kind2 == "spine" and polyline_crossings(
                                 np.array([new_walk[0], new_walk[1]]), A):
                             pen -= 4.0
-                        if kind2 == "spine" and polyline_crossings(
-                                np.array([new_spine[0], new_spine[1]]), A):
-                            pen -= 6.0
+                        if kind2 == "spine":
+                            if polyline_crossings(ns_arr, A):
+                                pen -= 6.0
+                            # LINE-OF-PLAY CLEARANCE in the beam (2026-08-30):
+                            # detail placement alone could not fix bunching --
+                            # every final of a bunched SEQUENCE bunches, so the
+                            # sequence itself must pay early. Straight-segment
+                            # approximation of the measured radii; the
+                            # consecutive junction (prev green = this walk's
+                            # origin) is exempt as in the exact term.
+                            sp_i += 1
+                            v = clearance_violation(
+                                ns_arr, A, consecutive=(sp_i == n_sp))
+                            pen -= 2.0 * v * v
                         if kind2 == "walk" and polyline_crossings(
                                 np.array([new_spine[0], new_spine[1]]), A):
                             pen -= 4.0
@@ -551,7 +595,8 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                     c2[{3: 0, 4: 1, 5: 2}[par]] += 1
                     nxt.append((sc + s_hole + pen, used | {gi}, tuple(c2),
                                 yx[gi], seq + ((gi, par, tuple(tee)),),
-                                segs + (new_walk, new_spine)))
+                                segs + (new_walk, new_spine),
+                                cum + float(hole_len[list(idxs).index(gi)])))
         if not nxt:
             return None
         nxt.sort(key=lambda s: (round(-s[0], 6),
@@ -620,6 +665,63 @@ def profile_terms(f: Fields, spine: np.ndarray) -> dict[str, float]:
                 _net_dz=net_dz, _above=above, _climb100=climb100)
 
 
+# --- line-of-play clearance (measured 2026-08-30) ---------------------------
+# Real courses keep neighbouring lines of play apart, most strictly through
+# the hole's MIDDLE: across 5,187 corpus holes with neighbours, the p10
+# clearance to the nearest other line is ~50 m at t=0.3-0.7, tapering to
+# ~30 m at the ends (t=0: 29 m, t=0.5: 50 m, t=1: 33 m) -- shared corridor
+# mouths near tees/greens are normal, shared landing zones are not.
+CLEAR_END_M = 30.0
+CLEAR_MID_M = 50.0
+LZ_SEP_M = 50.0          # landing zones of different holes stay this far apart
+
+
+def _clear_radius(t: np.ndarray) -> np.ndarray:
+    """The measured clearance profile: 30 m at the ends, 50 m mid-hole."""
+    ramp = np.clip(np.minimum(t, 1.0 - t) / 0.3, 0.0, 1.0)
+    return CLEAR_END_M + (CLEAR_MID_M - CLEAR_END_M) * ramp
+
+
+def _resample_t(poly: np.ndarray, step_m: float = 15.0):
+    segs = np.diff(poly, axis=0)
+    sl = np.hypot(segs[:, 0], segs[:, 1])
+    L = float(sl.sum())
+    if L < 2 * step_m:
+        return None, None
+    cum = np.r_[0.0, np.cumsum(sl)]
+    ss = np.linspace(0.0, L, max(int(L / step_m), 3) + 1)
+    pts = np.stack([np.interp(ss, cum, poly[:, 0]),
+                    np.interp(ss, cum, poly[:, 1])], 1)
+    return pts, ss / L
+
+
+def clearance_violation(A: np.ndarray, B: np.ndarray,
+                        consecutive: bool = False) -> float:
+    """Worst fractional intrusion of polylines A and B into each other's
+    measured clearance radius, weighted by BOTH holes' along-hole position
+    (an end-of-A point brushing the MIDDLE of B counts at B's radius).
+
+    consecutive=True exempts the junction: the end of A (green) and the
+    start of B (next tee) legitimately share ground -- that adjacency IS
+    walk minimization. Without the exemption the gentle-tile score fell
+    34 -> 4.9 purely on tee-beside-previous-green pairs."""
+    pa, ta = _resample_t(A)
+    pb, tb = _resample_t(B)
+    if pa is None or pb is None:
+        return 0.0
+    if consecutive:
+        keep_a = ta <= 0.82
+        keep_b = tb >= 0.18
+        pa, ta = pa[keep_a], ta[keep_a]
+        pb, tb = pb[keep_b], tb[keep_b]
+        if not len(pa) or not len(pb):
+            return 0.0
+    d = np.sqrt(((pa[:, None, :] - pb[None, :, :]) ** 2).sum(-1))
+    r = np.maximum(_clear_radius(ta)[:, None], _clear_radius(tb)[None, :])
+    v = np.clip((r - d) / r, 0.0, 1.0)
+    return float(v.max())
+
+
 # --- detail placement + exact rescore --------------------------------------
 
 def _walk(f: Fields, a_yx, b_yx, wet2, cell2, hole: int) -> Walk:
@@ -639,21 +741,31 @@ def _walk(f: Fields, a_yx, b_yx, wet2, cell2, hole: int) -> Walk:
 
 def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                  wet2: np.ndarray, cell2: float, state) -> Route | None:
-    _, _, counts, _, seq, _ = state
+    _, _, counts, _, seq, _, _cum = state
     home = np.asarray(sit.clubhouse.yx, float)
     holes: list[Hole] = []
     spines: list[np.ndarray] = []
     walks: list[np.ndarray] = []
+    lz_seen: list[tuple[float, float]] = []
     pos = home
     total_len = total_walk = 0.0
     hole_scores = 0.0
     yx_all, pct = _pool_arrays(pool)
 
+    # LENGTH BUDGET (2026-08-30): the beam's pace term cannot bind because
+    # detail re-derives lengths, and the clearance tier was buying spacing
+    # with band-top holes on every seed (totals 3.5-3.6 km). Each hole's
+    # band cap now shrinks to what the 3,100 m budget minus the remaining
+    # holes' band minimums allows -- totals are bounded by construction.
+    BUDGET_M = 3100.0
     for h, (gi, par, _est) in enumerate(seq):
         g = np.asarray(pool[gi].yx, float)
+        rest_min = sum(PAR_BANDS[pp][0] for (_g2, pp, _e2) in seq[h + 1:])
+        hi_cap = BUDGET_M - total_len - rest_min
         opts = place_tee(rf, f, pos, g, par,
                          clubhouse_yx=home if h == 0 else None,
-                         avoid_spines=spines, avoid_walks=walks)
+                         avoid_spines=spines, avoid_walks=walks,
+                         hi_cap=hi_cap)
         if not opts:
             # saturating fallback: tee at the walk-disc edge toward the green
             v = g - pos
@@ -674,7 +786,8 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
             if par >= 4:
                 r1 = place_lz(rf, f, tee_yx, g, DRIVE_R_M,
                               (90.0, 200.0) if par == 4 else (300.0, 999.0),
-                              avoid_spines=spines, avoid_walks=walks)
+                              avoid_spines=spines, avoid_walks=walks,
+                              avoid_lzs=lz_seen)
                 if r1 is not None:
                     lzs.append(r1[0])
                     lz_score = r1[1]
@@ -682,7 +795,8 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
             if par == 5 and lzs:
                 r2 = place_lz(rf, f, (lzs[0][0], lzs[0][1]), g, SECOND_R_M,
                               (120.0, 200.0),
-                              avoid_spines=spines, avoid_walks=walks)
+                              avoid_spines=spines, avoid_walks=walks,
+                              avoid_lzs=lz_seen)
                 if r2 is not None:
                     lzs.append(r2[0])
                     lz_score = 0.5 * (lz_score + r2[1])
@@ -693,6 +807,7 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 chosen = (tee_yx, tee_q, tee_graded, lzs, lz_score)
                 break
         tee_yx, tee_q, tee_graded, lzs, lz_score = chosen
+        lz_seen += [(y, x) for (y, x, _r) in lzs]
 
         pts = [np.asarray(tee_yx, float)] + \
               [np.array([y, x]) for (y, x, _r) in lzs] + [g]
@@ -739,6 +854,28 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         total_walk += walk.length_m
         pos = g
 
+    # line-of-play clearance + LZ separation, exact
+    clear_pen = 0.0
+    worst_clear = 0.0
+    for i in range(9):
+        for j in range(i + 1, 9):
+            v = clearance_violation(spines[i], spines[j],
+                                    consecutive=(j == i + 1))
+            worst_clear = max(worst_clear, v)
+            clear_pen -= 3.0 * v * v          # quadratic: brushing is cheap,
+                                              # sharing a corridor is not
+    lz_all = [(hh.index, y, x) for hh in holes for (y, x, _r) in hh.lzs]
+    lz_pen = 0.0
+    for ii in range(len(lz_all)):
+        for jj in range(ii + 1, len(lz_all)):
+            if lz_all[ii][0] == lz_all[jj][0]:
+                continue
+            dd = np.hypot(lz_all[ii][1] - lz_all[jj][1],
+                          lz_all[ii][2] - lz_all[jj][2])
+            if dd < LZ_SEP_M:
+                # SHARED LANDING ZONES ARE AVOIDED (owner): heavy, saturating
+                lz_pen -= 2.0 * (1.0 - dd / LZ_SEP_M)
+
     # crossings, exact
     crossings = []
     cross_pen = 0.0
@@ -769,11 +906,19 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         ls = [hh.length_m for hh in holes if hh.par == par]
         if len(ls) >= 2 and max(ls) - min(ls) >= need:
             spread += 0.3
-    tot_t = float(trapezoid(np.array([total_len]), *TOTAL_BAND_M)[0])
+    # weight 1.0 -> 2.5, tail 0.4 -> 0.05 (2026-08-30): adding the beam
+    # clearance term taught the router to BUY spacing with length (3,603 m
+    # totals); the band must push back as hard as the spacing pulls
+    tot_t = float(trapezoid(np.array([total_len]), *TOTAL_BAND_M,
+                            tail=0.05)[0])
 
-    rterms = dict(entropy=0.6 * entropy, spread=spread, total=1.0 * tot_t,
-                  crossings=cross_pen)
-    score = hole_scores + sum(rterms.values())
+    rterms = dict(entropy=0.6 * entropy, spread=spread, total=2.5 * tot_t,
+                  crossings=cross_pen, clearance=clear_pen, lz_sep=lz_pen,
+                  worst_clear=0.0)
+    rterms["worst_clear"] = 0.0        # diagnostic below, not a score term
+    score = hole_scores + sum(v for k, v in rterms.items()
+                              if k != "worst_clear")
+    rterms["worst_clear"] = round(worst_clear, 2)
     return Route(holes, [hh.par for hh in holes], total_len, total_walk,
                  (float(home[0]), float(home[1])), float(score),
                  rterms, crossings)

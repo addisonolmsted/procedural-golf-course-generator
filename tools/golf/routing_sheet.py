@@ -147,7 +147,8 @@ def main():
 <p>hole lengths {e['lens']} m · net dz {e['dz']} m (max above-chord
 {e['abmax']:.1f} m; real p90 1.7) · walk total {e['walk']:.0f} m (median
 {e['walk_med']:.0f}) · play crossings {e['ncross']} · bridges {e['nbridge']}
-· score {e['score']:.2f} · {e['terms']}</p>
+· worst clearance intrusion {e['terms'].get('worst_clear', 0):.2f}
+(0 = full measured spacing kept) · score {e['score']:.2f} · {e['terms']}</p>
 <figure><img src="{e['img']}"></figure>
 </section><hr>"""
 
