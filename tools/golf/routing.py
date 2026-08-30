@@ -40,8 +40,18 @@ ALLOWED_MIXES = ((2, 5, 2), (3, 3, 3), (1, 7, 1))
 PAR_BANDS = {3: (110.0, 210.0), 4: (280.0, 430.0), 5: (440.0, 560.0)}
 TOTAL_BAND_M = (2600.0, 3200.0)
 
-WALK_FREE_M = 150.0      # a walk this short costs ~nothing
+# Measured 2026-08-30 on 4,748 real green->next-tee walks (302 courses):
+# length p25/50/75/90 = 49/67/97/142 m. The old free threshold (150 m) sat
+# at the real p90+, and our routed medians drifted there. BACKTRACKING is
+# rare in reality: the walk projected against the prior hole's closing
+# direction is p50 0 m / p75 7 / p90 51, and only 13% of walks backtrack
+# more than 40 m -- walks continue FORWARD (median angle 59 deg off the
+# prior line of play).
+WALK_FREE_M = 70.0       # real p50: costs ~nothing up to here
+WALK_SAT_M = 200.0       # saturation point of the length penalty
 WALK_MAX_M = 300.0       # beyond this the tee simply isn't placed (geometric)
+BACKTRACK_FREE_M = 10.0
+BACKTRACK_SAT_M = 60.0   # real p90 is 51 m
 DRIVE_R_M = (190.0, 250.0)     # tee -> LZ1 annulus
 SECOND_R_M = (160.0, 220.0)    # LZ1 -> LZ2 annulus (par 5)
 # Real max-dogleg (9,248 hole lines): par4/5 p50 18-20 deg, p90 44-46, and
@@ -390,7 +400,7 @@ def place_tee(rf: RouteFields, f: Fields, prev_yx, green_yx, par: int,
         cand = mask & in_disc & in_band
         if not cand.any():
             continue
-        walk_t = 1.0 - np.clip((d_prev - WALK_FREE_M) / (WALK_MAX_M - WALK_FREE_M),
+        walk_t = 1.0 - np.clip((d_prev - WALK_FREE_M) / (WALK_SAT_M - WALK_FREE_M),
                                0, 1)
         band_t = trapezoid(d_green, lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo),
                            tail=0.05)
@@ -518,10 +528,10 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     # state gains a running length so the beam feels PACE, not just bands:
     # without it the clearance term buys spacing with length and totals ran
     # 3.5-3.6 km (band-top holes all the way); target pace ~322 m/hole
-    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0, 0.0)]
+    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0, 0.0, None)]
     for h in range(9):
         nxt = []
-        for (sc, used, counts, pos, seq, segs, cum, cum_mid) in states:
+        for (sc, used, counts, pos, seq, segs, cum, cum_mid, pdir) in states:
             pars = legal_pars(counts, h)
             D = np.hypot(yx[:, 0] - pos[0], yx[:, 1] - pos[1])
             d_home = np.hypot(yx[:, 0] - home[0], yx[:, 1] - home[1])
@@ -562,8 +572,8 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 cheap = (1.5 * pct[idxs]
                          + 0.9 * trapezoid(hole_len, lo_i, hi_i, tail=0.1)
                          - 1.0 * np.clip(pace / 450.0, 0, 1)
-                         - 1.2 * np.clip((walk_est[idxs] - WALK_FREE_M)
-                                         / (WALK_MAX_M - WALK_FREE_M), 0, 1)
+                         - 1.0 * np.clip((walk_est[idxs] - WALK_FREE_M)
+                                         / (WALK_SAT_M - WALK_FREE_M), 0, 1)
                          - 0.3 * np.clip(walk_est[idxs] / WALK_MAX_M, 0, 1))
                 # back-to-back 3s/5s
                 if seq and par in (3, 5) and seq[-1][1] == par:
@@ -611,13 +621,22 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                 np.array([new_spine[0], new_spine[1]]), A):
                             pen -= 4.0
                     pen -= 2.0 * ch_intrusion(ns_arr, home) ** 2
+                    if pdir is not None:
+                        wv = np.asarray(tee) - pos
+                        bt = max(0.0, -float(np.dot(pdir, wv)))
+                        pen -= 0.7 * min(1.0, max(0.0, (bt - BACKTRACK_FREE_M)
+                                                  / (BACKTRACK_SAT_M
+                                                     - BACKTRACK_FREE_M)))
                     c2 = list(counts)
                     c2[{3: 0, 4: 1, 5: 2}[par]] += 1
                     nxt.append((sc + s_hole + pen, used | {gi}, tuple(c2),
                                 yx[gi], seq + ((gi, par, tuple(tee)),),
                                 segs + (new_walk, new_spine),
                                 cum + float(hole_len[list(idxs).index(gi)]),
-                                cum_mid + mid_par))
+                                cum_mid + mid_par,
+                                (yx[gi] - np.asarray(tee))
+                                / max(np.hypot(*(yx[gi] - np.asarray(tee))),
+                                      1e-9)))
         if not nxt:
             return None
         nxt.sort(key=lambda s: (round(-s[0], 6),
@@ -787,14 +806,24 @@ def _walk(f: Fields, a_yx, b_yx, wet2, cell2, hole: int) -> Walk:
                 wet_spans(wet2, cell2, a, b, "walk", hole))
 
 
+def _backtrack_m(prev_dir, walk: Walk) -> float:
+    """Metres of the walk spent going AGAINST the prior hole's closing
+    direction (real p50 is zero; golfers walk onward, not back)."""
+    if prev_dir is None or walk.length_m < 5.0:
+        return 0.0
+    wv = walk.path[1] - walk.path[0]
+    return float(max(0.0, -np.dot(prev_dir, wv)))
+
+
 def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                  wet2: np.ndarray, cell2: float, state) -> Route | None:
-    _, _, counts, _, seq, _, _cum, _cm = state
+    _, _, counts, _, seq, _, _cum, _cm, _pd = state
     home = np.asarray(sit.clubhouse.yx, float)
     holes: list[Hole] = []
     spines: list[np.ndarray] = []
     walks: list[np.ndarray] = []
     lz_seen: list[tuple[float, float]] = []
+    prev_dir = None                       # unit closing direction of prev hole
     pos = home
     total_len = total_walk = 0.0
     hole_scores = 0.0
@@ -879,9 +908,12 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
             tee=0.4 * float(np.clip(tee_q, -1, 1)),
             length=0.5 * float(trapezoid(np.array([length]),
                                          *PAR_BANDS[par])[0]),
-            walk=-1.2 * float(np.clip((walk.length_m - WALK_FREE_M)
-                                      / (WALK_MAX_M - WALK_FREE_M), 0, 1))
+            walk=-1.0 * float(np.clip((walk.length_m - WALK_FREE_M)
+                                      / (WALK_SAT_M - WALK_FREE_M), 0, 1))
                  - 0.3 * float(np.clip(walk.length_m / WALK_MAX_M, 0, 1)),
+            backtrack=-0.7 * float(np.clip(
+                (_backtrack_m(prev_dir, walk) - BACKTRACK_FREE_M)
+                / (BACKTRACK_SAT_M - BACKTRACK_FREE_M), 0, 1)),
             walk_grade=-0.15 * float(np.clip(walk.grade_mean / 0.15, 0, 1)),
             bridges=max(-1.5, sum(-0.3 - 0.005 * b.span_m
                                   for b in bridges + walk.bridges)),
@@ -902,6 +934,9 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         total_len += length
         total_walk += walk.length_m
         pos = g
+        v_close = pts[-1] - pts[-2]
+        n_close = np.hypot(*v_close)
+        prev_dir = v_close / n_close if n_close > 1e-9 else None
 
     # line-of-play clearance + LZ separation, exact
     clear_pen = 0.0

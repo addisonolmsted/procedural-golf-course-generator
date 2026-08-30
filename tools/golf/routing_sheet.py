@@ -141,12 +141,22 @@ def main():
         aboves = [h.terms.get("above_chord_m", 0) for h in route.holes]
         n_bridge = sum(len(h.bridges) + len(h.walk_from_prev.bridges)
                        for h in route.holes)
+        bts = []
+        for i in range(1, 9):
+            sp = route.holes[i - 1].spine
+            v = sp[-1] - sp[-2]
+            n = np.hypot(*v)
+            if n > 1e-9:
+                w = route.holes[i].walk_from_prev
+                bts.append(float(max(0.0, -np.dot(v / n,
+                                                  w.path[1] - w.path[0]))))
         entries.append(dict(
             seed=seed, mode=mode, img=uri,
             pars="-".join(str(p_) for p_ in route.par_sequence),
             lens=" ".join(f"{h.length_m:.0f}" for h in route.holes),
             total=route.total_length_m, walk=route.total_walk_m,
-            walk_med=walk_med, ncross=len(route.crossings),
+            walk_med=walk_med, bt_max=max(bts) if bts else 0.0,
+            ncross=len(route.crossings),
             nbridge=n_bridge, score=route.score,
             dz=" ".join(f"{v:+.0f}" for v in net_dzs),
             ch_intr=float(ch_intr),
@@ -165,7 +175,9 @@ def main():
 <h2>seed {e['seed']} — {e['mode']} · par {e['pars']} · {e['total']:.0f} m</h2>
 <p>hole lengths {e['lens']} m · net dz {e['dz']} m (max above-chord
 {e['abmax']:.1f} m; real p90 1.7) · walk total {e['walk']:.0f} m (median
-{e['walk_med']:.0f}) · play crossings {e['ncross']} · bridges {e['nbridge']}
+{e['walk_med']:.0f}, worst backtrack {e['bt_max']:.0f} m; real per-nine
+p50 53 / p75 89)
+· play crossings {e['ncross']} · bridges {e['nbridge']}
 · clubhouse keep-out intrusion {e['ch_intr']:.2f} (0 = no line of play
 inside 45 m of the clubhouse pad)
 · doglegs med {e['dog_med']:.0f}° max {e['dog_max']:.0f}° (real par-4/5
