@@ -159,12 +159,20 @@ def main():
         roses = [(c.kind, f"{c.score:.2f}", rose_card(z2, c2, wet2, c, f))
                  for c in picks]
         from collections import Counter
+        # relief_pos of the chosen window: the crest-flat trap detector
+        # (d6w finding 5 -- real sandhills courses sit at ~0.43 on floor
+        # systems at 0.18; generated crest-flats read ~0.56)
+        wi, wj = sit.window_ij
+        hh = int(round(sit.window_m[2] / f.cell))
+        ww = int(round(sit.window_m[3] / f.cell))
+        wpos = float(f.relief_pos[wi:wi + hh, wj:wj + ww].mean())
         entries.append(dict(seed=seed, mode=mode,
                             play_m=f"{dims[0]:.0f}x{dims[1]:.0f}", sheet=sheet,
-                            roses=roses, n=len(pool),
+                            roses=roses, n=len(pool), wpos=wpos,
                             types=dict(Counter(c.kind for c in pool)),
                             loop=max(r[3] for r in sit.shortlist)))
-        print(f"  {seed} ({mode}): {len(pool)} candidates, loop {entries[-1]['loop']}")
+        print(f"  {seed} ({mode}): {len(pool)} candidates, "
+              f"loop {entries[-1]['loop']}, wpos {wpos:.2f}")
 
     legend = " ".join(
         f'<span class="chip" style="background:rgb{TYPE_COLORS[t]}"></span>{t}'
@@ -177,7 +185,8 @@ def main():
             for k, s, u in e["roses"])
         body += f"""<section>
 <h2>seed {e['seed']} — {e['mode']}, {e['play_m']} m window</h2>
-<p>{e['n']} candidates · loop closure {e['loop']}/9 · {e['types']}</p>
+<p>{e['n']} candidates · loop closure {e['loop']}/9 · window relief-pos
+{e['wpos']:.2f} · {e['types']}</p>
 <div class="row"><figure class="sheet"><img src="{e['sheet']}">
 <figcaption>core · shortlisted windows grey, chosen white, clubhouse red</figcaption></figure>
 <div class="roses">{roses}</div></div>

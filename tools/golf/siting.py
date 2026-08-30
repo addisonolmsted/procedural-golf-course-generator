@@ -481,56 +481,90 @@ def cand_window_or_halo(f, i0, j0, h, w, halo):
 
 
 def loop_probe(f: Fields, ch: Clubhouse, hole_lengths: np.ndarray,
-               sites: np.ndarray) -> int:
-    """How many of the 9 hole steps close, chaining greedily through `sites`
-    (an (N,2) array of world-metre green candidates) from the clubhouse and
-    requiring return within CLUBHOUSE_RADIUS_M. The joint coupling term."""
+               sites: np.ndarray, beam: int = 6) -> int:
+    """Max hole steps closable chaining through `sites` from the clubhouse,
+    return within CLUBHOUSE_RADIUS_M on the last step. The joint coupling
+    term.
+
+    BEAM, NOT GREEDY (2026-08-30). The greedy version broke on the first
+    dead step and reported the PREFIX length: one unreachable par-3 band at
+    h=2 printed "2/9" even when steps 3-9 were trivial -- and the observed
+    2-and-5 failure modes on aeolian seeds sat exactly before the two
+    par-3s. A capacity question needs a search that survives a bad branch:
+    per step, every legal extension of every beam state is generated and the
+    top `beam` states are kept, ranked by (holes closed, -total band error).
+    Deterministic: ties break on the site index path.
+    """
     if len(sites) == 0:
         return 0
-    pos = np.array(ch.yx)
-    used = np.zeros(len(sites), bool)
-    closed = 0
+    home = np.array(ch.yx)
+    # state: (closed, err, path_tuple, pos)
+    states = [(0, 0.0, (), home)]
+    best_closed = 0
+    nh = len(hole_lengths)
     for h, L in enumerate(hole_lengths):
-        d = np.hypot(sites[:, 0] - pos[0], sites[:, 1] - pos[1])
-        okd = (d > 0.8 * L) & (d < 1.2 * L) & ~used
-        if h == len(hole_lengths) - 1:
-            # the last green must land near home
-            dh = np.hypot(sites[:, 0] - ch.yx[0], sites[:, 1] - ch.yx[1])
-            okd &= dh <= CLUBHOUSE_RADIUS_M
-        if not okd.any():
+        nxt = []
+        for (closed, err, path, pos) in states:
+            if closed < h:          # this state already died at an earlier step
+                continue
+            d = np.hypot(sites[:, 0] - pos[0], sites[:, 1] - pos[1])
+            okd = (d > 0.8 * L) & (d < 1.2 * L)
+            if h == nh - 1:
+                dh = np.hypot(sites[:, 0] - home[0], sites[:, 1] - home[1])
+                okd &= dh <= CLUBHOUSE_RADIUS_M
+            okd[list(path)] = False
+            for k in np.flatnonzero(okd):
+                nxt.append((closed + 1, err + abs(d[k] - L),
+                            path + (int(k),), sites[k]))
+        if not nxt:
             break
-        k = int(np.argmin(np.abs(d - L) + 1e-6 * np.arange(len(d)))
-                if okd.all() else
-                np.flatnonzero(okd)[np.argmin(np.abs(d[okd] - L))])
-        used[k] = True
-        pos = sites[k]
-        closed += 1
-    return closed
+        nxt.sort(key=lambda s: (-s[0], s[1], s[2]))
+        states = nxt[:beam]
+        best_closed = max(best_closed, states[0][0])
+    return best_closed
 
 
-def preview_sites(f: Fields, i0: int, j0: int, h: int, w: int, cap: int = 40
-                  ) -> np.ndarray:
-    """Fast green-pad preview inside a window (for the loop probe only)."""
-    sub = np.zeros(f.z8.shape, bool)
-    sub[i0:i0 + h, j0:j0 + w] = True
-    mask = f.pad_green & sub
-    room = np.where(mask, f.room, 0.0)
-    ys, xs = np.where(room > 0)
-    if len(ys) == 0:
-        return np.zeros((0, 2))
-    order = np.lexsort((xs, ys, -room[ys, xs]))
-    kept = []
-    occ = np.zeros(f.z8.shape, bool)
-    sep = max(1, int(round(100.0 / f.cell)))
-    for k in order:
-        y, x = int(ys[k]), int(xs[k])
-        if occ[y, x]:
-            continue
-        kept.append((y * f.cell, x * f.cell))
-        if len(kept) >= cap:
-            break
-        occ[max(0, y - sep):y + sep + 1, max(0, x - sep):x + sep + 1] = True
-    return np.array(kept)
+def preview_sites(f: Fields, i0: int, j0: int, h: int, w: int, cap: int = 80,
+                  anchor_yx: tuple[float, float] | None = None) -> np.ndarray:
+    """Green-site preview inside a window+halo, for the loop probe only.
+
+    REBUILT 2026-08-30. The old preview required `pad_green` -- the
+    r=16 m / 5% / 1.4 m gate that greens.py records as passing only 28% of
+    real Nebraska greens -- ranked by `room` (which burned the 40-site cap
+    inside one big interdune flat), thinned at 100 m against the real pool's
+    40 m, and had no halo. The probe was scoring windows against a pool the
+    router will never see, and reported 2-5/9 on aeolian seeds whose ground
+    the corridor packer fits 9 holes into. This preview now approximates the
+    REAL pool's gates at 8 m: the GRADED confirm ceiling (slope <= 0.08
+    rise/run, local relief <= 2.2 m over a ~20 m disc, dry), flattest-first,
+    60 m spacing, 120 m halo, and the clubhouse's reserved green appended so
+    the return anchor the clubhouse gate guaranteed is actually reachable.
+    """
+    halo = int(round(120.0 / f.cell))
+    a0, a1 = max(0, i0 - halo), min(f.z8.shape[0], i0 + h + halo)
+    b0, b1 = max(0, j0 - halo), min(f.z8.shape[1], j0 + w + halo)
+    sl = np.s_[a0:a1, b0:b1]
+    k = int(round(20.0 / f.cell)) | 1
+    relief = (ndimage.maximum_filter(f.z8[sl], k)
+              - ndimage.minimum_filter(f.z8[sl], k))
+    ok = (f.slope[sl] <= 0.08) & (relief <= 2.2) & ~f.wet8[sl]
+    ys, xs = np.where(ok)
+    kept: list[tuple[float, float]] = []
+    if len(ys):
+        order = np.lexsort((xs, ys, f.slope[sl][ys, xs]))
+        occ = np.zeros(ok.shape, bool)
+        sep = max(1, int(round(60.0 / f.cell)))
+        for q in order:
+            y, x = int(ys[q]), int(xs[q])
+            if occ[y, x]:
+                continue
+            kept.append(((a0 + y) * f.cell, (b0 + x) * f.cell))
+            if len(kept) >= cap:
+                break
+            occ[max(0, y - sep):y + sep + 1, max(0, x - sep):x + sep + 1] = True
+    if anchor_yx is not None:
+        kept.append((float(anchor_yx[0]), float(anchor_yx[1])))
+    return np.array(kept) if kept else np.zeros((0, 2))
 
 
 @dataclass
@@ -564,10 +598,14 @@ def run_siting(z2, cell2, wet2, play_long_m: float, play_short_m: float = None,
         if ch is None:
             rows.append(((oi, i, j), float(scan.score[i, j]), None, 0))
             continue
-        sites = preview_sites(f, gi, gj, scan.h, scan.w)
+        sites = preview_sites(f, gi, gj, scan.h, scan.w,
+                              anchor_yx=ch.reserved_green)
         closed = loop_probe(f, ch, hole_lengths, sites)
         wscore = float(scan.score[i, j])
-        pair = wscore * (0.5 + ch.score / 4.0) * (0.4 + 0.6 * closed / 9.0)
+        # Loop-term floor 0.4 -> 0.25 (2026-08-30): with the honest probe an
+        # unroutable window should lose real ground, but routing is the final
+        # arbiter and is not built yet -- the probe steers, it does not veto.
+        pair = wscore * (0.5 + ch.score / 4.0) * (0.25 + 0.75 * closed / 9.0)
         rows.append(((oi, i, j), wscore, ch.score, closed))
         if best is None or pair > best[0]:
             best = (pair, oi, (i, j), ch)
