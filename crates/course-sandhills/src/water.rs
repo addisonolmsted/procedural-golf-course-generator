@@ -1435,10 +1435,18 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                 let s_here = arc + seg * t;
                 let lam_e = m_lam
                     * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, m_seed));
+                // KINOSHITA SHAPE + AMPLITUDE MODULATION (2026-08-30
+                // review: "too sinusoidal ... reads artificial"). Same
+                // helper as the aeolian trunk so the two cannot drift.
+                // NOTE the phase here is s/lam_e, not integrated -- this
+                // caller modulates lam_e only 35% over 640 m and the creek
+                // is short, so the drift the gorge comments describe stays
+                // small; the shape change is independent of it.
+                let phi_h = std::f64::consts::TAU * s_here / lam_e + m_phase;
                 let off = m_swing * 26.0
-                    * (math::sin(std::f64::consts::TAU * s_here / lam_e + m_phase)
-                        + 0.35 * math::sin(std::f64::consts::TAU * s_here
-                                           / (lam_e * 2.7) + m_phase * 1.7));
+                    * crate::meander::amp_mod(s_here, m_seed ^ 0x27f1)
+                    * crate::meander::shape(phi_h)
+                    * crate::meander::amp_cap_scale();
                 // the largest FRACTION of the swing that stays on the floor
                 let mut f = 0.0;
                 for step in 0..=8 {

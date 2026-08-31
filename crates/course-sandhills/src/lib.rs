@@ -31,6 +31,7 @@ pub mod carve;
 pub mod channel;
 pub mod draw;
 pub mod gorge;
+pub mod meander;
 pub mod mode;
 pub mod record;
 pub mod rng;

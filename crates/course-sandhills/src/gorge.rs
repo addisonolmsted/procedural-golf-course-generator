@@ -482,10 +482,17 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // Modulate FIRST, cap LAST. Capping and then multiplying by up
             // to 1.30 put the effective ratio at 0.163 and the bank back to
             // 49 degrees on seed 41423 -- the cap has to be the last word.
+            // AMPLITUDE MODULATION (B, 2026-08-30): the 0.30/470 m channel
+            // was too shallow and too close to the wavelength channel's
+            // 640 m to break the regularity the review caught. The second,
+            // slower channel in `meander::amp_mod` varies bend SIZE down
+            // the reach. Cap scaled so the added Kinoshita harmonics do not
+            // raise the bank angle past what MEANDER_RATIO promises.
             let amp = (swing * 34.0
                 * (1.0 + 0.30 * course_world::noise::perlin1(s_here / 470.0,
-                                                             s_lam ^ 0x5bd1)))
-                .min(MEANDER_RATIO * lam_e);
+                                                             s_lam ^ 0x5bd1))
+                * crate::meander::amp_mod(s_here, s_lam ^ 0x27f1))
+                .min(MEANDER_RATIO * lam_e * crate::meander::amp_cap_scale());
             // Phase is INTEGRATED, not `s / lam_e`.
             //
             // Dividing arc length by a wavelength that itself varies with s
@@ -498,9 +505,8 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // Measured on the emitted polyline, bank angles reached 90 degrees
             // where the cap predicts 42. Integrating gives a local wavelength
             // that IS lam_e, which is what makes the cap mean anything.
-            let off = amp
-                * (math::sin(phi + phase)
-                    + 0.35 * math::sin(phi / 2.7 + phase * 1.7));
+            // KINOSHITA SHAPE (A): skewed and flat-topped, not a pure sine.
+            let off = amp * crate::meander::shape(phi + phase);
             let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
             creek.push(Vec2::new(p.x + perp.x * off, p.y + perp.y * off));
             phi += std::f64::consts::TAU * (seg / n as f64) / lam_e;
