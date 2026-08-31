@@ -149,11 +149,28 @@ def main():
         if route is None:
             print(f"  {seed} ({mode}): NO ROUTE")
             continue
+        # CROP TO THE ROUTE, not the window (owner, 2026-08-30): tees and
+        # LZs carry a 120 m halo and doglegs bend outward, so holes could
+        # sit past a window+150 m crop and get clipped. Bounds now come
+        # from every drawn feature, padded.
         wy, wx, hh, ww = sit.window_m
-        halo = 150.0
-        i0, j0 = max(0.0, wy - halo), max(0.0, wx - halo)
-        i1 = min(z2.shape[0] * c2, wy + hh + halo)
-        j1 = min(z2.shape[1] * c2, wx + ww + halo)
+        ys = [wy, wy + hh]
+        xs = [wx, wx + ww]
+        for h in route.holes:
+            for (py, px) in list(h.spine) + list(h.walk_from_prev.path):
+                ys.append(float(py)); xs.append(float(px))
+            for b_ in h.tee_boxes:
+                ys.append(b_.yx[0]); xs.append(b_.yx[1])
+            for (ly, lx, lr) in h.lzs:
+                ys += [ly - lr, ly + lr]; xs += [lx - lr, lx + lr]
+            for br in h.bridges + h.walk_from_prev.bridges:
+                ys += [br.a_yx[0], br.b_yx[0]]
+                xs += [br.a_yx[1], br.b_yx[1]]
+        ys.append(route.clubhouse_yx[0]); xs.append(route.clubhouse_yx[1])
+        pad = 60.0
+        i0, j0 = max(0.0, min(ys) - pad), max(0.0, min(xs) - pad)
+        i1 = min(z2.shape[0] * c2, max(ys) + pad)
+        j1 = min(z2.shape[1] * c2, max(xs) + pad)
         a0, b0 = int(i0 / c2), int(j0 / c2)
         a1, b1 = int(i1 / c2), int(j1 / c2)
         zc = z2[a0:a1, b0:b1]
@@ -221,6 +238,8 @@ p50 53 / p75 89)
 inside 45 m of the clubhouse pad)
 · doglegs med {e['dog_med']:.0f}° max {e['dog_max']:.0f}° (real par-4/5
 p50 18-20°, p90 44-46°)
+· min green-to-other-LZ {e['terms'].get('min_green_lz_m', -1):.0f} m
+(floor 80; real p1 81)
 · worst clearance intrusion {e['terms'].get('worst_clear', 0):.2f}
 (0 = full measured spacing kept) · score {e['score']:.2f} · {e['terms']}</p>
 <figure><img src="{e['img']}"></figure>
