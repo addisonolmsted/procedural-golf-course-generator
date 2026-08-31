@@ -298,7 +298,7 @@ def lz_probe(rf: RouteFields, f: Fields, tee_yx, green_yx, par: int) -> float:
 
 def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
              r_band: tuple[float, float], remainder_band: tuple[float, float],
-             avoid_spines=(), avoid_walks=(), avoid_lzs=(),
+             avoid_spines=(), avoid_walks=(), avoid_lzs=(), avoid_greens=(),
              ch_keepout_yx=None) -> tuple[tuple[float, float, float], float] | None:
     """Best landing zone on an annulus around from_yx, bearing within
     DOGLEG_MAX of the direct line to the green. Returns ((y,x,r), score)."""
@@ -354,8 +354,13 @@ def place_lz(rf: RouteFields, f: Fields, from_yx, green_yx,
         # SHARED LZ AVOIDANCE (owner, 2026-08-30): landing zones of
         # different holes stay LZ_SEP_M apart -- the full-clean tier also
         # requires separation from every already-placed LZ
-        if all(np.hypot(yr[k] - ly, xr[k] - lx) >= LZ_SEP_M
-               for (ly, lx) in avoid_lzs):
+        if not all(np.hypot(yr[k] - ly, xr[k] - lx) >= LZ_SEP_M
+                   for (ly, lx) in avoid_lzs):
+            continue
+        # and never inside another hole's green (measured: real pairs are
+        # under 80 m only 0.95% of the time)
+        if all(np.hypot(yr[k] - gy2, xr[k] - gx2) >= GREEN_LZ_SEP_M
+               for (gy2, gx2) in avoid_greens):
             pick = k
             break
     else:
@@ -528,10 +533,14 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     # state gains a running length so the beam feels PACE, not just bands:
     # without it the clearance term buys spacing with length and totals ran
     # 3.5-3.6 km (band-top holes all the way); target pace ~322 m/hole
-    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0, 0.0, None)]
+    # state also carries approximate LZ points (par 4/5) so a GREEN is never
+    # chosen on top of an earlier hole's landing zone -- greens come from the
+    # beam and detail placement cannot move them.
+    states = [(0.0, frozenset(), (0, 0, 0), home, (), (), 0.0, 0.0, None, ())]
     for h in range(9):
         nxt = []
-        for (sc, used, counts, pos, seq, segs, cum, cum_mid, pdir) in states:
+        for (sc, used, counts, pos, seq, segs, cum, cum_mid, pdir,
+             lzs_ap) in states:
             pars = legal_pars(counts, h)
             D = np.hypot(yx[:, 0] - pos[0], yx[:, 1] - pos[1])
             d_home = np.hypot(yx[:, 0] - home[0], yx[:, 1] - home[1])
@@ -629,6 +638,27 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                 np.array([new_spine[0], new_spine[1]]), A):
                             pen -= 4.0
                     pen -= 2.0 * ch_intrusion(ns_arr, home) ** 2
+                    # this green vs earlier holes' approximate LZs
+                    gp = yx[gi]
+                    for (ly, lx) in lzs_ap:
+                        d_gl = np.hypot(gp[0] - ly, gp[1] - lx)
+                        if d_gl < GREEN_LZ_SEP_M:
+                            pen -= 5.0 * (1.0 - d_gl / GREEN_LZ_SEP_M)
+                    # this hole's approximate LZ vs earlier greens
+                    new_lz = ()
+                    if par >= 4:
+                        vv = gp - np.asarray(tee)
+                        nv2 = np.hypot(*vv)
+                        if nv2 > 1e-9:
+                            q = (np.asarray(tee)
+                                 + vv / nv2 * min(LZ_APPROX_M, 0.6 * nv2))
+                            new_lz = ((float(q[0]), float(q[1])),)
+                            for (_g2, _p2, _e2), gidx in zip(seq,
+                                                             [e[0] for e in seq]):
+                                gy2, gx2 = yx[gidx]
+                                d_lg = np.hypot(q[0] - gy2, q[1] - gx2)
+                                if d_lg < GREEN_LZ_SEP_M:
+                                    pen -= 5.0 * (1.0 - d_lg / GREEN_LZ_SEP_M)
                     if pdir is not None:
                         wv = np.asarray(tee) - pos
                         bt = max(0.0, -float(np.dot(pdir, wv)))
@@ -644,7 +674,8 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                                 cum_mid + mid_par,
                                 (yx[gi] - np.asarray(tee))
                                 / max(np.hypot(*(yx[gi] - np.asarray(tee))),
-                                      1e-9)))
+                                      1e-9),
+                                lzs_ap + new_lz))
         if not nxt:
             return None
         nxt.sort(key=lambda s: (round(-s[0], 6),
@@ -733,6 +764,13 @@ def profile_terms(f: Fields, spine: np.ndarray) -> dict[str, float]:
 CLEAR_END_M = 30.0
 CLEAR_MID_M = 50.0
 LZ_SEP_M = 50.0          # landing zones of different holes stay this far apart
+# A GREEN MUST NOT SIT IN ANOTHER HOLE'S LANDING ZONE (owner, 2026-08-30:
+# seed 600125's par-3 3rd green sat on the 2nd's LZ -- an ideal drive would
+# finish on the next green). Measured on 64,450 real (green, other-hole-LZ-
+# region) pairs: p0.1 = 52 m, p1 = 81 m; only 0.08% of pairs fall under 50 m
+# and 0.95% under 80 m. Real courses simply do not do this.
+GREEN_LZ_SEP_M = 80.0
+LZ_APPROX_M = 220.0      # where a drive finishes, for beam-time LZ estimates
 
 
 def _clear_radius(t: np.ndarray) -> np.ndarray:
@@ -836,7 +874,7 @@ def _backtrack_m(prev_dir, walk: Walk) -> float:
 
 def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                  wet2: np.ndarray, cell2: float, state) -> Route | None:
-    _, _, counts, _, seq, _, _cum, _cm, _pd = state
+    _, _, counts, _, seq, _, _cum, _cm, _pd, _lz = state
     home = np.asarray(sit.clubhouse.yx, float)
     holes: list[Hole] = []
     spines: list[np.ndarray] = []
@@ -856,6 +894,8 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     BUDGET_M = 3100.0
     for h, (gi, par, _est) in enumerate(seq):
         g = np.asarray(pool[gi].yx, float)
+        # every OTHER hole's green is a fixed obstacle for this hole's LZs
+        other_greens = [tuple(pool[q[0]].yx) for q in seq if q[0] != gi]
         rest_min = sum(PAR_BANDS[pp][0] for (_g2, pp, _e2) in seq[h + 1:])
         hi_cap = BUDGET_M - total_len - rest_min
         opts = place_tee(rf, f, pos, g, par,
@@ -883,7 +923,8 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 r1 = place_lz(rf, f, tee_yx, g, DRIVE_R_M,
                               (90.0, 200.0) if par == 4 else (300.0, 999.0),
                               avoid_spines=spines, avoid_walks=walks,
-                              avoid_lzs=lz_seen, ch_keepout_yx=home)
+                              avoid_lzs=lz_seen, avoid_greens=other_greens,
+                              ch_keepout_yx=home)
                 if r1 is not None:
                     lzs.append(r1[0])
                     lz_score = r1[1]
@@ -892,7 +933,8 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 r2 = place_lz(rf, f, (lzs[0][0], lzs[0][1]), g, SECOND_R_M,
                               (120.0, 200.0),
                               avoid_spines=spines, avoid_walks=walks,
-                              avoid_lzs=lz_seen, ch_keepout_yx=home)
+                              avoid_lzs=lz_seen, avoid_greens=other_greens,
+                              ch_keepout_yx=home)
                 if r2 is not None:
                     lzs.append(r2[0])
                     lz_score = 0.5 * (lz_score + r2[1])
@@ -967,6 +1009,18 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
             worst_clear = max(worst_clear, v)
             clear_pen -= 3.0 * v * v          # quadratic: brushing is cheap,
                                               # sharing a corridor is not
+    green_lz_pen = 0.0
+    worst_glz = 999.0
+    for hh in holes:
+        for (ly, lx, _r) in hh.lzs:
+            for h2 in holes:
+                if h2.index == hh.index:
+                    continue
+                d_gl = float(np.hypot(h2.green_yx[0] - ly,
+                                      h2.green_yx[1] - lx))
+                worst_glz = min(worst_glz, d_gl)
+                if d_gl < GREEN_LZ_SEP_M:
+                    green_lz_pen -= 5.0 * (1.0 - d_gl / GREEN_LZ_SEP_M)
     lz_all = [(hh.index, y, x) for hh in holes for (y, x, _r) in hh.lzs]
     lz_pen = 0.0
     for ii in range(len(lz_all)):
@@ -1038,11 +1092,13 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     rterms = dict(entropy=0.6 * entropy, spread=spread, total=2.5 * tot_t,
                   mix_prior=mix_prior,
                   crossings=cross_pen, clearance=clear_pen, lz_sep=lz_pen,
+                  green_in_lz=green_lz_pen,
                   worst_clear=0.0)
     rterms["worst_clear"] = 0.0        # diagnostic below, not a score term
     score = hole_scores + sum(v for k, v in rterms.items()
-                              if k != "worst_clear")
+                              if k not in ("worst_clear", "min_green_lz_m"))
     rterms["worst_clear"] = round(worst_clear, 2)
+    rterms["min_green_lz_m"] = round(worst_glz, 0) if worst_glz < 999 else -1
     return Route(holes, [hh.par for hh in holes], total_len, total_walk,
                  (float(home[0]), float(home[1])), float(score),
                  rterms, crossings)
