@@ -387,6 +387,7 @@ class ClubhouseFields:
     pad_room: np.ndarray            # EDT inside the buildable mask, m
     near_green: np.ndarray
     near_tee: np.ndarray
+    green_grade: np.ndarray         # corpus-calibrated green-buildable mask
 
 
 # A clubhouse needs SOME flat dry ground, but a hard 60 m disc is over-gated:
@@ -402,15 +403,29 @@ def build_clubhouse_fields(f: Fields) -> ClubhouseFields:
     ok = (f.slope <= FAIRWAY_SLOPE_RR) & ~f.wet8
     pad_room = ndimage.distance_transform_edt(ok, sampling=f.cell)
     rr = _disc(f, CLUBHOUSE_RADIUS_M)
-    near_green = ndimage.maximum_filter(f.pad_green.astype(np.uint8),
+    # GREEN-GRADE, not pad_green (2026-08-30). pad_green is the r=16m/5%/
+    # 1.4m gate that greens.py records as passing only 28% of real Nebraska
+    # greens; the corpus-calibrated criterion is the GRADED confirm ceiling
+    # (slope <= 0.08, relief <= 2.2 m over a ~20 m disc, dry). Using the old
+    # gate here made the clubhouse's near_green hard gate unsatisfiable on
+    # steep dune tiles -- seed 650084 (56 m relief) had pad_green on 0.00%
+    # of its core and raised "no window admits a clubhouse", the last hard
+    # veto in the pipeline. Same bug class as the loop probe's preview pool.
+    k20 = int(round(20.0 / f.cell)) | 1
+    green_grade = ((f.slope <= 0.08)
+                   & ((ndimage.maximum_filter(f.z8, k20)
+                       - ndimage.minimum_filter(f.z8, k20)) <= 2.2)
+                   & ~f.wet8)
+    near_green = ndimage.maximum_filter(green_grade.astype(np.uint8),
                                         footprint=rr).astype(bool)
     near_tee = ndimage.maximum_filter(f.pad_tee.astype(np.uint8),
                                       footprint=rr).astype(bool)
-    return ClubhouseFields(pad_room, near_green, near_tee)
+    return ClubhouseFields(pad_room, near_green, near_tee, green_grade)
 
 
 def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
-                   cf: ClubhouseFields) -> Clubhouse | None:
+                   cf: ClubhouseFields,
+                   pad_min_m: float | None = None) -> Clubhouse | None:
     """Best clubhouse for one window, or None if no legal anchor exists.
 
     Hard gates: a 60 m buildable dry pad, and a green-grade AND tee-grade
@@ -429,7 +444,8 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
 
     cand = np.zeros(f.z8.shape, bool)
     cand[a0:a1, b0:b1] = True
-    cand &= (cf.pad_room >= CH_PAD_MIN_M) & cf.near_green & cf.near_tee
+    cand &= (cf.pad_room >= (CH_PAD_MIN_M if pad_min_m is None else pad_min_m))
+    cand &= cf.near_green & cf.near_tee
     # CENTRAL MASK (owner, 2026-08-30): a clubhouse deep in the middle of
     # the property makes a returning nine hard to fit -- the route must
     # thread around its own origin twice. The soft edge term was not enough
@@ -507,7 +523,7 @@ def site_clubhouse(f: Fields, win_ij: tuple[int, int], scan: WindowScan,
                [(int(c.yx[0] / cell), int(c.yx[1] / cell)) for c in picks]):
             continue
         picks.append(Clubhouse((y * cell, x * cell), float(total[q]),
-                               nearest(f.pad_green, y, x),
+                               nearest(cf.green_grade, y, x),
                                nearest(f.pad_tee, y, x)))
         if len(picks) >= 3:
             break
@@ -651,6 +667,28 @@ def run_siting(z2, cell2, wet2, play_long_m: float, play_short_m: float = None,
         rows.append(((oi, i, j), wscore, ch.score, closed))
         if best is None or pair > best[0]:
             best = (pair, oi, (i, j), ch)
+    if best is None:
+        # NO HARD VETO (stage-06: "a bad route is expensive, never
+        # impossible"). If every shortlisted window refuses a clubhouse,
+        # relax the pad-room floor progressively rather than failing the
+        # seed -- a cramped tile gets a graded clubhouse, not no course.
+        for floor_m in (18.0, 12.0, 6.0):
+            for (oi, i, j) in cands:
+                scan = scans[oi]
+                ch = site_clubhouse(f, (i, j), scan, cf, pad_min_m=floor_m)
+                if ch is None:
+                    continue
+                gi2, gj2 = scan.ij0[0] + i, scan.ij0[1] + j
+                sites = preview_sites(f, gi2, gj2, scan.h, scan.w,
+                                      anchor_yx=ch.reserved_green)
+                closed = loop_probe(f, ch, hole_lengths, sites)
+                wscore = float(scan.score[i, j])
+                pair = (wscore * (0.5 + ch.score / 4.0)
+                        * (0.25 + 0.75 * closed / 9.0))
+                if best is None or pair > best[0]:
+                    best = (pair, oi, (i, j), ch)
+            if best is not None:
+                break
     if best is None:
         raise RuntimeError("no window admits a clubhouse")
     pair, oi, (i, j), ch = best
