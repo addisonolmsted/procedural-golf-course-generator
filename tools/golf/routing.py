@@ -578,6 +578,14 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
                 # back-to-back 3s/5s
                 if seq and par in (3, 5) and seq[-1][1] == par:
                     cheap = cheap - 0.6
+                # MIX PRIOR, beam side (measured 2026-08-30): among 489 real
+                # ref+par-tagged nines, par-36 mixes split (2,5,2) 94.2% /
+                # (1,7,1) 3.1% / (3,3,3) 2.7%; our 1000-seed batch ran
+                # (3,3,3) 75.4% -- par 3s dodge LZ/clearance costs and par 5s
+                # buy length room, so the beam drifted to the extremes. Real
+                # nines are 5/9 par-4s; nudge each par-4 pick.
+                if par == 4:
+                    cheap = cheap + 0.22
                 top = idxs[np.argsort(-cheap, kind="stable")[:EXPAND_TOP]]
                 for gi in top:
                     gi = int(gi)
@@ -645,6 +653,17 @@ def beam_route(f: Fields, rf: RouteFields, sit: Siting, pool,
         states = nxt[:BEAM_W]
 
     finals = states[:N_FINAL]
+    # (2,5,2) ALWAYS AUDITIONS (2026-08-30): the route-level mix prior can
+    # only rerank the finals, and on some seeds no (2,5,2) state survived
+    # the beam -- pushing the prior weight further just shuffled the
+    # minority between (3,3,3) and (1,7,1) (calibration ladder in
+    # detail_route). If the finals carry no (2,5,2) state, the best one
+    # from the full last generation joins them.
+    if not any(st[2] == (2, 5, 2) for st in finals):
+        for st in states:
+            if st[2] == (2, 5, 2):
+                finals = finals + [st]
+                break
     best = None
     for st in finals:
         r = detail_route(f, rf, sit, pool, wet2, cell2, st)
@@ -1000,12 +1019,24 @@ def detail_route(f: Fields, rf: RouteFields, sit: Siting, pool,
     # banking yardage for the end and the fives all landed on holes 7-9.
     # Reward fives whose indices span the round; -0.8 when they bunch in
     # any 3-hole stretch.
+    # MIX PRIOR, route side: (2,5,2) is what architects build (94.2% of
+    # real par-36 nines); the other two stay legal-but-exceptional.
+    n3 = sum(1 for hh in holes if hh.par == 3)
+    n5 = sum(1 for hh in holes if hh.par == 5)
+    # calibration ladder (200 fresh seeds per rung, real = 94.2/2.7/3.1):
+    #   1.2 / 0.15 / 0.0   ->  73.5 / 19.0 / 7.5
+    #   2.0 / 0.0  / 0.0   ->  86.0 / 10.5 / 3.5   ((1,7,1) on target)
+    #   2.0 / 0.0  / -0.6  ->  86.0 /  7.5 / 6.5   (minority reshuffled;
+    #                            the real limiter is (2,5,2) missing from
+    #                            the finals -- fixed structurally below)
+    mix_prior = {(2, 2): 2.0, (1, 1): 0.0, (3, 3): -0.6}.get((n3, n5), 0.0)
     idx5 = [hh.index for hh in holes if hh.par == 5]
     if len(idx5) >= 2 and (max(idx5) - min(idx5)) < 3:
         spread -= 0.8
     elif len(idx5) >= 2 and (max(idx5) - min(idx5)) >= 4:
         spread += 0.3
     rterms = dict(entropy=0.6 * entropy, spread=spread, total=2.5 * tot_t,
+                  mix_prior=mix_prior,
                   crossings=cross_pen, clearance=clear_pen, lz_sep=lz_pen,
                   worst_clear=0.0)
     rterms["worst_clear"] = 0.0        # diagnostic below, not a score term
