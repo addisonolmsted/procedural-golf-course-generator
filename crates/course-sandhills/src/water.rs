@@ -1459,7 +1459,11 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // fewer creeks clear the length filter at low vigour and the
         // detrend window scales with creek length -- so the crossing rate,
         // which is stable at 3-4%, is what the choice was made on.
-        let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5) * 0.8;
+        // Vigour back UP now that the creek cuts a 5 m channel instead of a
+        // 32 m swale: the amplitude that used to smear a trough across the
+        // floor now just moves a creek within its valley, and the room
+        // scaling in `migrate` keeps pinched reaches straight regardless.
+        let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5) * 1.15;
         let base: Vec<Vec2> = pts.to_vec();
         let pf = crate::migrate::grow(&base, mig_w, 0.34, m_seed, vigour,
                                       |q| u_field.bilinear(q));
@@ -1518,7 +1522,6 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let s_w = m_seed ^ 0x9E37_79B9;
         let s_d = m_seed ^ 0x85EB_CA6B;
         let s_h = m_seed ^ 0xC2B2_AE35;
-        let base_skirt = 13.0f64;
         let mut qs: Vec<Vec2> = Vec::with_capacity(pos.len());
         for i in 0..pos.len() {
             let (p0, perp, off) = pos[i];
@@ -1575,44 +1578,64 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let a = arcs[i];
             let perp = pos[i].1;
             let off = pos[i].2;
-            // width: two octaves, so it swells and pinches on more than one
-            // scale instead of breathing regularly
+            // width: two octaves, so the channel swells and pinches on more
+            // than one scale instead of breathing regularly
             let wmul = 1.0
                 + 0.40 * course_world::noise::perlin1(a / 270.0, s_w)
                 + 0.20 * course_world::noise::perlin1(a / 88.0, s_w ^ 0x11);
-            let sk_c = (base_skirt * wmul).clamp(6.5, 23.0);
+            let _ = wmul;
             // depth: pools and shallows along the run
             let cut = (0.30 + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
             // wet width breathes a little too
             let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
                 .clamp(1.4, 3.4);
-            let r = ((sk_c * 1.45) / cell).ceil() as i64 + 1;
+            // THE CREEK CUTS A CREEK, NOT A VALLEY (review, 2026-09-01:
+            // "the creek line is defining the terrain ... like a cut out
+            // where the creek is that extends into the surrounds").
+            //
+            // This used to grade a soft skirt out to `sk_c*1.40` -- up to
+            // 32 m either side -- smoothly down to the bed. At the old
+            // 283-700 m sine wavelength that read as a broad swale; once the
+            // planform meandered at 8-11 channel widths the same skirt swept
+            // a wide trough that followed every bend, and the creek was
+            // sculpting the valley instead of sitting in it.
+            //
+            // The VALLEY is the macro stage's job (the channel network and
+            // its HAND profile in `assemble`, cut by `carve::beds`). The
+            // creek's own cut is now what `water::cut_creek` has always cut
+            // on the aeolian side: flat bottom out to the wet half-width, a
+            // steep rise through the surface to the bank, and NOTHING beyond
+            // it. Footprint is hwi + RISE_M, about 4-6 m, not 32.
+            const RISE_M: f64 = 2.2;      // horizontal run of the bank
+            const FREE_M: f64 = 0.40;     // freeboard above the water surface
+            let r = ((hwi + RISE_M + 1.0) / cell).ceil() as i64 + 1;
             let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
             for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
                 for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
                     let idx = spec.index(gx as u32, gy as u32);
                     let q = spec.world_of(gx as u32, gy as u32);
                     let dd = q.distance(p);
-                    // which bank? the outer one is the cut bank
-                    let side = (q.x - p.x) * perp.x + (q.y - p.y) * perp.y;
-                    let outer = side * off >= 0.0;
-                    let sk = if outer { sk_c * 1.40 } else { sk_c * 0.68 };
-                    if dd > sk {
+                    if dd > hwi + RISE_M {
                         continue;
                     }
-                    // one-sided soft cut: full at the centre-line, nothing at
-                    // the skirt, and never a fill
-                    let t = math::smoothstep(sk, hwi, dd);
-                    let target = z - cut;
-                    let over = (h0[idx] - target).max(0.0);
-                    let cand = h0[idx] - t * over;
-                    if cand < height.data[idx] {
+                    // outer bank is the cut bank: a touch wider and deeper,
+                    // inner bank is the point bar. Kept -- it is what stops
+                    // the section being a symmetric trough -- but now it
+                    // modulates a 5 m channel, not a 32 m swale.
+                    let side = (q.x - p.x) * perp.x + (q.y - p.y) * perp.y;
+                    let outer = side * off >= 0.0;
+                    let hw_i = if outer { hwi * 1.15 } else { hwi * 0.9 };
+                    let cand = if dd <= hw_i {
+                        z - cut
+                    } else {
+                        let u = ((dd - hw_i) / RISE_M).min(1.0);
+                        z - cut + (cut + FREE_M) * u
+                    };
+                    if cand < h0[idx] && cand < height.data[idx] {
                         height.data[idx] = cand;
                     }
-                    if dd <= hwi + 2.0 {
+                    if dd <= hw_i + cell * 0.32 {
                         creek[idx] = true;
-                    }
-                    if dd <= hwi {
                         if surface.data[idx].is_nan() {
                             wet_cells += 1;
                             surface.data[idx] = z;

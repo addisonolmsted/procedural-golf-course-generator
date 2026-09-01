@@ -132,6 +132,15 @@ pub const RC_PEAK: f64 = 2.8;
 pub const ERODE_VAR: f64 = 0.55;
 /// Correlation length of the erodibility field, in channel widths.
 pub const ERODE_L_W: f64 = 9.0;
+/// Room reference: the floor half-width at which migration runs at its
+/// nominal rate. Below it the creek is pinched and straightens; above it the
+/// creek is free to swing. Set near the fluvial trunk's typical floor
+/// half-width so a normal reach is unchanged and the modulation is genuinely
+/// two-sided rather than a global slowdown.
+pub const ROOM_REF_M: f64 = 55.0;
+pub const ROOM_MIN_K: f64 = 0.25;
+pub const ROOM_MAX_K: f64 = 2.2;
+
 /// RESISTANT PATCHES, and why the field is gated rather than merely varied.
 ///
 /// A smooth +-55% variation means every reach migrates SOMEWHAT and nothing
@@ -555,6 +564,24 @@ where
             // Getting this backwards makes the model DECAY, and it decays
             // quietly -- the first run sat at its seed amplitude and looked
             // like a tuning problem rather than a sign error.
+            // ROOM-SCALED MIGRATION (review, 2026-09-01: "if the valley
+            // pinches in the creek should be straighter, if the valley
+            // widens we can have more meandering"). `u` is normalised, so
+            // the same u threshold sits at very different PHYSICAL distances
+            // in a narrow reach and a wide one. Estimating the local room
+            // from the u gradient turns that into a migration multiplier:
+            // a pinched valley pins the creek, a wide one lets it swing.
+            let room = {
+                let u0 = u_at(pf.p[i]);
+                let e = w;
+                let ux = (u_at(Vec2::new(pf.p[i].x + e, pf.p[i].y))
+                          - u_at(Vec2::new(pf.p[i].x - e, pf.p[i].y))) / (2.0 * e);
+                let uy = (u_at(Vec2::new(pf.p[i].x, pf.p[i].y + e))
+                          - u_at(Vec2::new(pf.p[i].x, pf.p[i].y - e))) / (2.0 * e);
+                let g = (ux * ux + uy * uy).sqrt();
+                if g < 1e-6 { ROOM_REF_M } else { ((u_hard - u0).max(0.0) / g).min(400.0) }
+            };
+            let room_k = (room / ROOM_REF_M).clamp(ROOM_MIN_K, ROOM_MAX_K);
             let en = noise::perlin2(pf.p[i].x / (ERODE_L_W * w),
                                     pf.p[i].y / (ERODE_L_W * w),
                                     salt ^ 0x51ED_270B);
@@ -565,7 +592,7 @@ where
                    * noise::perlin2(pf.p[i].x / (ERODE_L_W * w * 0.45),
                                     pf.p[i].y / (ERODE_L_W * w * 0.45),
                                     salt ^ 0x2C1B_3E77));
-            let mag = -r1[i] * hickin_nanson(c[i], w) * vigour
+            let mag = -r1[i] * hickin_nanson(c[i], w) * vigour * room_k
                 * mig_w * w * ero.max(0.05);
             let mut d = Vec2::new(nrm.x * mag, nrm.y * mag);
             if reinject {
