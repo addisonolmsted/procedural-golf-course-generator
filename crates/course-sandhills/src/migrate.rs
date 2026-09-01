@@ -132,6 +132,23 @@ pub const RC_PEAK: f64 = 2.8;
 pub const ERODE_VAR: f64 = 0.55;
 /// Correlation length of the erodibility field, in channel widths.
 pub const ERODE_L_W: f64 = 9.0;
+/// RESISTANT PATCHES, and why the field is gated rather than merely varied.
+///
+/// A smooth +-55% variation means every reach migrates SOMEWHAT and nothing
+/// is ever pinned, so the planform bends continuously. Real creeks do not:
+/// measured 2026-09-01 on 115,154 OSM stream reaches, 59.7% of a real creek's
+/// length runs straighter than R = 150 m and its typical longest straight run
+/// is 118 m (66 m at R > 300), against 53.1% and 83 m (30 m) for the ungated
+/// model. The reviewer saw this before it was measured: "real creeks have
+/// more straight sections than what we model".
+///
+/// The physical reading is resistant banks -- clay plugs left by old cutoffs,
+/// bedrock, root-bound sections -- which do not migrate at all rather than
+/// migrating a little. So the field is GATED: below the threshold erodibility
+/// drops to a floor and that reach is effectively pinned, which is what puts
+/// a straight passage between two mobile bends.
+pub const ERODE_FLOOR: f64 = 0.10;
+pub const ERODE_GATE: (f64, f64) = (-0.22, 0.14);
 
 // --- seeding ---------------------------------------------------------------
 
@@ -538,10 +555,16 @@ where
             // Getting this backwards makes the model DECAY, and it decays
             // quietly -- the first run sat at its seed amplitude and looked
             // like a tuning problem rather than a sign error.
-            let ero = 1.0 + ERODE_VAR * erode
-                * noise::perlin2(pf.p[i].x / (ERODE_L_W * w),
-                                 pf.p[i].y / (ERODE_L_W * w),
-                                 salt ^ 0x51ED_270B);
+            let en = noise::perlin2(pf.p[i].x / (ERODE_L_W * w),
+                                    pf.p[i].y / (ERODE_L_W * w),
+                                    salt ^ 0x51ED_270B);
+            // gate first (resistant patches), then vary within the mobile part
+            let gate = math::smoothstep(ERODE_GATE.0, ERODE_GATE.1, en);
+            let ero = (ERODE_FLOOR + (1.0 - ERODE_FLOOR) * gate)
+                * (1.0 + 0.35 * ERODE_VAR * erode
+                   * noise::perlin2(pf.p[i].x / (ERODE_L_W * w * 0.45),
+                                    pf.p[i].y / (ERODE_L_W * w * 0.45),
+                                    salt ^ 0x2C1B_3E77));
             let mag = -r1[i] * hickin_nanson(c[i], w) * vigour
                 * mig_w * w * ero.max(0.05);
             let mut d = Vec2::new(nrm.x * mag, nrm.y * mag);

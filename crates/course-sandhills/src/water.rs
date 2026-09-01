@@ -1452,7 +1452,14 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // registers as one, so the amplitude win is the PLANFORM's, not a
         // dial's: bends at 8-11 channel widths simply cannot wander like a
         // 283-700 m sine could.
-        let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5);
+        // 0.8 interpolates the straightness ladder (22 creek seeds, gated
+        // erodibility): x1.0 gives 54.8% of length straighter than R = 150 m
+        // with 76 m runs, x0.55 gives 66.0% with 156 m runs, against a real
+        // 59.7% and 118 m. Amplitude is NOT comparable across those rungs --
+        // fewer creeks clear the length filter at low vigour and the
+        // detrend window scales with creek length -- so the crossing rate,
+        // which is stable at 3-4%, is what the choice was made on.
+        let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5) * 0.8;
         let base: Vec<Vec2> = pts.to_vec();
         let pf = crate::migrate::grow(&base, mig_w, 0.34, m_seed, vigour,
                                       |q| u_field.bilinear(q));
