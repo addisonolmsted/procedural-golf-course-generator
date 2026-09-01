@@ -1435,6 +1435,23 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // this same stream, further down), so the transcript is preserved
         // exactly.
         let mig_w = (hw * 2.0).clamp(3.0, 12.0);
+        // AMPLITUDE is what the routing cares about (review, 2026-09-01: a
+        // line of play that crosses the creek and comes BACK is atypical
+        // golf). Measured on 8 fluvial creek seeds, same seeds both sides,
+        // chords angled >= 35 deg to the local creek axis (a chord nearly
+        // parallel to a creek re-crosses whatever its shape, and no router
+        // would place a hole that way -- including them measures the
+        // sampler, not the terrain, and read 21.9% against a true 2.8%):
+        //
+        //             lateral amplitude p95   holes crossing twice
+        //   sine        63.0 m                  11.8%
+        //   migrate     14.0 m                   2.8%
+        //
+        // A vigour sweep (x1.0/0.6/0.4/0.25) moved the crossing rate by less
+        // than 2 points and started dissolving creeks below the length that
+        // registers as one, so the amplitude win is the PLANFORM's, not a
+        // dial's: bends at 8-11 channel widths simply cannot wander like a
+        // 283-700 m sine could.
         let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5);
         let base: Vec<Vec2> = pts.to_vec();
         let pf = crate::migrate::grow(&base, mig_w, 0.34, m_seed, vigour,

@@ -403,6 +403,21 @@ where
     grow_at(base, w, u_hard, salt, vigour, mig_w, DS_WIDTHS, u_at)
 }
 
+/// Sweep entry with the ITERATION budget exposed. Bends must MATURE before
+/// their limbs touch, so cutoff frequency is as much a function of how long
+/// the model runs as of how fast it migrates.
+#[allow(clippy::too_many_arguments)]
+pub fn grow_sweep_iters<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32,
+                           vigour: f64, mig_w: f64, reinject: usize, erode: f64,
+                           kernel_w: f64, iters_mult: f64, u_at: F) -> Planform
+where
+    F: FnMut(Vec2) -> f64,
+{
+    grow_full_iters(base, w, u_hard, salt, vigour, mig_w, DS_WIDTHS, reinject,
+                    1.0, 1.0, erode, kernel_w,
+                    ((ITERS as f64 * iters_mult) as usize).max(10), u_at)
+}
+
 /// Full sweep entry for the calibration ladder.
 #[allow(clippy::too_many_arguments)]
 pub fn grow_sweep<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
@@ -450,7 +465,19 @@ where
 #[allow(clippy::too_many_arguments)]
 fn grow_full<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
                 mig_w: f64, ds_widths: f64, reinject: usize, spread: f64,
-                diff: f64, erode: f64, kernel_w: f64, mut u_at: F) -> Planform
+                diff: f64, erode: f64, kernel_w: f64, u_at: F) -> Planform
+where
+    F: FnMut(Vec2) -> f64,
+{
+    grow_full_iters(base, w, u_hard, salt, vigour, mig_w, ds_widths, reinject,
+                    spread, diff, erode, kernel_w, ITERS, u_at)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grow_full_iters<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
+                      mig_w: f64, ds_widths: f64, reinject: usize, spread: f64,
+                      diff: f64, erode: f64, kernel_w: f64, iters: usize,
+                      mut u_at: F) -> Planform
 where
     F: FnMut(Vec2) -> f64,
 {
@@ -465,7 +492,7 @@ where
     let start = pf.p.clone();
     let u_soft = u_hard * U_SOFT_FRAC;
     let step_max = STEP_CLAMP_W * w;
-    let cutoff_from = (ITERS as f64 * CUTOFF_FROM_FRAC) as usize;
+    let cutoff_from = (iters as f64 * CUTOFF_FROM_FRAC) as usize;
 
     // initial broadband perturbation
     {
@@ -483,7 +510,7 @@ where
         }
     }
 
-    for it in 0..ITERS {
+    for it in 0..iters {
         let n = pf.p.len();
         if n < 5 {
             break;

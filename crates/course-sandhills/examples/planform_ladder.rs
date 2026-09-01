@@ -29,26 +29,50 @@ fn main() {
     // Finer sweep around the measured target (real CV p25/50/75 =
     // 0.38/0.46/0.55, real sinuosity 1.063/1.117/1.225): the coarse ladder
     // put `shipped` (CV 0.26) below the band and `reinject_6` (0.66) above it.
-    // (label, mig, reinject, erode, kernel_w)
-    // Target from 55,281 real reaches: bend length 40/50/60 m, CV 0.38/0.46/0.55,
-    // sinuosity 1.063/1.117/1.225.
-    let rungs: [(&str, f64, usize, f64, f64); 9] = [
-        ("shipped",        0.70, 20, 0.0, 12.0),
-        ("erode_only",     0.70, 20, 1.0, 12.0),
-        ("erode_hi",       0.70, 20, 1.6, 12.0),
-        ("kernel_20",      0.70, 20, 1.0, 20.0),
-        ("kernel_28",      0.70, 20, 1.0, 28.0),
-        ("k20_erode_hi",   0.70, 20, 1.6, 20.0),
-        ("k20_ero_mig9",   0.90, 20, 1.6, 20.0),
-        ("k28_ero_mig9",   0.90, 20, 1.6, 28.0),
-        ("k20_ero_r8",     0.90,  8, 1.6, 20.0),
+    // Push growth until CUTOFFS fire. Zero oxbows on every on-terrain seed,
+    // and cutoffs are a primary irregularity engine -- each one deletes a
+    // bend and leaves mismatched neighbours. Target: bend length 40-60 m,
+    // CV 0.38-0.55, sinuosity 1.06-1.23 (55,281 real reaches).
+    // A CONFINED belt is included because unconfined bends migrate apart
+    // instead of necking: u = |offset from axis| / half_belt.
+    let belt = 90.0_f64;
+    let confine = |q: Vec2| -> f64 {
+        // distance to the axis, normalised by the half-belt
+        let mut best = f64::INFINITY;
+        for k in 0..axis.len() - 1 {
+            let (a, b) = (axis[k], axis[k + 1]);
+            let ab = Vec2::new(b.x - a.x, b.y - a.y);
+            let t = (((q.x - a.x) * ab.x + (q.y - a.y) * ab.y)
+                     / ab.dot(ab).max(1e-9)).clamp(0.0, 1.0);
+            let pr = Vec2::new(a.x + ab.x * t, a.y + ab.y * t);
+            best = best.min(q.distance(pr));
+        }
+        best / belt
+    };
+    // (label, mig, iters_mult, erode, confined)
+    let rungs: [(&str, f64, f64, f64, bool); 9] = [
+        ("now_free",       0.70, 1.0, 1.0, false),
+        ("now_belt",       0.70, 1.0, 1.0, true),
+        ("mig12_belt",     1.20, 1.0, 1.0, true),
+        ("mig18_belt",     1.80, 1.0, 1.0, true),
+        ("mig12_it2",      1.20, 2.0, 1.0, true),
+        ("mig18_it2",      1.80, 2.0, 1.0, true),
+        ("mig18_it3",      1.80, 3.0, 1.0, true),
+        ("mig25_it2",      2.50, 2.0, 1.0, true),
+        ("mig18_it3_ero2", 1.80, 3.0, 2.0, true),
     ];
-    for (tag, mig, re, ero, ker) in rungs {
-        let pf = migrate::grow_sweep(&axis, w, 1.0, 0xBEEF, 1.0, mig, re, ero, ker,
-                                     |_| 0.0);
+    for (tag, mig, itm, ero, conf) in rungs {
+        let pf = if conf {
+            migrate::grow_sweep_iters(&axis, w, 0.85, 0xBEEF, 1.0, mig, 20, ero,
+                                      12.0, itm, &confine)
+        } else {
+            migrate::grow_sweep_iters(&axis, w, 1.0, 0xBEEF, 1.0, mig, 20, ero,
+                                      12.0, itm, &|_| 0.0)
+        };
         let l: f64 = pf.p.windows(2).map(|q| q[0].distance(q[1])).sum();
         let chord = pf.p[0].distance(*pf.p.last().unwrap());
-        eprintln!("{tag}: sinuosity {:.3}, {} oxbows", l / chord, pf.oxbows.len());
+        eprintln!("{tag}: sinuosity {:.3}, {} oxbows, {} nodes",
+                  l / chord, pf.oxbows.len(), pf.p.len());
         txt.push_str(&format!("{tag}\n"));
         for p in &pf.p { txt.push_str(&format!("{:.2} {:.2}\n", p.x, p.y)); }
         for (i, ox) in pf.oxbows.iter().enumerate() {
