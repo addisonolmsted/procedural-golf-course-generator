@@ -32,6 +32,7 @@ pub mod channel;
 pub mod draw;
 pub mod gorge;
 pub mod meander;
+pub mod migrate;
 pub mod mode;
 pub mod record;
 pub mod rng;
