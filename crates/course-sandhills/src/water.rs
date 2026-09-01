@@ -1415,63 +1415,61 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // The path is now built once with a SMOOTHED clamp — it can bend
         // away from the valley wall but never jump — and the creek is
         // CARVED, so the water is continuous by construction.
-        let mut pos: Vec<(Vec2, Vec2, f64)> = Vec::new();   // centre, perp, swing
-        let mut zs: Vec<f64> = Vec::new();
-        let mut fac: Vec<f64> = Vec::new();
-        let mut arcs: Vec<f64> = Vec::new();
-        let mut arc = 0.0;
-        for k in 0..pts.len().saturating_sub(1) {
-            let (a, b) = (pts[k], pts[k + 1]);
-            let seg = a.distance(b);
-            if seg <= 1e-6 {
-                continue;
-            }
-            let tang = Vec2::new(b.x - a.x, b.y - a.y).normalized();
-            let perp = Vec2::new(-tang.y, tang.x);
-            let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
-            for j in 0..n {
-                let t = j as f64 / n as f64;
-                let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-                let s_here = arc + seg * t;
-                let lam_e = m_lam
-                    * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, m_seed));
-                // KINOSHITA SHAPE + AMPLITUDE MODULATION (2026-08-30
-                // review: "too sinusoidal ... reads artificial"). Same
-                // helper as the aeolian trunk so the two cannot drift.
-                // NOTE the phase here is s/lam_e, not integrated -- this
-                // caller modulates lam_e only 35% over 640 m and the creek
-                // is short, so the drift the gorge comments describe stays
-                // small; the shape change is independent of it.
-                let phi_h = std::f64::consts::TAU * s_here / lam_e + m_phase;
-                let off = m_swing * 26.0
-                    * crate::meander::amp_mod(s_here, m_seed ^ 0x27f1)
-                    * crate::meander::shape(phi_h)
-                    * crate::meander::amp_cap_scale();
-                // the largest FRACTION of the swing that stays on the floor
-                let mut f = 0.0;
-                for step in 0..=8 {
-                    let cand = 1.0 - step as f64 / 8.0;
-                    let q = Vec2::new(p.x + perp.x * off * cand, p.y + perp.y * off * cand);
-                    if u_field.bilinear(q) < 0.34 {
-                        f = cand;
-                        break;
-                    }
-                }
-                pos.push((p, perp, off));
-                zs.push(bed[k] + (bed[k + 1] - bed[k]) * t);
-                fac.push(f);
-                arcs.push(s_here);
-            }
-            arc += seg;
+        // --- THE PLANFORM IS GROWN, NOT OFFSET (2026-09-01) ---------------
+        // The sine offset that stood here -- and the Kinoshita/amplitude
+        // dressing added on 783f004 -- was a closed-form periodic function of
+        // arc length, and the review read the carrier through every
+        // modulation twice ("still looks artificial ... just due to the
+        // sinusoidal nature"). `migrate` grows the planform instead.
+        //
+        // The old confinement (search the largest fraction of the swing that
+        // keeps u < 0.34, then smooth that fraction over +-12 samples) is
+        // deleted: `migrate::grow` damps outward migration against the SAME
+        // u field continuously, so there is nothing to smooth after the fact.
+        // U_HARD stays 0.34 -- a measured, review-passed threshold.
+        //
+        // The five draws above are untouched and still consumed: `m_lam` and
+        // `m_swing` now set the channel width and the migration vigour, and
+        // `m_seed` salts the model. Changing the draw COUNT here would move
+        // every Carolina pond on every fluvial seed (the pond loop draws from
+        // this same stream, further down), so the transcript is preserved
+        // exactly.
+        let mig_w = (hw * 2.0).clamp(3.0, 12.0);
+        let vigour = (0.75 + 0.35 * (m_swing - 1.0)).clamp(0.6, 1.5);
+        let base: Vec<Vec2> = pts.to_vec();
+        let pf = crate::migrate::grow(&base, mig_w, 0.34, m_seed, vigour,
+                                      |q| u_field.bilinear(q));
+
+        // Re-key the bed to the migrated path. `t` carries position along the
+        // initialising centre-line, so the bed a node inherits is the bed of
+        // the station it grew from -- not the nearest station, which on a
+        // developed loop is a different part of the reach entirely.
+        let n_pf = pf.p.len();
+        let mut pos: Vec<(Vec2, Vec2, f64)> = Vec::with_capacity(n_pf);
+        let mut zs: Vec<f64> = Vec::with_capacity(n_pf);
+        let mut arcs: Vec<f64> = Vec::with_capacity(n_pf);
+        let mut arc_run = 0.0f64;
+        for i in 0..n_pf {
+            let a = if i == 0 { pf.p[0] } else { pf.p[i - 1] };
+            let b = if i + 1 < n_pf { pf.p[i + 1] } else { pf.p[n_pf - 1] };
+            let tv = Vec2::new(b.x - a.x, b.y - a.y);
+            let tl = tv.length().max(1e-9);
+            let perp = Vec2::new(-tv.y / tl, tv.x / tl);
+            // signed curvature -> which bank is the CUT bank. The old code
+            // keyed this on the sign of the sine offset, which is only a
+            // proxy for the bend direction; the curvature IS the bend.
+            let v1 = Vec2::new(pf.p[i].x - a.x, pf.p[i].y - a.y);
+            let v2 = Vec2::new(b.x - pf.p[i].x, b.y - pf.p[i].y);
+            let cross = v1.x * v2.y - v1.y * v2.x;
+            pos.push((pf.p[i], perp, -cross));
+            let tt = pf.t[i].clamp(0.0, 1.0) * (bed.len() - 1) as f64;
+            let lo = tt.floor() as usize;
+            let hi = (lo + 1).min(bed.len() - 1);
+            zs.push(bed[lo] + (bed[hi] - bed[lo]) * (tt - lo as f64));
+            if i > 0 { arc_run += pf.p[i].distance(pf.p[i - 1]); }
+            arcs.push(arc_run);
         }
-        // smooth the clamp: the creek leans off the wall over ~50 m instead
-        // of snapping to the centre-line between one sample and the next
-        let src = fac.clone();
-        for i in 0..fac.len() {
-            let lo = i.saturating_sub(12);
-            let hi = (i + 13).min(src.len());
-            fac[i] = src[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
-        }
+        let fac: Vec<f64> = vec![1.0; n_pf];
         // The carve must not become a TRENCH. Writing a hard floor inside
         // hw and a hard shelf outside it put a wall at each boundary — 825%
         // slope on seed 121, the "sharp ditch" of the review. Two changes:

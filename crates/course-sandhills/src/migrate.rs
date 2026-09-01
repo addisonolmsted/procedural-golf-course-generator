@@ -111,6 +111,28 @@ pub const KERNEL_W: f64 = 12.0;
 /// bounding the bank angle -- in units the model actually has.
 pub const RC_PEAK: f64 = 2.8;
 
+/// Bank erodibility varies IN SPACE, and that is the engine of irregular bend
+/// trains. Real banks are not uniform -- clay plugs from old cutoffs, tree
+/// roots, gravel lenses -- so one bend grows fast while its neighbour stalls,
+/// and a reach ends up with bends of genuinely different SIZE rather than
+/// merely different phase.
+///
+/// Anchored to WORLD POSITION (perlin2), not arc length: bank material does
+/// not travel with the channel. That is also what distinguishes this from the
+/// retired AMP_MOD, which multiplied the output of a closed-form curve by a
+/// function of arc length -- decoration. This multiplies the RATE of a growth
+/// process at a fixed place, so the planform still selects its own wavelength
+/// locally; some bends simply get there sooner.
+///
+/// Measured 2026-09-01 on 55,281 OSM `waterway=stream` reaches over the corpus
+/// regions (10 m resample, 30 m smoothing, bends >= 25 m): real bend-length CV
+/// is 0.38/0.46/0.55 (p25/50/75) against 0.15-0.20 for every setting of the
+/// re-injection dial. Re-injection varies bend AGE and barely moves the CV;
+/// erodibility varies bend SIZE, which is what the statistic sees.
+pub const ERODE_VAR: f64 = 0.55;
+/// Correlation length of the erodibility field, in channel widths.
+pub const ERODE_L_W: f64 = 9.0;
+
 // --- seeding ---------------------------------------------------------------
 
 /// Symmetry-breaking amplitude, in channel widths.
@@ -241,9 +263,9 @@ fn smooth_curv(c: &mut [f64], ds: f64, w: f64) {
 /// pure exponential the partial sum obeys
 /// `acc_i = acc_{i-1} * exp(-ds/L) + R0_i`, which is exact, not an
 /// approximation — `iir_matches_truncated_sum` pins it.
-fn migration_rate(r0: &[f64], ds: &[f64], w: f64) -> Vec<f64> {
+fn migration_rate(r0: &[f64], ds: &[f64], w: f64, kernel_w: f64) -> Vec<f64> {
     let n = r0.len();
-    let l = KERNEL_W * w;
+    let l = kernel_w * w;
     let mut out = vec![0.0; n];
     let mut acc = 0.0;
     let mut norm = 0.0;
@@ -280,9 +302,17 @@ fn arc_steps(p: &[Vec2]) -> Vec<f64> {
 }
 
 fn perturb(s: f64, w: f64, salt: u32, amp: f64) -> f64 {
+    perturb_sp(s, w, salt, amp, 1.0)
+}
+
+/// `spread` widens the octave scales: >1 makes the seed more broadband, which
+/// lets the instability select LOCALLY and so varies bend size along the reach.
+fn perturb_sp(s: f64, w: f64, salt: u32, amp: f64, spread: f64) -> f64 {
     let mut e = 0.0;
     for k in 0..4 {
-        e += PERTURB_A[k] * noise::perlin1(s / (PERTURB_L_W[k] * w), salt ^ (0x9E37_79B9u32.wrapping_mul(k as u32 + 1)));
+        let l = PERTURB_L_W[k] * w * spread.powf(k as f64 - 1.5);
+        e += PERTURB_A[k] * noise::perlin1(s / l,
+                salt ^ (0x9E37_79B9u32.wrapping_mul(k as u32 + 1)));
     }
     amp * w * e
 }
@@ -373,6 +403,34 @@ where
     grow_at(base, w, u_hard, salt, vigour, mig_w, DS_WIDTHS, u_at)
 }
 
+/// Full sweep entry for the calibration ladder.
+#[allow(clippy::too_many_arguments)]
+pub fn grow_sweep<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
+                     mig_w: f64, reinject: usize, erode: f64, kernel_w: f64,
+                     u_at: F) -> Planform
+where
+    F: FnMut(Vec2) -> f64,
+{
+    grow_full(base, w, u_hard, salt, vigour, mig_w, DS_WIDTHS, reinject, 1.0,
+              1.0, erode, kernel_w, u_at)
+}
+
+/// `grow` with the three IRREGULARITY dials exposed, for the calibration
+/// ladder. `reinject` is the re-injection period (bend AGE spread), `spread`
+/// multiplies the seeding octave scales (how broadband the seed is), and
+/// `diff` multiplies the diffusivity (how much small-scale variety survives).
+/// Production calls `grow`.
+#[allow(clippy::too_many_arguments)]
+pub fn grow_irregular<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32,
+                         vigour: f64, reinject: usize, spread: f64, diff: f64,
+                         u_at: F) -> Planform
+where
+    F: FnMut(Vec2) -> f64,
+{
+    grow_full(base, w, u_hard, salt, vigour, MIG_W_PER_ITER, DS_WIDTHS,
+              reinject, spread, diff, 1.0, KERNEL_W, u_at)
+}
+
 /// `grow_tuned` with the WORKING node spacing exposed. The resolution test
 /// must drive this: `grow` resamples to `DS_WIDTHS*w` internally, so passing a
 /// base at a different spacing does not change the working resolution -- an
@@ -381,7 +439,18 @@ where
 /// indistinguishable from a physical result.
 #[allow(clippy::too_many_arguments)]
 pub fn grow_at<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
-                  mig_w: f64, ds_widths: f64, mut u_at: F) -> Planform
+                  mig_w: f64, ds_widths: f64, u_at: F) -> Planform
+where
+    F: FnMut(Vec2) -> f64,
+{
+    grow_full(base, w, u_hard, salt, vigour, mig_w, ds_widths,
+              REINJECT_EVERY, 1.0, 1.0, 1.0, KERNEL_W, u_at)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grow_full<F>(base: &[Vec2], w: f64, u_hard: f64, salt: u32, vigour: f64,
+                mig_w: f64, ds_widths: f64, reinject: usize, spread: f64,
+                diff: f64, erode: f64, kernel_w: f64, mut u_at: F) -> Planform
 where
     F: FnMut(Vec2) -> f64,
 {
@@ -406,7 +475,7 @@ where
             s += steps[i - 1];
             let t = sub(pf.p[i + 1], pf.p[i - 1]).normalized();
             let nrm = Vec2::new(-t.y, t.x);
-            let e = perturb(s, w, salt, PERTURB_W);
+            let e = perturb_sp(s, w, salt, PERTURB_W, spread);
             let q = Vec2::new(pf.p[i].x + nrm.x * e, pf.p[i].y + nrm.y * e);
             if u_at(q) < u_hard {
                 pf.p[i] = q;
@@ -427,10 +496,10 @@ where
         let mut c = curvature(&pf.p);
         smooth_curv(&mut c, ds, w);
         let r0: Vec<f64> = c.iter().map(|&ci| w * ci).collect();
-        let r1 = migration_rate(&r0, &steps, w);
+        let r1 = migration_rate(&r0, &steps, w, kernel_w);
 
         // re-injection: fresh symmetry-breaking so bends carry mixed AGE
-        let reinject = it > 0 && it % REINJECT_EVERY == 0;
+        let reinject = it > 0 && reinject > 0 && it % reinject == 0;
 
         let mut np = pf.p.clone();
         for i in 1..n - 1 {
@@ -442,12 +511,17 @@ where
             // Getting this backwards makes the model DECAY, and it decays
             // quietly -- the first run sat at its seed amplitude and looked
             // like a tuning problem rather than a sign error.
+            let ero = 1.0 + ERODE_VAR * erode
+                * noise::perlin2(pf.p[i].x / (ERODE_L_W * w),
+                                 pf.p[i].y / (ERODE_L_W * w),
+                                 salt ^ 0x51ED_270B);
             let mag = -r1[i] * hickin_nanson(c[i], w) * vigour
-                * mig_w * w;
+                * mig_w * w * ero.max(0.05);
             let mut d = Vec2::new(nrm.x * mag, nrm.y * mag);
             if reinject {
-                let e = perturb(cum[i], w, salt ^ (it as u32).wrapping_mul(0x85EB_CA6B),
-                                PERTURB_W * REINJECT_FRAC);
+                let e = perturb_sp(cum[i], w,
+                                   salt ^ (it as u32).wrapping_mul(0x85EB_CA6B),
+                                   PERTURB_W * REINJECT_FRAC, spread);
                 d = Vec2::new(d.x + nrm.x * e, d.y + nrm.y * e);
             }
             // per-step clamp
@@ -485,7 +559,7 @@ where
         // into stable sub-passes so it does not depend on node spacing.
         {
             let ds2 = (ds * ds).max(1e-9);
-            let d_phys = DIFF_W2_PER_ITER * w * w;
+            let d_phys = DIFF_W2_PER_ITER * diff * w * w;
             let passes = ((d_phys / (DIFF_ALPHA_MAX * ds2)).ceil() as usize).max(1);
             let alpha = d_phys / (passes as f64 * ds2);
             for _ in 0..passes {
@@ -541,7 +615,7 @@ mod tests {
         let n = 200;
         let r0: Vec<f64> = (0..n).map(|i| (i as f64 * 0.11).sin()).collect();
         let ds = vec![3.0; n - 1];
-        let fast = migration_rate(&r0, &ds, w);
+        let fast = migration_rate(&r0, &ds, w, KERNEL_W);
         let l = KERNEL_W * w;
         for i in 0..n {
             let (mut acc, mut norm) = (0.0, 0.0);
