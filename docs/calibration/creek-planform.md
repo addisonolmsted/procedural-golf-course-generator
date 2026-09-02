@@ -216,4 +216,6 @@ fill. Two wrong turns recorded in the commit (normalise-and-scale → 3 m
 troughs; absolute rise → shelf and wall) — both caught by transects, not by
 any statistic. Sheet: `out/creek/step4_incision.html` (new | round-1 stamp |
 bare ground | real tile t03523_07935 with its transects). Routing metric and
-wet-body count unchanged by construction (wetting rule untouched).
+wet-body count unchanged by construction (wetting rule untouched). Cost:
+~110 ms per tile (3 seeds: 5.49 s with the incision vs 5.15 s with no carve),
+inside S4's 250 ms.
