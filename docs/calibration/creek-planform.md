@@ -219,3 +219,32 @@ bare ground | real tile t03523_07935 with its transects). Routing metric and
 wet-body count unchanged by construction (wetting rule untouched). Cost:
 ~110 ms per tile (3 seeds: 5.49 s with the incision vs 5.15 s with no carve),
 inside S4's 250 ms.
+
+### The aeolian port (2026-09-02): both principles, both modes
+
+Owner, after signing off the Carolina gallery: "the same principles applied
+to the aeolian seeds." `gorge.rs` drops the two-sine offset for
+`planform::bend_train` (confined to the trunk floor, five draws unchanged,
+`limit_curvature`/`MEANDER_RATIO` deleted with the sine), and
+`water::cut_creek` stops stamping its flat slot and calls the same `incise`,
+against a **Nebraska section pack of its own**
+(`assets/sandhills_creek_sections_ne.txt`).
+
+Nebraska vs Carolina, same instrument and pipeline:
+
+| | Carolina (nc) | Nebraska (ne) |
+|---|---|---|
+| resolved at 2 m | 35.7 % | **16.1 %** |
+| rim depth p10/50/90 | 0.36 / 1.03 / 2.05 m | **0.57 / 1.54 / 3.00 m** |
+| closure width p10/50/90 | 10 / 16.5 / 18 m | 11 / 14 / 17.5 m |
+| asymmetry p10/90 | −0.17 / +0.17 | **−0.39 / +0.27** |
+| along-stream depth correlation | 40 m | 30 m |
+
+The low resolved fraction is the archetype being itself: the dune uplands
+have no integrated drainage, so most mapped lines there are not channels the
+DTM can see. What differs per mode is one struct, `water::Incision` (pack,
+wet width and its band, depth law, salt); the aeolian keeps `cut_creek`'s own
+`0.30 + 0.045 · width_m` so a wide river cuts deeper. All 20 river seeds keep
+a single wet body. Galleries: `out/creek/gallery.html` (Carolina),
+`out/creek/gallery_aeolian.html` (Nebraska), both with the water as a
+toggleable layer.
