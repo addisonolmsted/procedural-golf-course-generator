@@ -1526,19 +1526,65 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let s_d = m_seed ^ 0x85EB_CA6B;
         let s_h = m_seed ^ 0xC2B2_AE35;
         // --- the channel section -------------------------------------------
-        // `cut_creek`'s profile: flat bed out to the wet half-width, then a
-        // bank at BANK_SLOPE that climbs through the water surface and keeps
-        // climbing until it meets the ground. Footprint ~5 m for a normal
-        // cut, ~10 m where the CUT_CAP is reached -- never 32. The outer bank
-        // (cut bank) is a little wider than the inner (point bar); that
-        // asymmetry now modulates a channel, not a swale.
-        const BANK_SLOPE: f64 = 0.40;
-        const FREE_M: f64 = 0.45;
+        // Owner's spec for the section (2026-09-01, after the placement
+        // sign-off), in their order:
+        //   1. level across the flow, at most slightly U-shaped;
+        //   2. a steep bank once the wet width is passed;
+        //   3. a SMOOTH transition from that bank into the surroundings;
+        //   4. bank grade inside realistic bounds;
+        //   5. grade and shoulder width varying along the creek;
+        //   6. curve-aware: straight reaches narrow and steep, wavy reaches
+        //      wider and gentler.
+        // The previous section was a straight 40 % ramp that stopped dead
+        // where it met the ground -- a crease at the top of every bank, the
+        // same width everywhere. Here the bank is a ramp whose grade and
+        // shoulder are drawn per node, and it meets the ground through a
+        // C1 smooth minimum (`course_world::ease::smin`, the same rounding
+        // the valley walls use), so there is no top-of-bank crease. Still
+        // never a fill: smin <= min, and the ground is only ever lowered.
+        //
+        // Grade bounds: 0.30-1.00 (17-45 degrees). A sand cut bank stands
+        // near 45; a point bar lies back to ~20. The outer (cut) bank is
+        // the steep one, the inner (bar) the gentle, wide one.
+        const U_K: f64 = 0.25;              // bed edge is 25 % shallower than the centre
+        const GRADE_BASE: f64 = 0.55;
+        const GRADE_MIN: f64 = 0.30;
+        const GRADE_MAX: f64 = 1.00;
+        const OUTER_GRADE_K: f64 = 1.35;
+        const INNER_GRADE_K: f64 = 0.75;
+        const SHOULDER_BASE_M: f64 = 3.0;
+        const SHOULDER_MIN_M: f64 = 1.5;
+        const SHOULDER_MAX_M: f64 = 8.0;
+        const INNER_SHOULDER_K: f64 = 1.4;
+        const CURVE_GRADE_K: f64 = 0.35;    // wavy reaches: grade down to 65 %
+        const CURVE_SHOULDER_K: f64 = 0.8;  // ... and shoulder out to 180 %
         const OUTER_K: f64 = 1.15;
         const INNER_K: f64 = 0.90;
-        // widest possible footprint: the deepest cut plus freeboard at the
-        // bank slope, from the widest outer half-width
-        let r_max = ((3.4 * OUTER_K + (CUT_CAP + FREE_M + 0.6) / BANK_SLOPE) / cell).ceil() as i64 + 1;
+        let s_g = m_seed ^ 0x9E37_79B9;
+        let s_sh = m_seed ^ 0x27D4_EB2F;
+        // How wavy the reach is at each node: |sin(turn over +-10 m)|,
+        // smoothed over +-20 m, normalised so a 40 m radius bend reads 1.
+        let curv_n: Vec<f64> = {
+            let n = qs.len();
+            let raw: Vec<f64> = (0..n).map(|i| {
+                let lo = i.saturating_sub(10);
+                let hi = (i + 10).min(n - 1);
+                let v1 = qs[i] - qs[lo];
+                let v2 = qs[hi] - qs[i];
+                let den = v1.length() * v2.length();
+                if den < 1e-9 { 0.0 } else { (v1.x * v2.y - v1.y * v2.x).abs() / den }
+            }).collect();
+            (0..n).map(|i| {
+                let lo = i.saturating_sub(20);
+                let hi = (i + 21).min(n);
+                let m = raw[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
+                (m / 0.30).clamp(0.0, 1.0)
+            }).collect()
+        };
+        // widest possible footprint: the deepest cut at the gentlest grade
+        // plus the widest shoulder, from the widest outer half-width
+        let r_max = ((3.4 * OUTER_K + (CUT_CAP + 0.5) / GRADE_MIN + SHOULDER_MAX_M) / cell)
+            .ceil() as i64 + 1;
         for i in 0..qs.len() {
             let (p, z) = (qs[i], zs[i]);
             let a = arcs[i];
@@ -1554,6 +1600,14 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                                    p, z, a, perp, bsg, cut, hwi, m_seed);
                 continue;
             }
+            // (5) along-arc variation of grade and shoulder, two scales that
+            // do not share a period with the depth or width modulation
+            let g_var = 1.0 + 0.25 * course_world::noise::perlin1(a / 210.0, s_g);
+            let sh_var = 1.0 + 0.30 * course_world::noise::perlin1(a / 130.0, s_sh);
+            // (6) curve-aware
+            let cn = curv_n[i];
+            let g_curve = 1.0 - CURVE_GRADE_K * cn;
+            let sh_curve = 1.0 + CURVE_SHOULDER_K * cn;
             let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
             for gy in (cy - r_max).max(0)..=(cy + r_max).min(spec.ny as i64 - 1) {
                 for gx in (cx - r_max).max(0)..=(cx + r_max).min(spec.nx as i64 - 1) {
@@ -1563,11 +1617,18 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     let side = (q.x - p.x) * perp.x + (q.y - p.y) * perp.y;
                     let outer = side * bsg >= 0.0;
                     let hw_i = if outer { hwi * OUTER_K } else { hwi * INNER_K };
-                    // flat bed, then the bank; never a fill
+                    let grade = (GRADE_BASE * g_var * g_curve
+                                 * if outer { OUTER_GRADE_K } else { INNER_GRADE_K })
+                        .clamp(GRADE_MIN, GRADE_MAX);
+                    let shoulder = (SHOULDER_BASE_M * sh_var * sh_curve
+                                    * if outer { 1.0 } else { INNER_SHOULDER_K })
+                        .clamp(SHOULDER_MIN_M, SHOULDER_MAX_M);
+                    // (1) a slightly U-shaped bed, (2) then the bank
+                    let bed_edge = z - cut * (1.0 - U_K);
                     let cand = if dd <= hw_i {
-                        z - cut
+                        z - cut * (1.0 - U_K * (dd / hw_i).powi(2))
                     } else {
-                        z - cut + BANK_SLOPE * (dd - hw_i)
+                        bed_edge + grade * (dd - hw_i)
                     };
                     // The wetting tolerance from `cut_creek`: testing cell
                     // centres against the bare half-width leaves gaps on a
@@ -1586,8 +1647,14 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                             surface.data[idx] = surface.data[idx].min(z);
                         }
                     }
-                    if cand >= h0[idx] {
-                        continue;           // the bank has met the ground
+                    // (3) the shoulder: the bank meets the ground through a
+                    // smooth minimum whose vertical blend is the shoulder
+                    // width at this grade, so the top of the bank is rounded
+                    // over `shoulder` metres instead of creased. Beyond the
+                    // blend smin IS min, and the ground is untouched.
+                    let cand = course_world::ease::smin(cand, h0[idx], grade * shoulder);
+                    if cand >= h0[idx] - 1e-9 {
+                        continue;           // past the shoulder: ground
                     }
                     if cand < height.data[idx] {
                         height.data[idx] = cand;

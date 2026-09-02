@@ -67,12 +67,14 @@ def main():
     prefix = "tex_"
     if "--prefix" in sys.argv: prefix = sys.argv[sys.argv.index("--prefix") + 1]; a = [x for x in a if x != prefix]
     d_new, d_ts, d_old, out_html = a[:4]; seeds = a[4:]
+    labels = ["NEW: bend train + channel carve", "bend train + OLD skirt carve", "SHIPPED: sine + skirt"]
+    if "--labels" in sys.argv:
+        labels = sys.argv[sys.argv.index("--labels") + 1].split("|"); seeds = [x for x in seeds if x != sys.argv[sys.argv.index("--labels") + 1]]
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    variants = [("NEW: bend train + channel carve", d_new), ("bend train + OLD skirt carve", d_ts), ("SHIPPED: sine + skirt", d_old)]
+    variants = [(labels[0], d_new), (labels[1], d_ts), (labels[2], d_old)]
     html = ["<title>Creek Terrain Sheet</title><style> :root{--bg:#f6f4ee;--ink:#22231f;--muted:#5f5e57;--rule:#d9d5c9;--accent:#8a3b2a;--panel:#fffdf8} @media (prefers-color-scheme: dark){:root:not([data-theme=\"light\"]){--bg:#1b1c19;--ink:#e8e5dc;--muted:#a7a49a;--rule:#3a3b35;--accent:#e08a72;--panel:#232420}} :root[data-theme=\"dark\"]{--bg:#1b1c19;--ink:#e8e5dc;--muted:#a7a49a;--rule:#3a3b35;--accent:#e08a72;--panel:#232420} body{background:var(--bg);color:var(--ink);font-family:\"IBM Plex Sans\",system-ui,sans-serif;margin:0;padding:20px 24px;line-height:1.45} h2{font-size:1.45rem;margin:0 0 6px;text-wrap:balance}h3{font-size:1.05rem;margin:26px 0 4px;color:var(--accent)} p{max-width:70ch;color:var(--muted);margin:4px 0 12px}.cap{font-size:11.5px;color:var(--muted);margin:2px 0 8px;font-family:\"IBM Plex Mono\",ui-monospace,monospace} .row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}img{max-width:100%;background:var(--panel)} table{border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}td,th{border:1px solid var(--rule);padding:3px 8px;text-align:right}td:first-child,th:first-child{text-align:left} .wrap{overflow-x:auto} </style> <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap\">",
             "<h2>Creek on the ground, step 2: bend train + channel carve vs the ablations</h2>",
-            "<p>Per seed: whole tile (new build), then two 600 m crops along the creek for the three variants, and cross-valley transects (±40 m) through each crop. "
-            "The skirt carve shows as a 20–30 m swale in the transect; the channel carve returns to the background within a few metres of the water.</p>"]
+            "<p>Per seed: whole tile (first variant), then two 600 m crops along the creek for the three variants, and cross-valley transects (±40 m) through each crop.</p>"]
     table = []
     for seed in seeds:
         try:
