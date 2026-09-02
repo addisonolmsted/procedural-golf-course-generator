@@ -1299,6 +1299,8 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // line down the middle of the swale (review). The carve marks its own
     // cells instead.
     let mut creek = vec![false; spec.len()];
+    // The creek's own centre-line, for the review overlay (`Water::river`).
+    let mut creek_line: Option<Vec<Vec2>> = None;
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         // Only the TRUNK carries visible water. The tributaries were drawn
@@ -1427,7 +1429,13 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // The five planform draws above are consumed exactly as before
         // (`mstyle` is drawn and unused now); `bend_train` takes no draws.
         let legacy_planform = std::env::var("CREEK_PLANFORM").map(|v| v == "sine").unwrap_or(false);
-        let legacy_carve = std::env::var("CREEK_CARVE").map(|v| v == "skirt").unwrap_or(false);
+        let carve_mode = std::env::var("CREEK_CARVE").unwrap_or_default();
+        let legacy_carve = carve_mode == "skirt";
+        // CREEK_CARVE=none: the planform is built and reported but nothing
+        // is cut or wetted -- the review wants the ground WITHOUT the creek,
+        // with the creek's line drawn over it, to judge placement before
+        // the section (owner, 2026-09-01).
+        let no_carve = carve_mode == "none";
         let _ = mstyle;
         let (qs, mut zs, arcs, perps, bends) = if legacy_planform {
             sine_offset_legacy(pts, bed, cell, m_lam, m_swing, m_phase, m_seed, u_field)
@@ -1510,6 +1518,10 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // cell is visited by several of them, and a running subtraction
         // compounded those visits into a black slot down the centre-line
         // (review). Reading h0 makes the result order-independent.
+        creek_line = Some(qs.clone());
+        if no_carve {
+            continue;
+        }
         let h0: Vec<f64> = height.data.clone();
         let s_d = m_seed ^ 0x85EB_CA6B;
         let s_h = m_seed ^ 0xC2B2_AE35;
@@ -2172,7 +2184,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
     }
 
-    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: None }
+    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: creek_line }
 }
 
 /// Drop every lake body that sits on the valley floor beside running water.

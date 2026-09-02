@@ -100,7 +100,11 @@ pub const BEND_LEN_M: f64 = 58.0;
 /// on a real reach are the 100-250 m bends in the tail. The measured CV
 /// still lands in band (0.36-0.45) because the 30 m pipeline splits long
 /// bends at their own small inflections.
-pub const BEND_LEN_SIGMA: f64 = 0.70;
+/// Owner, after the step-1 sheet: "I like the ones that are a bit more
+/// irregular ... turn up the dial slightly". 0.70 -> 0.78, with AMP_SIGMA
+/// 0.5 -> 0.6 and same_sign_p 0.15 -> 0.20 (compound bends on one bank are
+/// the most visible irregularity on the real panels).
+pub const BEND_LEN_SIGMA: f64 = 0.78;
 pub const BEND_LEN_CLAMP: (f64, f64) = (22.0, 260.0);
 /// Median straight-run length, metres, and its log-normal sigma. Together
 /// with `straightness` these set the ~60 % straight fraction in ~120 m runs.
@@ -113,7 +117,7 @@ pub const STRAIGHT_LEN_CLAMP: (f64, f64) = (15.0, 350.0);
 /// double-crossing and 15.8 m amplitude p95 on a straight corridor -- the
 /// routing target. 0.18 was the bold end (1.7 %, 18.5 m).
 pub const AMP_RATIO: f64 = 0.14;
-pub const AMP_SIGMA: f64 = 0.5;
+pub const AMP_SIGMA: f64 = 0.6;
 pub const AMP_RATIO_CLAMP: (f64, f64) = (0.02, 0.30);
 /// Apex position from the UPSTREAM end: mean, gaussian sigma, clamp. The
 /// clamp is the range over which the skew warp stays monotone.
@@ -149,7 +153,7 @@ impl Params {
             len_mult: 0.80 + 0.45 * f_lam,
             vigour: 0.70 + 0.70 * f_sw,
             straightness: 0.35 + 0.25 * f_ph,
-            same_sign_p: 0.15,
+            same_sign_p: 0.20,
             // Real 50 m bends at sinuosity 1.12 have apex radii of ~25 m
             // (R/W ~ 5 on a 5 m creek). 35 m capped every bend at ~6 m.
             r_min_m: (3.0 * width_m).max(25.0),

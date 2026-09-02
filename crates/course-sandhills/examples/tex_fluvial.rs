@@ -13,8 +13,15 @@ fn main() {
     for s in &a[1..] {
         let seed: u64 = s.parse().unwrap();
         let id = course_seed::RunIdentity::from_seed(seed);
-        let (_, _, _, tex, water, bays) = build_fluvial_textured(&id, &prof, &pack);
+        let (_, _, asm, tex, water, bays) = build_fluvial_textured(&id, &prof, &pack);
         gridio::write_grid_f32(&out.join(format!("tex_{seed}.cgrid")), &tex).unwrap();
+        // the valley coordinate (8 m) and the creek centre-line, for the
+        // placement overlay (tools/aeolian/creek_overlay_sheet.py)
+        gridio::write_grid_f32(&out.join(format!("tex_{seed}.u.cgrid")), &asm.u).unwrap();
+        if let Some(line) = &water.river {
+            let txt: String = line.iter().map(|p| format!("{:.2} {:.2}\n", p.x, p.y)).collect();
+            std::fs::write(out.join(format!("tex_{seed}.creek.txt")), txt).unwrap();
+        }
         gridio::write_grid_f32(&out.join(format!("tex_{seed}.water.cgrid")),
                                &water.surface).unwrap();
         let bl: String = bays.iter()
