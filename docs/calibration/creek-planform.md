@@ -178,3 +178,19 @@ sample bends, and wobble on the straights adds short inflection-to-inflection
 arcs. Both sides are measured identically, so the comparison stands, but the
 numbers are coarser than they look. Gorge port (step 3) waits on the render
 sign-off.
+
+### Section round 1 (2026-09-01, evening)
+
+Owner signed off the creek **paths** on the placement overlay
+(`tools/aeolian/creek_overlay_sheet.py`, `CREEK_CARVE=none`) and gave the
+section spec: level across the flow (slight U at most), steep bank past the
+wet width, smooth transition into the surroundings, realistic grade bounds,
+grade/width varying along the creek, curve-aware (straight = narrow and
+steep, wavy = wider and gentler). Implemented in `water::fluvial`: U bed
+(edges 25 % shallower), per-node bank grade (0.55 base, ±25 % along the arc,
+outer ×1.35 / inner ×0.75, wavy reaches down to 65 %, clamped 17–45°),
+per-node shoulder (3 m base, ±30 %, inner ×1.4, wavy up to ×1.8, 1.5–8 m),
+and the bank meets the ground through `ease::smin` so the top of bank is
+rounded, not creased. Sheet: `out/creek/step3_section.html` (new | previous
+ramp | shipped skirt, transects ±40 m). Awaiting the owner's eye; the
+differences read in the transects more than in the 2 m hillshade.
