@@ -21,10 +21,6 @@ pub struct Water {
     pub surface: Grid<f64>,
     pub lake_frac: f64,
     pub river: Option<Vec<Vec2>>,
-    /// The creek's own water level at each node of `river`, metres. This is
-    /// the profile the incision guarantees descends to the mouth; the raster
-    /// `surface` can sit ABOVE it where a pond floods the channel.
-    pub river_z: Option<Vec<f64>>,
 }
 
 /// Lakes: connected pockets where the ground sits below the local water
@@ -449,7 +445,7 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
     }
 
     let lake_frac = lake_cells as f64 / spec.len() as f64;
-    Water { surface, lake_frac, river: None, river_z: None }
+    Water { surface, lake_frac, river: None }
 }
 
 /// The allogenic river, redesigned to review spec (2026-08-23): "quite
@@ -1066,14 +1062,11 @@ pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
         hw_clamp: (hw * 0.62, hw * 1.45),
         cut_base: 0.30 + 0.045 * width_m,
         salt,
-        // `gorge` forces the bed monotone from whichever end is lower
-        mouth_first: bed[0] <= bed[bed.len() - 1],
     };
-    let level = incise(height, &h0, &mut water.surface, &mut mask, &mut wet,
-                       line, &arcs, &perps, &bends, &cfg);
+    let bed_at: Vec<f64> = (0..line.len()).map(|i| bed[i.min(bed.len() - 1)]).collect();
+    incise(height, &h0, &mut water.surface, &mut mask, &mut wet,
+           line, &bed_at, &arcs, &perps, &bends, &cfg);
     water.lake_frac += wet as f64 / spec.len() as f64;
-    water.river = Some(line.to_vec());
-    water.river_z = Some(level);
 }
 
 /// Arc length, left normal over a +-5 node window, and the bend sign, for a
@@ -1383,7 +1376,6 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     let mut creek = vec![false; spec.len()];
     // The creek's own centre-line, for the review overlay (`Water::river`).
     let mut creek_line: Option<Vec<Vec2>> = None;
-    let mut creek_level: Option<Vec<f64>> = None;
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         // Only the TRUNK carries visible water. The tributaries were drawn
@@ -1558,16 +1550,56 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             }
             (pf.p, zs, arcs, perps, bends)
         };
-        // The level is no longer taken from the graded valley bed: `incise`
-        // derives it from the ground the creek crosses (see its header). The
-        // rekeyed bed is kept only to say which end is the mouth.
-        let mouth_first = zs.first() <= zs.last();
-        // the creek's own line, for the placement overlay and the galleries
+        // Ground-following bed with a CUT CAP, and the bed RISES with the
+        // index because index 0 is the mouth (`carve::beds` builds every
+        // channel mouth-first; `zs` is that bed interpolated along the path).
+        //
+        // This constraint used to be `.min(zs[i - 1])`, which forced the bed
+        // to FALL going upstream -- backwards. It dragged the whole profile
+        // down to the mouth elevation, and the note that used to sit here
+        // blamed monotonicity for the resulting trench ("strict monotonicity
+        // ... every later point had to cut metres ... 510% slopes"). It was
+        // the direction, not the monotonicity: measured on seed 500030,
+        // descending-upstream needs a median cut of 8.25 m and up to 16.6,
+        // while rising-upstream needs 1.08 m and 7.2. The CUT_CAP override
+        // then had to fight it, and what came out was a ground-following
+        // ditch -- 46.5% of Carolina creek cells sat impounded behind a ridge
+        // in their own water surface, with up to 5.93 m of climb.
+        //
+        // Order matters: the monotone floor is applied first, the cut cap
+        // second. The cap only ever RAISES, so it cannot reintroduce a fall.
+        const CUT_CAP: f64 = 2.2;
+        let mut gr: Vec<f64> = Vec::with_capacity(qs.len());
+        for i in 0..qs.len() {
+            gr.push(height.bilinear(qs[i]));
+        }
+        zs[0] = zs[0].min(gr[0] - 0.35);
+        for i in 1..zs.len() {
+            let want = zs[i].min(gr[i] - 0.35).max(zs[i - 1]);
+            zs[i] = want.max(gr[i] - CUT_CAP);
+        }
+        // The invariant, asserted where it is established. This is a few
+        // thousand comparisons against a 1.6 s tile build, and the bug it
+        // guards against shipped: an inverted comparison here is invisible in
+        // every render and only shows up as water that cannot leave.
+        for i in 1..zs.len() {
+            debug_assert!(zs[i] >= zs[i - 1] - 1e-9,
+                "creek bed falls upstream at {i}: {} -> {}", zs[i - 1], zs[i]);
+            assert!(zs[i] >= zs[i - 1] - 1e-6,
+                "creek bed falls upstream at {i}: {} -> {}", zs[i - 1], zs[i]);
+        }
+        // The cut is taken against a SNAPSHOT of the ground and combined by
+        // MIN, not applied in sequence: path points sit ~1 m apart, so each
+        // cell is visited by several of them, and a running subtraction
+        // compounded those visits into a black slot down the centre-line
+        // (review). Reading h0 makes the result order-independent.
         creek_line = Some(qs.clone());
         if no_carve {
             continue;
         }
         let h0: Vec<f64> = height.data.clone();
+        let s_d = m_seed ^ 0x85EB_CA6B;
+        let s_h = m_seed ^ 0xC2B2_AE35;
         // --- the incision: LOWER the ground, do not replace it -------------
         // Section round 2 (2026-09-02). Round 1 stamped an analytic profile
         // over the textured ground (`height = min(h0, profile)`), and inside
@@ -1596,8 +1628,6 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         let bank_steep = std::env::var("CREEK_BANK").ok()
             .and_then(|v| v.parse::<f64>().ok()).unwrap_or(BANK_STEEPNESS).clamp(0.0, 1.0);
         if legacy_carve {
-            let s_d = m_seed ^ 0x85EB_CA6B;
-            let s_h = m_seed ^ 0xC2B2_AE35;
             for i in 0..qs.len() {
                 let (p, z, a) = (qs[i], zs[i], arcs[i]);
                 let cut = (0.30 + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
@@ -1618,10 +1648,10 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             Some(s) => s,
             None => { builtin = CreekSections::builtin(); &builtin }
         };
-        creek_level = Some(incise(height, &h0, &mut surface, &mut creek, &mut wet_cells,
-               &qs, &arcs, &perps, &bends,
+        incise(height, &h0, &mut surface, &mut creek, &mut wet_cells,
+               &qs, &zs, &arcs, &perps, &bends,
                &Incision { sections: sec, bank_steep, hw, hw_clamp: (1.4, 3.4),
-                           cut_base: 0.30, salt: m_seed, mouth_first }));
+                           cut_base: 0.30, salt: m_seed });
     }
 
     // --- the water TABLE is retired ---------------------------------------
@@ -2210,8 +2240,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
     }
 
-    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64,
-            river: creek_line, river_z: creek_level }
+    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: creek_line }
 }
 
 /// Drop every lake body that sits on the valley floor beside running water.
@@ -2416,38 +2445,32 @@ fn pick_spaced(spec: &course_world::grid::GridSpec, lab: &[u32],
 pub const BANK_STEEPNESS: f64 = 0.0;
 
 /// Measured real creek cross-sections (`CSEC1`,
-/// `assets/sandhills_creek_sections{,_ne}.txt`, built by
-/// `tools/aeolian/creek_sections.py`), averaged into a LADDER of shapes
-/// ordered by rim depth.
-///
-/// The file's rows are individual real transects. Indexing them directly
-/// along the creek -- even slowly -- swaps one real piece of creek for an
-/// unrelated one every few metres, and that printed 0.7 m of roughness on
-/// the bank: the serration the owner saw as teeth. Averaging the transects
-/// into depth-ordered rungs keeps the corpus's measured shape while making
-/// it a SMOOTH function of depth, so a smooth depth series gives a smooth
-/// bank. The irregularity then comes from the things that should carry it --
-/// depth, width, and the bank line -- all of which vary along the arc.
+/// `assets/sandhills_creek_sections.txt`, built by
+/// `tools/aeolian/creek_sections.py`). Each row is one real transect: rim
+/// depth, closure width per side, and the section at 1 m from -24 to +24 m
+/// relative to the local floor trend, zero at the channel. Sections are kept
+/// in ABSOLUTE metres and rows are sorted by rim depth, so the carve picks a
+/// real section whose depth matches the depth its own bed demands: a 1 m
+/// bed gets a real 1 m section (a broad, gentle V), a deep bed a real deep
+/// one. Normalising the shape and scaling it to our depth was tried first
+/// and turned a real 1 m floodplain step into a 3 m flat-floored trough.
 #[derive(Clone, Debug)]
 pub struct CreekSections {
     /// e-folding distance of rim depth along a real creek, metres.
     pub along_corr_m: f64,
-    /// Rim depth of each rung, ascending.
-    depth: Vec<f64>,
-    /// Closure width of the steeper and the gentler side, metres.
+    /// rim depth per row, ascending.
+    pub depth: Vec<f64>,
+    /// Closure width of the STEEPER (narrower) and the gentler side, metres.
     w_steep: Vec<f64>,
     w_gentle: Vec<f64>,
-    /// Normalised bank shape per rung: `P(x)`, `x = d / w` on 25 knots,
-    /// `P(0) = 0`, `P(1) = 1`.
-    p_steep: Vec<[f64; 25]>,
-    p_gentle: Vec<[f64; 25]>,
+    /// S(d) in metres, d = 0..24, per side; steeper side first.
+    s_steep: Vec<[f64; 25]>,
+    s_gentle: Vec<[f64; 25]>,
 }
 
-/// How many rungs the measured transects are averaged into.
-const LADDER: usize = 8;
-
 impl CreekSections {
-    /// Parse a CSEC1 file into the ladder.
+    /// Parse a CSEC1 file. Rows tagged `s` (individual transects) by default;
+    /// `CREEK_SECTIONS=median` takes the `m` rows (reach medians) instead.
     pub fn load(path: &std::path::Path) -> std::io::Result<CreekSections> {
         let text = std::fs::read_to_string(path)?;
         let want = if std::env::var("CREEK_SECTIONS").map(|v| v == "median").unwrap_or(false) { "m" } else { "s" };
@@ -2472,68 +2495,45 @@ impl CreekSections {
                         s_r[d] = v[24 + d].max(0.0);
                         s_l[d] = v[24 - d].max(0.0);
                     }
-                    let (Some(pl), Some(pr)) = (normalise(&s_l, w_l), normalise(&s_r, w_r)) else { continue };
-                    if w_l <= w_r { rows.push((depth, w_l, w_r, pl, pr)); }
-                    else { rows.push((depth, w_r, w_l, pr, pl)); }
+                    if w_l <= w_r { rows.push((depth, w_l, w_r, s_l, s_r)); } else { rows.push((depth, w_r, w_l, s_r, s_l)); }
                 }
                 _ => {}
             }
         }
-        if rows.len() < LADDER {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "CSEC1: too few usable rows"));
+        if rows.is_empty() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "CSEC1: no usable rows"));
         }
         rows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let mut out = CreekSections { along_corr_m: along, depth: Vec::new(), w_steep: Vec::new(),
-                                      w_gentle: Vec::new(), p_steep: Vec::new(), p_gentle: Vec::new() };
-        for k in 0..LADDER {
-            let lo = k * rows.len() / LADDER;
-            let hi = ((k + 1) * rows.len() / LADDER).max(lo + 1);
-            let n = (hi - lo) as f64;
-            let (mut d, mut ws, mut wg) = (0.0, 0.0, 0.0);
-            let mut ps = [0.0; 25];
-            let mut pg = [0.0; 25];
-            for r in &rows[lo..hi] {
-                d += r.0;
-                ws += r.1;
-                wg += r.2;
-                for j in 0..25 {
-                    ps[j] += r.3[j];
-                    pg[j] += r.4[j];
-                }
-            }
-            for j in 0..25 {
-                ps[j] /= n;
-                pg[j] /= n;
-            }
-            ps[0] = 0.0;
-            pg[0] = 0.0;
-            ps[24] = 1.0;
-            pg[24] = 1.0;
-            out.depth.push(d / n);
-            out.w_steep.push((ws / n).clamp(2.0, 24.0));
-            out.w_gentle.push((wg / n).clamp(2.0, 24.0));
-            out.p_steep.push(ps);
-            out.p_gentle.push(pg);
-        }
-        Ok(out)
+        Ok(CreekSections {
+            along_corr_m: along,
+            depth: rows.iter().map(|r| r.0).collect(),
+            w_steep: rows.iter().map(|r| r.1.clamp(1.0, 24.0)).collect(),
+            w_gentle: rows.iter().map(|r| r.2.clamp(1.0, 24.0)).collect(),
+            s_steep: rows.iter().map(|r| r.3).collect(),
+            s_gentle: rows.iter().map(|r| r.4).collect(),
+        })
     }
 
-    /// The fallback when the asset is absent: straight ramps, so the carve
-    /// still runs and a missing asset is visible as a straight bank.
+    /// The fallback when the asset is absent: eight straight ramps (the
+    /// round-1 bank) at depths 0.3..2.4 m, so the carve still runs and a
+    /// missing asset is visible as a straight bank on the render.
     pub fn builtin() -> CreekSections {
         let mut out = CreekSections { along_corr_m: 40.0, depth: Vec::new(), w_steep: Vec::new(),
-                                      w_gentle: Vec::new(), p_steep: Vec::new(), p_gentle: Vec::new() };
-        let mut p = [0.0; 25];
-        for (i, v) in p.iter_mut().enumerate() {
-            *v = i as f64 / 24.0;
-        }
-        for k in 0..LADDER {
-            let f = k as f64 / (LADDER - 1) as f64;
-            out.depth.push(0.4 + 2.2 * f);
-            out.w_steep.push(6.0 + 8.0 * f);
-            out.w_gentle.push(8.0 + 11.0 * f);
-            out.p_steep.push(p);
-            out.p_gentle.push(p);
+                                      w_gentle: Vec::new(), s_steep: Vec::new(), s_gentle: Vec::new() };
+        for k in 0..8 {
+            let depth = 0.3 + 2.1 * k as f64 / 7.0;
+            let w = 6.0 + 10.0 * k as f64 / 7.0;
+            let mut a = [0.0; 25];
+            let mut b = [0.0; 25];
+            for d in 0..=24 {
+                a[d] = depth * (d as f64 / (0.85 * w)).min(1.0);
+                b[d] = depth * (d as f64 / (1.15 * w)).min(1.0);
+            }
+            out.depth.push(depth);
+            out.w_steep.push(0.85 * w);
+            out.w_gentle.push(1.15 * w);
+            out.s_steep.push(a);
+            out.s_gentle.push(b);
         }
         out
     }
@@ -2541,14 +2541,8 @@ impl CreekSections {
     pub fn len(&self) -> usize { self.depth.len() }
     pub fn is_empty(&self) -> bool { self.depth.is_empty() }
 
-    /// Median closure width and rim depth of the ladder.
-    pub fn width_p50(&self) -> f64 {
-        (0.5 * (self.w_steep[LADDER / 2] + self.w_gentle[LADDER / 2])).clamp(4.0, 24.0)
-    }
-    pub fn depth_p50(&self) -> f64 { self.depth[LADDER / 2].clamp(0.2, 3.0) }
-
-    /// Fractional rung whose rim depth is nearest `d`.
-    pub fn rung_for_depth(&self, d: f64) -> f64 {
+    /// Fractional row index whose rim depth is nearest `d`.
+    pub fn row_for_depth(&self, d: f64) -> f64 {
         let n = self.len();
         let j = self.depth.partition_point(|&x| x < d);
         if j == 0 { return 0.0; }
@@ -2557,58 +2551,46 @@ impl CreekSections {
         (j - 1) as f64 + if b - a > 1e-9 { ((d - a) / (b - a)).clamp(0.0, 1.0) } else { 0.0 }
     }
 
-    /// Normalised bank height at rung `k`, side, and `x = distance / width`.
-    pub fn bank(&self, k: f64, steep: bool, x: f64) -> f64 {
-        if x <= 0.0 { return 0.0; }
-        if x >= 1.0 { return 1.0; }
-        let tab = if steep { &self.p_steep } else { &self.p_gentle };
-        let (i0, f) = self.rung(k);
-        let xi = x * 24.0;
-        let j = (xi as usize).min(23);
-        let g = xi - j as f64;
-        let a = tab[i0][j] + (tab[i0][j + 1] - tab[i0][j]) * g;
-        let b = tab[i0 + 1][j] + (tab[i0 + 1][j + 1] - tab[i0 + 1][j]) * g;
-        (a + (b - a) * f).clamp(0.0, 1.0)
+    /// Section relief, metres, at distance `d_m` from the wet edge; beyond
+    /// 24 m it continues at the rim grade.
+    pub fn relief(&self, k: f64, steep: bool, d_m: f64) -> f64 {
+        let tab = if steep { &self.s_steep } else { &self.s_gentle };
+        let (i0, f) = self.row(k);
+        let at = |row: &[f64; 25], d: f64| -> f64 {
+            if d >= 24.0 {
+                let g = (row[24] - row[18]) / 6.0;
+                return row[24] + g.max(0.0) * (d - 24.0);
+            }
+            let j = (d as usize).min(23);
+            row[j] + (row[j + 1] - row[j]) * (d - j as f64)
+        };
+        let d = d_m.max(0.0);
+        let a = at(&tab[i0], d);
+        let b = at(&tab[(i0 + 1).min(self.len() - 1)], d);
+        a + (b - a) * f
     }
 
     pub fn depth_at(&self, k: f64) -> f64 {
-        let (i0, f) = self.rung(k);
-        self.depth[i0] + (self.depth[i0 + 1] - self.depth[i0]) * f
+        let (i0, f) = self.row(k);
+        let b = self.depth[(i0 + 1).min(self.len() - 1)];
+        self.depth[i0] + (b - self.depth[i0]) * f
     }
 
+    /// Closure width, metres, at fractional row `k`.
     pub fn width(&self, k: f64, steep: bool) -> f64 {
         let tab = if steep { &self.w_steep } else { &self.w_gentle };
-        let (i0, f) = self.rung(k);
-        tab[i0] + (tab[i0 + 1] - tab[i0]) * f
+        let (i0, f) = self.row(k);
+        let b = tab[(i0 + 1).min(self.len() - 1)];
+        tab[i0] + (b - tab[i0]) * f
     }
 
-    fn rung(&self, k: f64) -> (usize, f64) {
+    fn row(&self, k: f64) -> (usize, f64) {
         let n = self.len();
         if n < 2 { return (0, 0.0); }
         let k = k.clamp(0.0, (n - 1) as f64 - 1e-9);
         let i0 = (k as usize).min(n - 2);
         (i0, k - i0 as f64)
     }
-}
-
-/// `P(x) = clamp(S(x w) / S(w), 0, 1)` on 25 knots; None if the side never
-/// rises (a row the screen should have dropped).
-fn normalise(s: &[f64; 25], w: f64) -> Option<[f64; 25]> {
-    let w = w.clamp(1.0, 24.0);
-    let at = |d: f64| -> f64 {
-        let d = d.clamp(0.0, 24.0);
-        let j = (d as usize).min(23);
-        s[j] + (s[j + 1] - s[j]) * (d - j as f64)
-    };
-    let top = at(w);
-    if !(top > 0.05) { return None; }
-    let mut p = [0.0; 25];
-    for (i, v) in p.iter_mut().enumerate() {
-        *v = (at(i as f64 / 24.0 * w) / top).clamp(0.0, 1.0);
-    }
-    p[0] = 0.0;
-    p[24] = 1.0;
-    Some(p)
 }
 
 /// How wavy the reach is at each node: |sin(turn over +-10 m)| smoothed over
@@ -2643,19 +2625,6 @@ const CURVE_SHOULDER_K: f64 = 0.8;
 const OUTER_K: f64 = 1.15;
 const INNER_K: f64 = 0.90;
 
-/// Centred running mean of `v` over +-`half_m` of arc length. O(n).
-fn run_mean(v: &[f64], arcs: &[f64], half_m: f64) -> Vec<f64> {
-    let n = v.len();
-    let mut out = vec![0.0; n];
-    let (mut lo, mut hi, mut acc) = (0usize, 0usize, 0.0);
-    for i in 0..n {
-        while hi < n && arcs[hi] <= arcs[i] + half_m { acc += v[hi]; hi += 1; }
-        while lo < hi && arcs[lo] < arcs[i] - half_m { acc -= v[lo]; lo += 1; }
-        out[i] = acc / (hi - lo).max(1) as f64;
-    }
-    out
-}
-
 /// Everything the incision needs that differs between the two modes: the
 /// Carolina creek is a 4-5 m blackwater channel on a valley floor, the
 /// Nebraska one a 4-14 m river on a canyon floor, and each is measured
@@ -2671,104 +2640,57 @@ pub struct Incision<'a> {
     pub cut_base: f64,
     /// salt for every noise field; never an RNG draw
     pub salt: u32,
-    /// true when index 0 of the line is the MOUTH (the low end). The water
-    /// level is forced to descend toward it.
-    pub mouth_first: bool,
 }
 
 /// The corpus-shaped incision. LOWERS the ground; never replaces it.
 ///
-/// Rewritten 2026-09-02 after the owner saw "a bunch of blobs stacked on top
-/// of each other" and the difference maps proved them: the cut was a chain of
-/// overlapping discs, its outer edge was the stamping window rather than a
-/// landform, and the excavation swung 40x along one creek where the whole
-/// real corpus swings 5-8x. Three things were wrong and all three are fixed
-/// here.
-///
-/// 1. THE DEPTH WAS THE WRONG QUANTITY. It was the gap between the valley's
-///    graded bed and the textured ground -- a valley-scale disagreement that
-///    varies over tens of metres, which the creek was made to swallow. Now
-///    the incision depth is a property of the CREEK: a real rim depth walked
-///    smoothly along the arc out of the corpus pack, and the water level is
-///    derived from the ground the creek actually crosses
-///    (`ground - depth`, then forced to descend toward the mouth by a running
-///    minimum). Measured over five seeds, that costs a median of 0.13-0.39 m
-///    of extra cut where the ground rises downstream, against the old scheme
-///    holding the water 0.2-2.0 m ABOVE the local ground.
-/// 2. THE COMPOSITING MADE DISCS. Each node stamped a radially symmetric
-///    target and the results were min-composed, so a deep node painted a 30 m
-///    bowl. Now the nodes are composed on DISTANCE only -- each corridor cell
-///    finds its nearest station -- and the section is evaluated ONCE per cell
-///    against the local smoothed ground. A bowl is not expressible.
-/// 3. THE FOOTPRINT WAS CLIPPED. The bank coordinate was divided by the notch
-///    and the raggedness, so the section could reach past the stamping window
-///    and print its square: 63 % of stations reached the window exactly. The
-///    window is now derived from the widest section the constants can produce.
-///
-/// What survives unchanged is the part that was measured: the section shapes,
-/// the texture returning across the bank, and the wetting rule.
+/// Per node the bed demands a depth `D = h0s - bed_edge`; a real section of
+/// that depth is chosen from the pack (with a slow along-arc jitter so
+/// neighbours differ the way real stations do), and the target is
+/// `bed_edge + S_real(d) + detail * g(d)` against the SMOOTHED ground `h0s`
+/// (13 m box), where `detail = h0 - h0s` returns over the first
+/// `DETAIL_KNEE_M` of the bank. The distance coordinate is warped by
+/// world-space noise (plan-view raggedness) and by notches every ~40-80 m.
+/// The `bank_steep` dial lerps the relief toward the round-1 ramp. The cut
+/// ends where the target meets the ground. Min-composed into a target field
+/// and applied once.
 #[allow(clippy::too_many_arguments)]
 fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &mut [bool],
-          wet_cells: &mut usize, qs: &[Vec2], arcs: &[f64], perps: &[Vec2],
-          bends: &[f64], cfg: &Incision) -> Vec<f64> {
-    // --- constants: the pack supplies depth and width; these are TASTE ----
-    /// widest closure the pack may ask for, metres
-    const W_MAX_M: f64 = 26.0;
-    const W_MIN_M: f64 = 3.0;
+          wet_cells: &mut usize, qs: &[Vec2], zs: &[f64], arcs: &[f64], perps: &[Vec2],
+          bends: &[f64], cfg: &Incision) {
+    let (hw, m_seed, sec, bank_steep) = (cfg.hw, cfg.salt, cfg.sections, cfg.bank_steep);
+    // --- constants: CORPUS-derived are read from `sec`; these are TASTE ----
+    /// how far the section walk strays from the depth-matched row, as a
+    /// fraction of the pack
+    const JITTER: f64 = 0.12;
+    /// rescale allowed when no row matches the bed's depth
+    const SCALE_CLAMP: (f64, f64) = (0.7, 1.4);
+    /// widest cut considered, metres from the wet edge
+    const REACH_M: f64 = 30.0;
     /// smoothed-ground box half-width, cells (3 -> 13 m at 2 m)
     const BLUR_R: i64 = 3;
-    /// longitudinal smoothing of the ground under the creek, metres. Too
-    /// short and every dune toe the creek crosses becomes an obstruction it
-    /// must cut through; too long and the bed stops following the ground.
-    const LONG_SMOOTH_M: f64 = 80.0;
-    /// where on the bank the texture residual starts coming back
-    const DETAIL_KNEE: f64 = 0.30;
-    /// Plan-view raggedness of the bank line. It modulates the WIDTH along
-    /// the arc, not the radial coordinate per cell: warping the radius by an
-    /// isotropic field combed the bank with ribs every ~5 m, because the
-    /// pattern lines up perpendicular to the creek wherever the creek goes.
-    /// Varying the width along the arc scallops the bank line instead, which
-    /// is the way a real bank is irregular.
-    const RAG: f64 = 0.13;
-    const RAG_L: (f64, f64) = (17.0, 46.0);
-    /// a weak isotropic term so the two banks are not mirror images
-    const RAG_ISO: f64 = 0.07;
-    const RAG_MIN: f64 = 0.80;
-    /// bank-line indents: period, gate, and how much they widen the bank
-    const NOTCH_PERIOD_M: f64 = 55.0;
-    const NOTCH_T: f64 = 0.35;
-    const NOTCH_K: f64 = 0.25;
+    /// the texture residual is fully back this far up the bank, metres
+    const DETAIL_KNEE_M: f64 = 5.0;
+    /// plan-view raggedness: relative warp of the distance coordinate
+    const RAG: f64 = 0.18;
     /// smin blend at the rim, metres
-    const K_RIM: f64 = 0.10;
-    /// the bed is at most this far below the local ground trend
-    const DEPTH_CLAMP: (f64, f64) = (0.35, 3.0);
-    /// longitudinal smoothing of the DEPTH that sets the bed, metres
-    const DEPTH_SMOOTH_M: f64 = 120.0;
-    /// the deepest the creek may cut below the ground trend, metres. Beyond
-    /// this the level is held up and the reach pools instead of trenching.
-    const MAX_INCISION_M: f64 = 2.8;
+    const K_RIM: f64 = 0.12;
+    const NOTCH_PERIOD_M: f64 = 40.0;
+    const NOTCH_T: f64 = 0.40;
+    const NOTCH_K: f64 = 0.9;
     let spec = height.spec;
     let cell = spec.cell_size;
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
-    let (hw, m_seed, sec) = (cfg.hw, cfg.salt, cfg.sections);
     let s_d = m_seed ^ 0x85EB_CA6B;
     let s_h = m_seed ^ 0xC2B2_AE35;
-    let s_w = m_seed ^ 0x9E37_79B9;
+    let s_g = m_seed ^ 0x9E37_79B9;
     let s_sec = m_seed ^ 0x1656_67B1;
     let s_n = m_seed ^ 0xD3A2_646C;
-    let (s_r1, s_r2) = (m_seed ^ 0x7F4A_7C15, m_seed ^ 0x3C6E_F372);
-    let (s_a1, s_a2) = (m_seed ^ 0xA54F_F53A, m_seed ^ 0x2545_F491);
-    let n = qs.len();
-    if n < 3 {
-        return Vec::new();
-    }
-    // The window can never be narrower than the widest section: the widest
-    // closure, pulled in by the raggedness, on the wider bank, plus the wet
-    // width. This is the number whose absence printed a square.
-    let reach_m = cfg.hw_clamp.1 * OUTER_K + (W_MAX_M * (1.0 + NOTCH_K)) / RAG_MIN;
-    let r_max = (reach_m / cell).ceil() as i64 + 1;
+    let (s_r1, s_r2, s_r3) = (m_seed ^ 0x7F4A_7C15, m_seed ^ 0x3C6E_F372, m_seed ^ 0xA54F_F53A);
+    let curv_n = waviness(qs);
+    let r_max = ((cfg.hw_clamp.1 * OUTER_K + REACH_M) / cell).ceil() as i64 + 1;
 
-    // --- corridor, smoothed ground, texture residual, raggedness ----------
+    // corridor
     let mut corr = vec![false; spec.len()];
     for p in qs {
         let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
@@ -2778,6 +2700,7 @@ fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &m
             }
         }
     }
+    // summed-area table of h0, then the smoothed ground on corridor cells
     let w1 = nx as usize + 1;
     let mut sat = vec![0.0f64; (nx as usize + 1) * (ny as usize + 1)];
     for y in 0..ny as usize {
@@ -2799,183 +2722,99 @@ fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &m
         h0s[idx] = sum / ((x1 - x0) * (y1 - y0)) as f64;
         detail[idx] = h0[idx] - h0s[idx];
         let q = spec.world_of(x as u32, y as u32);
-        // long-wavelength only: the fine octaves are what combed the bank
-        rag[idx] = course_world::noise::perlin2(q.x / 34.0, q.y / 34.0, s_r1)
-            + 0.5 * course_world::noise::perlin2(q.x / 19.0, q.y / 19.0, s_r2);
+        rag[idx] = course_world::noise::perlin2(q.x / 27.0, q.y / 27.0, s_r1)
+            + 0.6 * course_world::noise::perlin2(q.x / 13.0, q.y / 13.0, s_r2)
+            + 0.25 * course_world::noise::perlin2(q.x / 6.5, q.y / 6.5, s_r3);
     }
 
-    // --- the longitudinal profile: ground, depth, level -------------------
-    let at_node = |i: usize| -> usize {
-        let (cx, cy) = ((qs[i].x / cell).round() as i64, (qs[i].y / cell).round() as i64);
-        spec.index(cx.clamp(0, nx - 1) as u32, cy.clamp(0, ny - 1) as u32)
-    };
-    let g_raw: Vec<f64> = (0..n).map(|i| h0s[at_node(i)]).collect();
-    // running mean over +-LONG_SMOOTH_M of arc: the trend the creek sits in,
-    // free of the dune texture it crosses
-    let g = run_mean(&g_raw, arcs, LONG_SMOOTH_M);
+    let mut target: Vec<f64> = h0.to_vec();
     let n_sec = sec.len().max(2);
     let walk_m = sec.along_corr_m.max(10.0);
-    // A real rim depth, walked along the arc at the measured correlation
-    // length. The walk indexes the pack, whose rows are sorted by depth.
-    let depth_raw: Vec<f64> = arcs.iter().map(|&a| {
-        let k = (0.5 + 0.7 * course_world::noise::perlin1(a / walk_m, s_sec)).clamp(0.0, 0.999)
-            * (n_sec - 1) as f64;
-        sec.depth_at(k).clamp(DEPTH_CLAMP.0, DEPTH_CLAMP.1)
-    }).collect();
-    // The BED and the BANK HEIGHT are not the same quantity. The corpus
-    // decorrelation length (30-40 m) belongs to the rim -- how far the bank
-    // stands above the channel -- and applying it to the bed elevation built
-    // a staircase: the level stepped 1.3 m inside 20 m of arc, which is not
-    // something a creek does. So the level follows a SMOOTH depth, and the
-    // bank height is left to vary with the ground the creek crosses.
-    let depth = run_mean(&depth_raw, arcs, DEPTH_SMOOTH_M);
-    // The SHAPE row follows that smoothed depth, so it moves as slowly as the
-    // depth does. Indexing it by the raw walk swept ~4 rows per metre of
-    // creek, and since neighbouring rows differ in width, the bank's outer
-    // edge frayed into a comb -- the "blobs" complaint's last remnant.
-    let kfs: Vec<f64> = depth.iter().map(|&d| sec.rung_for_depth(d)).collect();
-    let (w_typ, d_typ) = (sec.width_p50(), sec.depth_p50());
-    // the water level: the ground minus that depth, then forced to DESCEND
-    // toward the mouth by a running minimum. This is what keeps the creek
-    // going downhill without ever holding its water above the ground.
-    // The target: the water surface sits `depth` below the ground trend, so
-    // the CUT (ground to channel bottom) is the corpus rim depth.
-    let mut level: Vec<f64> = (0..n).map(|i| g[i] - depth[i] + cfg.cut_base).collect();
-    // Descend to the mouth. A running minimum alone lets one hollow far
-    // upstream drag the whole reach down to it -- that is where the 7 m
-    // trenches came from -- so the descent is followed by a depth cap and a
-    // second pass that restores the ordering. Where the cap binds the reach
-    // goes FLAT and pools rather than trenching, which is what a creek meeting
-    // a rise actually does. Two fixed passes, no iteration.
-    let floor_cap = |i: usize| g[i] - MAX_INCISION_M + cfg.cut_base;
-    if cfg.mouth_first {
-        for i in (0..n - 1).rev() { level[i] = level[i].min(level[i + 1]); }
-        for i in 0..n { level[i] = level[i].max(floor_cap(i)); }
-        for i in 1..n { level[i] = level[i].max(level[i - 1]); }
-    } else {
-        for i in 1..n { level[i] = level[i].min(level[i - 1]); }
-        for i in 0..n { level[i] = level[i].max(floor_cap(i)); }
-        for i in (0..n - 1).rev() { level[i] = level[i].max(level[i + 1]); }
-    }
-    // The invariant the owner asked for, asserted where it is established:
-    // the creek runs strictly downhill to its mouth.
-    for i in 1..n {
-        let (lo, hi) = if cfg.mouth_first { (level[i - 1], level[i]) } else { (level[i], level[i - 1]) };
-        debug_assert!(hi >= lo - 1e-9, "creek level rises toward the mouth at {i}");
-        assert!(hi >= lo - 1e-6, "creek level rises toward the mouth at {i}: {lo} -> {hi}");
-    }
-
-    // --- nearest station per corridor cell (compose on DISTANCE, not depth)
-    //
-    // Distance to the SEGMENTS, not to the nodes. The nodes sit ~1 m apart
-    // and the grid is 2 m, so a distance-to-points field beats against the
-    // grid and combed both banks with ribs every few metres -- a moire, not
-    // a landform. Projecting onto the segment gives the true distance field.
-    let mut near = vec![u32::MAX; spec.len()];
-    let mut ndist = vec![f64::INFINITY; spec.len()];
-    for i in 0..n - 1 {
-        let (a, b) = (qs[i], qs[i + 1]);
-        let ab = Vec2::new(b.x - a.x, b.y - a.y);
-        let len2 = ab.x * ab.x + ab.y * ab.y;
-        let (cx, cy) = (((a.x + b.x) * 0.5 / cell).round() as i64,
-                        ((a.y + b.y) * 0.5 / cell).round() as i64);
+    for i in 0..qs.len() {
+        let (p, z, a) = (qs[i], zs[i], arcs[i]);
+        let perp = perps[i];
+        let bsg = bends[i];
+        let cn = curv_n[i];
+        // depth: pools and shallows along the run; wet width breathes too
+        let cut = (cfg.cut_base + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
+        let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
+            .clamp(cfg.hw_clamp.0, cfg.hw_clamp.1);
+        let g_var = 1.0 + 0.25 * course_world::noise::perlin1(a / 210.0, s_g);
+        let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+        let idx_node = spec.index(cx.clamp(0, nx - 1) as u32, cy.clamp(0, ny - 1) as u32);
+        let bed_edge = z - cut * (1.0 - U_K);
+        let d_inc = (h0s[idx_node] - bed_edge).max(0.2);
+        // a real section of THIS depth, with a slow walk about it
+        let k0 = sec.row_for_depth(d_inc);
+        let kf = (k0 + JITTER * n_sec as f64 * course_world::noise::perlin1(a / walk_m, s_sec))
+            .clamp(0.0, (n_sec - 1) as f64 - 1e-9);
+        let scale = (d_inc / sec.depth_at(kf).max(0.05)).clamp(SCALE_CLAMP.0, SCALE_CLAMP.1);
+        // notches: bank-line indents on one side, every ~40-80 m
+        let nz = course_world::noise::perlin1(a / NOTCH_PERIOD_M, s_n);
+        let notch = 1.0 + NOTCH_K * math::smoothstep(NOTCH_T, NOTCH_T + 0.2, nz);
+        let notch_outer = course_world::noise::perlin1(a / 300.0, s_n ^ 0x11) >= 0.0;
         for gy in (cy - r_max).max(0)..=(cy + r_max).min(ny - 1) {
             for gx in (cx - r_max).max(0)..=(cx + r_max).min(nx - 1) {
                 let idx = spec.index(gx as u32, gy as u32);
                 let q = spec.world_of(gx as u32, gy as u32);
-                let t = if len2 > 1e-12 {
-                    (((q.x - a.x) * ab.x + (q.y - a.y) * ab.y) / len2).clamp(0.0, 1.0)
-                } else { 0.0 };
-                let proj = Vec2::new(a.x + ab.x * t, a.y + ab.y * t);
-                let d = q.distance(proj);
-                if d < ndist[idx] {
-                    ndist[idx] = d;
-                    near[idx] = (if t > 0.5 { i + 1 } else { i }) as u32;
+                let dd = q.distance(p);
+                let side = (q.x - p.x) * perp.x + (q.y - p.y) * perp.y;
+                let outer = side * bsg >= 0.0;
+                let hw_i = if outer { hwi * OUTER_K } else { hwi * INNER_K };
+                // wetting exactly as before: decided before any cut test
+                if dd <= hw_i + cell * 0.32 {
+                    creek[idx] = true;
+                    if surface.data[idx].is_nan() {
+                        *wet_cells += 1;
+                        surface.data[idx] = z;
+                    } else {
+                        surface.data[idx] = surface.data[idx].min(z);
+                    }
+                }
+                let cand = if dd <= hw_i {
+                    // the level, slightly U, wet floor
+                    z - cut * (1.0 - U_K * (dd / hw_i).powi(2))
+                } else {
+                    // distance up the bank, ragged and notched
+                    let dw = (dd - hw_i) * (1.0 + RAG * rag[idx])
+                        / if outer == notch_outer { notch } else { 1.0 };
+                    if dw > REACH_M { continue; }
+                    let s_real = sec.relief(kf, outer, dw) * scale;
+                    let grade = (GRADE_BASE * g_var * (1.0 - CURVE_GRADE_K * cn)
+                                 * if outer { OUTER_GRADE_K } else { INNER_GRADE_K })
+                        .clamp(GRADE_MIN, GRADE_MAX);
+                    let s_ramp = grade * dw;
+                    let rel = s_real + (s_ramp - s_real) * bank_steep;
+                    let g = (dw / DETAIL_KNEE_M).clamp(0.0, 1.0);
+                    // A real section is relief RELATIVE TO THE LOCAL GROUND
+                    // TREND (detrended at 25-40 m), so it rides the smoothed
+                    // ground's cross-slope: on a valley side the target
+                    // climbs with the side. Applied as absolute rise from the
+                    // bed it ran out as a flat shelf and stopped at the reach
+                    // limit with a wall (first render).
+                    let trend = h0s[idx] - h0s[idx_node];
+                    let mut c0 = bed_edge + rel + trend + detail[idx] * g;
+                    // guaranteed close-out: whatever the section does, the
+                    // target rejoins the ground by REACH_M, never with a wall
+                    let close = math::smoothstep(0.65 * REACH_M, REACH_M, dw);
+                    c0 += (h0[idx] - c0) * close;
+                    if c0 >= h0[idx] + K_RIM {
+                        continue;           // the section has met the ground
+                    }
+                    course_world::ease::smin(c0, h0[idx], K_RIM)
+                };
+                if cand < target[idx] {
+                    target[idx] = cand;
+                    creek[idx] = true;
                 }
             }
         }
     }
-
-    // --- one evaluation per cell ------------------------------------------
     for idx in 0..spec.len() {
-        if near[idx] == u32::MAX { continue; }
-        let i = near[idx] as usize;
-        let (dd, a) = (ndist[idx], arcs[i]);
-        let q = spec.world_of((idx % nx as usize) as u32, (idx / nx as usize) as u32);
-        let side = (q.x - qs[i].x) * perps[i].x + (q.y - qs[i].y) * perps[i].y;
-        let outer = side * bends[i] >= 0.0;
-        // wet width and water depth breathe along the arc, as before
-        let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
-            .clamp(cfg.hw_clamp.0, cfg.hw_clamp.1);
-        let hw_i = if outer { hwi * OUTER_K } else { hwi * INNER_K };
-        let wet_d = (cfg.cut_base + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
-        // wetting, decided before any cut test: where the ground already sits
-        // below the level there is nothing to carve but the water is there
-        if dd <= hw_i + cell * 0.32 {
-            creek[idx] = true;
-            if surface.data[idx].is_nan() {
-                *wet_cells += 1;
-                surface.data[idx] = level[i];
-            } else {
-                surface.data[idx] = surface.data[idx].min(level[i]);
-            }
-        }
-        let cand = if dd <= hw_i {
-            // the wet floor: level, slightly U
-            level[i] - wet_d * (1.0 - U_K * (dd / hw_i).powi(2))
-        } else {
-            // The bank rises from the channel to the LOCAL ground over the
-            // section's own closure width, so it follows the terrain and
-            // cannot dig a bowl. `d_inc` is what the level actually costs
-            // here -- the corpus depth, plus whatever the descent forced.
-            let d_inc = (g[i] - level[i]).max(0.05);
-            let notch = 1.0 + NOTCH_K * math::smoothstep(NOTCH_T, NOTCH_T + 0.25,
-                course_world::noise::perlin1(a / NOTCH_PERIOD_M, s_n));
-            let notch_outer = course_world::noise::perlin1(a / 300.0, s_n ^ 0x11) >= 0.0;
-            // width along the arc: a slow breath plus the scalloping
-            let w_var = 1.0 + 0.22 * course_world::noise::perlin1(a / 210.0, s_w)
-                + RAG * course_world::noise::perlin1(a / RAG_L.0, s_a1)
-                + 0.6 * RAG * course_world::noise::perlin1(a / RAG_L.1, s_a2)
-                + RAG_ISO * rag[idx];
-            // The bank closes at a roughly CONSTANT SLOPE, so it reaches
-            // whatever the ground beside it happens to be. Holding the width
-            // fixed made the bank climb a dune flank in the same distance it
-            // climbed a flat, and that slope difference striped the whole
-            // bank -- 0.7 m of aperiodic roughness 6 m out, which is what
-            // read as teeth on the Nebraska rivers. The channel's own depth
-            // still sets the reference width through the corpus's weak power
-            // law; the local rise is absorbed by extending the bank, which is
-            // geometry rather than morphology.
-            let bed_edge = level[i] - wet_d * (1.0 - U_K);
-            let ground = h0s[idx];
-            let drop = (ground - bed_edge).max(0.05);
-            let w_ref = w_typ * math::pow(d_inc / d_typ, 0.25)
-                * if outer { 0.85 } else { 1.15 } * w_var
-                * if outer == notch_outer { notch } else { 1.0 }
-                * (1.0 - 0.5 * cfg.bank_steep);
-            let w_i = (w_ref * (drop / d_inc).clamp(0.35, 2.6))
-                .clamp(W_MIN_M, W_MAX_M / RAG_MIN);
-            let dw = dd - hw_i;
-            if dw >= w_i {
-                continue;                       // beyond the bank: untouched
-            }
-            let p = sec.bank(kfs[i], outer, dw / w_i);
-            // The texture returns across the OUTER bank, not immediately. A
-            // fresh bank is smoothed by the water that cut it; carrying the
-            // full-amplitude dune residual up a 10 % bank put teeth along it,
-            // because a +-0.3 m bump at 5 m spacing is as steep as the bank.
-            // At the rim the residual is fully back, which is what keeps the
-            // cut from reading as a scraped-out corridor.
-            let gr = math::smoothstep(DETAIL_KNEE, 0.92, dw / w_i);
-            let c0 = bed_edge + drop * p + detail[idx] * gr;
-            course_world::ease::smin(c0, h0[idx], K_RIM)
-        };
-        if cand < height.data[idx] {
-            height.data[idx] = cand;
-            creek[idx] = true;
+        if corr[idx] && target[idx] < height.data[idx] {
+            height.data[idx] = target[idx];
         }
     }
-    level
 }
 
 /// ABLATION ONLY (CREEK_CARVE=section): the round-1 analytic section (U bed,
@@ -3269,31 +3108,32 @@ mod incision {
     #[test]
     fn water_level_monotone_and_above_bed() {
         let (_, h, w) = run();
-        let line = w.river.as_ref().expect("meander seed carries a creek line");
-        let z = w.river_z.as_ref().expect("and its water profile");
-        assert_eq!(line.len(), z.len());
-        // THE invariant: the creek's own level descends to its mouth
-        // (index 0). This is what "strictly down elevation" means; the
-        // raster surface can sit above it where a pond floods the channel.
-        let mut worst = 0.0f64;
-        for i in 1..z.len() {
-            worst = worst.max(z[i - 1] - z[i]);
-        }
-        assert!(worst < 1e-6, "creek level rises toward the mouth by {worst:.4} m");
-        assert!(z[z.len() - 1] - z[0] > 1.0, "the creek does not fall: {:.2} m", z[z.len() - 1] - z[0]);
-        // and the ground never stands above the water in the channel
+        let line = w.river.expect("meander seed carries a creek line");
         let spec = h.spec;
+        let mut last = f64::NEG_INFINITY;
         let mut n = 0;
-        for p in line.iter() {
+        for p in &line {
             let (x, y) = ((p.x / 2.0).round() as u32, (p.y / 2.0).round() as u32);
             if x >= spec.nx || y >= spec.ny { continue; }
-            let idx = spec.index(x, y);
-            let s = w.surface.data[idx];
+            let s = w.surface.data[spec.index(x, y)];
             if s.is_nan() { continue; }
-            assert!(h.data[idx] <= s + 1e-9, "ground above water at {p:?}");
+            // A cell's level is the MIN over every node within the ~3 m wet
+            // band, so a cell can read the level of a node a few metres
+            // DOWNSTREAM along the arc: a few centimetres, bounded by the bed
+            // rise across the band. The bed itself is asserted monotone in
+            // the carve; here the level may not fall by more than that.
+            assert!(s >= last - 0.10, "water level falls upstream: {last} -> {s}");
+            assert!(h.data[spec.index(x, y)] <= s + 1e-9, "ground above water at {:?}", p);
+            last = s;
             n += 1;
         }
         assert!(n > 200, "only {n} wet nodes along the line");
+        let first = line.iter().find_map(|p| {
+            let (x, y) = ((p.x / 2.0).round() as u32, (p.y / 2.0).round() as u32);
+            let v = w.surface.data[spec.index(x.min(spec.nx - 1), y.min(spec.ny - 1))];
+            if v.is_nan() { None } else { Some(v) }
+        }).unwrap();
+        assert!(last > first + 1.0, "the water does not fall to the mouth: {first} .. {last}");
     }
 
     #[test]
@@ -3338,54 +3178,36 @@ mod incision {
 
     #[test]
     fn csec_loader_and_builtin() {
-        // twelve rows of increasing depth, so the ladder has something to
-        // average into each of its rungs
-        let mut text = String::from("CSEC1\n# c\nhalf_m 24\nstep_m 1\nalong_corr_m 37.5\n");
-        for k in 0..12 {
-            let depth = 0.4 + 0.2 * k as f64;
-            let w = 6.0 + k as f64;
-            text.push_str(&format!("s {depth:.2} {w:.0} {:.0} ", w + 3.0));
-            for i in 0..49 {
-                let d = (i as f64 - 24.0).abs();
-                text.push_str(&format!("{:.3} ", depth * (d / w).min(1.0)));
-            }
-            text.push('\n');
-        }
+        let text = "CSEC1\n# c\nhalf_m 24\nstep_m 1\nalong_corr_m 37.5\ns 1.0 8 12 ".to_string()
+            + &(0..49).map(|i| format!("{:.3}", ((i as f64 - 24.0).abs() / 12.0).min(1.5))).collect::<Vec<_>>().join(" ")
+            + "\ns 0.5 6 6 " + &(0..49).map(|i| format!("{:.3}", ((i as f64 - 24.0).abs() / 6.0 * 0.5).min(0.6))).collect::<Vec<_>>().join(" ") + "\n";
         let tmp = std::env::temp_dir().join("csec_test.txt");
         std::fs::write(&tmp, text).unwrap();
         let s = CreekSections::load(&tmp).unwrap();
-        assert_eq!(s.len(), LADDER);
+        assert_eq!(s.len(), 2);
         assert!((s.along_corr_m - 37.5).abs() < 1e-9);
-        assert!(s.depth.windows(2).all(|w| w[1] >= w[0]), "rungs ordered by depth");
-        for k in [0.0, 3.5, (LADDER - 1) as f64] {
+        assert!(s.depth[0] <= s.depth[1], "rows sorted by depth");
+        for k in [0.0, 0.5, 1.0] {
             for steep in [true, false] {
-                assert_eq!(s.bank(k, steep, 0.0), 0.0);
-                assert_eq!(s.bank(k, steep, 1.0), 1.0);
-                for j in 0..=10 {
-                    let v = s.bank(k, steep, j as f64 / 10.0);
-                    assert!((0.0..=1.0).contains(&v), "bank out of range: {v}");
-                }
-                assert!(s.width(k, steep) >= 2.0);
+                assert_eq!(s.relief(k, steep, 0.0), 0.0);
+                assert!(s.relief(k, steep, 24.0) > 0.0);
+                assert!(s.relief(k, steep, 30.0) >= s.relief(k, steep, 24.0));
+                assert!(s.width(k, steep) >= 1.0);
             }
         }
         assert!(s.width(0.0, true) <= s.width(0.0, false));
-        assert!(s.rung_for_depth(0.0) == 0.0);
-        assert!(s.rung_for_depth(9.0) == (LADDER - 1) as f64);
-        assert!(s.width_p50() >= 4.0 && s.depth_p50() > 0.2);
+        assert!((s.row_for_depth(0.0) - 0.0).abs() < 1e-9 && (s.row_for_depth(5.0) - 1.0).abs() < 1e-9);
+        assert!((s.row_for_depth(0.75) - 0.5).abs() < 1e-9);
         let b = CreekSections::builtin();
-        assert_eq!(b.len(), LADDER);
-        assert!((b.bank(3.0, true, 0.5) - 0.5).abs() < 1e-9);
+        assert!(b.len() >= 2 && b.relief(3.0, true, 1.0) > 0.0);
         assert!(CreekSections::load(std::path::Path::new("/nonexistent/csec.txt")).is_err());
-        // the shipped assets, if present from the crate dir
-        for name in ["sandhills_creek_sections.txt", "sandhills_creek_sections_ne.txt"] {
-            let asset = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/"))
-                .join(name);
-            if asset.exists() {
-                let s = CreekSections::load(&asset).unwrap();
-                assert_eq!(s.len(), LADDER, "{name}: ladder rungs");
-                assert!(s.along_corr_m > 10.0);
-                assert!(s.depth_p50() > 0.3 && s.width_p50() > 5.0, "{name}");
-            }
+        // the shipped asset, if present from the crate dir
+        let asset = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/sandhills_creek_sections.txt"));
+        if asset.exists() {
+            let s = CreekSections::load(asset).unwrap();
+            assert!(s.len() > 100, "asset rows {}", s.len());
+            assert!(s.along_corr_m > 10.0);
+            assert!(s.depth.windows(2).all(|w| w[1] >= w[0]));
         }
     }
 }
