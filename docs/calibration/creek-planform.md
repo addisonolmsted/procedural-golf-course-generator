@@ -194,3 +194,26 @@ and the bank meets the ground through `ease::smin` so the top of bank is
 rounded, not creased. Sheet: `out/creek/step3_section.html` (new | previous
 ramp | shipped skirt, transects ±40 m). Awaiting the owner's eye; the
 differences read in the transects more than in the 2 m hillshade.
+
+### Section round 2 (2026-09-02): the corpus, and "lower, don't replace"
+
+Owner: the round-1 stamp read as "a constant cutout without texture". Step 0
+measured what a real sandhills creek does to the ground at 2 m
+(`tools/aeolian/creek_sections.py`, cached OSM streams joined to 35 corpus
+tiles, 38,507 screened transects): **only 35.7 % of mapped stream stations
+show a channel the DTM resolves at all**; among those the section is a broad
+ragged V — rim depth p10/50/90 = 0.36/1.03/2.05 m at 16–24 m, closure width
+p50 16.5 m (~6 % grade), symmetric (asym p10/90 −0.17/+0.17), depth
+decorrelating along the stream in ~40 m. No flat bed, no steep bank at 2 m.
+Asset `assets/sandhills_creek_sections.txt` (CSEC1: 256 individual transects
++ 370 reach medians, ±24 m at 1 m, sorted by depth in the loader).
+
+The incision (`water::incise`) picks a real section of the depth the
+monotone bed demands, rides it on the smoothed ground's cross-slope, and
+returns the texture residual over the first 5 m of the bank; ragged distance
+warp and notches from world-space noise; min-composed, applied once, never a
+fill. Two wrong turns recorded in the commit (normalise-and-scale → 3 m
+troughs; absolute rise → shelf and wall) — both caught by transects, not by
+any statistic. Sheet: `out/creek/step4_incision.html` (new | round-1 stamp |
+bare ground | real tile t03523_07935 with its transects). Routing metric and
+wet-body count unchanged by construction (wetting rule untouched).
