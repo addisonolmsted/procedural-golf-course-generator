@@ -35,41 +35,67 @@ STATION_M, RECENTER_M = 10.0, 12
 DETREND = (25, 40)
 RESOLVE_MIN, STEP_MAX, RIM_MAX = 0.15, 1.0, 4.0
 REACH_N = 20
-TILES = ROOT / "tools/macro_campaign/out/tiles/sandhills_nc"
+TILE_ROOT = ROOT / "tools/macro_campaign/out/tiles"
 CACHE = ROOT / "tools/golf/corpus/out/fetch_cache/overpass"
-ASSET = ROOT / "assets/sandhills_creek_sections.txt"
-QUERY = '[out:json][timeout:180];(way["waterway"="stream"]({b}););out geom;'
+QUERY = '[out:json][timeout:180];(way["waterway"="{kind}"]({b}););out geom;'
+
+# Which corpus a mode's creeks are measured against. The Carolina creek is a
+# blackwater stream on an integrated network; the Nebraska one is the
+# allogenic river on a canyon floor -- different water, different corpus, so
+# each mode gets its own pack.
+REGIONS = {
+    "nc": dict(tiles=["sandhills_nc"], zone=17, box="sandhills_nc", kinds=["stream"],
+               asset="assets/sandhills_creek_sections.txt", tag=""),
+    "ne": dict(tiles=["sandhills_river", "sandhills"], zone=14, box="sandhills_ne",
+               kinds=["stream", "river"], asset="assets/sandhills_creek_sections_ne.txt", tag="_ne"),
+}
+REG = REGIONS["nc"]
+ASSET = ROOT / REGIONS["nc"]["asset"]
+
+def use_region(key):
+    """Point the module at one region's tiles, UTM zone and asset."""
+    global REG, ASSET
+    REG = REGIONS[key]
+    ASSET = ROOT / REG["asset"]
 D = np.arange(-HALF_M, HALF_M + 1e-9, STEP_M)          # 81 samples
 C0 = len(D) // 2
 
 # --- inputs ---------------------------------------------------------------------
 def stream_ways():
-    from corpus import config
-    box = [b for b in config.SEARCH_BOXES if b[0] == "sandhills_nc"][0]
+    """Every mapped waterway of the region's kinds, deduped, in UTM metres.
+    Served from the Overpass disk cache; a miss fetches once and caches."""
+    from corpus import config, net, geo
+    box = [b for b in config.SEARCH_BOXES if b[0] == REG["box"]][0]
     _, la, lo, h = box
-    from corpus import geo
+    quads = ((la-h/2, lo-h/2), (la-h/2, lo+h/2), (la+h/2, lo-h/2), (la+h/2, lo+h/2))
     ways = {}
-    for (qa, qo) in ((la-h/2, lo-h/2), (la-h/2, lo+h/2), (la+h/2, lo-h/2), (la+h/2, lo+h/2)):
-        b = f"{qa-h/2},{qo-h/2},{qa+h/2},{qo+h/2}"
-        key = hashlib.sha256(QUERY.format(b=b).encode()).hexdigest()[:24]
-        p = CACHE / f"{key}.json"
-        assert p.exists(), f"overpass cache missing for quadrant {b}: {p}"
-        for el in json.load(open(p)).get("elements", []):
-            g = el.get("geometry")
-            if g and len(g) >= 4 and el["id"] not in ways:
-                lat = np.array([q["lat"] for q in g]); lon = np.array([q["lon"] for q in g])
-                ne = geo.ll_to_m(lat, lon, 17)              # (N,2) [northing, easting], UTM 17
-                ways[el["id"]] = (ne[:, 1], ne[:, 0])       # (E, N)
+    for kind in REG["kinds"]:
+        for (qa, qo) in quads:
+            b = f"{qa-h/2},{qo-h/2},{qa+h/2},{qo+h/2}"
+            q = QUERY.format(kind=kind, b=b)
+            p = CACHE / f"{hashlib.sha256(q.encode()).hexdigest()[:24]}.json"
+            if not p.exists():
+                print(f"  [fetch] {kind} {b}", flush=True)
+                net.overpass(q)
+            assert p.exists(), f"overpass cache missing for {kind} {b}: {p}"
+            for el in json.load(open(p)).get("elements", []):
+                g = el.get("geometry")
+                if g and len(g) >= 4 and (kind, el["id"]) not in ways:
+                    lat = np.array([q2["lat"] for q2 in g]); lon = np.array([q2["lon"] for q2 in g])
+                    ne = geo.ll_to_m(lat, lon, REG["zone"])   # (N,2) [northing, easting]
+                    ways[(kind, el["id"])] = (ne[:, 1], ne[:, 0])   # (E, N)
     return ways
 
 def tile_frames(min_valid=0.98):
     from macro_campaign import cgrid
     out = []
-    for js in sorted(TILES.glob("*.json")):
-        meta = json.load(open(js))
-        if meta.get("valid_frac", 0) < min_valid: continue
-        z, (_, _, c) = cgrid.read_f32(js.with_suffix(".cgrid"))
-        out.append((js.stem, z.astype(float), float(meta["easting0"]), float(meta["northing0"]), c))
+    for sub in REG["tiles"]:
+        for js in sorted((TILE_ROOT / sub).glob("*.json")):
+            meta = json.load(open(js))
+            if meta.get("valid_frac", 0) < min_valid: continue
+            z, (_, _, c) = cgrid.read_f32(js.with_suffix(".cgrid"))
+            out.append((f"{sub}/{js.stem}", z.astype(float), float(meta["easting0"]),
+                        float(meta["northing0"]), c))
     return out
 
 # --- one transect -----------------------------------------------------------------
@@ -184,7 +210,11 @@ def measure(verbose=True):
 def pct(v):
     return [float(np.percentile(v, p)) for p in (10, 25, 50, 75, 90)]
 
-def export(all_rows, reach_rows, stats, path=ASSET, n_s=256):
+def export(all_rows, reach_rows, stats, path=None, n_s=256):
+    # NOT a default argument: `ASSET` is rebound by use_region(), and a
+    # default captured at def time wrote the Nebraska pack over the Carolina
+    # one on the first regional run.
+    path = path or ASSET
     rows = sorted(all_rows, key=lambda r: 0.5 * (r["w_l"] + r["w_r"]))
     idx = np.unique(np.linspace(0, len(rows) - 1, min(n_s, len(rows))).astype(int)) if rows else []
     s_rows = [rows[i] for i in idx]
@@ -193,7 +223,8 @@ def export(all_rows, reach_rows, stats, path=ASSET, n_s=256):
     with open(path, "w") as f:
         f.write("CSEC1\n")
         f.write(f"# measured 2 m creek cross-sections: {stats['n_resolved']} resolved of {stats['n_screened']} screened transects, "
-                f"{stats['n_reaches']} reaches, {stats['n_tiles']} sandhills_nc tiles (tools/aeolian/creek_sections.py)\n")
+                f"{stats['n_reaches']} reaches, {stats['n_tiles']} {'+'.join(REG['tiles'])} tiles, "
+                f"waterway={'/'.join(REG['kinds'])} (tools/aeolian/creek_sections.py)\n")
         f.write(f"# OSM waterway=stream, {STATION_M:.0f} m stations, +-{HALF_M} m at {STEP_M:.0f} m, recentred +-{RECENTER_M} m, detrended {DETREND[0]}..{DETREND[1]} m\n")
         f.write(f"half_m {EXPORT_HALF}\nstep_m {STEP_M:.0f}\nn_sections {len(s_rows)}\nn_medians {len(m_rows)}\n")
         f.write(f"resolved_frac {stats['resolved_frac']:.4f}\nalong_corr_m {stats['along_corr_m']:.1f}\n")
@@ -240,7 +271,7 @@ def sheet(all_rows, reach_rows, per_tile, stats, out_html, gen_dir=None, seeds=(
     top = sorted(per_tile.items(), key=lambda kv: -kv[1][1])[:6]
     rng = np.random.default_rng(3)
     for name, (n_scr, n_res) in top:
-        z, (_, _, c) = cgrid.read_f32(TILES / f"{name}.cgrid"); z = z.astype(float)
+        z, (_, _, c) = cgrid.read_f32(TILE_ROOT / f"{name}.cgrid"); z = z.astype(float)
         rows = [r for r in all_rows if r["tile"] == name]
         if not rows: continue
         r = rows[rng.integers(len(rows))]
@@ -250,7 +281,7 @@ def sheet(all_rows, reach_rows, per_tile, stats, out_html, gen_dir=None, seeds=(
         base = hillshade_rgb(zz, c)
         # every stream vertex of this tile's ways inside the crop, as line layers
         ways = stream_ways()
-        meta = json.load(open(TILES / f"{name}.json")); e0, n0 = meta["easting0"], meta["northing0"]
+        meta = json.load(open(TILE_ROOT / f"{name}.json")); e0, n0 = meta["easting0"], meta["northing0"]
         h, w = base.shape[:2]; scale = 2
         im = Image.new("RGBA", (w*scale, h*scale), (0, 0, 0, 0))
         from PIL import ImageDraw
@@ -354,6 +385,9 @@ def selftest():
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    for _k in list(REGIONS):
+        if f"--region={_k}" in a:
+            use_region(_k); a = [x for x in a if x != f"--region={_k}"]
     if "--selftest" in a:
         selftest()
     elif a and a[0] == "measure":
@@ -361,7 +395,7 @@ if __name__ == "__main__":
         export(all_rows, reach_rows, stats)
         (ROOT / "out/creek").mkdir(parents=True, exist_ok=True)
         gen = a[1] if len(a) > 1 else None; seeds = a[2:]
-        sheet(all_rows, reach_rows, per_tile, stats, ROOT / "out/creek/step0_real_sections.html", gen, seeds)
+        sheet(all_rows, reach_rows, per_tile, stats, ROOT / f"out/creek/step0_real_sections{REG['tag']}.html", gen, seeds)
     elif a and a[0] == "sheet":
         all_rows, reach_rows, per_tile, stats = measure(verbose=False)
-        sheet(all_rows, reach_rows, per_tile, stats, ROOT / "out/creek/step0_real_sections.html", a[1], a[2:])
+        sheet(all_rows, reach_rows, per_tile, stats, ROOT / f"out/creek/step0_real_sections{REG['tag']}.html", a[1], a[2:])
