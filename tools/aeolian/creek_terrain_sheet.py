@@ -70,6 +70,9 @@ def main():
     labels = ["NEW: bend train + channel carve", "bend train + OLD skirt carve", "SHIPPED: sine + skirt"]
     if "--labels" in sys.argv:
         labels = sys.argv[sys.argv.index("--labels") + 1].split("|"); seeds = [x for x in seeds if x != sys.argv[sys.argv.index("--labels") + 1]]
+    real = None
+    if "--real" in sys.argv:
+        real = sys.argv[sys.argv.index("--real") + 1]; seeds = [x for x in seeds if x != real]
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     variants = [(labels[0], d_new), (labels[1], d_ts), (labels[2], d_old)]
     html = ["<title>Creek Terrain Sheet</title><style> :root{--bg:#f6f4ee;--ink:#22231f;--muted:#5f5e57;--rule:#d9d5c9;--accent:#8a3b2a;--panel:#fffdf8} @media (prefers-color-scheme: dark){:root:not([data-theme=\"light\"]){--bg:#1b1c19;--ink:#e8e5dc;--muted:#a7a49a;--rule:#3a3b35;--accent:#e08a72;--panel:#232420}} :root[data-theme=\"dark\"]{--bg:#1b1c19;--ink:#e8e5dc;--muted:#a7a49a;--rule:#3a3b35;--accent:#e08a72;--panel:#232420} body{background:var(--bg);color:var(--ink);font-family:\"IBM Plex Sans\",system-ui,sans-serif;margin:0;padding:20px 24px;line-height:1.45} h2{font-size:1.45rem;margin:0 0 6px;text-wrap:balance}h3{font-size:1.05rem;margin:26px 0 4px;color:var(--accent)} p{max-width:70ch;color:var(--muted);margin:4px 0 12px}.cap{font-size:11.5px;color:var(--muted);margin:2px 0 8px;font-family:\"IBM Plex Mono\",ui-monospace,monospace} .row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}img{max-width:100%;background:var(--panel)} table{border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}td,th{border:1px solid var(--rule);padding:3px 8px;text-align:right}td:first-child,th:first-child{text-align:left} .wrap{overflow-x:auto} </style> <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono&display=swap\">",
@@ -128,6 +131,39 @@ def main():
     rs = [t[1] for t in table if t[1] is not None]; ros = [t[4] for t in table if t[4] is not None]
     if rs: html.append(f"<tr><td><b>median</b></td><td><b>{np.median(rs):.1f}</b></td><td><b>{np.median([t[2] for t in table]):.1f}</b></td><td></td><td><b>{np.median(ros):.1f}</b></td></tr>")
     html.append("</table>")
+    if real:
+        html.append(f"<h3>REAL corpus tile {real}: resolved creek stations, 600 m crops at the same render, with transects</h3>")
+        html.append("<p>Yellow dots mark stations where the 2 m DTM resolves a channel (tools/aeolian/creek_sections.py). "
+                    "Transects use the same ±40 m window as ours above.</p>")
+        import creek_sections as cs
+        from macro_campaign import cgrid as cg
+        import json as _json
+        z, (_, _, c) = cg.read_f32(cs.TILES / f"{real}.cgrid"); z = z.astype(float)
+        meta = _json.load(open(cs.TILES / f"{real}.json")); e0, n0 = meta["easting0"], meta["northing0"]
+        ways = cs.stream_ways(); ext = z.shape[0] * c
+        rows = []
+        for wid, (E, N) in ways.items():
+            if not (E.min() < e0 + ext and E.max() > e0 and N.min() < n0 + ext and N.max() > n0): continue
+            rows += [r for r in cs.way_transects(z, e0, n0, c, E, N) if r["resolved"]]
+        rng = np.random.default_rng(5)
+        picks = [rows[i] for i in rng.choice(len(rows), min(4, len(rows)), replace=False)] if rows else []
+        html.append('<div class=row>')
+        for r in picks:
+            cx, cy = int(r["x"] / c), int(r["y"] / c); half = int(300 / c)
+            x0 = int(np.clip(cx - half, 0, z.shape[1] - 2*half)); y0 = int(np.clip(cy - half, 0, z.shape[0] - 2*half))
+            zz = z[y0:y0+2*half, x0:x0+2*half]
+            img = hillshade_rgb(zz, c)
+            html.append(f'<div><img src="{to_uri(img, upscale=2)}" width=600><div class=cap>{real} · station ({r["x"]:.0f}, {r["y"]:.0f}) m · rim {r["depth"]:.2f} m · w {0.5*(r["w_l"]+r["w_r"]):.0f} m</div></div>')
+        html.append('</div>')
+        if rows:
+            fig, ax = plt.subplots(1, 1, figsize=(9.0, 2.8), dpi=100)
+            S = np.stack([q["S"] for q in rows])
+            ax.fill_between(cs.D, np.percentile(S, 25, 0), np.percentile(S, 75, 0), color="#1f4e79", alpha=0.25, lw=0)
+            ax.plot(cs.D, np.median(S, 0), color="#1f4e79", lw=2, label=f"real tile {real}, {len(rows)} resolved transects")
+            for r in picks: ax.plot(cs.D, r["S"], lw=0.8, alpha=0.7)
+            ax.set_xlabel("m across creek"); ax.set_ylabel("m rel. to creek"); ax.grid(True, color="#eee"); ax.legend(fontsize=7); ax.set_ylim(-0.5, 3)
+            fig.tight_layout(); b = io.BytesIO(); fig.savefig(b, format="png"); plt.close(fig)
+            html.append(f'<img src="data:image/png;base64,{base64.b64encode(b.getvalue()).decode()}" width=900>')
     open(out_html, "w").write("\n".join(html))
     print(f"wrote {out_html}")
     for seed, r, amp, bodies, ro in table:

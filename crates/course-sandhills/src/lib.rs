@@ -215,7 +215,12 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     // X4 — water last, on the finished ground
     let mut wr2 = rng::stream(id, rng::WATER);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
-    let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &w2, &d);
+    // Measured real creek cross-sections; without the asset the carve falls
+    // back to a straight bank (`CreekSections::builtin`), visibly.
+    let csec = water::CreekSections::load(std::path::Path::new(
+        "assets/sandhills_creek_sections.txt")).ok();
+    let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &w2, &d,
+                               csec.as_ref());
     (d, net, asm, tex, water, bays)
 }
 
