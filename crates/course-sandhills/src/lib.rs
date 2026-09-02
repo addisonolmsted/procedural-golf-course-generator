@@ -32,6 +32,7 @@ pub mod channel;
 pub mod draw;
 pub mod gorge;
 pub mod mode;
+pub mod planform;
 pub mod record;
 pub mod rng;
 pub mod surface;
@@ -197,10 +198,24 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     let _ = &u2;
     let bays: Vec<blowout::Bay> = Vec::new();
 
+    // The valley HALF-WIDTH at 2 m, beside `u`: the creek planform needs
+    // physical room (`(0.34 - u) * w` metres to the floor edge), because the
+    // same u threshold sits at very different distances in a pinched reach
+    // and a wide one (review 2026-09-01: "if the valley pinches in the creek
+    // should be straighter, if the valley widens we can have more meandering").
+    let w2 = {
+        let mut g = Grid::filled(tex.spec, 0.0f64);
+        for y in 0..tex.spec.ny {
+            for x in 0..tex.spec.nx {
+                g.set(x, y, asm.w.bilinear(tex.spec.world_of(x, y)));
+            }
+        }
+        g
+    };
     // X4 — water last, on the finished ground
     let mut wr2 = rng::stream(id, rng::WATER);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
-    let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &d);
+    let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &w2, &d);
     (d, net, asm, tex, water, bays)
 }
 
