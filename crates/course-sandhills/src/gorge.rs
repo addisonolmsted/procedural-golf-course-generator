@@ -29,7 +29,7 @@
 
 use course_seed::DetRng;
 use course_world::grid::Grid;
-use course_world::math::{self, Vec2};
+use course_world::math::Vec2;
 
 use crate::draw::Descriptors;
 use crate::{carve, channel};
@@ -40,6 +40,9 @@ pub struct Gorge {
     /// The creek line on the trunk floor, and its bed elevation.
     pub creek: Vec<Vec2>,
     pub creek_z: Vec<f64>,
+    /// The planform's salt, passed on to the incision so the carve's noise
+    /// belongs to this river without taking a draw of its own.
+    pub salt: u32,
 }
 
 /// Valley half-width by tier, metres -- the distance at which the cut dies.
@@ -75,12 +78,6 @@ fn floor_frac(tier: u8) -> f64 {
 /// full depth and stops -- which is the other half of the worm. Exponent
 /// below 1 keeps it deep for most of its length and closes it out quickly.
 const HEAD_SHALLOW: f64 = 0.55;
-
-/// Ceiling on meander amplitude as a fraction of the local wavelength. For an
-/// offset `A sin(2*pi*s/L)` the path's steepest bank angle is
-/// `atan(2*pi*A/L)`, so this is the dial that decides whether the creek can
-/// double back on itself at all. 0.125 caps the bank near 42 degrees.
-const MEANDER_RATIO: f64 = 0.125;
 
 /// Wall exponent by tier, on the normalised wall coordinate.
 ///
@@ -437,91 +434,27 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     let swing = rng.range_f64(style.swing.0, style.swing.1);
     let phase = rng.range_f64(0.0, std::f64::consts::TAU);
     let s_lam = rng.next_u32();
-    let mut creek: Vec<Vec2> = Vec::with_capacity(tp.len());
-    let mut creek_z: Vec<f64> = Vec::with_capacity(tp.len());
-    // Sub-sample each trunk segment. The offset is a lateral displacement,
-    // so the OFFSET path is longer than the centre-line it came from: at this
-    // amplitude and wavelength the offset moves ~4.7 m per 6 m of centre-line,
-    // which spaces consecutive creek points ~7.6 m apart. Emitting one creek
-    // point per bed point therefore leaves gaps wider than the creek, and the
-    // wet ribbon breaks into hundreds of disconnected puddles (measured: seed
-    // 9 gave 271 bodies of ~30 m2). Step along the segment instead.
-    let mut arc = 0.0;
-    // Accumulated meander phase -- see the note at the offset below.
-    let mut phi = 0.0f64;
-    for k in 0..tp.len().saturating_sub(1) {
-        let (a, b) = (tp[k], tp[k + 1]);
-        let seg = a.distance(b);
-        if seg <= 1e-6 {
-            continue;
-        }
-        // Tangent over a WINDOW, not the raw segment. A lateral offset is
-        // multiplied by any rotation of `perp`: at a bend, a 10 degree turn
-        // swings a 50 m offset point by 8.7 m and opens another gap. Taking
-        // the tangent across +/-4 bed points makes it rotate smoothly, which
-        // is the same fix the Carolina creek needed.
-        let lo = k.saturating_sub(4);
-        let hi = (k + 4).min(tp.len() - 1);
-        let tv = Vec2::new(tp[hi].x - tp[lo].x, tp[hi].y - tp[lo].y);
-        let tl = tv.length().max(1e-9);
-        let perp = Vec2::new(-tv.y / tl, tv.x / tl);
-        let n = (seg / 2.0).ceil().max(1.0) as usize;
-        for j in 0..n {
-            let t = j as f64 / n as f64;
-            let s_here = arc + seg * t;
-            let lam_e =
-                lam * (1.0 + 0.35 * course_world::noise::perlin1(s_here / 640.0, s_lam));
-            // Amplitude is CAPPED against the local wavelength, and so
-            // tracks it. It used to be `swing * 34` regardless of lambda, and
-            // the two are drawn independently: style C (lambda from 283,
-            // swing to 1.70) put a 57.8 m amplitude on a 283 m wave, which is
-            // A/lambda = 0.204 and a 55 degree bank angle -- a switchback, and
-            // a run of them wherever the lambda modulation dipped. Holding
-            // A/lambda at MEANDER_RATIO caps the bank at about 42 degrees, so
-            // a short wave is necessarily a shallow one.
-            // Modulate FIRST, cap LAST. Capping and then multiplying by up
-            // to 1.30 put the effective ratio at 0.163 and the bank back to
-            // 49 degrees on seed 41423 -- the cap has to be the last word.
-            let amp = (swing * 34.0
-                * (1.0 + 0.30 * course_world::noise::perlin1(s_here / 470.0,
-                                                             s_lam ^ 0x5bd1)))
-                .min(MEANDER_RATIO * lam_e);
-            // Phase is INTEGRATED, not `s / lam_e`.
-            //
-            // Dividing arc length by a wavelength that itself varies with s
-            // gives an instantaneous frequency of
-            //     d/ds [2*pi*s/L(s)] = (2*pi/L)(1 - s*L'/L)
-            // and the second term grows with s. Ten wavelengths downstream,
-            // with L modulated 35% over 640 m, it dominates: the real local
-            // wavelength bore no relation to L, so the amplitude cap -- which
-            // is expressed against L -- was capping against the wrong number.
-            // Measured on the emitted polyline, bank angles reached 90 degrees
-            // where the cap predicts 42. Integrating gives a local wavelength
-            // that IS lam_e, which is what makes the cap mean anything.
-            let off = amp
-                * (math::sin(phi + phase)
-                    + 0.35 * math::sin(phi / 2.7 + phase * 1.7));
-            let p = Vec2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-            creek.push(Vec2::new(p.x + perp.x * off, p.y + perp.y * off));
-            phi += std::f64::consts::TAU * (seg / n as f64) / lam_e;
-        }
-        arc += seg;
-    }
-    // Resample along the CREEK's own arc. Sub-sampling the centre-line is
-    // not enough: the offset derivative depends on the drawn style, and the
-    // steepest one (lam 260 m, swing 1.70) moves the offset 3.7 m per metre
-    // of centre-line, so even a 2 m centre-line step can space creek points
-    // more than a creek-width apart. Walking the creek itself at a fixed
-    // interval makes continuity independent of the style drawn.
-    let (mut creek, _) = resample(&creek, &vec![0.0; creek.len()], 1.5);
-    // Swept 55 / 75 / 95 / 120 m. A capped meander runs at lambda / 4.93,
-    // which is 61 m at lambda 300, so 55 only trims what is already extreme
-    // and left seed 41421's switchback train at 94 degrees. 95 takes the worst
-    // bank across the sample to 73 and costs almost nothing in sinuosity
-    // (1.15 against 1.14 at 120, and 1.26 on the real Dismal) -- the guard
-    // removes tight loops without straightening the meander.
-    limit_curvature(&mut creek, 95.0, 20);
-    let creek = creek;
+    // The planform is the BEND TRAIN, the same one the Carolina creek uses
+    // (`planform::bend_train`): a sequence of individually drawn bends and
+    // straight runs with no carrier, each bend confined to the trunk floor.
+    // It replaces the two-sine offset that ran here -- review, twice: "too
+    // sinusoidal" -- and takes no draws of its own, so the five above keep
+    // their positions and their values.
+    //
+    // The base line is already smoothed six passes above, so the planform is
+    // told not to smooth it again. Room is the trunk's flat floor half-width
+    // (`FLOOR_FRAC * half_width(1)`), kept off the wall by a margin; at these
+    // amplitudes the curvature floor is what actually binds, which is why the
+    // old `limit_curvature(95 m)` guard and `MEANDER_RATIO` are gone with the
+    // sine that needed them.
+    let prm = crate::planform::Params {
+        smooth_passes: 0,
+        ..crate::planform::Params::from_draws(lam, swing, phase, d.river_w_m)
+    };
+    let room = 0.85 * FLOOR_FRAC * half_width(1);
+    let pf = crate::planform::bend_train(tp, crate::planform::Flow::MouthFirst,
+                                         &prm, s_lam, &|_| room);
+    let creek = pf.p;
 
     // Take the creek bed from the CUT SURFACE, not from carve::beds.
     // The valley cut saturates at MAX_CUT_M, so where the trunk routes under
@@ -543,7 +476,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             }
         }
     }
-    Some(Gorge { net, creek, creek_z })
+    Some(Gorge { net, creek, creek_z, salt: s_lam })
 }
 
 /// In-place 5-point blur over a bare Vec on `spec`, `n` passes.
@@ -564,31 +497,6 @@ fn blur_vec(spec: &course_world::grid::GridSpec, v: &mut [f64], n: usize) {
             }
         }
     }
-}
-
-/// Walk a polyline at a fixed interval, carrying its per-point value.
-fn resample(pts: &[Vec2], val: &[f64], step: f64) -> (Vec<Vec2>, Vec<f64>) {
-    if pts.len() < 2 {
-        return (pts.to_vec(), val.to_vec());
-    }
-    let (mut op, mut ov) = (vec![pts[0]], vec![val[0]]);
-    let mut carry = 0.0f64;
-    for k in 0..pts.len() - 1 {
-        let (a, b) = (pts[k], pts[k + 1]);
-        let seg = a.distance(b);
-        if seg <= 1e-9 {
-            continue;
-        }
-        let mut t = step - carry;
-        while t <= seg {
-            let f = t / seg;
-            op.push(Vec2::new(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f));
-            ov.push(val[k] + (val[k + 1] - val[k]) * f);
-            t += step;
-        }
-        carry = seg - (t - step);
-    }
-    (op, ov)
 }
 
 /// 5-point blur with edge replication, `n` passes. Local copy so the gorge
@@ -769,44 +677,3 @@ fn edt(spec: &course_world::grid::GridSpec, seed: &[(u32, u32, f64)])
     (dist, out)
 }
 
-/// Relax any bend tighter than `r_min` out of a polyline, leaving the rest of
-/// the path alone.
-///
-/// The meander is built from a sum of sines whose amplitude is capped against
-/// the local wavelength, and at that cap a bend's radius is `lambda / 4.93`.
-/// That bounds the SINE, not the path: the creek is the sine plus the trunk's
-/// own wander, and where the two turn the same way they compound into loops
-/// far tighter than either. Measured on the emitted polyline, seed 41421 ran a
-/// train of four switchbacks at 95 degrees where the sine alone accounts for
-/// 42. Capping amplitude and integrating the phase each removed part of it;
-/// neither bounds the sum, and this does, whatever produced the bend.
-fn limit_curvature(line: &mut [Vec2], r_min: f64, span: usize) {
-    if line.len() < 2 * span + 3 {
-        return;
-    }
-    for _ in 0..24 {
-        let src = line.to_vec();
-        let mut worst = 0.0f64;
-        for i in span..src.len() - span {
-            let (a, b, c) = (src[i - span], src[i], src[i + span]);
-            // Circumradius from the triangle: R = abc / 4A.
-            let (ab, bc, ca) = (a.distance(b), b.distance(c), c.distance(a));
-            let area2 = ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)).abs();
-            if area2 < 1e-9 {
-                continue;
-            }
-            let r = ab * bc * ca / (2.0 * area2);
-            if r >= r_min {
-                continue;
-            }
-            worst = worst.max(r_min / r);
-            // Pull toward the chord midpoint, by the shortfall.
-            let k = (0.5 * (1.0 - r / r_min)).clamp(0.0, 0.5);
-            let mid = Vec2::new((a.x + c.x) * 0.5, (a.y + c.y) * 0.5);
-            line[i] = Vec2::new(b.x + (mid.x - b.x) * k, b.y + (mid.y - b.y) * k);
-        }
-        if worst <= 1.0 {
-            break;
-        }
-    }
-}

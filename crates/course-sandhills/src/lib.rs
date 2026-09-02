@@ -336,7 +336,12 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
         water::clear_lakes_near(&mut water, &g.creek, &g.creek_z);
     }
     let river = if let Some(g) = &gorge {
-        water::cut_creek(&mut height, &mut water, &g.creek, &g.creek_z, d.river_w_m);
+        // Measured NEBRASKA sections: the allogenic river runs on a canyon
+        // floor, not a Carolina valley floor, so it gets its own pack.
+        let csec = water::CreekSections::load(std::path::Path::new(
+            "assets/sandhills_creek_sections_ne.txt")).ok();
+        water::cut_creek(&mut height, &mut water, &g.creek, &g.creek_z, d.river_w_m,
+                         csec.as_ref(), g.salt);
         Some(g.creek.clone())
     } else {
         None

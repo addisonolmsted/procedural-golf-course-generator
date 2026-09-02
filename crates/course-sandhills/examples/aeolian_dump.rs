@@ -15,6 +15,11 @@ fn main() {
         let t = build_full(&id, &pack, None);
         gridio::write_grid_f32(&out.join(format!("a_{seed}.cgrid")), &t.height).unwrap();
         gridio::write_grid_f32(&out.join(format!("a_{seed}.water.cgrid")), &t.water).unwrap();
-        println!("seed {seed}: {} blowouts, lake_frac {:.3}", t.blowouts.len(), t.lake_frac);
+        if let Some(r) = &t.river {
+            let txt: String = r.iter().map(|p| format!("{:.2} {:.2}\n", p.x, p.y)).collect();
+            std::fs::write(out.join(format!("a_{seed}.creek.txt")), txt).unwrap();
+        }
+        println!("seed {seed}: {} blowouts, lake_frac {:.3}, river {}",
+                 t.blowouts.len(), t.lake_frac, t.river.is_some());
     }
 }

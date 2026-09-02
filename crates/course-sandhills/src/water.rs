@@ -1028,7 +1028,81 @@ pub fn carve_corridor(height: &mut Grid<f64>, pl: &RiverPlan) {
 /// a `smoothstep` from the centre-line out to a 4 m bank, which is a rounded
 /// gutter -- the water sat in a dish with no bank line anywhere.
 pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
-                 line: &[Vec2], bed: &[f64], width_m: f64) {
+                 line: &[Vec2], bed: &[f64], width_m: f64,
+                 sections: Option<&CreekSections>, salt: u32) {
+    if line.len() < 3 {
+        return;
+    }
+    // `CREEK_CARVE=slot` keeps the flat-bed slot this function cut before
+    // 2026-09-02 (below), for the ablation render.
+    if std::env::var("CREEK_CARVE").map(|v| v == "slot").unwrap_or(false) {
+        cut_creek_slot_legacy(height, water, line, bed, width_m);
+        return;
+    }
+    let spec = height.spec;
+    let (arcs, perps, bends) = node_frames(line);
+    let h0: Vec<f64> = height.data.clone();
+    let mut mask = vec![false; spec.len()];
+    let mut wet = 0usize;
+    let builtin;
+    let sec: &CreekSections = match sections {
+        Some(s) => s,
+        None => { builtin = CreekSections::builtin(); &builtin }
+    };
+    let bank_steep = std::env::var("CREEK_BANK").ok()
+        .and_then(|v| v.parse::<f64>().ok()).unwrap_or(BANK_STEEPNESS).clamp(0.0, 1.0);
+    // The Nebraska river is wider and deeper than the Carolina creek, so it
+    // brings its own wet width band and its own depth law -- `cut_creek`'s
+    // own `0.30 + 0.045 * width_m`, kept exactly.
+    let hw = (width_m * 0.5).max(1.2);
+    let cfg = Incision {
+        sections: sec,
+        bank_steep,
+        hw,
+        hw_clamp: (hw * 0.62, hw * 1.45),
+        cut_base: 0.30 + 0.045 * width_m,
+        salt,
+    };
+    let bed_at: Vec<f64> = (0..line.len()).map(|i| bed[i.min(bed.len() - 1)]).collect();
+    incise(height, &h0, &mut water.surface, &mut mask, &mut wet,
+           line, &bed_at, &arcs, &perps, &bends, &cfg);
+    water.lake_frac += wet as f64 / spec.len() as f64;
+}
+
+/// Arc length, left normal over a +-5 node window, and the bend sign, for a
+/// creek polyline. `side * bend >= 0` is the OUTER (cut) bank, the same
+/// convention the fluvial planform hands to the incision.
+fn node_frames(p: &[Vec2]) -> (Vec<f64>, Vec<Vec2>, Vec<f64>) {
+    let n = p.len();
+    let mut arcs = Vec::with_capacity(n);
+    let mut a = 0.0;
+    arcs.push(0.0);
+    for i in 1..n {
+        a += p[i - 1].distance(p[i]);
+        arcs.push(a);
+    }
+    let mut perps = Vec::with_capacity(n);
+    let mut bends = Vec::with_capacity(n);
+    for i in 0..n {
+        let (lo, hi) = (i.saturating_sub(5), (i + 5).min(n - 1));
+        let tv = p[hi] - p[lo];
+        let l = tv.length().max(1e-9);
+        perps.push(Vec2::new(-tv.y / l, tv.x / l));
+        let (lo2, hi2) = (i.saturating_sub(10), (i + 10).min(n - 1));
+        let v1 = p[i] - p[lo2];
+        let v2 = p[hi2] - p[i];
+        bends.push(-(v1.x * v2.y - v1.y * v2.x));
+    }
+    (arcs, perps, bends)
+}
+
+/// ABLATION ONLY (CREEK_CARVE=slot): the flat-bottomed slot this function cut
+/// until 2026-09-02 -- a 5 m footprint stamped over the textured ground.
+/// Correct in section and far better than the 32 m skirt it replaced, but it
+/// still REPLACES the ground rather than lowering it, so the creek came out
+/// as a clean extrusion. Deleted once the incision is signed off.
+fn cut_creek_slot_legacy(height: &mut Grid<f64>, water: &mut Water,
+                         line: &[Vec2], bed: &[f64], width_m: f64) {
     let spec = height.spec;
     let cell = spec.cell_size;
     let hw = (width_m * 0.5).max(1.2);
@@ -1575,7 +1649,9 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             None => { builtin = CreekSections::builtin(); &builtin }
         };
         incise(height, &h0, &mut surface, &mut creek, &mut wet_cells,
-               &qs, &zs, &arcs, &perps, &bends, hw, m_seed, sec, bank_steep);
+               &qs, &zs, &arcs, &perps, &bends,
+               &Incision { sections: sec, bank_steep, hw, hw_clamp: (1.4, 3.4),
+                           cut_base: 0.30, salt: m_seed });
     }
 
     // --- the water TABLE is retired ---------------------------------------
@@ -2549,6 +2625,23 @@ const CURVE_SHOULDER_K: f64 = 0.8;
 const OUTER_K: f64 = 1.15;
 const INNER_K: f64 = 0.90;
 
+/// Everything the incision needs that differs between the two modes: the
+/// Carolina creek is a 4-5 m blackwater channel on a valley floor, the
+/// Nebraska one a 4-14 m river on a canyon floor, and each is measured
+/// against its own corpus pack.
+pub struct Incision<'a> {
+    pub sections: &'a CreekSections,
+    /// 0 = the corpus section, 1 = the round-1 analytic ramp.
+    pub bank_steep: f64,
+    /// wet half-width, metres, and the band its along-arc breathing stays in
+    pub hw: f64,
+    pub hw_clamp: (f64, f64),
+    /// depth of the wet floor below the bed level, metres, before modulation
+    pub cut_base: f64,
+    /// salt for every noise field; never an RNG draw
+    pub salt: u32,
+}
+
 /// The corpus-shaped incision. LOWERS the ground; never replaces it.
 ///
 /// Per node the bed demands a depth `D = h0s - bed_edge`; a real section of
@@ -2564,7 +2657,8 @@ const INNER_K: f64 = 0.90;
 #[allow(clippy::too_many_arguments)]
 fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &mut [bool],
           wet_cells: &mut usize, qs: &[Vec2], zs: &[f64], arcs: &[f64], perps: &[Vec2],
-          bends: &[f64], hw: f64, m_seed: u32, sec: &CreekSections, bank_steep: f64) {
+          bends: &[f64], cfg: &Incision) {
+    let (hw, m_seed, sec, bank_steep) = (cfg.hw, cfg.salt, cfg.sections, cfg.bank_steep);
     // --- constants: CORPUS-derived are read from `sec`; these are TASTE ----
     /// how far the section walk strays from the depth-matched row, as a
     /// fraction of the pack
@@ -2594,7 +2688,7 @@ fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &m
     let s_n = m_seed ^ 0xD3A2_646C;
     let (s_r1, s_r2, s_r3) = (m_seed ^ 0x7F4A_7C15, m_seed ^ 0x3C6E_F372, m_seed ^ 0xA54F_F53A);
     let curv_n = waviness(qs);
-    let r_max = ((3.4 * OUTER_K + REACH_M) / cell).ceil() as i64 + 1;
+    let r_max = ((cfg.hw_clamp.1 * OUTER_K + REACH_M) / cell).ceil() as i64 + 1;
 
     // corridor
     let mut corr = vec![false; spec.len()];
@@ -2642,8 +2736,9 @@ fn incise(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>, creek: &m
         let bsg = bends[i];
         let cn = curv_n[i];
         // depth: pools and shallows along the run; wet width breathes too
-        let cut = (0.30 + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
-        let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h))).clamp(1.4, 3.4);
+        let cut = (cfg.cut_base + 0.20 * course_world::noise::perlin1(a / 165.0, s_d)).max(0.12);
+        let hwi = (hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
+            .clamp(cfg.hw_clamp.0, cfg.hw_clamp.1);
         let g_var = 1.0 + 0.25 * course_world::noise::perlin1(a / 210.0, s_g);
         let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
         let idx_node = spec.index(cx.clamp(0, nx - 1) as u32, cy.clamp(0, ny - 1) as u32);

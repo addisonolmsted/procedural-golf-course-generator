@@ -23,6 +23,10 @@ from siting_sheet import hillshade_rgb
 from PIL import Image, ImageDraw
 
 TILE_PX, CROP_M, CROP_ZOOM = 900, 700.0, 3
+TITLE = "Carolina creeks, {n} tiles"
+BLURB = ("Finished fluvial tiles with the corpus-shaped incision. Take the water off to see the ground "
+         "the creek cut: the channel keeps the 2&nbsp;m texture across its banks and rejoins the untouched "
+         "surface at the rim. Each seed shows the whole 3&nbsp;km tile and a 700&nbsp;m detail on the creek.")
 WET_RGB = np.array([38, 86, 140])
 
 def uri(im, lossless=False, quality=88):
@@ -30,11 +34,13 @@ def uri(im, lossless=False, quality=88):
     im.save(b, "WEBP", lossless=lossless, quality=quality, method=4)
     return "data:image/webp;base64," + base64.b64encode(b.getvalue()).decode(), b.getbuffer().nbytes
 
+PREFIX = "tex_"
+
 def load(d, seed):
-    z, (_, _, c) = cgrid.read_f32(pathlib.Path(d) / f"tex_{seed}.cgrid")
-    w, _ = cgrid.read_f32(pathlib.Path(d) / f"tex_{seed}.water.cgrid")
+    z, (_, _, c) = cgrid.read_f32(pathlib.Path(d) / f"{PREFIX}{seed}.cgrid")
+    w, _ = cgrid.read_f32(pathlib.Path(d) / f"{PREFIX}{seed}.water.cgrid")
     line = None
-    lp = pathlib.Path(d) / f"tex_{seed}.creek.txt"
+    lp = pathlib.Path(d) / f"{PREFIX}{seed}.creek.txt"
     if lp.exists() and lp.stat().st_size:
         line = np.loadtxt(lp)
     return z.astype(float), np.isfinite(w), c, line
@@ -68,8 +74,13 @@ def creek_centre(wet, line, shape):
     return float(np.median(ys)), float(np.median(xs))
 
 def main():
-    d, out_html = sys.argv[1], sys.argv[2]
-    seeds = sys.argv[3:]
+    global PREFIX, TITLE, BLURB
+    a = sys.argv[1:]
+    for k, v in (("--prefix", "PREFIX"), ("--title", "TITLE"), ("--blurb", "BLURB")):
+        if k in a:
+            i = a.index(k); globals()[v] = a[i + 1]; a = a[:i] + a[i + 2:]
+    d, out_html = a[0], a[1]
+    seeds = a[2:]
     cards, total = [], 0
     for seed in seeds:
         try:
@@ -129,8 +140,8 @@ body.no-water .water{{display:none}}
 body.no-creek .creek{{display:none}}
 </style>
 <header>
-<h1>Carolina creeks, {len(cards)} tiles</h1>
-<p>Finished fluvial tiles with the corpus-shaped incision. Take the water off to see the ground the creek cut: the channel keeps the 2&nbsp;m texture across its banks and rejoins the untouched surface at the rim. Each seed shows the whole 3&nbsp;km tile and a 700&nbsp;m detail on the creek.</p>
+<h1>{TITLE.format(n=len(cards))}</h1>
+<p>{BLURB}</p>
 </header>
 <div class="controls">
 <label><input type="checkbox" id="t-water" checked> water</label>
