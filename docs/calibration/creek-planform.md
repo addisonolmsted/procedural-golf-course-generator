@@ -248,3 +248,38 @@ wet width and its band, depth law, salt); the aeolian keeps `cut_creek`'s own
 a single wet body. Galleries: `out/creek/gallery.html` (Carolina),
 `out/creek/gallery_aeolian.html` (Nebraska), both with the water as a
 toggleable layer.
+
+### Rollback and the lowered slot (2026-09-02, late)
+
+The swept-corridor rebuild was reverted in full (owner: "very smooth looking
+profiles that had sharp discontinuities within them"); Carolina verified
+byte-identical to the approved build. Chosen direction: **the slot carve,
+lowered not replaced**, for both modes (`water::slot_lowered`): the flat-bed,
+steep-bank slot that passed the Nebraska river rounds, meeting the smoothed
+local ground through the 2 m texture, one station per cell (nearest point on
+the segments), only wet width / depth / grade varying along the arc.
+Ablations: Carolina `CREEK_CARVE=incise` (the approved corpus incision),
+Nebraska `CREEK_CARVE=slot` (the stamp), `none` in both.
+
+**The finding of the round is in the beds, not the carve.** Carved minus
+no-creek, along the creek:
+
+| | footprint half-width p50 | excavation p10 | depth on the line p50/p90 |
+|---|---|---|---|
+| Carolina lowered (4 seeds) | 5–7 m | **0.0** m²/m | 0.11–0.68 / 2.0–2.4 m |
+| Carolina approved incision | 33 m | 1.8 | 0.32–0.79 / 2.1–2.5 m |
+| Nebraska lowered (600000) | 11 m | 2.3 | **2.34 / 7.20 m** |
+| Nebraska slot stamp (600000) | 6 m | 1.9 | 2.34 / 7.18 m |
+
+On the Carolina stretches where the graded bed sits ABOVE the ground (the
+`max(zs[i-1])` monotone pass raises the water into every dip; measured
+earlier as ~half the creek on some seeds) the carve has nothing to cut and
+the water ribbon lies on the surface; the approved incision hid this by
+cutting relative to the local ground, which is where its bowls came from. On
+Nebraska the bed (`creek_z`, sampled from the 8 m macro before the dune
+texture is laid on) sits up to 7 m below the textured ground; the stamp hid
+it by stopping its bank at 4.4 m with a wall, the lowered bank runs 50–60 m
+there. Both are bed defects with a carve-side symptom. Next, gated: derive
+each mode's water level from the textured ground along the creek with a
+descending (never perching) monotone pass — the level logic alone, without
+the cap, notches and warp that were rejected with the rebuild.
