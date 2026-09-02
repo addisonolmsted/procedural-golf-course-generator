@@ -248,38 +248,3 @@ wet width and its band, depth law, salt); the aeolian keeps `cut_creek`'s own
 a single wet body. Galleries: `out/creek/gallery.html` (Carolina),
 `out/creek/gallery_aeolian.html` (Nebraska), both with the water as a
 toggleable layer.
-
-### The blobs, and the rebuild (2026-09-02, evening)
-
-Owner: "the land affected by the creek looks like a bunch of blobs stacked on
-top of each other. Is this realistic?" It was not. Differencing a carved tile
-against the same tile built with `CREEK_CARVE=none` isolates exactly what the
-creek did to the land, and it showed three defects:
-
-| | before | after | real corpus |
-|---|---|---|---|
-| excavation per metre, p90/p10 along ONE creek | 40.6 / 39.3 | 3.5–17.8 | 7.7 (nc), 5.1 (ne) |
-| incision depth on the line p10/50/90 | 0.35/1.62/3.49 m | 0.38/1.15/2.61 m | 0.36/1.03/2.05 m |
-| footprint outer edge | the stamping window (63 % of stations reached it) | the section | — |
-
-Causes and fixes, in the order they were found: the depth was the valley
-bed's disagreement with the textured ground rather than the creek's own (now
-a corpus rim depth walked along the arc, with the level derived from the
-ground and forced to descend); per-node radial stamps were min-composed, so
-a deep node painted a 30 m bowl (now composed on distance to the SEGMENTS,
-one section evaluation per cell against the local ground); and the window
-clipped the footprint (now sized from the widest possible section).
-
-Three further rounds chased a comb on the banks, each isolated by shading the
-CUT ALONE rather than the result — the discipline that made it tractable:
-the bank now closes at constant slope (a fixed width made it climb a dune
-flank in the same distance as a flat, worth 0.7 m of roughness 6 m out); the
-texture returns across the outer bank rather than immediately; and
-`CreekSections` averages the measured transects into a ladder of eight
-depth-ordered shapes, because indexing raw rows swapped one real piece of
-creek for an unrelated one every few metres.
-
-Also recorded: ponds are still built on the valley's graded bed, which the
-creek no longer follows, so a pond surface can stand above the free creek
-just upstream of it. `Water::river_z` now carries the creek's own level and
-is what the descent invariant is asserted on.
