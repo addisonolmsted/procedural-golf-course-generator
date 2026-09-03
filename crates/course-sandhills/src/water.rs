@@ -21,6 +21,10 @@ pub struct Water {
     pub surface: Grid<f64>,
     pub lake_frac: f64,
     pub river: Option<Vec<Vec2>>,
+    /// The creek's own water level at each node of `river`: the profile the
+    /// carve guarantees descends to the mouth. The raster `surface` can sit
+    /// above it where a pond floods the channel.
+    pub river_z: Option<Vec<f64>>,
 }
 
 /// Lakes: connected pockets where the ground sits below the local water
@@ -445,7 +449,7 @@ pub fn find(height: &Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
     }
 
     let lake_frac = lake_cells as f64 / spec.len() as f64;
-    Water { surface, lake_frac, river: None }
+    Water { surface, lake_frac, river: None, river_z: None }
 }
 
 /// The allogenic river, redesigned to review spec (2026-08-23): "quite
@@ -1061,15 +1065,329 @@ pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
                              cut_base: 0.30 + 0.045 * width_m, salt };
         incise(height, &h0, &mut water.surface, &mut mask, &mut wet,
                line, &bed_at, &arcs, &perps, &bends, &cfg);
-    } else {
-        // The slot's own numbers, kept exactly: `cut_creek`'s wet half-width,
-        // depth law, bank rise and freeboard as they passed the river rounds.
+    } else if mode == "lowered" {
+        // the slot, lowered not replaced (ablation)
         let cfg = SlotLowered { hw, hw_clamp: (hw * 0.62, hw * 1.45),
                                 depth: 0.30 + 0.045 * width_m, rise_m: 2.4, free_m: 0.45, salt };
         slot_lowered(height, &h0, &mut water.surface, &mut mask, &mut wet,
                      line, &bed_at, &arcs, &perps, &bends, &cfg);
+    } else {
+        let builtin = CreekSections::builtin();
+        let sec = _sections.unwrap_or(&builtin);
+        let cfg = DeltaCarve { sections: sec, hw, hw_clamp: (hw * 0.62, hw * 1.45),
+                               wet_d: 0.30 + 0.045 * width_m, salt,
+                               mouth_first: bed[0] <= bed[bed.len() - 1] };
+        let level = delta_carve(height, &h0, &mut water.surface, &mut mask, &mut wet,
+                                line, &arcs, &perps, &bends, &cfg);
+        water.river = Some(line.to_vec());
+        water.river_z = Some(level);
     }
     water.lake_frac += wet as f64 / spec.len() as f64;
+}
+
+/// Centred running mean of `v` over +-`half_m` of arc length. O(n).
+fn run_mean(v: &[f64], arcs: &[f64], half_m: f64) -> Vec<f64> {
+    let n = v.len();
+    let mut out = vec![0.0; n];
+    let (mut lo, mut hi, mut acc) = (0usize, 0usize, 0.0);
+    for i in 0..n {
+        while hi < n && arcs[hi] <= arcs[i] + half_m { acc += v[hi]; hi += 1; }
+        while lo < hi && arcs[lo] < arcs[i] - half_m { acc -= v[lo]; lo += 1; }
+        out[i] = acc / (hi - lo).max(1) as f64;
+    }
+    out
+}
+
+/// The pack's measured transects averaged into depth-ordered rungs of
+/// NORMALISED bank shape. Indexing the raw rows along the creek -- even from
+/// a smooth depth -- swaps one real transect for an unrelated one every
+/// metre or so, and that printed teeth on the banks; averaging keeps the
+/// corpus shape while making it a smooth function of depth.
+struct ShapeLadder {
+    depth: Vec<f64>,
+    p_steep: Vec<[f64; 25]>,
+    p_gentle: Vec<[f64; 25]>,
+}
+
+const LADDER: usize = 8;
+
+impl ShapeLadder {
+    fn build(sec: &CreekSections) -> ShapeLadder {
+        let n = sec.len().max(1);
+        let norm = |s: &[f64; 25], w: f64| -> [f64; 25] {
+            let w = w.clamp(1.0, 24.0);
+            let at = |d: f64| -> f64 {
+                let d = d.clamp(0.0, 24.0);
+                let j = (d as usize).min(23);
+                s[j] + (s[j + 1] - s[j]) * (d - j as f64)
+            };
+            let top = at(w).max(1e-6);
+            let mut p = [0.0; 25];
+            for (i, v) in p.iter_mut().enumerate() {
+                *v = (at(i as f64 / 24.0 * w) / top).clamp(0.0, 1.0);
+            }
+            p[0] = 0.0;
+            p[24] = 1.0;
+            p
+        };
+        let mut out = ShapeLadder { depth: Vec::new(), p_steep: Vec::new(), p_gentle: Vec::new() };
+        for k in 0..LADDER {
+            let lo = k * n / LADDER;
+            let hi = ((k + 1) * n / LADDER).max(lo + 1).min(n);
+            let m = (hi - lo) as f64;
+            let mut d = 0.0;
+            let mut ps = [0.0; 25];
+            let mut pg = [0.0; 25];
+            for i in lo..hi {
+                d += sec.depth[i];
+                let a = norm(&sec.s_steep[i], sec.w_steep[i]);
+                let b = norm(&sec.s_gentle[i], sec.w_gentle[i]);
+                for j in 0..25 { ps[j] += a[j]; pg[j] += b[j]; }
+            }
+            for j in 0..25 { ps[j] /= m; pg[j] /= m; }
+            ps[0] = 0.0; pg[0] = 0.0; ps[24] = 1.0; pg[24] = 1.0;
+            out.depth.push(d / m);
+            out.p_steep.push(ps);
+            out.p_gentle.push(pg);
+        }
+        out
+    }
+
+    fn rung_for_depth(&self, d: f64) -> f64 {
+        let n = self.depth.len();
+        let j = self.depth.partition_point(|&x| x < d);
+        if j == 0 { return 0.0; }
+        if j >= n { return (n - 1) as f64; }
+        let (a, b) = (self.depth[j - 1], self.depth[j]);
+        (j - 1) as f64 + if b - a > 1e-9 { ((d - a) / (b - a)).clamp(0.0, 1.0) } else { 0.0 }
+    }
+
+    /// Normalised bank height at rung `k`, side, `x = distance / width`.
+    fn bank(&self, k: f64, steep: bool, x: f64) -> f64 {
+        if x <= 0.0 { return 0.0; }
+        if x >= 1.0 { return 1.0; }
+        let tab = if steep { &self.p_steep } else { &self.p_gentle };
+        let n = tab.len();
+        let k = k.clamp(0.0, (n - 1) as f64 - 1e-9);
+        let i0 = (k as usize).min(n - 2);
+        let f = k - i0 as f64;
+        let xi = x * 24.0;
+        let j = (xi as usize).min(23);
+        let g = xi - j as f64;
+        let a = tab[i0][j] + (tab[i0][j + 1] - tab[i0][j]) * g;
+        let b = tab[i0 + 1][j] + (tab[i0 + 1][j + 1] - tab[i0 + 1][j]) * g;
+        (a + (b - a) * f).clamp(0.0, 1.0)
+    }
+}
+
+/// What the delta carve needs per mode.
+pub struct DeltaCarve<'a> {
+    /// the corpus pack: channel depth and bank shape, smooth along the arc
+    pub sections: &'a CreekSections,
+    /// wet half-width and the band its breathing stays in, metres
+    pub hw: f64,
+    pub hw_clamp: (f64, f64),
+    /// water depth over the flat floor, metres
+    pub wet_d: f64,
+    pub salt: u32,
+    /// index 0 is the mouth (the low end)
+    pub mouth_first: bool,
+}
+
+/// The creek as a DELTA from the textured ground.
+///
+/// Owner, after three carves (2026-09-02): the cuts read artificial because
+/// they were untextured and discontinuous; the version with the bowls looked
+/// better because its banks kept the texture. So this carve is built from
+/// exactly two principles and nothing else.
+///
+/// TEXTURE BY CONSTRUCTION. Every bank cell is `ground - D`, where `D` is a
+/// smooth depth profile: the channel depth at the wet edge falling to zero
+/// at the bank width. Subtracting a smooth function keeps every ripple of
+/// the ground on the bank; nothing is replaced and no "detail return" has to
+/// be tuned. The only flat cells are the wet floor, under water.
+///
+/// CONTINUITY BY CONSTRUCTION. The channel depth and the bank width are
+/// properties of the CREEK -- real corpus values walked smoothly along the
+/// arc -- never the gap to the valley's graded bed, so the channel exists
+/// everywhere at one character. The water level is derived from the ground
+/// under the creek (13 m box, then an 80 m running mean along the arc) with
+/// ONE monotone pass that descends toward the mouth and never raises water
+/// into a dip; measured, that costs a median of no extra cut and a 90th
+/// percentile of ~1.3 m where the ground rises downstream. The bank
+/// asymmetry is a continuous weight, not a switch. One evaluation per cell
+/// against the nearest point on the creek's segments. No notches, no
+/// distance warp, no depth cap, no window fade, no min-composition.
+///
+/// Never a fill. Zero draws. Fixed passes. The graded bed is used only to
+/// say which end is the mouth.
+#[allow(clippy::too_many_arguments)]
+fn delta_carve(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
+               creek: &mut [bool], wet_cells: &mut usize, qs: &[Vec2],
+               arcs: &[f64], perps: &[Vec2], bends: &[f64], cfg: &DeltaCarve) -> Vec<f64> {
+    /// smoothed-ground box half-width, cells (3 -> 13 m at 2 m)
+    const BLUR_R: i64 = 3;
+    /// longitudinal smoothing of the ground under the creek, metres
+    const LONG_SMOOTH_M: f64 = 80.0;
+    /// longitudinal smoothing of the channel depth, metres
+    const DEPTH_SMOOTH_M: f64 = 120.0;
+    const DEPTH_CLAMP: (f64, f64) = (0.35, 3.0);
+    /// bank width variation along the arc: two non-harmonic scales
+    const W_VAR: [(f64, f64); 2] = [(0.18, 60.0), (0.12, 170.0)];
+    const W_CLAMP: (f64, f64) = (4.0, 26.0);
+    /// how much the outer (cut) bank narrows and the inner (bar) widens
+    const ASYM_W: f64 = 0.15;
+    const ASYM_HW: f64 = 0.125;
+    /// the bend weight saturates at this turn over +-10 m
+    const ASYM_TURN: f64 = 2.5;
+    /// C1 rim, metres of elevation
+    const K_RIM: f64 = 0.10;
+    let spec = height.spec;
+    let cell = spec.cell_size;
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let n = qs.len();
+    if n < 3 {
+        return Vec::new();
+    }
+    let sec = cfg.sections;
+    let s_h = cfg.salt ^ 0xC2B2_AE35;
+    let s_sec = cfg.salt ^ 0x1656_67B1;
+    let (s_w1, s_w2) = (cfg.salt ^ 0xA54F_F53A, cfg.salt ^ 0x2545_F491);
+
+    // --- the ground under the creek: SAT once, 13 m box at the node cells --
+    let w1 = nx as usize + 1;
+    let mut sat = vec![0.0f64; (nx as usize + 1) * (ny as usize + 1)];
+    for y in 0..ny as usize {
+        let mut row = 0.0;
+        for x in 0..nx as usize {
+            row += h0[y * nx as usize + x];
+            sat[(y + 1) * w1 + x + 1] = sat[y * w1 + x + 1] + row;
+        }
+    }
+    let box13 = |x: i64, y: i64| -> f64 {
+        let (x0, x1) = ((x - BLUR_R).max(0) as usize, ((x + BLUR_R).min(nx - 1) + 1) as usize);
+        let (y0, y1) = ((y - BLUR_R).max(0) as usize, ((y + BLUR_R).min(ny - 1) + 1) as usize);
+        (sat[y1 * w1 + x1] - sat[y0 * w1 + x1] - sat[y1 * w1 + x0] + sat[y0 * w1 + x0])
+            / ((x1 - x0) * (y1 - y0)) as f64
+    };
+    let g_raw: Vec<f64> = qs.iter().map(|p| {
+        box13(((p.x / cell).round() as i64).clamp(0, nx - 1), ((p.y / cell).round() as i64).clamp(0, ny - 1))
+    }).collect();
+    let g = run_mean(&g_raw, arcs, LONG_SMOOTH_M);
+
+    // --- the creek's own depth, width and shape, smooth along the arc -----
+    let n_sec = sec.len().max(2);
+    let walk_m = sec.along_corr_m.max(10.0);
+    let depth_raw: Vec<f64> = arcs.iter().map(|&a| {
+        let k = (0.5 + 0.7 * course_world::noise::perlin1(a / walk_m, s_sec)).clamp(0.0, 0.999)
+            * (n_sec - 1) as f64;
+        sec.depth_at(k).clamp(DEPTH_CLAMP.0, DEPTH_CLAMP.1)
+    }).collect();
+    let depth = run_mean(&depth_raw, arcs, DEPTH_SMOOTH_M);
+    let (w_typ, d_typ) = (sec.width_p50(), sec.depth_p50());
+    let hw_n: Vec<f64> = arcs.iter().map(|&a| {
+        (cfg.hw * (1.0 + 0.28 * course_world::noise::perlin1(a / 140.0, s_h)))
+            .clamp(cfg.hw_clamp.0, cfg.hw_clamp.1)
+    }).collect();
+    // bend weight in [-1, 1], continuous: positive where the left side is
+    // the outer bank
+    let asym_raw: Vec<f64> = bends.iter().map(|&b| (b / ASYM_TURN).clamp(-1.0, 1.0)).collect();
+    let asym = run_mean(&asym_raw, arcs, 15.0);
+
+    // --- the water level: ground minus depth, descending to the mouth ----
+    let mut level: Vec<f64> = (0..n).map(|i| g[i] - depth[i]).collect();
+    if cfg.mouth_first {
+        for i in (0..n - 1).rev() { level[i] = level[i].min(level[i + 1]); }
+    } else {
+        for i in 1..n { level[i] = level[i].min(level[i - 1]); }
+    }
+    for i in 1..n {
+        let (lo, hi) = if cfg.mouth_first { (level[i - 1], level[i]) } else { (level[i], level[i - 1]) };
+        debug_assert!(hi >= lo - 1e-9, "creek level rises toward the mouth at {i}");
+        assert!(hi >= lo - 1e-6, "creek level rises toward the mouth at {i}: {lo} -> {hi}");
+    }
+    // the cut at the wet edge: the corpus depth plus whatever the descent cost
+    let d_edge: Vec<f64> = (0..n).map(|i| (g[i] - level[i]).max(0.05)).collect();
+    let w_n: Vec<f64> = (0..n).map(|i| {
+        let a = arcs[i];
+        (w_typ * math::pow(d_edge[i] / d_typ, 0.25)
+            * (1.0 + W_VAR[0].0 * course_world::noise::perlin1(a / W_VAR[0].1, s_w1)
+                   + W_VAR[1].0 * course_world::noise::perlin1(a / W_VAR[1].1, s_w2)))
+            .clamp(W_CLAMP.0, W_CLAMP.1)
+    }).collect();
+    let lad = ShapeLadder::build(sec);
+    let kfs: Vec<f64> = d_edge.iter().map(|&d| lad.rung_for_depth(d)).collect();
+
+    // --- window: the widest bank plus the widest wet width; D is zero at the
+    // bank width by construction, so nothing can reach it
+    let reach_m = cfg.hw_clamp.1 * (1.0 + ASYM_HW) + W_CLAMP.1 * (1.0 + ASYM_W) + 2.0 * cell;
+    let r_max = (reach_m / cell).ceil() as i64 + 1;
+
+    // --- one station per cell: the nearest point on the SEGMENTS ----------
+    let mut near = vec![u32::MAX; spec.len()];
+    let mut ndist = vec![f64::INFINITY; spec.len()];
+    for i in 0..n - 1 {
+        let (a, b) = (qs[i], qs[i + 1]);
+        let ab = Vec2::new(b.x - a.x, b.y - a.y);
+        let len2 = ab.x * ab.x + ab.y * ab.y;
+        let (cx, cy) = (((a.x + b.x) * 0.5 / cell).round() as i64,
+                        ((a.y + b.y) * 0.5 / cell).round() as i64);
+        for gy in (cy - r_max).max(0)..=(cy + r_max).min(ny - 1) {
+            for gx in (cx - r_max).max(0)..=(cx + r_max).min(nx - 1) {
+                let idx = spec.index(gx as u32, gy as u32);
+                let q = spec.world_of(gx as u32, gy as u32);
+                let t = if len2 > 1e-12 {
+                    (((q.x - a.x) * ab.x + (q.y - a.y) * ab.y) / len2).clamp(0.0, 1.0)
+                } else { 0.0 };
+                let d = q.distance(Vec2::new(a.x + ab.x * t, a.y + ab.y * t));
+                if d < ndist[idx] {
+                    ndist[idx] = d;
+                    near[idx] = (if t > 0.5 { i + 1 } else { i }) as u32;
+                }
+            }
+        }
+    }
+
+    // --- one evaluation per cell --------------------------------------------
+    for idx in 0..spec.len() {
+        if near[idx] == u32::MAX { continue; }
+        let i = near[idx] as usize;
+        let dd = ndist[idx];
+        let q = spec.world_of((idx % nx as usize) as u32, (idx / nx as usize) as u32);
+        let side = (q.x - qs[i].x) * perps[i].x + (q.y - qs[i].y) * perps[i].y;
+        // outer-ness in [-1, 1]: +1 on the cut bank, -1 on the bar
+        let outer = if side >= 0.0 { asym[i] } else { -asym[i] };
+        let hw_c = hw_n[i] * (1.0 + ASYM_HW * outer);
+        let w_c = w_n[i] * (1.0 - ASYM_W * outer);
+        let floor = level[i] - cfg.wet_d;
+        if dd <= hw_c + cell * 0.32 {
+            creek[idx] = true;
+            if surface.data[idx].is_nan() {
+                *wet_cells += 1;
+                surface.data[idx] = level[i];
+            } else {
+                surface.data[idx] = surface.data[idx].min(level[i]);
+            }
+        }
+        let cand = if dd <= hw_c {
+            floor
+        } else {
+            let x = (dd - hw_c) / w_c;
+            if x >= 1.0 {
+                continue;                       // beyond the bank: untouched
+            }
+            // the depth profile: the wet-edge cut, falling to zero along the
+            // corpus bank shape; subtracted from the ground AS IT IS
+            let dcut = d_edge[i] * (1.0 - lad.bank(kfs[i], outer >= 0.0, x));
+            let t = (h0[idx] - dcut).max(floor);
+            course_world::ease::smin(t, h0[idx], K_RIM)
+        };
+        if cand < height.data[idx] {
+            height.data[idx] = cand;
+            creek[idx] = true;
+        }
+    }
+    level
 }
 
 /// The slot carve's numbers, per mode. Carolina: a 4-5 m blackwater creek
@@ -1603,6 +1921,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     let mut creek = vec![false; spec.len()];
     // The creek's own centre-line, for the review overlay (`Water::river`).
     let mut creek_line: Option<Vec<Vec2>> = None;
+    let mut creek_level: Option<Vec<f64>> = None;
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         // Only the TRUNK carries visible water. The tributaries were drawn
@@ -1884,12 +2203,24 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                                cut_base: 0.30, salt: m_seed });
             continue;
         }
-        // The slot, lowered not replaced -- the same carve the Nebraska river
-        // gets, with the Carolina creek's own numbers (owner, 2026-09-02).
-        slot_lowered(height, &h0, &mut surface, &mut creek, &mut wet_cells,
-                     &qs, &zs, &arcs, &perps, &bends,
-                     &SlotLowered { hw, hw_clamp: (1.4, 3.4), depth: 0.30,
-                                    rise_m: 2.4, free_m: 0.45, salt: m_seed });
+        if carve_mode == "lowered" {
+            slot_lowered(height, &h0, &mut surface, &mut creek, &mut wet_cells,
+                         &qs, &zs, &arcs, &perps, &bends,
+                         &SlotLowered { hw, hw_clamp: (1.4, 3.4), depth: 0.30,
+                                        rise_m: 2.4, free_m: 0.45, salt: m_seed });
+            continue;
+        }
+        // The delta carve -- the same one the Nebraska river gets, with the
+        // Carolina creek's numbers and its own corpus pack.
+        let builtin;
+        let sec: &CreekSections = match sections {
+            Some(s) => s,
+            None => { builtin = CreekSections::builtin(); &builtin }
+        };
+        creek_level = Some(delta_carve(height, &h0, &mut surface, &mut creek, &mut wet_cells,
+                    &qs, &arcs, &perps, &bends,
+                    &DeltaCarve { sections: sec, hw, hw_clamp: (1.4, 3.4), wet_d: 0.30,
+                                  salt: m_seed, mouth_first: zs.first() <= zs.last() }));
     }
 
     // --- the water TABLE is retired ---------------------------------------
@@ -2478,7 +2809,8 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
     }
 
-    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64, river: creek_line }
+    Water { surface, lake_frac: wet_cells as f64 / spec.len() as f64,
+            river: creek_line, river_z: creek_level }
 }
 
 /// Drop every lake body that sits on the valley floor beside running water.
@@ -2775,6 +3107,15 @@ impl CreekSections {
         }
         out
     }
+
+    /// Median closure width and rim depth of the pack.
+    pub fn width_p50(&self) -> f64 {
+        let mut v: Vec<f64> = (0..self.len())
+            .map(|i| 0.5 * (self.w_steep[i] + self.w_gentle[i])).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v[v.len() / 2].clamp(4.0, 24.0)
+    }
+    pub fn depth_p50(&self) -> f64 { self.depth[self.len() / 2].clamp(0.2, 3.0) }
 
     pub fn len(&self) -> usize { self.depth.len() }
     pub fn is_empty(&self) -> bool { self.depth.is_empty() }
@@ -3346,32 +3687,27 @@ mod incision {
     #[test]
     fn water_level_monotone_and_above_bed() {
         let (_, h, w) = run();
-        let line = w.river.expect("meander seed carries a creek line");
+        let line = w.river.as_ref().expect("meander seed carries a creek line");
+        let z = w.river_z.as_ref().expect("and its water profile");
+        assert_eq!(line.len(), z.len());
+        // THE invariant: the creek's own level descends to its mouth (index 0)
+        let mut worst = 0.0f64;
+        for i in 1..z.len() { worst = worst.max(z[i - 1] - z[i]); }
+        assert!(worst < 1e-6, "creek level rises toward the mouth by {worst:.4} m");
+        assert!(z[z.len() - 1] - z[0] > 1.0, "the creek does not fall: {:.2} m", z[z.len() - 1] - z[0]);
+        // and the ground never stands above the water in the channel
         let spec = h.spec;
-        let mut last = f64::NEG_INFINITY;
         let mut n = 0;
-        for p in &line {
+        for p in line.iter() {
             let (x, y) = ((p.x / 2.0).round() as u32, (p.y / 2.0).round() as u32);
             if x >= spec.nx || y >= spec.ny { continue; }
-            let s = w.surface.data[spec.index(x, y)];
+            let idx = spec.index(x, y);
+            let s = w.surface.data[idx];
             if s.is_nan() { continue; }
-            // A cell's level is the MIN over every node within the ~3 m wet
-            // band, so a cell can read the level of a node a few metres
-            // DOWNSTREAM along the arc: a few centimetres, bounded by the bed
-            // rise across the band. The bed itself is asserted monotone in
-            // the carve; here the level may not fall by more than that.
-            assert!(s >= last - 0.10, "water level falls upstream: {last} -> {s}");
-            assert!(h.data[spec.index(x, y)] <= s + 1e-9, "ground above water at {:?}", p);
-            last = s;
+            assert!(h.data[idx] <= s + 1e-9, "ground above water at {p:?}");
             n += 1;
         }
         assert!(n > 200, "only {n} wet nodes along the line");
-        let first = line.iter().find_map(|p| {
-            let (x, y) = ((p.x / 2.0).round() as u32, (p.y / 2.0).round() as u32);
-            let v = w.surface.data[spec.index(x.min(spec.nx - 1), y.min(spec.ny - 1))];
-            if v.is_nan() { None } else { Some(v) }
-        }).unwrap();
-        assert!(last > first + 1.0, "the water does not fall to the mouth: {first} .. {last}");
     }
 
     #[test]
@@ -3479,7 +3815,7 @@ mod slot_lowered_tests {
     fn run(textured: bool, width: f64) -> (Grid<f64>, Grid<f64>, Water, Vec<Vec2>, Vec<f64>) {
         let (mut h, line, bed) = tile(textured);
         let h0 = h.clone();
-        let mut w = Water { surface: Grid::filled(h.spec, f64::NAN), lake_frac: 0.0, river: None };
+        let mut w = Water { surface: Grid::filled(h.spec, f64::NAN), lake_frac: 0.0, river: None, river_z: None };
         cut_creek(&mut h, &mut w, &line, &bed, width, None, 7);
         (h0, h, w, line, bed)
     }
@@ -3506,15 +3842,15 @@ mod slot_lowered_tests {
         for width in [9.0, 2.4] {
             let (_, _, w, line, bed) = run(true, width);
             let spec = w.surface.spec;
-            // the level at every node is the bed the caller graded
-            for (p, z) in line.iter().zip(bed.iter()) {
+            // the creek's own level descends to the mouth (index 0 is the
+            // low end of the synthetic bed) and every node is wet
+            let z = w.river_z.as_ref().expect("level profile");
+            for i in 1..z.len() { assert!(z[i] >= z[i - 1] - 1e-6, "level falls toward the head at {i}"); }
+            let _ = bed;
+            for p in line.iter() {
                 let (x, y) = ((p.x / 2.0) as u32, (p.y / 2.0) as u32);
                 if x >= spec.nx || y >= spec.ny { continue; }
-                let s = w.surface.data[spec.index(x, y)];
-                assert!(!s.is_nan(), "dry at {p:?}");
-                // a cell belongs to the nearest station, which can be the
-                // neighbouring node a metre along: allow the bed's own slope
-                assert!((s - z).abs() < 0.06, "level {s} != bed {z}");
+                assert!(!w.surface.data[spec.index(x, y)].is_nan(), "dry at {p:?}");
             }
             // one connected body
             let n = spec.len();
