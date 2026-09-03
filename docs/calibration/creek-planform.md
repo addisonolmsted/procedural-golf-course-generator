@@ -316,3 +316,34 @@ reaches 8 m of cut at p90 where the planform climbs off the canyon floor
 and the descent must cut the rise — a planform-room question in `gorge.rs`.
 Ablations kept: Carolina `CREEK_CARVE=incise|lowered|section|skirt|none`,
 Nebraska `slot|lowered|incise|none`.
+
+### The converging floor and the crease (2026-09-02, night)
+
+Owner on the delta carve: "a smooth cut along the length of the creek
+varying too subtly if at all and not appearing to have texture or smoothly
+blending to the surrounds." The corpus explained it: the real section is a
+straight ~5 % rise from the channel (0.12 m at 4 m, 0.46 at 10, 0.82 at 16,
+1.33 at 24) with no bank and no rim — the **valley floor converging on the
+creek**. Ours was flat for 40 m (the 8 m HAND bins cannot see a 1 m slope),
+so every carve sank a trough into a flat floor and drew a rim parallel to
+the creek. The corridor was the wrong object.
+
+Split into the two things the real section is: (1) `assemble` and
+`gorge.rs` give the floor the measured convergence (`FLOOR_CONV_S` 5.5 %,
+easing to a plateau by `FLOOR_CONV_W` 70 m, smooth-max into the HAND
+profile, referenced to the trunk axis); (2) `water::creek_crease` is a thin
+irregular incision at its bottom — width and depth scalloping at 8–90 m
+(±40/30 %), a few metres of bank with a rounded lip, nothing beyond, level
+from the ground with one descending pass, `ground − D` per cell.
+
+| median rise above the channel, identical pipeline | 2 m | 4 m | 6 m | 10 m | 16 m | 24 m |
+|---|---|---|---|---|---|---|
+| real (256 transects) | 0.03 | 0.12 | 0.22 | 0.46 | 0.82 | 1.33 |
+| ours, crease + converging floor (598) | 0.06 | 0.28 | 0.51 | 0.76 | 1.02 | 1.53 |
+| ours, delta carve (previous) | 0.07 | 0.20 | 0.35 | 0.69 | 1.26 | 1.86 |
+
+Footprint half-width 5–7 m, one wet body per creek. The excavation swing
+along the creek (15–46x) is now the deliberate scalloping of a 7 m feature,
+not bowls. Side by side with three real reaches at 4x the character matches
+for the first time. Awaiting the owner's eye; every earlier carve remains
+under `CREEK_CARVE=` for the ablation.
