@@ -283,3 +283,36 @@ there. Both are bed defects with a carve-side symptom. Next, gated: derive
 each mode's water level from the textured ground along the creek with a
 descending (never perching) monotone pass — the level logic alone, without
 the cap, notches and warp that were rejected with the rebuild.
+
+### The delta carve (2026-09-02, night)
+
+Owner on the lowered slot: "the creek cuts look artificial due to being
+untextured and containing discontinuities. The implementation with the blobs
+looked better due to the texturing." Diagnosis: the two later carves returned
+the texture only outboard of 30 % of the bank (a change made while chasing
+teeth), and the slot defined the channel from the graded bed, so it vanished
+where the bed sat above the ground.
+
+`water::delta_carve`, default in both modes: every bank cell is
+`ground − D`, with `D` the corpus channel depth falling to zero along an
+averaged corpus bank shape — texture by subtraction, nothing replaced, no
+detail return to tune. Depth and width are the creek's own (corpus, smooth
+along the arc), the level is the ground under the creek minus that depth
+with one descending running-minimum pass, asymmetry a continuous bend
+weight, one evaluation per cell against the segments. No notches, warp,
+cap, window fade or min-composition. `Water::river_z` carries the level and
+the descent invariant is asserted on it.
+
+| carved minus no-creek | Carolina delta (4 seeds) | approved incision | Nebraska delta (2) | stamp |
+|---|---|---|---|---|
+| excavation p90/p10 along the creek | **2.1–4.8x** | 33–41x | **2.2 / 8.1x** | 40x |
+| footprint half-width p50 / max | 20–22 / 32 m | 33 / 51 m | 17–19 / 29 m | 6 / 8 m |
+| bank texture ÷ far texture | **1.27–1.53** | 1.24–1.60 | 1.05–1.23 | (wall) |
+| depth on the line p50 / p90 | 1.5 / 2.5–3.7 m | 0.3–0.8 / 2.1–2.5 | 2.1–2.9 / 3.2–8.2 | 0.8–2.3 / 2.6–7.2 |
+| wet bodies | 1 | 1 | 1 | 1 |
+
+Real corpus: 7.7x (Carolina), 5.1x (Nebraska). Open: Nebraska 600000
+reaches 8 m of cut at p90 where the planform climbs off the canyon floor
+and the descent must cut the rise — a planform-room question in `gorge.rs`.
+Ablations kept: Carolina `CREEK_CARVE=incise|lowered|section|skirt|none`,
+Nebraska `slot|lowered|incise|none`.
