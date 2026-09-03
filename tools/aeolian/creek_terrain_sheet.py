@@ -138,8 +138,8 @@ def main():
         import creek_sections as cs
         from macro_campaign import cgrid as cg
         import json as _json
-        z, (_, _, c) = cg.read_f32(cs.TILES / f"{real}.cgrid"); z = z.astype(float)
-        meta = _json.load(open(cs.TILES / f"{real}.json")); e0, n0 = meta["easting0"], meta["northing0"]
+        z, (_, _, c) = cg.read_f32(cs.TILE_ROOT / "sandhills_nc" / f"{real}.cgrid"); z = z.astype(float)
+        meta = _json.load(open(cs.TILE_ROOT / "sandhills_nc" / f"{real}.json")); e0, n0 = meta["easting0"], meta["northing0"]
         ways = cs.stream_ways(); ext = z.shape[0] * c
         rows = []
         for wid, (E, N) in ways.items():

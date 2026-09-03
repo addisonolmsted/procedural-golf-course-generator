@@ -291,6 +291,12 @@ fn slope_limit(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, max_grade: 
 }
 
 /// Assemble the 8 m surface from the network and its beds.
+/// Floor convergence toward the channel: grade at the channel, and the
+/// distance over which it eases to a plateau (metres). Measured, see the
+/// note where it is applied.
+pub const FLOOR_CONV_S: f64 = 0.055;
+pub const FLOOR_CONV_W: f64 = 70.0;
+
 pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
                 tiers: &[u8], prof: &HandProfile, d: &Descriptors) -> Assembled {
     let spec = macro_spec();
@@ -545,6 +551,24 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
         // together without touching the depth the profile ends at (u = 1
         // maps to 1, so the cap is untouched by construction).
         hf[i] = prof.height(u[i].powf(floor_p), w[i]);
+        // THE FLOOR CONVERGES ON THE CHANNEL. Measured 2026-09-02 on 256
+        // resolved 2 m creek transects (tools/aeolian/creek_sections.py): the
+        // ground rises from the channel in a straight line at ~5 % -- 0.12 m
+        // at 4 m, 0.46 at 10, 0.82 at 16, 1.33 at 24 -- with no bank and no
+        // rim. The 8 m HAND table cannot see that (its near-channel bins are
+        // "within 5 m of the channel"), so it left the inner floor flat, and
+        // every creek carve then had to sink a trough into a flat floor,
+        // which drew a rim parallel to the creek. The convergence belongs
+        // here, at the stage that owns the floor: a 5 % rise from the
+        // channel that eases to a plateau by FLOOR_CONV_W, joined to the
+        // measured profile by a smooth max so the walls are unchanged.
+        let dd = dist_v[i];
+        let conv = if dd < FLOOR_CONV_W {
+            FLOOR_CONV_S * dd - FLOOR_CONV_S * dd * dd / (2.0 * FLOOR_CONV_W)
+        } else {
+            0.5 * FLOOR_CONV_S * FLOOR_CONV_W
+        };
+        hf[i] = course_world::ease::smax(hf[i], conv, 0.35);
     }
     blur(spec, &mut hf, 2);
 

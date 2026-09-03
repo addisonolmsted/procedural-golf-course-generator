@@ -388,7 +388,20 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
                 xs.powf(lwp)
             };
             let tex = WALL_TEX * fine[i] * (4.0 * xs * (1.0 - xs)).max(0.0);
-            let t = floor_z + cut * (shape + tex) + detail * g;
+            // The floor converges on the river at the measured 5 % (see
+            // `assemble::FLOOR_CONV_*`): the same rise the Carolina floor
+            // gets, applied across the flat floor and fading as the wall
+            // starts, referenced to the trunk axis so the creek's bends do
+            // not print. Without it the trench sat in a flat floor and every
+            // creek carve drew a rim.
+            let dc = dist_c[i];
+            let conv = if dc < crate::assemble::FLOOR_CONV_W {
+                crate::assemble::FLOOR_CONV_S * dc
+                    - crate::assemble::FLOOR_CONV_S * dc * dc / (2.0 * crate::assemble::FLOOR_CONV_W)
+            } else {
+                0.5 * crate::assemble::FLOOR_CONV_S * crate::assemble::FLOOR_CONV_W
+            };
+            let t = floor_z + cut * (shape + tex) + detail * g + conv * (1.0 - xs);
             if t < target[i] {
                 target[i] = t;
             }
