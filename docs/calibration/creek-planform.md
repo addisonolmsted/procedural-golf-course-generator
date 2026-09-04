@@ -347,3 +347,49 @@ along the creek (15–46x) is now the deliberate scalloping of a 7 m feature,
 not bowls. Side by side with three real reaches at 4x the character matches
 for the first time. Awaiting the owner's eye; every earlier carve remains
 under `CREEK_CARVE=` for the ablation.
+
+## 2026-09-04 — the gorge floor goes to grade (cut AND fill)
+
+Owner, on Nebraska 600032 with the crease: "when the stream passes through
+the mound it appears like the slope grade will be extremely high". Measured:
+the water grade there was 0 % (the descending level held flat), the CUT was
+17 m deep with a 4.5 m bank — a slot with ~300 % walls. The creek was on the
+trunk axis (off-axis p50 2.8 m), so the planform room was not the cause.
+
+Two defects in `gorge.rs`, both fixed under one toggle (`GORGE_THROUGH=off`):
+
+1. **Saturation left a mound on the floor.** `MAX_CUT_M` (62 m, ×0.52 for a
+   wide river) is a valley-scale relief valve, and it applied on the trunk
+   line too: where the bed demanded more, the floor was the smoothed dune
+   surface lowered bodily. Floor above bed on the trunk, 600032: p50 5.7 m,
+   p90 18.6 m, max 27.7 m. Now the innermost trunk layer (the trench) cuts
+   the residual `want − full` and widens by `sqrt(1 + res / trench_depth)`
+   so its wall slope stays in band. Floor above bed after: max 0.3 m.
+2. **The cut never filled.** A deflation pan drawn before the gorge (or an
+   interdune hollow) on the trunk line stayed a hole; the crease's running
+   min then dragged the whole downstream reach to the hole (600006: 4 km of
+   creek 13–20 m below its floor, cut p50 12.8 m). Within the trench, ground
+   below `bed + conv` is raised to it, the raise fading to zero by the
+   middle of the trench wall (`fill_w = 1 − smoothstep(0, 0.6, xs)`).
+
+Instrument: `tools/aeolian/creek_cutdepth.py` (cut = ground 12 m either side
+of the line minus the water level; grade over 10 m; ground slope within 30 m).
+Viewer: `tools/aeolian/creek_before_after.py` (both builds stacked, `b` to
+flip, water toggle, detail at the deepest cut of the before build).
+
+| median over 20 seeds | before | after |
+|---|---|---|
+| cut depth p90, m | 4.8 | 1.3 |
+| cut depth max, m | 10.0 | 2.6 |
+| worst cut on any seed, m | 34.5 (600006) | 6.9 (600009) |
+| ground slope within 30 m, p99 % | 103 | 40 |
+| water grade over 10 m, max % | 5.9 | 3.8 |
+
+The quilt was checked and is innocent (it moves the line by ±0.3 m). The
+gorge's `NET_DEBUG` print now reports floor-above-bed on the trunk and under
+the creek, the bed's monotonicity and `creek_z`; `lib.rs` prints ground on
+the line minus `creek_z` after the gorge, the quilt and the blowouts.
+Remaining: 600009 and 600017 still cut ~7 m at one spot each (not yet
+examined). Renders: `out/creek/ae_through` vs `ae_crease`;
+`out/creek/before_after_through.html`; crops `through_600006.png`,
+`through_600032.png`; difference maps `through_diff_*.png`.

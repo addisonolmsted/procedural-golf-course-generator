@@ -171,6 +171,31 @@ const HEAD_TAPER: f64 = 0.30;
 /// landscape warrants (measured, seed 41229: 113 m against a real 50-54).
 const MAX_CUT_M: f64 = 62.0;
 
+/// The saturation above is a valley-scale relief valve, and it left the
+/// river with nowhere to run: where the trunk crosses a dune train the cut
+/// stops MAX_CUT_M short, the "floor" is the dune surface lowered bodily,
+/// and the water level -- which must descend -- ends up 17 m below the
+/// ground beside it (measured, seed 600032: floor above the graded bed
+/// p50 5.7 m, p90 18.6 m, max 27.7 m ON THE TRUNK LINE). The creek crease
+/// then dug a slot with near-vertical walls through the residual.
+///
+/// A river that was there before the dunes cuts THROUGH them: the valley
+/// floor may rise over the train, but the inner gorge goes to grade. So the
+/// trench layer cuts the residual the saturated apron leaves, and widens
+/// with the extra depth so its wall slope does not blow up:
+/// `hw *= sqrt(1 + res / trench_depth)`.
+///
+/// The same rule runs the other way. The cut never fills, so a deflation pan
+/// or an interdune hollow lying on the trunk line stayed a hole in the floor
+/// (seed 600006: a pan at -9.9 m on a bed at +3 m), and the creek's
+/// descending level dragged the whole downstream reach to the hole's depth --
+/// 4 km of creek 13-20 m below its floor. A river aggrades its floor: within
+/// the trench, ground below the graded floor is raised to it, the raise
+/// fading out across the lower wall so nothing steps. Ablation: same toggle.
+fn through_cut() -> bool {
+    std::env::var("GORGE_THROUGH").map(|v| v != "off").unwrap_or(true)
+}
+
 /// Cut the gorge into `height` (8 m macro grid). Returns None when the seed
 /// draws no river.
 pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
@@ -207,6 +232,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     let depth_k = if wide { 0.52 } else { 1.0 };
     dg.valley_depth_m = d.valley_depth_m * 3.4 * depth_k;
     let max_cut = MAX_CUT_M * depth_k;
+    let through = through_cut();
     let beds = carve::beds(rng, &net, &datum, &dg);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
 
@@ -261,6 +287,10 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     blur8(&mut h0g, 14);
     let h0s: Vec<f64> = h0g.data.clone();
     let mut target: Vec<f64> = h0.clone();
+    // The graded floor the trunk's trench guarantees, and how firmly (1 on
+    // the flat floor, 0 by the middle of the trench wall). See `through_cut`.
+    let mut fill_t: Vec<f64> = vec![f64::NEG_INFINITY; spec.len()];
+    let mut fill_w: Vec<f64> = vec![0.0; spec.len()];
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         if pts.len() < 2 {
             continue;
@@ -347,11 +377,31 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // swing widened the valley, which put a hard edge in the surface
             // and drew a dashed line along the whole valley -- visible in the
             // macro grid, which is how it was told apart from the texture.
+            // Saturate the cut SMOOTHLY. `bed.max(h0 - MAX_CUT)` was tried
+            // and put a kink wherever the two branches cross, which on a
+            // bumpy dune surface is a ragged line -- 809% slopes. tanh
+            // saturates at the same limit with no corner anywhere.
+            let ds = ds_c[i].clamp(0.0, 1.0);
+            let want = (h0s[i] - bed_c[i]).max(0.0);
+            let full = max_cut * (want / max_cut).tanh() * ds;
+            // The innermost trunk layer carries the river to grade: it takes
+            // the residual the saturation left (see `through_cut`).
+            let res = if through && tier == 1 && li == layers.len() - 1 {
+                (want * ds - full).max(0.0)
+            } else {
+                0.0
+            };
+            let widen = if res > 0.0 {
+                (1.0 + res / (full * ldep).max(1.0)).sqrt()
+            } else {
+                1.0
+            };
             let hw = (if tier == 1 {
                 lhw * (hw_c[i] / hw0).clamp(0.0, 1.0)
             } else {
                 hw_c[i]
-            } * (1.0 + WIDTH_SWING * wide[i]).clamp(0.30, 1.95))
+            } * (1.0 + WIDTH_SWING * wide[i]).clamp(0.30, 1.95)
+                * widen)
             .max(1.0);
             let x = (dist_c[i] / hw * (1.0 + WALL_ROUGH * rough[i])).clamp(0.0, 1.0);
             if x >= 1.0 {
@@ -359,13 +409,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             }
             // Flat floor first, then the wall on the remaining coordinate.
             let xs = ((x - lff) / (1.0 - lff)).clamp(0.0, 1.0);
-            // Saturate the cut SMOOTHLY. `bed.max(h0 - MAX_CUT)` was tried
-            // and put a kink wherever the two branches cross, which on a
-            // bumpy dune surface is a ragged line -- 809% slopes. tanh
-            // saturates at the same limit with no corner anywhere.
-            let want = (h0s[i] - bed_c[i]).max(0.0);
-            let full = max_cut * (want / max_cut).tanh() * ds_c[i].clamp(0.0, 1.0);
-            let cut = full * ldep;
+            let cut = full * ldep + res;
             // LOWER the dune surface; do not replace it. Interpolating toward
             // a floor -- `floor_z + (h0 - floor_z) * xs^p` -- scales the local
             // dune relief by xs^p, so the apron came out a smooth ramp with
@@ -405,12 +449,21 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             if t < target[i] {
                 target[i] = t;
             }
+            if through && tier == 1 && li == layers.len() - 1 {
+                fill_t[i] = bed_c[i] + conv * (1.0 - xs);
+                fill_w[i] = 1.0 - course_world::ease::smoothstep(0.0, 0.6, xs);
+            }
         }
         }
     }
     for i in 0..spec.len() {
         if target[i] < height.data[i] {
             height.data[i] = target[i];
+        }
+        // ground below the graded floor, inside the trench: raise it
+        let below = fill_t[i] - height.data[i];
+        if below > 0.0 && fill_w[i] > 0.0 {
+            height.data[i] += fill_w[i] * below;
         }
     }
     // One light pass to take the corner off the rim, where the cut meets
@@ -477,6 +530,44 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // seed 41251 sat within 12 m of water). Sampling the floor makes the
     // creek sit on it by construction.
     let mut creek_z: Vec<f64> = creek.iter().map(|p| height.bilinear(*p)).collect();
+    if std::env::var("NET_DEBUG").is_ok() {
+        // DIAG: how far the cut floor sits above the graded bed, on the
+        // trunk line itself and under the creek.
+        let (_, tb) = &beds[trunk_i];
+        let mut on_trunk: Vec<f64> = Vec::new();
+        let mut want_v: Vec<f64> = Vec::new();
+        for (k, p) in tp_raw.iter().enumerate() {
+            on_trunk.push(height.bilinear(*p) - tb[k]);
+            want_v.push(h0g.bilinear(*p) - tb[k]);
+        }
+        let mut under_creek: Vec<f64> = Vec::new();
+        let mut off_axis: Vec<f64> = Vec::new();
+        for (i, p) in creek.iter().enumerate() {
+            let (mut kb, mut db) = (0usize, f64::MAX);
+            for (k, q) in tp_raw.iter().enumerate() {
+                let dd = p.distance(*q);
+                if dd < db { db = dd; kb = k; }
+            }
+            under_creek.push(creek_z[i] - tb[kb]);
+            off_axis.push(db);
+        }
+        let pct = |v: &mut Vec<f64>| {
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let q = |f: f64| v[((v.len() - 1) as f64 * f) as usize];
+            format!("p50 {:.1} p90 {:.1} max {:.1}", q(0.5), q(0.9), q(1.0))
+        };
+        eprintln!("gorge diag: want (h0s-bed) on trunk {}", pct(&mut want_v));
+        eprintln!("gorge diag: floor-bed on trunk {}", pct(&mut on_trunk));
+        eprintln!("gorge diag: floor-bed under creek {}", pct(&mut under_creek));
+        eprintln!("gorge diag: creek off-axis {}", pct(&mut off_axis));
+        let ups = tb.windows(2).filter(|w| w[1] > w[0] + 1e-9).count();
+        let downs = tb.windows(2).filter(|w| w[1] < w[0] - 1e-9).count();
+        eprintln!("gorge diag: trunk bed {} nodes, first {:.1} last {:.1}, min {:.1} max {:.1}, rises {} falls {}",
+                  tb.len(), tb[0], tb[tb.len() - 1],
+                  tb.iter().cloned().fold(f64::MAX, f64::min), tb.iter().cloned().fold(f64::MIN, f64::max), ups, downs);
+        let mut cz = creek_z.clone();
+        eprintln!("gorge diag: creek_z raw {}", pct(&mut cz));
+    }
     // a creek runs downhill; hold it monotone from whichever end is lower
     if creek_z.len() > 1 {
         if creek_z[0] > creek_z[creek_z.len() - 1] {

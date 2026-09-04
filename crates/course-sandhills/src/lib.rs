@@ -317,7 +317,21 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     // A5b: blowouts over the texture. A blowout inside the canyon would be
     // a dune feature cut into a river valley, so the gorge keeps them out.
     let avoid = gorge.as_ref().map(|g| (g.creek.as_slice(), 420.0));
+    let diag_line = |tag: &str, h: &course_world::grid::Grid<f64>| {
+        if let (Some(g), true) = (gorge.as_ref(), std::env::var("NET_DEBUG").is_ok()) {
+            let mut v: Vec<f64> = g.creek.iter().zip(&g.creek_z)
+                .map(|(p, z)| h.bilinear(*p) - z).collect();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let q = |f: f64| v[((v.len() - 1) as f64 * f) as usize];
+            eprintln!("line diag {tag}: ground on the creek line minus creek_z: p10 {:.1} p50 {:.1} p90 {:.1} min {:.1} max {:.1}",
+                      q(0.1), q(0.5), q(0.9), q(0.0), q(1.0));
+        }
+    };
+    // NET_DEBUG: the graded floor is what the creek stage inherits.
+    diag_line("after gorge (8 m macro)", &sf.height);
+    diag_line("after quilt", &height);
     let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
+    diag_line("after blowouts", &height);
 
     // A6b: lakes on the finished ground, then the sharp creek slot.
     // The gorge supplies the table drawdown: its floor sits ~50 m below the
