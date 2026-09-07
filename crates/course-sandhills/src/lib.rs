@@ -294,7 +294,10 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
 
     // A5a: deflation pans, under the texture
     let mut pr = rng::stream(id, rng::BLOWOUT);
-    let _pan = blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d);
+    // ablations for the slope diagnosis (2026-09-07): BLOWOUT=off, QUILT=off
+    let blowouts_on = !std::env::var("BLOWOUT").map(|v| v == "off").unwrap_or(false);
+    let quilt_on = !std::env::var("QUILT").map(|v| v == "off").unwrap_or(false);
+    let _pan = if blowouts_on { blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d) } else { Default::default() };
 
     // A6a: the river GORGE, cut into the macro before texture — the valley
     // is a landform and belongs under the quilt.
@@ -312,7 +315,13 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
 
     // T: texture at 2 m — now covering the corridor floor too
     let mut tr = rng::stream(id, rng::TEXTURE);
-    let mut height = texture::quilt(&mut tr, pack, &sf.height, &d);
+    let mut height = if quilt_on {
+        texture::quilt(&mut tr, pack, &sf.height, &d)
+    } else {
+        let mut d0 = d.clone();
+        d0.texture_gain = 0.0;
+        texture::quilt(&mut tr, pack, &sf.height, &d0)
+    };
 
     // A5b: blowouts over the texture. A blowout inside the canyon would be
     // a dune feature cut into a river valley, so the gorge keeps them out.
@@ -330,7 +339,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     // NET_DEBUG: the graded floor is what the creek stage inherits.
     diag_line("after gorge (8 m macro)", &sf.height);
     diag_line("after quilt", &height);
-    let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
+    let blowouts = if blowouts_on { blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid) } else { Vec::new() };
     diag_line("after blowouts", &height);
 
     // A6b: lakes on the finished ground, then the sharp creek slot.

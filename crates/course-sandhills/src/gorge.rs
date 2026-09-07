@@ -171,6 +171,12 @@ const HEAD_TAPER: f64 = 0.30;
 /// landscape warrants (measured, seed 41229: 113 m against a real 50-54).
 const MAX_CUT_M: f64 = 62.0;
 
+/// Mean wall grade a valley wall may not exceed (rise over the wall's
+/// width). Measured on the seven Dismal tiles, 2 m, within 400 m of the
+/// trunk: slope p99 50 %, p99.9 62 %, max 80 %. 0.60 puts the power law's
+/// rim (1.15x the mean on the trench) at the real p99.9.
+const WALL_SLOPE_MAX: f64 = 0.60;
+
 /// The saturation above is a valley-scale relief valve, and it left the
 /// river with nowhere to run: where the trunk crosses a dune train the cut
 /// stops MAX_CUT_M short, the "floor" is the dune surface lowered bodily,
@@ -233,6 +239,16 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     dg.valley_depth_m = d.valley_depth_m * 3.4 * depth_k;
     let max_cut = MAX_CUT_M * depth_k;
     let through = through_cut();
+    let slope_bound = std::env::var("GORGE_SLOPE").map(|v| v != "off").unwrap_or(true);
+    // ablations for the wall-slope diagnosis
+    let wall_tex = if std::env::var("GORGE_TEX").map(|v| v == "off").unwrap_or(false) { 0.0 } else { WALL_TEX };
+    let wall_rough = if std::env::var("GORGE_ROUGH").map(|v| v == "off").unwrap_or(false) { 0.0 } else { WALL_ROUGH };
+    let detail_on = !std::env::var("GORGE_DETAIL").map(|v| v == "off").unwrap_or(false);
+    let fill_on = !std::env::var("GORGE_FILL").map(|v| v == "off").unwrap_or(false);
+    let blur_on = !std::env::var("GORGE_BLUR").map(|v| v == "off").unwrap_or(false);
+    if std::env::var("GORGE").map(|v| v == "off").unwrap_or(false) {
+        return None;
+    }
     let beds = carve::beds(rng, &net, &datum, &dg);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
 
@@ -291,6 +307,9 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // the flat floor, 0 by the middle of the trench wall). See `through_cut`.
     let mut fill_t: Vec<f64> = vec![f64::NEG_INFINITY; spec.len()];
     let mut fill_w: Vec<f64> = vec![0.0; spec.len()];
+    // The apron's own surface, per cell, for the trench to ride on (see the
+    // trench branch below). Untouched ground where the apron does not reach.
+    let mut t_apron: Vec<f64> = h0.clone();
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         if pts.len() < 2 {
             continue;
@@ -338,7 +357,17 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         if bed_seed.is_empty() {
             continue;
         }
-        let (mut dist_c, bed_c) = edt(&spec, &bed_seed);
+        let (mut dist_c, mut bed_c) = edt(&spec, &bed_seed);
+        // The bed field is a nearest-station carry, so between two reaches
+        // of one meander it JUMPS by the bed's fall around the bend (metres
+        // at a neck). The saturating cut attenuated that jump; the
+        // through-cut, which cuts to the bed exactly, printed it as a cliff
+        // along the medial line (700046: 5,400 cells above 150 %, 300-570 m
+        // from the river, 174 with the through-cut off). Twelve passes give
+        // a ~20 m Gaussian: a 10 m jump becomes a 20 % slope, and on the
+        // axis, where adjacent stations differ by the grade times 8 m,
+        // nothing moves.
+        blur_vec(&spec, &mut bed_c, 12);
         // A distance field has a CREASE along its medial axis -- the locus
         // equidistant from two parts of the channel -- and the cut prints that
         // crease as a dead-straight line running out across the dune field.
@@ -403,7 +432,31 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             } * (1.0 + WIDTH_SWING * wide[i]).clamp(0.30, 1.95)
                 * widen)
             .max(1.0);
-            let x = (dist_c[i] / hw * (1.0 + WALL_ROUGH * rough[i])).clamp(0.0, 1.0);
+            // The wall is never steeper than the real one. The width swing
+            // (down to 0.30), the plan roughness (the wall coordinate scaled
+            // by up to 1.8) and the through-cut's depth each narrowed the
+            // wall on their own, and together they cut cliffs: on the
+            // 200-seed mixed run 152/155 river tiles carried slopes above
+            // 150 % on the trench wall, against a real Dismal wall of p99
+            // 50 %, p99.9 62 %, max 80 % within 400 m of the trunk. So the
+            // wall's width is at least what its depth needs at WALL_SLOPE_MAX
+            // (mean grade; the power law's rim is p times that), measured
+            // AFTER the roughness warp. Ablation: `GORGE_SLOPE=off`.
+            let warp = 1.0 + wall_rough * rough[i];
+            let trench_on_apron = through && tier == 1 && li == layers.len() - 1;
+            let hw = if slope_bound {
+                // the trench's wall climbs from the bed to the APRON SURFACE
+                let depth_l = if trench_on_apron {
+                    (t_apron[i] - bed_c[i]).max(0.0)
+                } else {
+                    full * ldep + res
+                };
+                let need = lwp * depth_l / (WALL_SLOPE_MAX * (1.0 - lff)) * warp.max(0.2);
+                hw.max(need)
+            } else {
+                hw
+            };
+            let x = (dist_c[i] / hw * warp).clamp(0.0, 1.0);
             if x >= 1.0 {
                 continue;
             }
@@ -424,14 +477,14 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // dune surface -- that is what puts the break in slope at its rim.
             let base = h0s[i] - full * before;
             let floor_z = base - cut;
-            let detail = h0[i] - h0s[i];
+            let detail = if detail_on { h0[i] - h0s[i] } else { 0.0 };
             let g = (xs / DETAIL_KNEE).clamp(0.0, 1.0);
             let shape = if ltan {
                 1.0 - (1.0 - xs).powf(lwp)
             } else {
                 xs.powf(lwp)
             };
-            let tex = WALL_TEX * fine[i] * (4.0 * xs * (1.0 - xs)).max(0.0);
+            let tex = wall_tex * fine[i] * (4.0 * xs * (1.0 - xs)).max(0.0);
             // The floor converges on the river at the measured 5 % (see
             // `assemble::FLOOR_CONV_*`): the same rise the Carolina floor
             // gets, applied across the flat floor and fading as the wall
@@ -445,11 +498,30 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             } else {
                 0.5 * crate::assemble::FLOOR_CONV_S * crate::assemble::FLOOR_CONV_W
             };
-            let t = floor_z + cut * (shape + tex) + detail * g + conv * (1.0 - xs);
+            let t = if trench_on_apron {
+                // The trench rides on the apron SURFACE. Measured from the
+                // apron's floor level, as before, its rim sat 0.3·full below
+                // the apron wherever the apron had already started to climb
+                // -- and the through-cut's widening pushed the rim out to
+                // where that was 20 m: a cliff along the whole trench edge
+                // (700046: 5,400 cells above 150 %, 300-570 m from the
+                // river; 174 with the through-cut off). So: floor at the
+                // bed (with the converging rise), the wall climbing to
+                // whatever the apron is at this cell, the dune detail
+                // arriving with it.
+                let floor_t = bed_c[i] + conv * (1.0 - xs);
+                let depth_h = (t_apron[i] - floor_t).max(0.0);
+                floor_t + depth_h * (shape + tex)
+            } else {
+                floor_z + cut * (shape + tex) + detail * g + conv * (1.0 - xs)
+            };
+            if tier == 1 && li == 0 {
+                t_apron[i] = t;
+            }
             if t < target[i] {
                 target[i] = t;
             }
-            if through && tier == 1 && li == layers.len() - 1 {
+            if through && fill_on && tier == 1 && li == layers.len() - 1 {
                 fill_t[i] = bed_c[i] + conv * (1.0 - xs);
                 fill_w[i] = 1.0 - course_world::ease::smoothstep(0.0, 0.6, xs);
             }
@@ -466,9 +538,24 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             height.data[i] += fill_w[i] * below;
         }
     }
+    // Angle of repose over the cut (2026-09-07). The plan-view roughness
+    // warp scales the wall coordinate by a field with a 62 m octave, and
+    // across a 400 m wall that field's gradient makes the wall locally six
+    // times steeper than its mean (700046: a 61 m drop in 30 m; 2,085 cells
+    // above 150 %, six with the warp off). The width swing does the same
+    // on the apron. Rather than retune each term, the cut gets the pass
+    // the dunes get (`surface::talus_at`), at the real wall's limit: 2 m
+    // max 80 % within 400 m of the Dismal, so 0.60 on the 8 m macro.
+    // Crenulation survives wherever its walls stand at repose. Ablation:
+    // `GORGE_TALUS=off`.
+    if !std::env::var("GORGE_TALUS").map(|v| v == "off").unwrap_or(false) {
+        crate::surface::talus_at(height, 0.60);
+    }
     // One light pass to take the corner off the rim, where the cut meets
     // untouched ground. The attribution seams are gone at source now.
-    blur8(height, 1);
+    if blur_on {
+        blur8(height, 1);
+    }
 
     // --- the creek on the trunk floor -------------------------------------
     // The trunk is the straight element; the creek is where the wiggle went.

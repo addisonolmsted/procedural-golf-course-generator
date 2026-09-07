@@ -498,6 +498,36 @@ fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, w: usize,
     }
 }
 
+/// Catmull-Rom (bicubic, C1) sample of a grid at a world point; edges clamp.
+fn catmull_rom_2d(g: &Grid<f64>, world: math::Vec2) -> f64 {
+    let s = &g.spec;
+    let gx = ((world.x - s.origin.x) / s.cell_size).clamp(0.0, (s.nx - 1) as f64);
+    let gy = ((world.y - s.origin.y) / s.cell_size).clamp(0.0, (s.ny - 1) as f64);
+    let (x0, y0) = (gx.floor() as i64, gy.floor() as i64);
+    let (tx, ty) = (gx - x0 as f64, gy - y0 as f64);
+    let w = |t: f64| -> [f64; 4] {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        [-0.5 * t3 + t2 - 0.5 * t,
+         1.5 * t3 - 2.5 * t2 + 1.0,
+         -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+         0.5 * t3 - 0.5 * t2]
+    };
+    let (wx, wy) = (w(tx), w(ty));
+    let at = |a: i64, b: i64| -> f64 {
+        *g.get(a.clamp(0, s.nx as i64 - 1) as u32, b.clamp(0, s.ny as i64 - 1) as u32)
+    };
+    let mut v = 0.0;
+    for j in 0..4 {
+        let mut row = 0.0;
+        for i in 0..4 {
+            row += wx[i] * at(x0 - 1 + i as i64, y0 - 1 + j as i64);
+        }
+        v += wy[j] * row;
+    }
+    v
+}
+
 fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
               d: &Descriptors, fields: Option<(&Grid<f64>, &Grid<f64>)>)
     -> Grid<f64>
@@ -511,10 +541,19 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // every 8 m node -- the exact defect heartland measured at a 749x curvature
     // spike -- so this goes through the grid's bilinear ONCE and is then
     // smoothed, rather than being sampled per texture cell from a coarse grid.
+    // The macro comes up to 2 m through a Catmull-Rom spline, not bilinear.
+    // Bilinear is C0: on a steep wall the 8 m nodes print as facets, and
+    // the mixed-run screen's "step" class (a 0.8 m departure from the 3x3
+    // mean) sat on those walls on 155/155 aeolian tiles -- the real tiles
+    // have none. Catmull-Rom is C1 through the same nodes, so the walls
+    // are smooth between them and nothing else moves by more than the
+    // node spacing's curvature allows. Ablation: `TEX_UPSAMPLE=bilinear`.
+    let bilinear = std::env::var("TEX_UPSAMPLE").map(|v| v == "bilinear").unwrap_or(false);
     let mut out = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
         for x in 0..spec.nx {
-            out.set(x, y, macro_h.bilinear(spec.world_of(x, y)));
+            let w = spec.world_of(x, y);
+            out.set(x, y, if bilinear { macro_h.bilinear(w) } else { catmull_rom_2d(macro_h, w) });
         }
     }
 

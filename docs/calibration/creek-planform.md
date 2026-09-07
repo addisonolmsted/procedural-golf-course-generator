@@ -512,3 +512,64 @@ Tests: `incision::never_fills` now allows a raise within 8 cells of standing
 water (the berm); 79 green. Pages: after-screen
 https://claude.ai/code/artifact/03c4b8b0-ba72-410e-b7d6-8c7be7cad3e2, before/after
 https://claude.ai/code/artifact/20311f87-0d48-4f51-8419-28a6cd6afb01. Tool: `tools/aeolian/mix_before_after.py`.
+
+## 2026-09-07 — fix 1 + 5: walls at repose
+
+Find 1 was misdiagnosed: the gorge trench was not the cliff. Ablated term by
+term (toggles `GORGE=off`, `GORGE_TEX/ROUGH/DETAIL/THROUGH/FILL/SLOPE/BLUR`,
+`BLOWOUT=off`, `QUILT=off`, `SURFACE_TAIL/TALUS/ADVECT`, `TEX_UPSAMPLE=bilinear`):
+
+- **The dune macro itself** (700791: bare 8 m macro slope p99 119 %, max
+  538 %, a 65 m knob 100 m wide on a 25 m drawn relief). Real Nebraska
+  tiles, 24 of them at 8 m: p99 39 %, max 69 %; (max − p95)/(p95 − p5) 0.43.
+  Cause: `shape_body`'s linear crest tail (slope p above t = 1) plus the
+  height-proportional advection folding on Train seeds.
+- **The through-cut's trench rim**: measured from the apron's FLOOR level,
+  the trench rim sat 0.3·full below the apron wherever the apron had begun to
+  climb, and the widening pushed the rim out to where that was 20 m — a
+  cliff along the trench edge (700046: 5,400 cells above 150 %, 300–570 m
+  from the river; 174 with the through-cut off).
+- **The plan-view roughness warp**: `x = dist/hw · (1 + 0.52·rough)` with a
+  62 m octave; across a 400 m wall the field's gradient makes the wall six
+  times steeper than its mean (a 61 m drop in 30 m; 2,085 cells above 150 %,
+  six with the warp off). The width swing does the same on the apron.
+- The bilinear 8 m → 2 m upsampling printed facets on every steep wall (the
+  "step" class on 155/155 aeolian tiles; real tiles: none).
+- My first attempt, a mean-slope bound on the trench width, binds nowhere
+  and changed nothing; a bed-field blur against nearest-station seams also
+  changed nothing. Both recorded so they are not tried again.
+
+**What runs now.**
+- `surface::talus_at`: angle of repose, a fixed 40-pass pairwise relaxation
+  (4- and diagonal neighbours, mass-conserving) at 0.50 on the dune macro
+  (`SURFACE_TALUS=off`) and 0.60 over the gorge cut (`GORGE_TALUS=off`) —
+  the real canyon wall's 2 m max is 80 % within 400 m of the Dismal.
+- `shape_body`: the crest tail saturates at 1 + TAIL (0.6) with the same
+  slope at t = 1 (`SURFACE_TAIL=off`).
+- The trench rides on the apron SURFACE: floor at the bed plus the
+  converging rise, wall climbing to the apron's own target at that cell.
+- The macro comes up through Catmull-Rom (`TEX_UPSAMPLE=bilinear` for the
+  old): step cells 3–6x fewer on the same tiles.
+- The width-bound on the trench stays (harmless) and the bed blur stays.
+
+Five river tiles, 2 m, after: near-river p99 59–75 % (real 50), p99.9
+78–95 (real 62), max 117–256 (real 80); 700007 keeps 114 cells above 150 %
+(unexamined; blowout rims or the crease are the candidates).
+
+**200 seeds** (`out/mix200_f2` → `out/mix200_f3`, both with the water fix):
+
+| | aeolian before | after | fluvial before | after |
+|---|---|---|---|---|
+| tiles flagged | 77 | 37 | 17 | 17 |
+| wall, any / notable | 152 / 48 | 109 / 0 | 0 / 0 | 0 / 0 |
+| step, any / notable | 155 / 38 | 155 / 0 | 5 / 0 | 4 / 0 |
+| perched notable | 17 | 24 | 2 | 2 |
+| deepcut | 24 | 25 | 17 | 17 |
+| slope p99, median % | 91 | 65 | 18 | 18 |
+
+Real aeolian tile slope p99 is 44–52 %; the remaining 65 is the dune forms'
+own steepness (relief over body width with `body_p` 1.6) and the 2 m quilt,
+a calibration question, not a defect. Perched on aeolian tiles (24) is the
+ribbon-edge family noted with the water round. Pages: after-screen
+https://claude.ai/code/artifact/6655b9f5-982f-449c-9a11-75340ef238ea,
+before/after https://claude.ai/code/artifact/724e217c-c17d-47a3-a3bd-688f0b496578.

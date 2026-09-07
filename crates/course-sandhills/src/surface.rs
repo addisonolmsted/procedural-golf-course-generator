@@ -128,6 +128,7 @@ pub fn profile(t: f64, stoss_share: f64) -> f64 {
 /// for free.
 fn advect(z: &Grid<f64>, tnorm: &[f64], wind_rad: f64, offset_m: f64) -> Grid<f64> {
     let spec = z.spec;
+    let offset_m = if std::env::var("SURFACE_ADVECT").map(|v| v == "off").unwrap_or(false) { 0.0 } else { offset_m };
     let w = Vec2::new(math::cos(wind_rad), math::sin(wind_rad));
     let mut out = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
@@ -167,8 +168,80 @@ fn shape_body(t: f64, p: f64) -> f64 {
         0.15 * t
     } else if t <= 1.0 {
         t.powf(p)
+    } else if tail_saturates() {
+        // The crest tail SATURATES (2026-09-07). Linear continuation at slope
+        // p let the top 5 % of the field run away: on the mixed run a mound
+        // stood 65 m over a 25 m drawn relief, 100 m wide, with 200 % sides
+        // -- (max - p95)/(p95 - p5) of 1.6 against 0.43 on the real tiles.
+        // Same slope p at t = 1 (C1), asymptote 1 + TAIL.
+        1.0 + TAIL * (1.0 - math::exp(-p * (t - 1.0) / TAIL))
     } else {
         1.0 + p * (t - 1.0)
+    }
+}
+
+/// How far above the p95 level a crest may climb, as a fraction of the
+/// p5-p95 span. Real Nebraska tiles: (max - p95)/(p95 - p5) median 0.43,
+/// p90 ~0.8.
+const TAIL: f64 = 0.6;
+
+fn tail_saturates() -> bool {
+    !std::env::var("SURFACE_TAIL").map(|v| v == "off").unwrap_or(false)
+}
+
+/// Angle of repose (2026-09-07). Sand does not stand steeper than ~32
+/// degrees, and the real 8 m macro never exceeds 69 % (p99 39 %) on 24
+/// Nebraska tiles, while ours reached 538 %. A fixed number of relaxation
+/// passes moves material from the higher cell to the lower wherever a
+/// neighbour pair exceeds TALUS, mass-conserving, so a cliff becomes a slip
+/// face and the calibrated relief (p5-p95) is barely touched. Ablation:
+/// `SURFACE_TALUS=off`.
+const TALUS: f64 = 0.50;
+const TALUS_PASSES: usize = 40;
+
+fn talus(g: &mut Grid<f64>) {
+    if std::env::var("SURFACE_TALUS").map(|v| v == "off").unwrap_or(false) {
+        return;
+    }
+    talus_at(g, TALUS);
+}
+
+/// The repose pass at a given grade, for other stages (the gorge runs it
+/// at 0.60 over its cut: the real canyon wall's 2 m max is 80 %).
+pub fn talus_at(g: &mut Grid<f64>, grade: f64) {
+    let spec = g.spec;
+    let (nx, ny) = (spec.nx as usize, spec.ny as usize);
+    let lim = grade * spec.cell_size;
+    let lim_d = grade * spec.cell_size * std::f64::consts::SQRT_2;
+    for _ in 0..TALUS_PASSES {
+        let mut moved = false;
+        for y in 0..ny {
+            for x in 0..nx {
+                let i = y * nx + x;
+                for (dx, dy, l) in [(1usize, 0usize, lim), (0, 1, lim), (1, 1, lim_d)] {
+                    let (a, b) = (x + dx, y + dy);
+                    if a >= nx || b >= ny {
+                        continue;
+                    }
+                    let j = b * nx + a;
+                    let d = g.data[i] - g.data[j];
+                    if d > l {
+                        let e = 0.5 * (d - l);
+                        g.data[i] -= e;
+                        g.data[j] += e;
+                        moved = true;
+                    } else if d < -l {
+                        let e = 0.5 * (-d - l);
+                        g.data[i] += e;
+                        g.data[j] -= e;
+                        moved = true;
+                    }
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
     }
 }
 
@@ -337,6 +410,7 @@ pub fn build(rng: &mut DetRng, w: &WindField, hw: &WindField, d: &Descriptors) -
     // The gate is advected with the belts it keys on -- otherwise the exported
     // gate describes the PRE-shear surface and the two disagree by the offset.
     let gate_a = advect(&gate, &tnorm, d.wind_rad, belt_off);
+    talus(&mut height2);
 
     Surface { height: height2, datum, belts: belts_a, hummock_gate: gate_a }
 }
