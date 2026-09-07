@@ -1296,9 +1296,11 @@ pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
         // the crease, with the river's own width and depth law
         let cfg = CreekCrease { hw, hw_clamp: (hw * 0.6, hw * 1.5),
                                 depth: 0.32 + 0.04 * width_m, bank_m: 3.0 + 0.15 * width_m, salt,
-                                mouth_first: bed[0] <= bed[bed.len() - 1] };
+                                mouth_first: bed[0] <= bed[bed.len() - 1], cut_cap: 3.0 };
         let level = creek_crease(height, &h0, &mut water.surface, &mut mask, &mut wet,
                                  line, &arcs, &perps, &bends, &cfg);
+        // a pool behind a rise stands over the floor beside the ribbon too
+        pool_beside(&spec, &height.data, &mut water.surface, &mut wet, line, &level, 150.0);
         water.river = Some(line.to_vec());
         water.river_z = Some(level);
     }
@@ -1411,6 +1413,13 @@ pub struct CreekCrease {
     pub bank_m: f64,
     pub salt: u32,
     pub mouth_first: bool,
+    /// The most the crease may cut below the local ground, metres. Where a
+    /// rise on the line demands more, the water POOLS behind it instead
+    /// (2026-09-07): the descending level used to be a running min of the
+    /// ground, so one rise near the mouth dug a 6 m trench through the floor
+    /// (17/45 fluvial tiles; ground 60 m either side 6-10 m above the water).
+    /// Corpus creek depth p90: 2.05 m Carolina, 3.0 m Nebraska.
+    pub cut_cap: f64,
 }
 
 /// The creek as a THIN, IRREGULAR CREASE in a floor that already slopes to it.
@@ -1504,6 +1513,21 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
     } else {
         for i in 1..n { level[i] = level[i].min(level[i - 1]); }
     }
+    // Cap the cut and pool behind what is left (see `cut_cap`): the level
+    // may not sit deeper than the cap below the ground, and a dam backs
+    // water up -- walking upstream from the mouth the level never falls.
+    // Both together keep the level descending to the mouth.
+    if std::env::var("CREEK_POOL").map(|v| v != "off").unwrap_or(true) {
+        for i in 0..n {
+            let cap = g[i] - cfg.cut_cap;
+            if level[i] < cap { level[i] = cap; }
+        }
+        if cfg.mouth_first {
+            for i in 1..n { level[i] = level[i].max(level[i - 1]); }
+        } else {
+            for i in (0..n - 1).rev() { level[i] = level[i].max(level[i + 1]); }
+        }
+    }
     for i in 1..n {
         let (lo, hi) = if cfg.mouth_first { (level[i - 1], level[i]) } else { (level[i], level[i - 1]) };
         debug_assert!(hi >= lo - 1e-9, "creek level rises toward the mouth at {i}");
@@ -1576,8 +1600,68 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
             height.data[idx] = cand;
             creek[idx] = true;
         }
+        // a bank cell carved below the water line is under water (the
+        // ribbon-edge "perched" family on the mixed run: floor-level cells
+        // just outside the wet half-width, 0.3 m below the surface)
+        if height.data[idx] < level[i] - 0.02 && surface.data[idx].is_nan() {
+            *wet_cells += 1;
+            surface.data[idx] = level[i];
+        }
     }
     level
+}
+
+/// Water standing beside the creek where the creek's level stands above the
+/// floor (a pool behind a rise): from the ribbon outward, every cell whose
+/// ground lies below its nearest station's level, within `reach_m` of the
+/// line. The fluvial build does this in its backwater pass; the aeolian
+/// build has no such pass, so it is done here.
+fn pool_beside(spec: &course_world::grid::GridSpec, ground: &[f64], surface: &mut Grid<f64>,
+               wet_cells: &mut usize, line: &[Vec2], level: &[f64], reach_m: f64) {
+    let cell = spec.cell_size;
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let mut st = vec![u32::MAX; spec.len()];
+    let mut depth = vec![0u16; spec.len()];
+    let mut q: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for (k, p) in line.iter().enumerate() {
+        let (x, y) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
+        if x < 0 || y < 0 || x >= nx || y >= ny { continue; }
+        let i = spec.index(x as u32, y as u32);
+        if st[i] == u32::MAX { st[i] = k as u32; q.push_back(i); }
+    }
+    let max_d = (reach_m / cell) as u16;
+    while let Some(i) = q.pop_front() {
+        if depth[i] >= max_d { continue; }
+        let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+        for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+            let (a, b) = (x + dx, y + dy);
+            if a < 0 || b < 0 || a >= nx || b >= ny { continue; }
+            let j = spec.index(a as u32, b as u32);
+            if st[j] == u32::MAX { st[j] = st[i]; depth[j] = depth[i] + 1; q.push_back(j); }
+        }
+    }
+    // from the wet ribbon outward over ground below the local level
+    let mut q2: std::collections::VecDeque<usize> =
+        (0..spec.len()).filter(|i| st[*i] != u32::MAX && surface.data[*i].is_finite()).collect();
+    while let Some(i) = q2.pop_front() {
+        let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+        for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+            let (a, b) = (x + dx, y + dy);
+            if a < 0 || b < 0 || a >= nx || b >= ny { continue; }
+            let j = spec.index(a as u32, b as u32);
+            if st[j] == u32::MAX { continue; }
+            let want = level[(st[j] as usize).min(level.len() - 1)];
+            if ground[j] >= want - 0.02 { continue; }
+            if surface.data[j].is_nan() {
+                *wet_cells += 1;
+                surface.data[j] = want;
+                q2.push_back(j);
+            } else if surface.data[j] < want - 1e-9 {
+                surface.data[j] = want;
+                q2.push_back(j);
+            }
+        }
+    }
 }
 
 /// What the delta carve needs per mode.
@@ -2630,7 +2714,8 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     // pipeline: 0.55 m / 2.2 m rose 0.58 m by 4 m where the
                     // real creek rises 0.12; shallower and wider-banked.
                     &CreekCrease { hw, hw_clamp: (1.2, 3.6), depth: 0.35, bank_m: 4.5,
-                                   salt: m_seed, mouth_first: zs.first() <= zs.last() }));
+                                   salt: m_seed, mouth_first: zs.first() <= zs.last(),
+                                   cut_cap: 2.0 }));
     }
 
     // --- the water TABLE is retired ---------------------------------------

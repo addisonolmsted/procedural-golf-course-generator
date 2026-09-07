@@ -604,9 +604,49 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         smooth_passes: 0,
         ..crate::planform::Params::from_draws(lam, swing, phase, d.river_w_m)
     };
-    let room = 0.85 * FLOOR_FRAC * half_width(1);
+    let room_max = 0.85 * FLOOR_FRAC * half_width(1);
+    // Room is what the CUT FLOOR actually offers (2026-09-07), not the
+    // nominal flat-floor half-width: the width swing shrinks the trench
+    // floor to ~20 m in places, and a creek given 119 m there climbed the
+    // wall -- on the 200-seed mixed run 25 river tiles cut 6-15 m at one
+    // spot with the ground high on ONE side only. At each base point the
+    // room is the distance, either side along the normal, at which the cut
+    // surface first stands ROOM_RISE_M above the floor, less a margin.
+    // Ablation: `GORGE_ROOM=fixed`.
+    const ROOM_RISE_M: f64 = 2.0;
+    const ROOM_MARGIN_M: f64 = 8.0;
+    const ROOM_MIN_M: f64 = 6.0;
+    let fixed_room = std::env::var("GORGE_ROOM").map(|v| v == "fixed").unwrap_or(false);
+    let hgt: &Grid<f64> = height;
+    let room_at = |q: Vec2| -> f64 {
+        if fixed_room {
+            return room_max;
+        }
+        let mut k = 0usize;
+        let mut best = f64::MAX;
+        for (j, p) in tp.iter().enumerate() {
+            let dd = p.distance(q);
+            if dd < best { best = dd; k = j; }
+        }
+        let (a, b) = (tp[k.saturating_sub(1)], tp[(k + 1).min(tp.len() - 1)]);
+        let t = Vec2::new(b.x - a.x, b.y - a.y);
+        let tl = (t.x * t.x + t.y * t.y).sqrt().max(1e-9);
+        let nrm = Vec2::new(-t.y / tl, t.x / tl);
+        let z0 = hgt.bilinear(tp[k]);
+        let mut room = room_max;
+        for sgn in [-1.0f64, 1.0] {
+            let mut s = 4.0;
+            while s < room_max {
+                let p = Vec2::new(tp[k].x + nrm.x * s * sgn, tp[k].y + nrm.y * s * sgn);
+                if hgt.bilinear(p) - z0 > ROOM_RISE_M { break; }
+                s += 4.0;
+            }
+            room = room.min(s);
+        }
+        (room - ROOM_MARGIN_M).max(ROOM_MIN_M)
+    };
     let pf = crate::planform::bend_train(tp, crate::planform::Flow::MouthFirst,
-                                         &prm, s_lam, &|_| room);
+                                         &prm, s_lam, &room_at);
     let creek = pf.p;
 
     // Take the creek bed from the CUT SURFACE, not from carve::beds.

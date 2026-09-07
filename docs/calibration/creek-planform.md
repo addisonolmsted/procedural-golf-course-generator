@@ -573,3 +573,47 @@ a calibration question, not a defect. Perched on aeolian tiles (24) is the
 ribbon-edge family noted with the water round. Pages: after-screen
 https://claude.ai/code/artifact/6655b9f5-982f-449c-9a11-75340ef238ea,
 before/after https://claude.ai/code/artifact/724e217c-c17d-47a3-a3bd-688f0b496578.
+
+## 2026-09-07 — fix 4: creeks at grade
+
+Deep cuts came in two families, told apart by the ground 60 m either side
+of the deepest point. **Aeolian** (25 tiles): high on ONE side only — the
+creek at the foot of the trench wall, because the bend train was given a
+fixed 119 m of room while the width swing shrinks the trench floor to ~20 m
+in places. **Fluvial** (17 tiles): high on BOTH sides — the crease's level is
+a running min of the ground toward the mouth, so one rise on the line
+(often at the tile edge near the mouth) dug a 6 m trench through the floor.
+
+**What runs now.**
+- `gorge.rs`: room from the CUT FLOOR — at each base point, the distance
+  either side along the normal at which the cut surface first stands 2 m
+  above the floor, less an 8 m margin (`GORGE_ROOM=fixed` for the old).
+- `creek_crease`: `cut_cap` (2.0 m Carolina, 3.0 m Nebraska — corpus depth
+  p90): the level may not sit deeper than the cap below the ground, and a
+  dam backs water up (walking upstream from the mouth the level never
+  falls), so a rise the cap cannot cut through becomes a POOL behind it.
+  The level still descends to the mouth; the assertion stays. Toggle
+  `CREEK_POOL=off`. Pools stand over the floor beside the ribbon: the
+  fluvial backwater pass already does this; `pool_beside` does it for the
+  aeolian build (150 m reach).
+- Bank cells carved below the water line are wet — the ribbon-edge
+  "perched" family (floor-level cells just outside the wet half-width,
+  0.3 m under the surface).
+
+**200 seeds** (`out/mix200_f3` → `out/mix200_f4`):
+
+| | aeolian before | after | fluvial before | after |
+|---|---|---|---|---|
+| tiles flagged | 37 | 2 | 17 | 9 |
+| deepcut | 25 | 0 | 17 | 0 |
+| perched, any / notable | 148 / 24 | 38 / 2 | 41 / 2 | 43 / 9 |
+| creek cut max, median m | 2.4 | 1.8 | 4.5 | 3.6 |
+
+Over the whole round (`out/mix200` → `_f4`): tiles flagged 124 → 11;
+reversal 33 → 0; deepcut 35 → 0; wall-notable 48 → 0; step-notable 38 → 0;
+perched-notable 64 → 11. The nine fluvial perched tiles are the new pools
+meeting dry ground below their level outside the backwater's reach --
+small (0.1-0.3 ha) and next in line. Fluvial water share rose with the pools
+(six checked tiles 1.3-2.8 %, corpus p75 3.5 %). 79 tests green. Pages:
+after-screen https://claude.ai/code/artifact/47abbae2-1199-4919-abd1-a81e426ff43f,
+before/after https://claude.ai/code/artifact/62cb3f07-dbc2-4ab7-b253-ff6e07e473de.
