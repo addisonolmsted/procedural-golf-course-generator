@@ -393,3 +393,55 @@ Remaining: 600009 and 600017 still cut ~7 m at one spot each (not yet
 examined). Renders: `out/creek/ae_through` vs `ae_crease`;
 `out/creek/before_after_through.html`; crops `through_600006.png`,
 `through_600032.png`; difference maps `through_diff_*.png`.
+
+## 2026-09-06 — 200-seed mixed run, screened (no fixes)
+
+`examples/mix_dump.rs`: each seed's mode from its own coin, kept only when
+the tile carries a creek or river line (seeds 700000+, four workers by
+stride). Kept 200 of 645 tried: **155 aeolian, 45 fluvial** — aeolian tiles
+carry a river 28 % of the time, fluvial creeks only 7 % (`p_valley_creek`
+0.10 in record.rs). Renders in `out/mix200`, screen cache in
+`out/mix200/screen/`, page `out/mix200/mix_screen.html` (10.1 MB),
+artifact https://claude.ai/code/artifact/8c0c9dd2-d665-404d-a69d-ea5464b873b2.
+
+`tools/aeolian/mix_screen.py` flags, per 2 m cell: **step** (|z − box3| >
+0.8 m, away from water), **steep** (> 80 % aeolian / > 50 % fluvial),
+**wall** (> 150 %), **perched** (wet cell > 0.3 m above a dry neighbour's
+ground), **reversal** (level rising toward the mouth > 0.25 m / 10 m),
+**deepcut** (ground 12 m off the line > 5 m above the water), **flat**
+(< 0.3 % over > 1 ha). A tile is "flagged" when a class exceeds its notable
+size (step 0.5 ha, wall 2 ha, perched 0.1 ha, the creek classes any; steep
+never on its own). Score = weighted hectares; the page sorts by it and shows
+a 500 m detail at the worst spot of the top 24.
+
+| tiles with class, any / notable | aeolian (155) | fluvial (45) |
+|---|---|---|
+| step | 155 / 38 | 5 / 0 |
+| wall | 152 / 48 | 13 / 0 |
+| perched | 148 / 20 | 45 / 44 |
+| reversal | 0 / 0 | 33 / 33 |
+| deepcut | 24 / 24 | 11 / 11 |
+| flat | 0 | 0 |
+| slope p99 (median %) | 91 | 18 |
+| creek cut max (median m) | 2.4 | 4.2 |
+
+Systematic finds, verified by eye on crops (not fixed):
+1. **Aeolian gorge walls above 150 %** on 152/155 tiles (median 1.1 ha, up
+   to 17 ha): the inner trench's wall renders black in the hillshade, and
+   98 % of the step cells lie on those walls — the 8 m macro's bilinear
+   facets on a 200 % slope, which show as blocks in the render.
+2. **Fluvial ponds do not fill their basins**: on every fluvial tile the
+   largest pond's shore has dry ground below the water level (seed 700124,
+   9.8 ha pond: half of the shore's dry cells sit below the level, by up to
+   2.7 m). Aeolian ponds show it on 20 tiles.
+3. **Fluvial creeks flow into lakes higher than themselves** on 33/45
+   tiles: along the line the water surface steps UP toward the mouth by
+   1.4 m (median) to 2.9 m where the ribbon meets an impounded lake
+   (`surface.max(lvl)` in `fluvial`). No aeolian tile does this.
+4. **Deep cuts**: 24 aeolian tiles still cut > 5 m somewhere (the
+   through-cut round left 600009/600017 at ~7 m; same family); 11 fluvial
+   tiles do too, and the fluvial creek's cut sits at 4.2 m median against
+   a 0.35 m crease — the graded `zs` bed lies below the assembled floor,
+   the defect noted on the slot-lowered round.
+5. Fluvial tiles carry a creek line rarely (7 %), so a mixed run with
+   running water is three-quarters aeolian.
