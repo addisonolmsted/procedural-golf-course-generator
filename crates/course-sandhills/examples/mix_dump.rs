@@ -1,7 +1,7 @@
 //! Dump a MIXED run: each seed's mode comes from its own coin (`draw::site`
 //! with nothing forced), and only tiles that carry a creek or river are kept.
 //!
-//!   mix_dump <out_dir> <first_seed> <keep_n> [--stride k --offset j]
+//!   mix_dump <out_dir> <first_seed> <keep_n> [--stride k --offset j] [--seeds a,b,c]
 //!
 //! Walks seeds first_seed + offset, + offset + stride, ... until `keep_n`
 //! tiles with a river line are written. Files: `m_<seed>.cgrid`,
@@ -25,6 +25,9 @@ fn main() {
         a.iter().position(|x| x == k).map(|i| a[i + 1].parse().unwrap()).unwrap_or(d)
     };
     let (stride, offset) = (opt("--stride", 1), opt("--offset", 0));
+    // `--seeds a,b,c`: exactly these seeds, kept or skipped on the same rule
+    let only: Option<Vec<u64>> = a.iter().position(|x| x == "--seeds")
+        .map(|i| a[i + 1].split(',').map(|v| v.parse().unwrap()).collect());
     let prof = HandProfile::load(std::path::Path::new(
         "assets/sandhills_hand_profile.txt")).expect("hand profile");
     let fpack = texture::PatchPack::load(std::path::Path::new(
@@ -38,6 +41,12 @@ fn main() {
     let mut seed = first + offset;
     let mut tried = 0usize;
     while kept < keep_n {
+        if let Some(list) = &only {
+            if tried >= list.len() {
+                break;
+            }
+            seed = list[tried];
+        }
         tried += 1;
         let id = RunIdentity::from_seed(seed);
         let mode = draw::site(&id, None, None).mode;

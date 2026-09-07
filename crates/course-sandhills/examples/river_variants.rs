@@ -31,7 +31,7 @@ fn main() {
         let base = texture::quilt(&mut tr, &pack, &sf.height, &d);
         for (name, st) in &variants {
             let mut h = course_world::grid::Grid { spec: base.spec, data: base.data.clone() };
-            let mut wat = water::find(&h, &sf.datum, &d, None, &[]);
+            let mut wat = water::find(&mut h, &sf.datum, &d, None, &[]);
             let mut rr = rng::stream(&id, rng::WATER);
             water::river_styled(&mut rr, &mut h, &mut wat, &d, *st, true);
             gridio::write_grid_f32(&out.join(format!("{name}_{seed}.cgrid")), &h).unwrap();

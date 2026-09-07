@@ -445,3 +445,70 @@ Systematic finds, verified by eye on crops (not fixed):
    the defect noted on the slot-lowered round.
 5. Fluvial tiles carry a creek line rarely (7 %), so a mixed run with
    running water is three-quarters aeolian.
+
+## 2026-09-07 — fix 2 + 3: water settles, the creek is backwatered
+
+Owner: fix the mixed-run finds in the recommended order, a viewer after
+each. This round is the water stage (`water.rs`), toggle `WATER_SETTLE=off`.
+
+**Cause, traced.** In `find` a tilted table decided which cells were wet
+and one flat level was then painted on the body, so on the low side of the
+tilt the level stood above dry ground; the fluvial table ponds were clipped
+by an opening and by the trunk keep-out and kept their level; the
+impoundment was built over the graded BED, which the creek's level no
+longer follows (the bed lies metres below the floor the crease cuts), and
+its "upstream" walk assumed lower station index = upstream, which on a
+mouth-first trunk flooded the reach DOWN to the mouth (seed sets of a
+million cells). The creek's own level never knew about the pond it ran
+into.
+
+**What runs now.**
+- `fill_levels`: a priority flood from the sinks (tile edge; the creek for
+  the fluvial table ponds) inward gives every cell its spill elevation;
+  walls (a dam) are never entered.
+- `settle`: a body is lowered to the lowest spill elevation it reaches and
+  every connected cell below that level is wet (four fixed rounds). Nothing
+  beside the water is lower than the water; nothing floods that would drain.
+- `berm`: a body whose basin would lose half its cells is dammed instead --
+  the dry ring is raised to the level plus 0.15 m, tapering out at 30 % --
+  never on the creek's banks (`creek_banks`). Most Carolina table ponds are
+  sheets on open slopes; settled, five of six drained to nothing, against
+  the corpus's 1.7 % water inside a course. Dug and dammed is what they are.
+- Impoundments: level = the creek's WATER at the dam + rise (0.8-2.6 m),
+  the reach walked upstream along the creek line, the dam a wall of
+  `cap·1.8` around the line just downstream of the dam point, the pond
+  capped at 4 ha by lowering the dam (six rounds of bisection). Draws stay
+  in their transcript order.
+- Backwater: walking upstream from the mouth the creek's level never falls
+  below a pond it runs through; every valley-floor cell takes the level of
+  its nearest station and is wet where its ground is below it. (A spread
+  that carried one level sideways crept down the banks to the mouth: always
+  lower ground downstream. Bounded per station instead.)
+- The station walk over the creek mask is capped at five cells: the mask
+  carries channel cells 500 m off the line and the walk reached a pond.
+
+**Dead ends recorded.** A rim rule (stop when the flood drops 0.5 m below
+the highest ground popped) fired on floor texture; a growth cap (2x) let
+sheet ponds double at a lower level; both replaced by the fill.
+
+**200 seeds, same seeds as the screen** (`out/mix200` → `out/mix200_f2`):
+
+| tiles with class, any / notable | aeolian before | after | fluvial before | after |
+|---|---|---|---|---|
+| perched | 148 / 20 | 147 / 17 | 45 / 44 | 40 / 2 |
+| reversal | 0 / 0 | 0 / 0 | 33 / 33 | 0 / 0 |
+| deepcut | 24 / 24 | 24 / 24 | 11 / 11 | 17 / 17 |
+| tiles flagged | 79 | 77 | 45 | 17 |
+
+Fluvial water stays in the corpus band (six checked tiles: 1.7-3.4 % of the
+tile before, 1.0-2.2 % after; corpus median 1.7 %, p75 3.5 %). The six extra
+fluvial deep-cut tiles are the pre-existing family (fix 4): the crease's
+level near the mouth sits 5 m below the floor, and an impoundment used to
+hide it under water. The 17 aeolian perched tiles are ribbon-edge cells of
+the river body standing up to 1 m above a dry neighbour (700375: 371 cells,
+4.5 m from the line) -- untouched by this round, to look at with fix 4.
+
+Tests: `incision::never_fills` now allows a raise within 8 cells of standing
+water (the berm); 79 green. Pages: after-screen
+https://claude.ai/code/artifact/03c4b8b0-ba72-410e-b7d6-8c7be7cad3e2, before/after
+https://claude.ai/code/artifact/20311f87-0d48-4f51-8419-28a6cd6afb01. Tool: `tools/aeolian/mix_before_after.py`.

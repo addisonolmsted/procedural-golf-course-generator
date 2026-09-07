@@ -343,7 +343,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
         inner: 200.0,
         reach: 620.0,
     });
-    let mut water = water::find(&height, &sf.datum, &d, dd.as_ref(), &blowouts);
+    let mut water = water::find(&mut height, &sf.datum, &d, dd.as_ref(), &blowouts);
     // No standing lakes on the valley floor beside running water. Done
     // BEFORE cut_creek so it cannot remove the river it just laid down.
     if let Some(g) = &gorge {
