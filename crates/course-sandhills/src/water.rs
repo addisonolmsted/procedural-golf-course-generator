@@ -1296,11 +1296,11 @@ pub fn cut_creek(height: &mut Grid<f64>, water: &mut Water,
         // the crease, with the river's own width and depth law
         let cfg = CreekCrease { hw, hw_clamp: (hw * 0.6, hw * 1.5),
                                 depth: 0.32 + 0.04 * width_m, bank_m: 3.0 + 0.15 * width_m, salt,
-                                mouth_first: bed[0] <= bed[bed.len() - 1], cut_cap: 3.0 };
-        let level = creek_crease(height, &h0, &mut water.surface, &mut mask, &mut wet,
-                                 line, &arcs, &perps, &bends, &cfg);
+                                mouth_first: bed[0] <= bed[bed.len() - 1], cut_cap: 6.0 };
+        let (level, pooled) = creek_crease(height, &h0, &mut water.surface, &mut mask, &mut wet,
+                                           line, &arcs, &perps, &bends, &cfg);
         // a pool behind a rise stands over the floor beside the ribbon too
-        pool_beside(&spec, &height.data, &mut water.surface, &mut wet, line, &level, 150.0);
+        pool_beside(&spec, &height.data, &mut water.surface, &mut wet, line, &level, &pooled, 150.0);
         water.river = Some(line.to_vec());
         water.river_z = Some(level);
     }
@@ -1418,7 +1418,9 @@ pub struct CreekCrease {
     /// (2026-09-07): the descending level used to be a running min of the
     /// ground, so one rise near the mouth dug a 6 m trench through the floor
     /// (17/45 fluvial tiles; ground 60 m either side 6-10 m above the water).
-    /// Corpus creek depth p90: 2.05 m Carolina, 3.0 m Nebraska.
+    /// Below REGRADE_MAX (6 m) the descent is paid by regrading the floor
+    /// toward the creek at 5 %; the cap is that same 6 m, so only a taller
+    /// rise pools.
     pub cut_cap: f64,
 }
 
@@ -1441,8 +1443,9 @@ pub struct CreekCrease {
 #[allow(clippy::too_many_arguments)]
 fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
                 creek: &mut [bool], wet_cells: &mut usize, qs: &[Vec2],
-                arcs: &[f64], perps: &[Vec2], bends: &[f64], cfg: &CreekCrease) -> Vec<f64> {
+                arcs: &[f64], perps: &[Vec2], bends: &[f64], cfg: &CreekCrease) -> (Vec<f64>, Vec<bool>) {
     const BLUR_R: i64 = 3;
+    const BANK_LIP: f64 = 0.05;
     const LONG_SMOOTH_M: f64 = 80.0;
     /// the margin scallops: two short scales on the wet half-width
     const HW_VAR: [(f64, f64); 2] = [(0.40, 8.5), (0.30, 23.0)];
@@ -1463,7 +1466,7 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let n = qs.len();
     if n < 3 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let (s_h1, s_h2) = (cfg.salt ^ 0xC2B2_AE35, cfg.salt ^ 0x7F4A_7C15);
     let (s_d1, s_d2) = (cfg.salt ^ 0x85EB_CA6B, cfg.salt ^ 0x3C6E_F372);
@@ -1517,6 +1520,7 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
     // may not sit deeper than the cap below the ground, and a dam backs
     // water up -- walking upstream from the mouth the level never falls.
     // Both together keep the level descending to the mouth.
+    let level_min = level.clone();
     if std::env::var("CREEK_POOL").map(|v| v != "off").unwrap_or(true) {
         for i in 0..n {
             let cap = g[i] - cfg.cut_cap;
@@ -1528,13 +1532,74 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
             for i in (0..n - 1).rev() { level[i] = level[i].max(level[i + 1]); }
         }
     }
+    // where the water stands above the descending level: a pool behind a
+    // dam, the only place standing water may spread beside the ribbon
+    let pooled: Vec<bool> = (0..n).map(|i| level[i] > level_min[i] + 0.05).collect();
     for i in 1..n {
         let (lo, hi) = if cfg.mouth_first { (level[i - 1], level[i]) } else { (level[i], level[i - 1]) };
         debug_assert!(hi >= lo - 1e-9, "creek level rises toward the mouth at {i}");
         assert!(hi >= lo - 1e-6, "creek level rises toward the mouth at {i}: {lo} -> {hi}");
     }
-    // the cut at the wet edge: the crease depth plus whatever the descent cost
-    let d_edge: Vec<f64> = (0..n).map(|i| (g[i] - level[i]).max(0.05)).collect();
+    // --- the floor converges on the CREEK (2026-09-09) --------------------
+    // The valley stage slopes the floor at 5 % toward the TRUNK AXIS, and
+    // the creek wanders across that floor: 40 m off the axis the ground
+    // stands 2 m higher, so every bend read as a rise. The descent cost
+    // (ground minus level, beyond the crease's own depth) used to be paid
+    // as a narrow cut down the bank -- the "deep cut" family -- or, capped,
+    // as a pool that dammed the valley behind it (700234: the whole floor
+    // under water for 700 m). What the corpus section shows is the floor
+    // converging on the creek. So the excursion is regraded at that same
+    // 5 %: subtracted from the ground over a width of `ex / FLOOR_CONV_S`,
+    // texture kept, up to REGRADE_MAX; only a rise beyond that pools.
+    // Ablation: `CREEK_REGRADE=off`.
+    const REGRADE_MAX: f64 = 6.0;
+    let regrade_on = std::env::var("CREEK_REGRADE").map(|v| v != "off").unwrap_or(true);
+    let ex: Vec<f64> = (0..n).map(|i| if regrade_on {
+        (g[i] - level[i] - dep_n[i]).max(0.0).min(REGRADE_MAX)
+    } else { 0.0 }).collect();
+    // the cut at the wet edge: the crease depth plus whatever descent the
+    // regrade did not take
+    let d_edge: Vec<f64> = (0..n).map(|i| (g[i] - level[i] - ex[i]).max(0.05)).collect();
+    let mut rg = vec![0.0f64; spec.len()];
+    if regrade_on {
+        let conv_s = crate::assemble::FLOOR_CONV_S;
+        let mut rg_d = vec![f64::INFINITY; spec.len()];
+        let mut rg_i = vec![u32::MAX; spec.len()];
+        for i in 0..n {
+            if ex[i] < 0.05 { continue; }
+            let r = (ex[i] / conv_s).clamp(20.0, 150.0);
+            let rc = (r / cell).ceil() as i64;
+            let (cx, cy) = ((qs[i].x / cell).round() as i64, (qs[i].y / cell).round() as i64);
+            for gy in (cy - rc).max(0)..=(cy + rc).min(ny - 1) {
+                for gx in (cx - rc).max(0)..=(cx + rc).min(nx - 1) {
+                    let idx = spec.index(gx as u32, gy as u32);
+                    let dd = spec.world_of(gx as u32, gy as u32).distance(qs[i]);
+                    if dd < rg_d[idx] { rg_d[idx] = dd; rg_i[idx] = i as u32; }
+                }
+            }
+        }
+        let conv_w = crate::assemble::FLOOR_CONV_W;
+        for idx in 0..spec.len() {
+            if rg_i[idx] == u32::MAX { continue; }
+            let i = rg_i[idx] as usize;
+            let r = (ex[i] / conv_s).clamp(20.0, 150.0);
+            let dd = rg_d[idx];
+            // never below the converging floor's own target: a cell already
+            // at or under it is texture, and pushing it further put hollows
+            // under the water line beside the ribbon
+            let conv = if dd < conv_w { conv_s * dd - conv_s * dd * dd / (2.0 * conv_w) } else { 0.5 * conv_s * conv_w };
+            let target = level[i] + dep_n[i] + conv;
+            let want = ex[i] * (1.0 - math::smoothstep(0.0, 1.0, dd / r));
+            rg[idx] = want.min((h0[idx] - target).max(0.0));
+        }
+    }
+    let h0r: Vec<f64> = (0..spec.len()).map(|k| h0[k] - rg[k]).collect();
+    for idx in 0..spec.len() {
+        if rg[idx] > 0.0 && h0r[idx] < height.data[idx] {
+            height.data[idx] = h0r[idx];
+        }
+    }
+    let h0 = &h0r[..];
 
     // --- window and nearest station (segments) ----------------------------
     let reach_m = cfg.hw_clamp.1 * (1.0 + ASYM_HW) + BANK_CLAMP.1 * (1.0 + ASYM_BANK) + 2.0 * cell;
@@ -1588,27 +1653,33 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
         } else {
             let x = (dd - hw_c) / bank_c;
             if x >= 1.0 {
-                continue;                       // beyond the bank: untouched
+                f64::INFINITY                   // beyond the bank: not lowered
+            } else {
+                // the crease: the wet-edge cut falling to zero over the bank
+                // with a rounded lip, subtracted from the ground as it is
+                let dcut = d_edge[i] * (1.0 - math::smoothstep(0.0, 1.0, x));
+                let t = (h0[idx] - dcut).max(floor);
+                course_world::ease::smin(t, h0[idx], K_LIP)
             }
-            // the crease: the wet-edge cut falling to zero over the bank with
-            // a rounded lip, subtracted from the ground as it is
-            let dcut = d_edge[i] * (1.0 - math::smoothstep(0.0, 1.0, x));
-            let t = (h0[idx] - dcut).max(floor);
-            course_world::ease::smin(t, h0[idx], K_LIP)
         };
         if cand < height.data[idx] {
             height.data[idx] = cand;
             creek[idx] = true;
         }
-        // a bank cell carved below the water line is under water (the
-        // ribbon-edge "perched" family on the mixed run: floor-level cells
-        // just outside the wet half-width, 0.3 m below the surface)
-        if height.data[idx] < level[i] - 0.02 && surface.data[idx].is_nan() {
-            *wet_cells += 1;
-            surface.data[idx] = level[i];
+        // The bank stands at or above the water line. A texture hollow in
+        // the bank zone below the level was either left dry beside the water
+        // (the screen's "perched" edge, 37/45 fluvial tiles once the pool
+        // spread was confined to standing water) or wetted into a side pond
+        // at every bend. Neither is a creek bank: the hollow is filled to
+        // the water line plus a lip. Bounded by the texture, ~0.5 m. Over
+        // the whole window, not just the (scalloped) bank width: the hollows
+        // sat just beyond it.
+        if dd > hw_c + cell * 0.32 && height.data[idx] < level[i] + BANK_LIP {
+            height.data[idx] = level[i] + BANK_LIP;
+            creek[idx] = true;
         }
     }
-    level
+    (level, pooled)
 }
 
 /// Water standing beside the creek where the creek's level stands above the
@@ -1617,7 +1688,7 @@ fn creek_crease(height: &mut Grid<f64>, h0: &[f64], surface: &mut Grid<f64>,
 /// line. The fluvial build does this in its backwater pass; the aeolian
 /// build has no such pass, so it is done here.
 fn pool_beside(spec: &course_world::grid::GridSpec, ground: &[f64], surface: &mut Grid<f64>,
-               wet_cells: &mut usize, line: &[Vec2], level: &[f64], reach_m: f64) {
+               wet_cells: &mut usize, line: &[Vec2], level: &[f64], pooled: &[bool], reach_m: f64) {
     let cell = spec.cell_size;
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let mut st = vec![u32::MAX; spec.len()];
@@ -1640,16 +1711,20 @@ fn pool_beside(spec: &course_world::grid::GridSpec, ground: &[f64], surface: &mu
             if st[j] == u32::MAX { st[j] = st[i]; depth[j] = depth[i] + 1; q.push_back(j); }
         }
     }
-    // from the wet ribbon outward over ground below the local level
+    // from the wet ribbon outward over ground below the local level, only
+    // where the level is a pool's (the ribbon's own level over a hollow
+    // beside it is not standing water: that printed a side pond at every
+    // bend on the mixed run)
+    let is_pool = |j: usize| pooled[(st[j] as usize).min(pooled.len() - 1)];
     let mut q2: std::collections::VecDeque<usize> =
-        (0..spec.len()).filter(|i| st[*i] != u32::MAX && surface.data[*i].is_finite()).collect();
+        (0..spec.len()).filter(|i| st[*i] != u32::MAX && surface.data[*i].is_finite() && is_pool(*i)).collect();
     while let Some(i) = q2.pop_front() {
         let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
         for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
             let (a, b) = (x + dx, y + dy);
             if a < 0 || b < 0 || a >= nx || b >= ny { continue; }
             let j = spec.index(a as u32, b as u32);
-            if st[j] == u32::MAX { continue; }
+            if st[j] == u32::MAX || !is_pool(j) { continue; }
             let want = level[(st[j] as usize).min(level.len() - 1)];
             if ground[j] >= want - 0.02 { continue; }
             if surface.data[j].is_nan() {
@@ -2406,6 +2481,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // The creek's own centre-line, for the review overlay (`Water::river`).
     let mut creek_line: Option<Vec<Vec2>> = None;
     let mut creek_level: Option<Vec<f64>> = None;
+    let mut creek_pooled: Option<Vec<bool>> = None;
     for (ci, (pts, bed)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         // Only the TRUNK carries visible water. The tributaries were drawn
@@ -2708,14 +2784,16 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         }
         // The crease: a narrow irregular incision at the bottom of a floor
         // that the valley stage already slopes toward it (owner, 2026-09-02).
-        creek_level = Some(creek_crease(height, &h0, &mut surface, &mut creek, &mut wet_cells,
+        let (lv_c, pooled_c) = creek_crease(height, &h0, &mut surface, &mut creek, &mut wet_cells,
                     &qs, &arcs, &perps, &bends,
                     // Measured against the corpus section through the same
                     // pipeline: 0.55 m / 2.2 m rose 0.58 m by 4 m where the
                     // real creek rises 0.12; shallower and wider-banked.
                     &CreekCrease { hw, hw_clamp: (1.2, 3.6), depth: 0.35, bank_m: 4.5,
                                    salt: m_seed, mouth_first: zs.first() <= zs.last(),
-                                   cut_cap: 2.0 }));
+                                   cut_cap: 6.0 });
+        creek_level = Some(lv_c);
+        creek_pooled = Some(pooled_c);
     }
 
     // --- the water TABLE is retired ---------------------------------------
@@ -3621,6 +3699,13 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     continue;
                 }
                 let want = at[(st[i] as usize).min(n - 1)];
+                // only ground below the water line: the creek mask carries
+                // the carved BANK cells too, and setting a surface on a
+                // bank standing above the water made "wet" cells above
+                // their own water with dry hollows beside them
+                if height.data[i] >= want {
+                    continue;
+                }
                 if surface.data[i].is_nan() {
                     wet_cells += 1;
                     surface.data[i] = want;
@@ -3630,8 +3715,17 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     raised.push(i);
                 }
             }
+            // beside the ribbon only where the water is STANDING: behind an
+            // impoundment (the station raised above the crease's level) or
+            // behind a rise the crease pooled. The ribbon's own level over a
+            // hollow beside it is running water, and spreading it printed a
+            // side pond at every bend on the mixed run (2026-09-09).
+            let standing: Vec<bool> = (0..n).map(|k| {
+                at[k] > lv[k] + 0.05 || creek_pooled.as_ref().map_or(false, |p| p[k.min(p.len() - 1)])
+            }).collect();
             let w0 = wet_cells;
-            let mut q3: std::collections::VecDeque<usize> = raised.iter().copied().collect();
+            let mut q3: std::collections::VecDeque<usize> = raised.iter().copied()
+                .filter(|i| standing[(st[*i] as usize).min(n - 1)]).collect();
             while let Some(i) = q3.pop_front() {
                 let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
                 for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
@@ -3640,7 +3734,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                         continue;
                     }
                     let j = spec.index(a as u32, b as u32);
-                    if stv[j] == u32::MAX || dam_block[j] {
+                    if stv[j] == u32::MAX || dam_block[j] || !standing[(stv[j] as usize).min(n - 1)] {
                         continue;
                     }
                     let want = at[(stv[j] as usize).min(n - 1)];
@@ -4537,22 +4631,36 @@ mod incision {
 
     #[test]
     fn never_fills() {
-        // the carve never fills; the only raise allowed is a pond's berm,
-        // within 8 cells of standing water (see `berm`)
+        // the carve never fills; the raises allowed are a pond's berm (see
+        // `berm`) and the creek's bank lip (see `creek_crease`), both within
+        // 12 cells of water (the crease's window reaches ~12 m past the
+        // ribbon, and at the tile edge past the line's end)
         let (h0, h, w) = run();
         let spec = h.spec;
         let near_water = |i: usize| -> bool {
             let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
-            for dy in -8i64..=8 { for dx in -8i64..=8 {
+            for dy in -12i64..=12 { for dx in -12i64..=12 {
                 let (a, b) = (x + dx, y + dy);
                 if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64
                     && w.surface.data[spec.index(a as u32, b as u32)].is_finite() { return true; }
             } }
             false
         };
+        let nearest_water = |i: usize| -> f64 {
+            let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+            let mut best = f64::MAX;
+            for j in 0..spec.len() {
+                if w.surface.data[j].is_finite() {
+                    let (a, b) = ((j % spec.nx as usize) as i64, (j / spec.nx as usize) as i64);
+                    best = best.min((((a - x).pow(2) + (b - y).pow(2)) as f64).sqrt());
+                }
+            }
+            best
+        };
         for i in 0..h0.data.len() {
             if h.data[i] > h0.data[i] + 1e-9 {
-                assert!(near_water(i), "fill away from water at {i}: {} -> {}", h0.data[i], h.data[i]);
+                assert!(near_water(i), "fill away from water at {i} ({},{}): {} -> {}, nearest water {} cells",
+                        i % spec.nx as usize, i / spec.nx as usize, h0.data[i], h.data[i], nearest_water(i));
             }
         }
     }
@@ -4695,10 +4803,23 @@ mod slot_lowered_tests {
 
     #[test]
     fn never_fills() {
+        // the carve never fills; the one raise allowed is the bank lip, a
+        // hollow beside the ribbon brought to the water line, within 8
+        // cells of water (see `creek_crease`)
         for width in [9.0, 2.4] {
-            let (h0, h, _, _, _) = run(true, width);
+            let (h0, h, w, _, _) = run(true, width);
+            let spec = h.spec;
             for i in 0..h0.data.len() {
-                assert!(h.data[i] <= h0.data[i] + 1e-9, "fill at {i}");
+                if h.data[i] <= h0.data[i] + 1e-9 { continue; }
+                let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+                let mut near = false;
+                for dy in -8i64..=8 { for dx in -8i64..=8 {
+                    let (a, b) = (x + dx, y + dy);
+                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64
+                        && w.surface.data[spec.index(a as u32, b as u32)].is_finite() { near = true; }
+                } }
+                assert!(near, "fill away from water at {i}: {} -> {}", h0.data[i], h.data[i]);
+                assert!(h.data[i] - h0.data[i] < 1.5, "fill of {} m at {i}", h.data[i] - h0.data[i]);
             }
         }
     }

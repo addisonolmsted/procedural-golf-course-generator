@@ -617,3 +617,45 @@ small (0.1-0.3 ha) and next in line. Fluvial water share rose with the pools
 (six checked tiles 1.3-2.8 %, corpus p75 3.5 %). 79 tests green. Pages:
 after-screen https://claude.ai/code/artifact/47abbae2-1199-4919-abd1-a81e426ff43f,
 before/after https://claude.ai/code/artifact/62cb3f07-dbc2-4ab7-b253-ff6e07e473de.
+
+## 2026-09-09 — fix 4 revised: the floor converges on the creek, not pools
+
+Owner, on the levels viewer: "quite a few mini lakes running across the
+creek line ... not normal at this frequency". Confirmed on 700234: the cap
+rule pinned the level at a rise near the mouth and the running max behind
+it put the whole valley floor under water for 700 m (wet 1.0 → 3.1 % of the
+tile); on aeolian tiles the pool spread printed a side lobe at bends.
+
+Cause, one level down: the valley stage slopes the floor at 5 % toward the
+TRUNK AXIS and the creek wanders across it, so 40 m off the axis the ground
+stands 2 m higher and every bend read as a rise. The descent cost was paid
+either as a narrow cut (the deep-cut family) or, capped, as a lake.
+
+**What runs now** (`creek_crease`, toggle `CREEK_REGRADE=off`):
+- the excursion `ex = g − level − depth` (≤ 6 m) is REGRADED: subtracted
+  from the ground over a width `ex / FLOOR_CONV_S` (20–150 m) with a
+  smoothstep, never below the converging floor's own target
+  (`level + depth + conv(dist)`), texture kept — the corpus section's floor
+  converging on the creek, applied where the creek actually runs;
+- `cut_cap` is 6 m in both modes, so only a rise the regrade cannot take
+  pools; `creek_crease` returns which stations pooled, and standing water
+  spreads beside the ribbon only there (aeolian `pool_beside`) or behind an
+  impoundment (fluvial backwater) — the ribbon's own level over a hollow
+  beside it is running water, and spreading it was the side-pond source;
+- the backwater raise touches only cells whose ground lies below the water
+  line (the creek mask carries carved bank cells too, which were being
+  given a surface above their own ground);
+- the bank holds at the water line plus a 0.05 m lip across the whole
+  crease window, not just the scalloped bank width: a texture hollow beside
+  the ribbon is filled to the water line rather than left dry (perched) or
+  wetted (a side pond). Both never-fills tests allow that raise within 12
+  cells of water.
+
+**200 seeds** (`out/mix200_f4_capped` = fix 4 as first shipped → `_f4`):
+tiles flagged 11 → 6 (aeolian 2 → 0, fluvial 9 → 6); perched notable 11 → 6;
+deepcut stays 0; water bodies over 400 m² within 60 m of the creek per km
+back at the pre-fix-4 rate (fluvial p90 0.45 → 0.61, matching f3's 0.63);
+fluvial wet share median 2.55 → 1.31 % (f3 1.78; part of the drop is bank
+cells no longer counted as water). Pages republished at the same URLs:
+before/after https://claude.ai/code/artifact/62cb3f07-dbc2-4ab7-b253-ff6e07e473de,
+after-screen https://claude.ai/code/artifact/47abbae2-1199-4919-abd1-a81e426ff43f.
