@@ -729,3 +729,27 @@ to the dam's toe). 200 seeds (`out/mix200_f6`): flagged 4 → 0.
 
 Viewer https://claude.ai/code/artifact/237e16f8-58a1-46b2-af4e-73db1d7dbf2e; the final screen
 page (47abbae2) republished from this build.
+
+## 2026-09-09 — the dam is an embankment
+
+Owner, on the dam viewer: "sharp narrow land bridges into these lakes with
+steep slope". Confirmed on 700135: the berm ring was a single-cell ridge,
+and once the next pond's backwater reached its toe it stood as a needle
+across the lake with water on both sides; on 700403 a straight bar with a
+0.6 m crest.
+
+`embank` (water.rs): at the creek-line point nearest the dam station, a
+crest DAM_FREEBOARD (1.2 m) above the pond, DAM_CREST_HALF (2.5 m) either
+side of the dam line, faces at DAM_FACE (3:1) up- and downstream, run across
+the valley along the normal until the ground stands 0.5 m above the crest
+(at most `cap·1.8`). Ground is only raised; the wet ribbon plus one cell is
+kept through it as the spillway (the first cut kept the whole bank zone and
+left an 18 m notch). Cells raised above their water go dry. Chained ponds
+step down: a plan's level is capped 0.3 m below the pond upstream of it
+(700135 had the lower pond 0.25 m above the upper). The berm ring stays for
+the natural shore, where it is centimetres.
+
+200 seeds (`out/mix200_f7`): flagged 0/200; fluvial water share −0.02 pt
+(the dams' footprints). `never_fills` allows a dam's low tail to 40 cells.
+Viewer republished at https://claude.ai/code/artifact/237e16f8-58a1-46b2-af4e-73db1d7dbf2e,
+screen at 47abbae2.

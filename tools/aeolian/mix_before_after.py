@@ -61,6 +61,7 @@ def main():
     rb, ra = load_rows(db), load_rows(da)
     seeds = sorted(set(rb) & set(ra), key=int)
     key = (lambda s: abs(rb[s]["score"] - ra[s]["score"])) if pick == "score" else \
+          (lambda s: abs(rb[s]["wet_pct"] - ra[s]["wet_pct"])) if pick == "wet" else \
           (lambda s: abs(rb[s]["ha"][pick] - ra[s]["ha"][pick]))
     chosen = sorted(seeds, key=key, reverse=True)[:n_pick]
     cards, total = [], 0
