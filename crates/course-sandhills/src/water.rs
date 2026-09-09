@@ -3571,6 +3571,22 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     level = lvl;
                     cells = seeds.clone();
                 }
+                // The dam is made of earth (2026-09-09). It was a wall to the
+                // flood only, so the ground of the dam band stayed below the
+                // pond it held and the pond's edge along it was perched, and
+                // the reach just below the dam, backwatered by the next pond,
+                // ran wet between dry lower banks. `berm` raises the pond's
+                // dry ring to the level plus a lip, tapering at 30 %: on the
+                // natural shore that is nothing, on the dam band it is the
+                // dam. The creek's banks are kept, so the ribbon stays the
+                // spillway.
+                {
+                    let mut w = vec![false; spec.len()];
+                    for &i in &cells {
+                        w[i] = true;
+                    }
+                    berm(&spec, &mut height.data, &w, level, &creek_banks(&spec, &creek));
+                }
                 if std::env::var("NET_DEBUG").is_ok() {
                     eprintln!("  impoundment settle: {} -> {} cells, level {:.2} -> {:.2}{}", seeds.len(), cells.len(), lvl, level,
                               if dammed { " (dammed)" } else { "" });
@@ -3736,7 +3752,12 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                         continue;
                     }
                     let j = spec.index(a as u32, b as u32);
-                    if stv[j] == u32::MAX || dam_block[j] || !standing[(stv[j] as usize).min(n - 1)] {
+                    // the dam band is no longer a barrier here: the dam is
+                    // earth now (bermed above its pond), and the NEXT pond's
+                    // backwater legitimately stands up to its toe -- blocking
+                    // the band left the reach below a dam wet between dry
+                    // lower banks (700403)
+                    if stv[j] == u32::MAX || !standing[(stv[j] as usize).min(n - 1)] {
                         continue;
                     }
                     let want = at[(stv[j] as usize).min(n - 1)];

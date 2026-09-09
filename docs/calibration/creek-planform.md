@@ -692,3 +692,40 @@ then built the platform. Two fixes in `gorge.rs`:
 200 seeds (`out/mix200_f5`): levee reaches 2 → 0 tiles; flagged 6 → 4 (all
 fluvial, small pool-edge perched); deepcut 0; aeolian slope p99 unchanged.
 Pages republished at the same URLs (62cb3f07 before/after, 47abbae2 screen).
+
+## 2026-09-09 — item 5 measured; the last four perched tiles
+
+**Item 5, aeolian slopes, measured tier by tier** (2 m tiles split into a
+100 m belt tier, a 16 m hummock tier and the texture below it; real = the 24
+Nebraska dune tiles, ours = 12 river seeds built with `GORGE=off`):
+
+| tier, slope p50/p90/p99 % | real dune tiles | ours, gorge off |
+|---|---|---|
+| belt (100 m) | 5 / 12 / 19 | 4 / 16 / 31 |
+| hummock (16 m − 100 m) | 7 / 18 / 32 | 6 / 19 / 35 |
+| texture (2 m − 16 m) | 3 / 8 / 19 | 2 / 8 / 20 |
+| hummock std, m | 1.53 | 1.70 |
+| texture std, m | 0.26 | 0.27 |
+
+Texture and hummocks match the real tiles. The belt tier is the gap, and it
+is a FORM question: our Mound seeds (belt p99 24, relief 22 m) sit close to
+the real mound tiles (19, 19.5 m); our Train seeds (belt p99 36, relief
+67 m) are twice as steep as the other real tiles (18) with 40 % more relief
+(48 m). `dune_relief_m` for Train is drawn 32–74 m, "measured (course
+sites)" in record.rs, and that is a calibration decision the owner made
+against course sites, not these tiles — left alone, recorded here. The
+gorge adds the rest of the tile-wide excess (real river tiles are steeper
+than real dune tiles too: full p99 52 vs 44).
+
+**The last four flagged tiles** (all fluvial, perched 0.11–0.15 ha): the
+reach just below an impoundment's dam, backwatered by the next pond, ran
+wet between dry lower banks, and a pond's edge along its dam band was
+perched — the dam was a wall to the flood only, its ground below the water
+it held. Now every impoundment gets `berm` (its dry ring to the level plus
+a lip, 30 % taper, the creek's banks kept as the spillway), so the dam is
+earth, and the backwater spread no longer treats the dam band as a barrier
+(the berm holds the upper pond on its own; the lower pond's water stands up
+to the dam's toe). 200 seeds (`out/mix200_f6`): flagged 4 → 0.
+
+Viewer https://claude.ai/code/artifact/237e16f8-58a1-46b2-af4e-73db1d7dbf2e; the final screen
+page (47abbae2) republished from this build.

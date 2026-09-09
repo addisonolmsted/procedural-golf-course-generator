@@ -50,18 +50,18 @@ fn main() {
         tried += 1;
         let id = RunIdentity::from_seed(seed);
         let mode = draw::site(&id, None, None).mode;
-        let (height, water, river, lake_frac, bl) = match mode {
+        let (height, water, river, lake_frac, bl, river_z) = match mode {
             Mode::Aeolian => {
                 let t = build_full(&id, &apack, None);
                 let bl: String = t.blowouts.iter().map(|b| format!("{:.1} {:.1} {:.1} {:.1}\n",
                     b.center.x, b.center.y, b.radius_m, b.depth_m)).collect();
-                (t.height, t.water, t.river, t.lake_frac, bl)
+                (t.height, t.water, t.river, t.lake_frac, bl, None)
             }
             Mode::Fluvial => {
                 let (_, _, _, tex, w, bays) = build_fluvial_textured(&id, &prof, &fpack);
                 let bl: String = bays.iter().map(|b| format!("{:.1} {:.1} {:.1} {:.1}\n",
                     b.center.x, b.center.y, b.a_m.max(b.b_m), b.depth_m)).collect();
-                (tex, w.surface, w.river, w.lake_frac, bl)
+                (tex, w.surface, w.river, w.lake_frac, bl, w.river_z)
             }
         };
         if let Some(r) = river.filter(|r| r.len() > 1) {
@@ -71,6 +71,11 @@ fn main() {
             std::fs::write(out.join(format!("m_{seed}.creek.txt")), txt).unwrap();
             // blowouts / bays: x y radius depth, for the screen's diagnostics
             std::fs::write(out.join(format!("m_{seed}.blowouts.txt")), &bl).unwrap();
+            // the creek's water level per line point (fluvial), for diagnostics
+            if let Some(z) = &river_z {
+                let txt: String = z.iter().map(|v| format!("{v:.3}\n")).collect();
+                std::fs::write(out.join(format!("m_{seed}.creek_z.txt")), txt).unwrap();
+            }
             writeln!(index, "{seed} {} {lake_frac:.4}",
                      match mode { Mode::Aeolian => "aeolian", Mode::Fluvial => "fluvial" }).unwrap();
             kept += 1;
