@@ -249,8 +249,55 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     if std::env::var("GORGE").map(|v| v == "off").unwrap_or(false) {
         return None;
     }
-    let beds = carve::beds(rng, &net, &datum, &dg);
+    let mut beds = carve::beds(rng, &net, &datum, &dg);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
+    // The bed runs no higher than the ground beside it would let water stand
+    // (2026-09-09). The graded bed is measured off the routing datum, and
+    // where the trunk crosses a hummock with open low ground beside it the
+    // bed sat 12-15 m above that ground; filled to grade, the creek ran on a
+    // ridge (700200, 700775). A stream is the local minimum. So at each
+    // trunk station the bed is lowered to the lowest SPILL elevation within
+    // BED_LOW_R of it -- the level water beside the station would drain to
+    // -- and the profile is made monotone toward the mouth again, which is
+    // what carries a low crossed near the head down the rest of the trunk
+    // as a deeper cut. An enclosed pan keeps its rim above the bed and
+    // changes nothing. Ablation: `GORGE_BEDLOW=off`.
+    if std::env::var("GORGE_BEDLOW").map(|v| v != "off").unwrap_or(true) {
+        const BED_LOW_R: f64 = 100.0;
+        let spill = crate::water::fill_levels(&spec, &height.data, &vec![false; spec.len()], &vec![false; spec.len()]);
+        let rc = (BED_LOW_R / cell).ceil() as i64;
+        for (ci, (pts, bed)) in beds.iter_mut().enumerate() {
+            if tiers.get(ci).copied().unwrap_or(1) != 1 || pts.len() < 2 {
+                continue;
+            }
+            let mouth_last = bed[bed.len() - 1] <= bed[0];
+            let mut lowered = 0usize;
+            for k in 0..pts.len() {
+                let (cx, cy) = ((pts[k].x / cell).round() as i64, (pts[k].y / cell).round() as i64);
+                let mut s_min = f64::INFINITY;
+                for gy in (cy - rc).max(0)..=(cy + rc).min(spec.ny as i64 - 1) {
+                    for gx in (cx - rc).max(0)..=(cx + rc).min(spec.nx as i64 - 1) {
+                        if spec.world_of(gx as u32, gy as u32).distance(pts[k]) <= BED_LOW_R {
+                            s_min = s_min.min(spill[spec.index(gx as u32, gy as u32)]);
+                        }
+                    }
+                }
+                if s_min < bed[k] {
+                    bed[k] = s_min;
+                    lowered += 1;
+                }
+            }
+            // monotone toward the mouth again
+            if mouth_last {
+                for k in 1..bed.len() { bed[k] = bed[k].min(bed[k - 1]); }
+            } else {
+                for k in (0..bed.len() - 1).rev() { bed[k] = bed[k].min(bed[k + 1]); }
+            }
+            if std::env::var("NET_DEBUG").is_ok() {
+                eprintln!("gorge: bed lowered to the ground beside at {lowered}/{} stations", pts.len());
+            }
+        }
+    }
 
     // --- the cut: one valley per channel, min-composed --------------------
     // Nearest-channel attribution was the bug. It hands every cell to
@@ -532,8 +579,30 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         if target[i] < height.data[i] {
             height.data[i] = target[i];
         }
-        // ground below the graded floor, inside the trench: raise it
-        let below = fill_t[i] - height.data[i];
+    }
+    // The fill may not build a levee (2026-09-09). Filling a hollow on the
+    // trunk line up to the bed made a platform wherever the bed stood above
+    // the ground BESIDE the trench -- an interdune low, a pan -- and the
+    // creek then ran on a ridge 12-15 m above both flanks (700200, 700775;
+    // 2 of 155 river tiles). A stream is the local minimum. So the fill is
+    // capped at each cell's spill elevation on the cut surface (a priority
+    // flood from the tile edge): an enclosed hollow still fills to the bed,
+    // one open to lower ground fills only to its rim, and the creek's level
+    // then dips there and pools, which is what the low ground would do to
+    // it. Ablation: `GORGE_LEVEE=allow`.
+    let levee_cap = !std::env::var("GORGE_LEVEE").map(|v| v == "allow").unwrap_or(false);
+    let spill = if levee_cap {
+        let mut sp = crate::water::fill_levels(&spec, &height.data, &vec![false; spec.len()], &vec![false; spec.len()]);
+        blur_vec(&spec, &mut sp, 4);      // a rim, not a scarp, where the cap changes
+        sp
+    } else {
+        vec![f64::INFINITY; spec.len()]
+    };
+    for i in 0..spec.len() {
+        // ground below the graded floor, inside the trench: raise it, but
+        // never above what the ground around would hold
+        let cap = fill_t[i].min(spill[i] + 0.2);
+        let below = cap - height.data[i];
         if below > 0.0 && fill_w[i] > 0.0 {
             height.data[i] += fill_w[i] * below;
         }

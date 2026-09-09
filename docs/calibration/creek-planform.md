@@ -659,3 +659,36 @@ fluvial wet share median 2.55 → 1.31 % (f3 1.78; part of the drop is bank
 cells no longer counted as water). Pages republished at the same URLs:
 before/after https://claude.ai/code/artifact/62cb3f07-dbc2-4ab7-b253-ff6e07e473de,
 after-screen https://claude.ai/code/artifact/47abbae2-1199-4919-abd1-a81e426ff43f.
+
+## 2026-09-09 — two owner notes: water teeth, and a creek on a ridge
+
+**Teeth (700234).** A comb of wet cells 6–19 m off the ribbon, one station
+wide each, at successive stations' levels. The backwater's beside-spread
+was gated per station on `at > lv + 0.05`, and a station cell touching a
+berm or a lip lifts `at` by a few centimetres, so alternate stations
+qualified. Gate raised to a real impoundment rise (`STANDING_M` 0.30; the
+draw is 0.8–2.6 m), and the backwater raise touches only cells already wet.
+700234: wet cells 5–25 m off the line 60 → 0.
+
+**A creek on a ridge (700200, 700775).** True: 376 m and 832 m of creek stood
+12–15 m above BOTH flanks at 60–120 m. Not something a stream does (an
+alluvial ridge on a floodplain is decimetres). Cause: the graded bed is
+measured off the routing datum, and where the trunk crosses a hummock with
+open low ground beside it the bed sat above that ground; the fill-to-grade
+then built the platform. Two fixes in `gorge.rs`:
+- the trunk bed runs no higher than the lowest spill elevation within 100 m
+  of each station (a priority flood of the pre-cut macro from the tile
+  edge), then monotone toward the mouth again (`GORGE_BEDLOW=off`). An
+  enclosed pan keeps its rim above the bed and is untouched; an open low
+  pulls the bed down and the rest of the trunk deepens to carry it. On the
+  two tiles the trunk dropped 15–19 m and the valley deepened ~10 m at 400 m;
+  over all 155 river tiles the median valley depth is unchanged (45.2 m,
+  real Dismal 46–54), two tiles deepened by more than 5 m.
+- the fill-to-grade is capped at each cell's (blurred) spill elevation
+  (`GORGE_LEVEE=allow`), so it can never stand above lower ground beside it.
+  A first version without the bed lowering left a flat terrace with a scarp
+  (700200 flagged `flat` 2.3 ha); recorded, not kept.
+
+200 seeds (`out/mix200_f5`): levee reaches 2 → 0 tiles; flagged 6 → 4 (all
+fluvial, small pool-edge perched); deepcut 0; aeolian slope p99 unchanged.
+Pages republished at the same URLs (62cb3f07 before/after, 47abbae2 screen).

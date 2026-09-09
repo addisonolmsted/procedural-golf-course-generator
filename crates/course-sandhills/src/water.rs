@@ -74,7 +74,7 @@ fn settle_on() -> bool {
     std::env::var("WATER_SETTLE").map(|v| v != "off").unwrap_or(true)
 }
 
-fn fill_levels(spec: &course_world::grid::GridSpec, ground: &[f64], sink: &[bool],
+pub(crate) fn fill_levels(spec: &course_world::grid::GridSpec, ground: &[f64], sink: &[bool],
                wall: &[bool]) -> Vec<f64> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
@@ -3699,18 +3699,16 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
                     continue;
                 }
                 let want = at[(st[i] as usize).min(n - 1)];
-                // only ground below the water line: the creek mask carries
-                // the carved BANK cells too, and setting a surface on a
-                // bank standing above the water made "wet" cells above
-                // their own water with dry hollows beside them
-                if height.data[i] >= want {
+                // only cells ALREADY wet -- the ribbon -- are raised. The
+                // creek mask carries the carved bank cells too; wetting a
+                // dry bank cell wherever the station's level stood a few
+                // centimetres above its lip printed a comb of wet teeth
+                // beside the ribbon (700234). Dry ground beside standing
+                // water is wet by the spread below, behind a pool or a dam.
+                if surface.data[i].is_nan() || height.data[i] >= want {
                     continue;
                 }
-                if surface.data[i].is_nan() {
-                    wet_cells += 1;
-                    surface.data[i] = want;
-                    raised.push(i);
-                } else if surface.data[i] < want - 1e-9 {
+                if surface.data[i] < want - 1e-9 {
                     surface.data[i] = want;
                     raised.push(i);
                 }
@@ -3720,8 +3718,12 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             // behind a rise the crease pooled. The ribbon's own level over a
             // hollow beside it is running water, and spreading it printed a
             // side pond at every bend on the mixed run (2026-09-09).
+            // an impoundment raises the water by 0.8 m or more; a few
+            // centimetres is a station cell touching a berm or a lip, and
+            // gating on that wet alternate stations' floor cells in a comb
+            const STANDING_M: f64 = 0.30;
             let standing: Vec<bool> = (0..n).map(|k| {
-                at[k] > lv[k] + 0.05 || creek_pooled.as_ref().map_or(false, |p| p[k.min(p.len() - 1)])
+                at[k] > lv[k] + STANDING_M || creek_pooled.as_ref().map_or(false, |p| p[k.min(p.len() - 1)])
             }).collect();
             let w0 = wet_cells;
             let mut q3: std::collections::VecDeque<usize> = raised.iter().copied()
