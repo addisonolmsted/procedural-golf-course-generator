@@ -212,63 +212,39 @@ fn berm(spec: &course_world::grid::GridSpec, ground: &mut [f64], wet: &[bool], l
     }
 }
 
-/// The creek's ribbon grown by three cells: its banks, which no berm may raise.
-fn creek_banks(spec: &course_world::grid::GridSpec, creek: &[bool]) -> Vec<bool> {
-    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
-    let mut out = creek.to_vec();
-    for _ in 0..3 {
-        let src = out.clone();
-        for y in 0..ny {
-            for x in 0..nx {
-                let i = spec.index(x as u32, y as u32);
-                if src[i] {
-                    continue;
-                }
-                for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
-                    let (a, b) = (x + dx, y + dy);
-                    if a >= 0 && b >= 0 && a < nx && b < ny && src[spec.index(a as u32, b as u32)] {
-                        out[i] = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    out
-}
+/// The earth dam's numbers: freeboard over the pond, half the crest width,
+/// and the face grade (3:1) both ways.
+const DAM_FREEBOARD: f64 = 1.2;
+const DAM_CREST_HALF: f64 = 2.5;
+const DAM_FACE: f64 = 0.33;
 
-/// An earth dam across the valley at the creek-line point `kd`: a crest
-/// DAM_FREEBOARD above the pond, DAM_CREST_HALF wide either side of the dam
-/// line, faces falling at DAM_FACE (3:1) up- and downstream, run across the
-/// valley (along the normal) until the ground already stands above the
-/// crest, at most `cap * 1.8`. Ground is only ever raised. Cells in `keep`
-/// (the creek's banks) are left: the ribbon is the spillway.
-fn embank(spec: &course_world::grid::GridSpec, ground: &mut [f64], line: &[Vec2], kd: usize,
-          down: i64, level: f64, cap: f64, keep: &[bool]) {
-    // a small earth dam: 1.2 m of freeboard, a 5 m crest, 3:1 faces
-    const DAM_FREEBOARD: f64 = 1.2;
-    const DAM_CREST_HALF: f64 = 2.5;
-    const DAM_FACE: f64 = 0.33;
-    let cell = spec.cell_size;
-    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+/// The dam's frame at creek-line point `kd`: the point, the unit tangent
+/// pointing downstream (`down` is the line's downstream index direction),
+/// and the valley normal.
+fn dam_axes(line: &[Vec2], kd: usize, down: i64) -> Option<(Vec2, Vec2, Vec2)> {
     let n = line.len();
     let (a, b) = (line[kd.saturating_sub(3)], line[(kd + 3).min(n - 1)]);
     let mut t = Vec2::new(b.x - a.x, b.y - a.y);
     let tl = (t.x * t.x + t.y * t.y).sqrt();
     if tl < 1e-6 {
-        return;
+        return None;
     }
     t = Vec2::new(t.x / tl * down as f64, t.y / tl * down as f64);
-    let nrm = Vec2::new(-t.y, t.x);
-    let p0 = line[kd];
-    let crest = level + DAM_FREEBOARD;
-    // how far across the valley the dam runs, each side: to the abutment
+    Some((line[kd], t, Vec2::new(-t.y, t.x)))
+}
+
+/// How far the dam runs across the valley each side of `p0` along `nrm`
+/// before the ground stands half a metre above the crest: the abutments.
+/// `reach` when it never does within it.
+fn dam_extent(spec: &course_world::grid::GridSpec, ground: &[f64], p0: Vec2, nrm: Vec2,
+              crest: f64, reach: f64) -> [f64; 2] {
+    let cell = spec.cell_size;
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let sample = |q: Vec2| -> f64 {
         let (x, y) = ((q.x / cell).round() as i64, (q.y / cell).round() as i64);
         if x < 0 || y < 0 || x >= nx || y >= ny { return f64::INFINITY; }
         ground[spec.index(x as u32, y as u32)]
     };
-    let reach = cap * 1.8;
     let mut ext = [reach, reach];
     for (si, sgn) in [(0usize, -1.0f64), (1, 1.0)] {
         let mut v = 0.0;
@@ -281,15 +257,31 @@ fn embank(spec: &course_world::grid::GridSpec, ground: &mut [f64], line: &[Vec2]
         }
         ext[si] = v;
     }
+    ext
+}
+
+/// An earth dam across the valley at the creek-line point `kd`: a crest
+/// DAM_FREEBOARD above the pond, DAM_CREST_HALF wide either side of the dam
+/// line, faces falling at DAM_FACE (3:1) up- and downstream, run across the
+/// valley (along the normal) until the ground already stands above the
+/// crest, at most `reach` each side. Ground is only ever raised. Cells in
+/// `weir` (the creek's wet ribbon) are raised no higher than the pond's
+/// level: the ribbon crosses the dam as a broad-crested weir and falls down
+/// its face, not as a slot to the bed. Returns the weir cells raised.
+fn embank(spec: &course_world::grid::GridSpec, ground: &mut [f64], line: &[Vec2], kd: usize,
+          down: i64, level: f64, reach: f64, weir: &[bool]) -> Vec<usize> {
+    let cell = spec.cell_size;
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let Some((p0, t, nrm)) = dam_axes(line, kd, down) else { return Vec::new() };
+    let crest = level + DAM_FREEBOARD;
+    let ext = dam_extent(spec, ground, p0, nrm, crest, reach);
     let half_u = DAM_CREST_HALF + (crest - (level - 6.0)).max(0.0) / DAM_FACE;   // never wider than a 6 m-tall face
     let r = ((reach.max(half_u) + 2.0 * cell) / cell).ceil() as i64;
     let (cx, cy) = ((p0.x / cell).round() as i64, (p0.y / cell).round() as i64);
+    let mut raised_weir: Vec<usize> = Vec::new();
     for gy in (cy - r).max(0)..=(cy + r).min(ny - 1) {
         for gx in (cx - r).max(0)..=(cx + r).min(nx - 1) {
             let i = spec.index(gx as u32, gy as u32);
-            if keep[i] {
-                continue;
-            }
             let q = spec.world_of(gx as u32, gy as u32);
             let d = Vec2::new(q.x - p0.x, q.y - p0.y);
             let u = d.x * t.x + d.y * t.y;          // along the creek, + downstream
@@ -298,14 +290,200 @@ fn embank(spec: &course_world::grid::GridSpec, ground: &mut [f64], line: &[Vec2]
             if v.abs() > side + cell {
                 continue;
             }
-            let target = crest - DAM_FACE * (u.abs() - DAM_CREST_HALF).max(0.0);
+            let mut target = crest - DAM_FACE * (u.abs() - DAM_CREST_HALF).max(0.0);
+            if weir[i] {
+                target = target.min(level - 0.02);
+            }
             if target > ground[i] {
                 ground[i] = target;
+                if weir[i] {
+                    raised_weir.push(i);
+                }
             }
         }
     }
+    raised_weir
 }
-
+/// A pond behind ONE earth dam on a creek: the construction-stage feature
+/// (built 2026-09-13 for the terrain, moved out of it the same day -- see
+/// `fluvial`). Given the creek's line and water level per point, a station
+/// `kd0` on it, and the pond's `rise` over the creek at the dam, the dam
+/// is placed at the NARROWEST valley section within `DAM_WINDOW_M` of the
+/// station (a short dam holds a lot of water; a flat would need a ring),
+/// the pond is a 4-neighbour flood of the untouched ground below the level
+/// from the creek just upstream of the dam plane, and the level is lowered
+/// -- a lower dam -- until the pond holds `POND_MIN_HA..=max_ha`. The
+/// embankment (`embank`) is then raised and every flooded cell below the
+/// level is wet at it; the creek's ribbon crosses the dam as a weir at the
+/// pond's level. `level_cap` bounds the level (a pond downstream of another
+/// may not stand above it). Returns the level and the dam's length, or
+/// None when no candidate within `DAM_TRIES` holds a pond. Nothing is ever
+/// bermed: a site that cannot hold a pond is passed over.
+pub fn impound(height: &mut Grid<f64>, surface: &mut Grid<f64>, creek: &[bool],
+               line: &[Vec2], lv: &[f64], kd0: usize, rise: f64, max_ha: f64,
+               level_cap: f64) -> Option<(f64, f64)> {
+    const POND_MIN_HA: f64 = 0.2;
+    const DAM_WINDOW_M: f64 = 200.0;     // candidate stations either side of the drawn one
+    const DAM_STEP_M: f64 = 8.0;         // candidate spacing along the line
+    const DAM_REACH_M: f64 = 240.0;      // the abutment search, each side
+    const DAM_MAX_M: f64 = 220.0;        // PROVISIONAL: longest dam accepted, both sides together
+    const DAM_TRIES: usize = 6;          // narrowest candidates tried
+    let spec = height.spec;
+    let cell = spec.cell_size;
+    let n = line.len();
+    if n < 3 || lv.len() != n {
+        return None;
+    }
+    let up_dir: i64 = if lv.first() <= lv.last() { 1 } else { -1 };   // index direction that climbs
+    let ddown = -up_dir;
+    let mut arc = vec![0.0f64; n];
+    for k in 1..n {
+        arc[k] = arc[k - 1] + line[k].distance(line[k - 1]);
+    }
+    let cap_cells = (max_ha * 1e4 / (cell * cell)) as usize;
+    let min_cells = (POND_MIN_HA * 1e4 / (cell * cell)) as usize;
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    // candidates every DAM_STEP_M of arc within the window, ranked by the
+    // dam's length at the drawn crest
+    let mut cands: Vec<(f64, usize)> = Vec::new();
+    let mut bucket_seen: Vec<i64> = Vec::new();
+    for k in 0..n {
+        let da = arc[k] - arc[kd0.min(n - 1)];
+        if da.abs() > DAM_WINDOW_M {
+            continue;
+        }
+        let bucket = (da / DAM_STEP_M).round() as i64;
+        if bucket_seen.contains(&bucket) {
+            continue;
+        }
+        bucket_seen.push(bucket);
+        let level_hi = (lv[k] + rise).min(level_cap);
+        if level_hi < lv[k] + 0.3 {
+            continue;
+        }
+        let Some((p0, _t, nrm)) = dam_axes(line, k, ddown) else { continue };
+        let ext = dam_extent(&spec, &height.data, p0, nrm, level_hi + DAM_FREEBOARD, DAM_REACH_M);
+        if ext[0] >= DAM_REACH_M || ext[1] >= DAM_REACH_M {
+            continue;           // no abutment: the valley is open here
+        }
+        if ext[0] + ext[1] > DAM_MAX_M {
+            continue;
+        }
+        cands.push((ext[0] + ext[1], k));
+    }
+    cands.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    for &(dam_len, k) in cands.iter().take(DAM_TRIES) {
+        let level_hi = (lv[k] + rise).min(level_cap);
+        let Some((p0, t, nrm)) = dam_axes(line, k, ddown) else { continue };
+        let ext = dam_extent(&spec, &height.data, p0, nrm, level_hi + DAM_FREEBOARD, DAM_REACH_M);
+        // the flood's seed: the lowest cell about the line, far enough
+        // upstream to clear the dam plane
+        let mut ks = k as i64;
+        while (arc[ks as usize] - arc[k]).abs() < 3.0 * cell
+            && ks + up_dir >= 0 && ks + up_dir < n as i64 {
+            ks += up_dir;
+        }
+        let ps = line[ks as usize];
+        let (sx, sy) = ((ps.x / cell).round() as i64, (ps.y / cell).round() as i64);
+        let mut seed_cell: Option<usize> = None;
+        for gy in (sy - 1).max(0)..=(sy + 1).min(ny - 1) {
+            for gx in (sx - 1).max(0)..=(sx + 1).min(nx - 1) {
+                let i = spec.index(gx as u32, gy as u32);
+                if seed_cell.map_or(true, |s| height.data[i] < height.data[s]) {
+                    seed_cell = Some(i);
+                }
+            }
+        }
+        let Some(seed_cell) = seed_cell else { continue };
+        // the pond at a level: every cell below it connected to the seed
+        // without crossing the dam plane; None when it would run off the
+        // tile or past three times the cap -- the ground does not hold it
+        let flood = |level: f64| -> Option<Vec<usize>> {
+            if height.data[seed_cell] >= level {
+                return None;
+            }
+            let barrier = |i: usize| -> bool {
+                let q = spec.world_of((i % spec.nx as usize) as u32, (i / spec.nx as usize) as u32);
+                let d = Vec2::new(q.x - p0.x, q.y - p0.y);
+                let u = d.x * t.x + d.y * t.y;
+                let v = d.x * nrm.x + d.y * nrm.y;
+                let side = if v < 0.0 { ext[0] } else { ext[1] };
+                u.abs() <= 1.5 * cell && v.abs() <= side + cell
+            };
+            let mut seen = vec![false; spec.len()];
+            let mut stack = vec![seed_cell];
+            let mut cells: Vec<usize> = Vec::new();
+            seen[seed_cell] = true;
+            while let Some(i) = stack.pop() {
+                cells.push(i);
+                if cells.len() > 3 * cap_cells {
+                    return None;
+                }
+                let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+                if x == 0 || y == 0 || x == nx - 1 || y == ny - 1 {
+                    return None;
+                }
+                for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                    let j = spec.index((x + dx) as u32, (y + dy) as u32);
+                    if seen[j] || height.data[j] >= level || barrier(j) {
+                        continue;
+                    }
+                    seen[j] = true;
+                    stack.push(j);
+                }
+            }
+            Some(cells)
+        };
+        // the drawn level if the ground holds it within the cap; otherwise
+        // the highest level it does hold, by bisection between the creek's
+        // water plus a hand and the drawn one
+        let mut best: Option<(f64, Vec<usize>)> = None;
+        let (mut lo, mut hi) = (lv[k] + 0.3, level_hi);
+        match flood(hi) {
+            Some(c) if c.len() <= cap_cells => best = Some((hi, c)),
+            _ => {
+                for _ in 0..7 {
+                    let mid = 0.5 * (lo + hi);
+                    match flood(mid) {
+                        Some(c) if c.len() <= cap_cells => {
+                            lo = mid;
+                            best = Some((mid, c));
+                        }
+                        _ => hi = mid,
+                    }
+                }
+            }
+        }
+        let Some((level, cells)) = best else { continue };
+        if cells.len() < min_cells {
+            continue;             // a puddle behind a dam is not a pond
+        }
+        // the dam, then the water: the embankment's upstream face rises out
+        // of the pond, so a flooded cell it raised above the level is the
+        // dam, not water
+        let weir: Vec<bool> = (0..spec.len()).map(|i| creek[i] && surface.data[i].is_finite()).collect();
+        let raised = embank(&spec, &mut height.data, line, k, ddown, level, DAM_REACH_M, &weir);
+        for &i in &cells {
+            if height.data[i] < level {
+                surface.data[i] = if surface.data[i].is_nan() { level } else { surface.data[i].max(level) };
+            }
+        }
+        // the weir carries a sheet of water over the crest and down the
+        // face to the creek below
+        for &i in &raised {
+            surface.data[i] = if surface.data[i].is_nan() { height.data[i] + 0.03 }
+                              else { surface.data[i].max(height.data[i] + 0.03) };
+        }
+        // ground standing above its water is dry: the dam's footprint
+        for i in 0..spec.len() {
+            if surface.data[i].is_finite() && height.data[i] > surface.data[i] + 0.02 {
+                surface.data[i] = f64::NAN;
+            }
+        }
+        return Some((level, dam_len));
+    }
+    None
+}
 pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             river: Option<&Drawdown>, blowouts: &[crate::blowout::Blowout]) -> Water {
     let spec = height.spec;
@@ -2875,152 +3053,17 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // water now comes only from closed depressions (below), which is where
     // it comes from on the real tiles.
 
-    // --- PONDS IN CLOSED DEPRESSIONS ---------------------------------------
-    // Real Carolina interfluves DO hold standing water away from the trunk:
-    // measured over 8 kept tiles, closed depressions cover 0.24% of a tile
-    // on the interfluves alone (up to 0.68%), reaching 2.3 ha and 2.7 m
-    // deep. That is bay country — a bay floor is exactly such a pit — so
-    // rather than placing ponds, we FIND them: fill the surface, and
-    // whatever the fill had to raise is a basin that would hold water.
-    //
-    // Done at 8 m: a pond smaller than a few cells is not a pond, and the
-    // fill is far cheaper there.
-    let step = (8.0 / cell).round().max(1.0) as usize;
-    let (nx8, ny8) = ((spec.nx as usize).div_ceil(step), (spec.ny as usize).div_ceil(step));
-    let mut z8 = vec![0.0f64; nx8 * ny8];
-    for y in 0..ny8 {
-        for x in 0..nx8 {
-            let sx = (x * step).min(spec.nx as usize - 1) as u32;
-            let sy = (y * step).min(spec.ny as usize - 1) as u32;
-            z8[y * nx8 + x] = height.data[spec.index(sx, sy)];
-        }
-    }
-    // Planchon-Darboux: start high everywhere but the border, then let the
-    // surface drain down to its neighbours until nothing moves.
-    let hi = z8.iter().cloned().fold(f64::MIN, f64::max) + 10.0;
-    let mut f: Vec<f64> = (0..nx8 * ny8)
-        .map(|i| {
-            let (x, y) = (i % nx8, i / nx8);
-            if x == 0 || y == 0 || x == nx8 - 1 || y == ny8 - 1 { z8[i] } else { hi }
-        })
-        .collect();
-    let eps = 1e-4;
-    for _ in 0..200 {
-        let mut moved = false;
-        for pass in 0..2 {
-            let order: Vec<usize> = if pass == 0 {
-                (0..nx8 * ny8).collect()
-            } else {
-                (0..nx8 * ny8).rev().collect()
-            };
-            for i in order {
-                if f[i] <= z8[i] {
-                    continue;
-                }
-                let (x, y) = ((i % nx8) as i64, (i / nx8) as i64);
-                let mut lowest = f64::MAX;
-                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                    let (a, b) = (x + dx, y + dy);
-                    if a >= 0 && b >= 0 && a < nx8 as i64 && b < ny8 as i64 {
-                        lowest = lowest.min(f[b as usize * nx8 + a as usize]);
-                    }
-                }
-                let cand = (lowest + eps).max(z8[i]);
-                if cand < f[i] - 1e-9 {
-                    f[i] = cand;
-                    moved = true;
-                }
-            }
-        }
-        if !moved {
-            break;
-        }
-    }
-    // A pit is only a pond if it is both DEEP enough and BIG enough. Without
-    // the area test the fill returns every texture-scale hollow and the tile
-    // floods: measured, 7-11% of the tile against real tiles' 0.5-2.5% of
-    // closed depression at the same depth threshold.
-    // Raised 2026-08-27 with the wider valley floors. Widening the floor to
-    // the corpus 274 m left far more flat low ground, and a fill-based pond
-    // test finds every shallow dip in it: measured wet fraction went to
-    // 1.4-5.0% against a corpus 0.5-2.5%. The gate is a DEPTH, so it is the
-    // right thing to raise — a 1 m dip on a 270 m floodplain is damp ground,
-    // not a lake.
-    let pond_min = rng.range_f64(1.55, 2.20);
-    let mut pit = vec![false; nx8 * ny8];
-    for i in 0..nx8 * ny8 {
-        pit[i] = f[i] - z8[i] >= pond_min;
-    }
-    // connected-component area filter, 4-neighbour flood
-    let min_cells = 190usize;                    // ≈ 1.2 ha at 8 m
-    let mut keep = vec![false; nx8 * ny8];
-    let mut seen = vec![false; nx8 * ny8];
-    for start in 0..nx8 * ny8 {
-        if !pit[start] || seen[start] {
-            continue;
-        }
-        let mut stack = vec![start];
-        let mut comp = Vec::new();
-        seen[start] = true;
-        while let Some(k) = stack.pop() {
-            comp.push(k);
-            let (x, y) = ((k % nx8) as i64, (k / nx8) as i64);
-            for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                let (a, b) = (x + dx, y + dy);
-                if a < 0 || b < 0 || a >= nx8 as i64 || b >= ny8 as i64 {
-                    continue;
-                }
-                let m = b as usize * nx8 + a as usize;
-                if pit[m] && !seen[m] {
-                    seen[m] = true;
-                    stack.push(m);
-                }
-            }
-        }
-        // Where a pit sits matters as much as its size. Real interfluve
-        // depressions are RARE — 0.05-0.68% of a tile against 0.48-2.46%
-        // for the tile as a whole — so upland pits have to clear a much
-        // higher bar than valley ones, which is also what a bay floor
-        // does: large and properly basined, not a hollow in the fabric.
-        if comp.len() < min_cells {
-            continue;
-        }
-        let mut u_sum = 0.0;
-        let mut deepest = 0.0f64;
-        for &k in &comp {
-            let (bx, by) = (k % nx8, k / nx8);
-            let wx = bx as f64 * cell * step as f64;
-            let wy = by as f64 * cell * step as f64;
-            u_sum += u_field.bilinear(Vec2::new(wx, wy));
-            deepest = deepest.max(f[k] - z8[k]);
-        }
-        let u_mean = u_sum / comp.len() as f64;
-        let ok = if u_mean < 0.55 {
-            true                                   // valley floor: ordinary
-        } else {
-            comp.len() >= 230 && deepest >= 1.3    // upland: ≈1.5 ha and deep
-        };
-        if ok {
-            for k in comp {
-                keep[k] = true;
-            }
-        }
-    }
-    // The pond LEVEL is interpolated back to 2 m, not sampled per 8 m cell:
-    // nearest-cell sampling gave the shorelines an 8 m staircase.
-    let lvl_at = |wx: f64, wy: f64| -> f64 {
-        let gx = (wx / (cell * step as f64)).clamp(0.0, (nx8 - 1) as f64);
-        let gy = (wy / (cell * step as f64)).clamp(0.0, (ny8 - 1) as f64);
-        let (x0, y0) = (gx.floor() as usize, gy.floor() as usize);
-        let (x1, y1) = ((x0 + 1).min(nx8 - 1), (y0 + 1).min(ny8 - 1));
-        let (tx, ty) = (gx - x0 as f64, gy - y0 as f64);
-        let a = f[y0 * nx8 + x0] * (1.0 - tx) + f[y0 * nx8 + x1] * tx;
-        let b = f[y1 * nx8 + x0] * (1.0 - tx) + f[y1 * nx8 + x1] * tx;
-        a * (1.0 - ty) + b * ty
-    };
-    // Ponds belong OFF the trunk. Filling depressions along the main valley
-    // floor is what turned the trunk into one long lake (review); the trunk
-    // gets its wet reaches and nothing more.
+    // --- NO PONDS IN CLOSED DEPRESSIONS (2026-09-13) -----------------------
+    // Fluvial standing water is the dammed creek reach (below) and nothing
+    // else. Ponds FOUND by filling closed depressions were never capped:
+    // on the fresh 200-seed run (seeds 800000+) they ran to 22 ha against
+    // the corpus's 0.2-4 ha, the opening and compactness passes smoothed
+    // their outlines into cut-outs, and a depression that would not hold
+    // its level was bermed all the way round. The owner asked for the
+    // feature to go (2026-09-13). The depth draw is kept in its place so
+    // every later draw keeps its value.
+    let _pond_min = rng.range_f64(1.55, 2.20);
+    // The trunk zone: the backwater (below) spreads only within it.
     let mut trunkzone = vec![false; spec.len()];
     for (ci, (pts, _)) in beds.iter().enumerate() {
         if tiers.get(ci).copied().unwrap_or(1) != 1 {
@@ -3039,343 +3082,9 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             }
         }
     }
-    let mut pond = vec![false; spec.len()];
-    let mut pond_lvl = vec![0.0f64; spec.len()];
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let i = spec.index(x, y);
-            if trunkzone[i] {
-                continue;
-            }
-            let (bx, by) = ((x as usize / step).min(nx8 - 1), (y as usize / step).min(ny8 - 1));
-            let j = by * nx8 + bx;
-            if !keep[j] {
-                continue;
-            }
-            let wp = spec.world_of(x, y);
-            let lvl = lvl_at(wp.x, wp.y);
-            if height.data[i] < lvl {
-                pond[i] = true;
-                pond_lvl[i] = lvl;
-            }
-        }
-    }
-
-    // --- OPEN the pond mask ------------------------------------------------
-    // Filled depressions grow hairline fingers up every little draw, and
-    // some of them hang off otherwise good lakes (review). A morphological
-    // OPENING — erode, then dilate by the same radius — deletes anything
-    // narrower than the kernel and leaves everything wider untouched, which
-    // is exactly the distinction wanted, and it costs two passes rather than
-    // a boundary analysis. The CREEK is not opened: it is legitimately
-    // narrower than this and is added afterwards.
-    let orad = 4i64;                             // removes < ~16 m of width
-    let mut eroded = vec![false; spec.len()];
-    for y in 0..spec.ny as i64 {
-        for x in 0..spec.nx as i64 {
-            let mut all = true;
-            'e: for dy in -orad..=orad {
-                for dx in -orad..=orad {
-                    if dx * dx + dy * dy > orad * orad {
-                        continue;
-                    }
-                    let (a, b) = (x + dx, y + dy);
-                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64
-                        || !pond[spec.index(a as u32, b as u32)]
-                    {
-                        all = false;
-                        break 'e;
-                    }
-                }
-            }
-            eroded[spec.index(x as u32, y as u32)] = all;
-        }
-    }
-    let mut opened = vec![false; spec.len()];
-    for y in 0..spec.ny as i64 {
-        for x in 0..spec.nx as i64 {
-            if !eroded[spec.index(x as u32, y as u32)] {
-                continue;
-            }
-            for dy in -orad..=orad {
-                for dx in -orad..=orad {
-                    if dx * dx + dy * dy > orad * orad {
-                        continue;
-                    }
-                    let (a, b) = (x + dx, y + dy);
-                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
-                        opened[spec.index(a as u32, b as u32)] = true;
-                    }
-                }
-            }
-        }
-    }
-
-    // --- COMPACTNESS: a pond is a basin, not a contour worm ----------------
-    // Opening removes what is thin everywhere, but a 25 m x 350 m ribbon
-    // wrapped around a hillside survives it and still is not a pond: it is a
-    // level line grazing a slope. The shape test is area against the biggest
-    // disk that fits inside — pi for a circle, ~4pi for a 4:1 ellipse, 30+
-    // for the worms on seed 105 — which separates basins from slope grazes
-    // without touching a compact lake of any size.
-    {
-        let big = 1e9f64;
-        let mut dt: Vec<f64> = opened.iter().map(|&w| if w { big } else { 0.0 }).collect();
-        let (dx1, dx2) = (cell, cell * std::f64::consts::SQRT_2);
-        for y in 0..spec.ny as i64 {
-            for x in 0..spec.nx as i64 {
-                let i = spec.index(x as u32, y as u32);
-                if dt[i] == 0.0 {
-                    continue;
-                }
-                let mut m = dt[i];
-                for (ox, oy, w) in [(-1i64, 0i64, dx1), (0, -1, dx1), (-1, -1, dx2), (1, -1, dx2)] {
-                    let (a, b) = (x + ox, y + oy);
-                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
-                        m = m.min(dt[spec.index(a as u32, b as u32)] + w);
-                    }
-                }
-                dt[i] = m;
-            }
-        }
-        for y in (0..spec.ny as i64).rev() {
-            for x in (0..spec.nx as i64).rev() {
-                let i = spec.index(x as u32, y as u32);
-                if dt[i] == 0.0 {
-                    continue;
-                }
-                let mut m = dt[i];
-                for (ox, oy, w) in [(1i64, 0i64, dx1), (0, 1, dx1), (1, 1, dx2), (-1, 1, dx2)] {
-                    let (a, b) = (x + ox, y + oy);
-                    if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64 {
-                        m = m.min(dt[spec.index(a as u32, b as u32)] + w);
-                    }
-                }
-                dt[i] = m;
-            }
-        }
-        let mut seen = vec![false; spec.len()];
-        for start in 0..spec.len() {
-            if !opened[start] || seen[start] {
-                continue;
-            }
-            let mut stack = vec![start];
-            let mut comp = Vec::new();
-            seen[start] = true;
-            let mut rmax = 0.0f64;
-            while let Some(k) = stack.pop() {
-                comp.push(k);
-                rmax = rmax.max(dt[k]);
-                let (x, y) = ((k % spec.nx as usize) as i64, (k / spec.nx as usize) as i64);
-                for (ox, oy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                    let (a, b) = (x + ox, y + oy);
-                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
-                        continue;
-                    }
-                    let m = spec.index(a as u32, b as u32);
-                    if opened[m] && !seen[m] {
-                        seen[m] = true;
-                        stack.push(m);
-                    }
-                }
-            }
-            // rmax is ALSO the size floor: a pond that cannot hold a 36 m
-            // disk is a puddle, and a worm chopped into compact fragments by
-            // the opening becomes exactly such a string of beads — which is
-            // what seed 105 printed across its north-east interfluve.
-            let area = comp.len() as f64 * cell * cell;
-            if rmax < 18.0 || area < 6000.0 || area > 13.0 * rmax * rmax {
-                for k in comp {
-                    opened[k] = false;
-                }
-            }
-        }
-    }
-
-    // --- a meander valley keeps AT MOST ONE lake on its creek --------------
-    // Review: where the creek runs, one lake on it is a feature and three are
-    // a chain of ponds. Components touching the creek are found, the largest
-    // is kept, the rest are dropped; lakes away from the creek are untouched.
-    if meander {
-        let mut lab = vec![0u32; spec.len()];
-        let mut next = 1u32;
-        let mut touch: Vec<(u32, usize)> = Vec::new();
-        for start in 0..spec.len() {
-            if !opened[start] || lab[start] != 0 {
-                continue;
-            }
-            let mut stack = vec![start];
-            lab[start] = next;
-            let (mut size, mut hits) = (0usize, false);
-            while let Some(k) = stack.pop() {
-                size += 1;
-                if !surface.data[k].is_nan() {
-                    hits = true;             // creek water already here
-                }
-                let (x, y) = ((k % spec.nx as usize) as i64, (k / spec.nx as usize) as i64);
-                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                    let (a, b) = (x + dx, y + dy);
-                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
-                        continue;
-                    }
-                    let m = spec.index(a as u32, b as u32);
-                    if opened[m] && lab[m] == 0 {
-                        lab[m] = next;
-                        stack.push(m);
-                    }
-                }
-            }
-            if hits {
-                touch.push((next, size));
-            }
-            next += 1;
-        }
-        if touch.len() > 1 {
-            touch.sort_by_key(|(_, sz)| std::cmp::Reverse(*sz));
-            for (id, _) in touch.into_iter().skip(1) {
-                for i in 0..spec.len() {
-                    if lab[i] == id {
-                        opened[i] = false;
-                    }
-                }
-            }
-        }
-    }
-
-    if settle_on() {
-        // One flat level per body, settled to what its basin holds (see
-        // `settle`): the opening and the trunk keep-out clipped the outline
-        // and left ground below the level dry beside it. The creek and the
-        // keep-out stay off limits, so a pond that would drain into the
-        // creek drops to the ground where it would.
-        // the creek drains: a pond whose basin opens onto it drops to the
-        // ground where it would spill in
-        let no_wall = vec![false; spec.len()];
-        let fill = fill_levels(&spec, &height.data, &creek, &no_wall);
-        let keep = creek_banks(&spec, &creek);
-        let mut lab = vec![false; spec.len()];
-        for start in 0..spec.len() {
-            if !opened[start] || lab[start] {
-                continue;
-            }
-            let mut stack = vec![start];
-            lab[start] = true;
-            let mut comp: Vec<usize> = Vec::new();
-            while let Some(k) = stack.pop() {
-                comp.push(k);
-                let (x, y) = ((k % spec.nx as usize) as i64, (k / spec.nx as usize) as i64);
-                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                    let (a, b) = (x + dx, y + dy);
-                    if a < 0 || b < 0 || a >= spec.nx as i64 || b >= spec.ny as i64 {
-                        continue;
-                    }
-                    let m = spec.index(a as u32, b as u32);
-                    if opened[m] && !lab[m] {
-                        lab[m] = true;
-                        stack.push(m);
-                    }
-                }
-            }
-            let mut lv: Vec<f64> = comp.iter().map(|k| pond_lvl[*k]).collect();
-            lv.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let want = lv[lv.len() / 2];
-            let (mut level, mut cells) = settle(&spec, &height.data, &fill, &comp, want, &no_wall);
-            let body: Vec<usize> = comp.iter().copied().filter(|k| height.data[*k] < want).collect();
-            let dammed = cells.len() * 2 < body.len();
-            if dammed {
-                let mut w = vec![false; spec.len()];
-                for &k in &body {
-                    w[k] = true;
-                }
-                berm(&spec, &mut height.data, &w, want, &keep);
-                level = want;
-                cells = body;
-            }
-            if std::env::var("NET_DEBUG").is_ok() {
-                eprintln!("  pond settle: {} -> {} cells, level {:.2} -> {:.2}{}", comp.len(), cells.len(), want, level,
-                          if dammed { " (dammed)" } else { "" });
-            }
-            for i in cells {
-                if surface.data[i].is_nan() {
-                    wet_cells += 1;
-                    surface.data[i] = level;
-                } else {
-                    surface.data[i] = surface.data[i].max(level);
-                }
-            }
-        }
-    } else {
-        for i in 0..spec.len() {
-            if !opened[i] {
-                continue;
-            }
-            if surface.data[i].is_nan() {
-                wet_cells += 1;
-                surface.data[i] = pond_lvl[i];
-            } else {
-                surface.data[i] = surface.data[i].max(pond_lvl[i]);
-            }
-        }
-    }
-
-    // LAKE COUNT CAP (review, 2026-08-28): at most MAX_LAKES standing bodies
-    // per tile, largest kept.
-    //
-    // Applied to the FINISHED surface, not to any one producer. Carolina fills
-    // standing water from two independent places -- valley pools impounded
-    // behind a downstream lip, and ponds found in closed depressions -- and a
-    // cap on either alone misses the other: capping `opened` measured "1 body
-    // before cap" on seed 500063 while the render showed nine pools strung
-    // along the valleys. Creek cells are exempt by the `creek` mask, so a
-    // wet channel is never counted as a lake nor culled as one.
-    {
-        const MAX_LAKES: usize = 8;
-        const MIN_LAKE_GAP_M: f64 = 50.0;
-        let mut lab = vec![0u32; spec.len()];
-        let mut sizes: Vec<(usize, u32)> = Vec::new();
-        let mut nid = 0u32;
-        let mut stack: Vec<usize> = Vec::new();
-        for start in 0..spec.len() {
-            if surface.data[start].is_nan() || creek[start] || lab[start] != 0 {
-                continue;
-            }
-            nid += 1;
-            lab[start] = nid;
-            stack.clear();
-            stack.push(start);
-            let mut count = 0usize;
-            while let Some(i) = stack.pop() {
-                count += 1;
-                let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
-                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
-                    let (jx, jy) = (x + dx, y + dy);
-                    if jx < 0 || jy < 0 || jx >= spec.nx as i64 || jy >= spec.ny as i64 {
-                        continue;
-                    }
-                    let j = spec.index(jx as u32, jy as u32);
-                    if !surface.data[j].is_nan() && !creek[j] && lab[j] == 0 {
-                        lab[j] = nid;
-                        stack.push(j);
-                    }
-                }
-            }
-            sizes.push((count, nid));
-        }
-        let drop = pick_spaced(&spec, &lab, &mut sizes, MAX_LAKES, MIN_LAKE_GAP_M);
-        for i in 0..spec.len() {
-            if lab[i] != 0 && drop.contains(&lab[i]) {
-                surface.data[i] = f64::NAN;
-                wet_cells -= 1;
-            }
-        }
-    }
-
-    // --- FLATTEN THE GROUND UNDER STANDING WATER ---------------------------
-    // A pond floor is a depositional surface: fines settle out and level it.
-    // Sloping ground beneath a flat water plane reads wrong, and it is wrong
-    // — so anything under standing water is levelled to a shallow, near-flat
-    // bed. The CREEKS are exempt: a creek bed keeps its gradient, which is
-    // what makes it a creek.
+    // The creek mask grown four cells around every channel with a water
+    // class below 4: the ribbon and its banks, which the backwater walk and
+    // the dam's weir read as the creek.
     for (ci, (pts, _)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
         if tier >= 4 {
@@ -3391,345 +3100,38 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             }
         }
     }
-    // Level the ROUGHNESS, not the basin. Pulling the floor toward a fixed
-    // offset below the water plane filled the bays in — a bay is a basin,
-    // and its depth is the point of it. Blending toward a heavily smoothed
-    // copy of the ground removes the fabric a pond floor would not carry
-    // while keeping the hollow it sits in.
-    let mut flat = height.data.clone();
-    {
-        let r = (26.0 / cell).round() as i64;      // ~26 m
-        for _ in 0..2 {
-            for axis in 0..2 {
-                let src = flat.clone();
-                for y in 0..spec.ny as i64 {
-                    for x in 0..spec.nx as i64 {
-                        let (mut acc, mut n) = (0.0, 0.0);
-                        for k in -r..=r {
-                            let (px, py) = if axis == 0 {
-                                ((x + k).clamp(0, spec.nx as i64 - 1), y)
-                            } else {
-                                (x, (y + k).clamp(0, spec.ny as i64 - 1))
-                            };
-                            acc += src[spec.index(px as u32, py as u32)];
-                            n += 1.0;
-                        }
-                        flat[spec.index(x as u32, y as u32)] = acc / n;
-                    }
-                }
-            }
-        }
-    }
-    for i in 0..spec.len() {
-        if surface.data[i].is_nan() || creek[i] {
-            continue;
-        }
-        // deeper water = quieter floor
-        // Feathered by depth: at the shoreline the levelling is weak and it
-        // strengthens with submergence, so no flat-edged strip prints inside
-        // the water (review: a thinner flat section showed inside the trunk).
-        let sub = (surface.data[i] - height.data[i]).max(0.0);
-        let k = 0.9 * math::smoothstep(0.05, 1.1, sub);
-        height.data[i] += (flat[i] - height.data[i]) * k;
-        // and never leave ground standing above its own water surface
-        if height.data[i] > surface.data[i] - 0.05 {
-            height.data[i] = surface.data[i] - 0.05;
-        }
-    }
-
-    // --- IMPOUNDMENTS ON THE TRUNK (measured, 2026-08-29) ------------------
-    // The corpus says our Carolina water was ~4x too dry: real Sandhills-NC
-    // courses carry a median 1.7% water INSIDE the course polygon (p75 3.5%),
-    // 93% of them have at least one body, typically 2 bodies of 0.2-4 ha
-    // (Asheboro 12.9%, Pinehurst No.7 7.5%). Ours ran 0.4% with a single
-    // body. The missing feature is not scattered ponds: it is the DAMMED
-    // CREEK REACH -- a flat pond in the valley floor with the drainage
-    // running through it, plus irrigation ponds cut off the same line.
+    // --- NO IMPOUNDMENTS ON THE TRUNK (2026-09-13) -------------------------
+    // The corpus says real Sandhills-NC courses carry water (median 1.7 %
+    // inside the course polygon, 93 % with at least one body, typically two
+    // of 0.2-4 ha), and that the commonest body is the DAMMED CREEK REACH.
+    // Two builds of it lived here: a disc swept along the trunk, settled
+    // and bermed (2026-08-29), then one dam per pond at the narrowest
+    // section with the pond as the flood of the untouched valley behind it
+    // (2026-09-13 am, `impound` below). The owner judged both: the first
+    // a bathtub, the second right and still wrong -- "even though it is
+    // realistic the terrain looks weird and artificial around it": a
+    // 1.2 m embankment with a 5 m crest and a notch is a block with a slot
+    // at 2 m, the pond ends in a straight line against it, and the creek
+    // leaves its toe between banks that stand below the pond.
     //
-    // This is the sanctioned exception to `clear_lakes_near` (2026-08-27,
-    // "no standing lakes on the valley floor beside running water"). That
-    // rule stays for OFF-CHANNEL bodies, which is what it was written for;
-    // an ON-CHANNEL impoundment is the region's commonest water feature and
-    // outlawing it was a measurement error, corrected here with the owner's
-    // sign-off. Ponds are built from the creek's own bed, which cut_creek
-    // has already forced monotone, so a pond can never run uphill.
-    //
-    // Draws are appended at the TAIL of the WATER stream per the transcript
-    // discipline: every earlier draw keeps its position and its value.
-    let mut dam_block = vec![false; spec.len()];
-    if let Some((pts, bed)) = beds.iter().zip(tiers.iter())
-        .find(|(_, t)| **t == 1).map(|(b, _)| b)
-    {
+    // The feature is CONSTRUCTION, not geology: the real ponds were dug and
+    // dammed when the course was built, placed relative to holes. That is
+    // stage S7 earthmoving and S8 hole layout, which see the routing. So
+    // the terrain carries creeks only, which is what the natural Sandhills
+    // ground has, and `impound` stays as a public function for the
+    // earthmoving stage to call with a hole in mind. The draws are still
+    // consumed so the transcript keeps every value.
+    if beds.iter().zip(tiers.iter()).any(|(_, t)| *t == 1) {
         let n_pond = {
             let u = rng.next_f64();
             if u < 0.18 { 0 } else if u < 0.62 { 1 } else if u < 0.92 { 2 } else { 3 }
         };
-        // Every draw first, in the order the transcript has always had them,
-        // so the dams can all stand before any pond settles.
-        // The pond stands `rise` above the WATER at the dam. It was defined
-        // over the graded bed, which the creek's level no longer follows
-        // (the bed lies metres below the floor the crease cuts into), so a
-        // pond could sit 12 m above the creek that fed it and the backwater
-        // then drowned the valley. With a creek line and its level the dam
-        // is placed on the line; without them the bed is what there is.
-        let mut plans: Vec<(usize, usize, f64, f64)> = Vec::new();   // (up, di, lvl, cap)
-        let on_line = match (creek_line.as_ref(), creek_level.as_ref()) {
-            (Some(l), Some(lv)) if l.len() > 2 && lv.len() == l.len() && settle_on() => Some((l, lv)),
-            _ => None,
-        };
-        // Which way is upstream along the trunk stations? The bed rises
-        // that way. The old walk assumed lower index = upstream and on a
-        // mouth-first trunk flooded the whole reach DOWN to the mouth
-        // (seed sets of a million cells on the mixed run).
-        let pts_up: i64 = if bed[0] > bed[bed.len() - 1] { -1 } else { 1 };
         for k in 0..n_pond {
-            // dam station: spread along the trunk, never in the last eighth
-            let frac = rng.range_f64(0.12 + 0.24 * k as f64, 0.32 + 0.24 * k as f64);
-            let di = ((pts.len() - 1) as f64 * frac.min(0.88)) as usize;
-            // pond depth over the water at the dam: 0.8-2.6 m -> 0.2-4 ha
-            let rise = rng.range_f64(0.8, 2.6);
-            let (up, lvl) = match on_line {
-                Some((l, lv)) => {
-                    let pd = pts[di.min(pts.len() - 1)];
-                    let kd = (0..l.len()).min_by(|a, b| l[*a].distance(pd).partial_cmp(&l[*b].distance(pd)).unwrap()).unwrap();
-                    let lvl = lv[kd] + rise;
-                    // flood UPSTREAM along the line while its water stays below level
-                    let upstream: i64 = if lv.first() <= lv.last() { 1 } else { -1 };
-                    let mut ku = kd as i64;
-                    while ku + upstream >= 0 && ku + upstream < l.len() as i64
-                        && lv[(ku + upstream) as usize] < lvl {
-                        ku += upstream;
-                    }
-                    // the nearest trunk station on the upstream side closes the reach
-                    let pu = l[ku as usize];
-                    let side: Vec<usize> = if pts_up < 0 { (0..=di).collect() } else { (di..pts.len()).collect() };
-                    let up = side.into_iter().min_by(|a, b| pts[*a].distance(pu).partial_cmp(&pts[*b].distance(pu)).unwrap()).unwrap();
-                    (up, lvl)
-                }
-                None => {
-                    let lvl = bed[di.min(bed.len() - 1)] + rise;
-                    let mut up = di as i64;
-                    while up + pts_up >= 0 && up + pts_up < bed.len() as i64
-                        && bed[(up + pts_up) as usize] < lvl {
-                        up += pts_up;
-                    }
-                    (up as usize, lvl)
-                }
-            };
-            if std::env::var("NET_DEBUG").is_ok() {
-                eprintln!("  impoundment plan: di {di} up {up} lvl {lvl:.2} rise {rise:.2} on_line {}", on_line.is_some());
-            }
-            if (di as i64 - up as i64).unsigned_abs() < 6 {
-                continue;             // too short to read as a pond
-            }
-            // half-width from the valley: widen until the ground rises above
-            // the level, capped so a pond never becomes a lake
-            let cap = rng.range_f64(38.0, 105.0);
-            plans.push((up, di, lvl, cap));
-        }
-        // Chained ponds step DOWN: a downstream pond may not stand above the
-        // one feeding it (700135 had the lower pond's backwater lapping the
-        // upper dam from below, 0.25 m above the upper pond). Walk the
-        // plans from upstream to downstream and cap each level below the
-        // last by the crease's own depth.
-        {
-            let mut order: Vec<usize> = (0..plans.len()).collect();
-            // upstream first: larger `di` is upstream when pts_up > 0
-            order.sort_by(|&a, &b| if pts_up > 0 { plans[b].1.cmp(&plans[a].1) } else { plans[a].1.cmp(&plans[b].1) });
-            let mut last = f64::INFINITY;
-            for &i in &order {
-                if plans[i].2 > last - 0.3 {
-                    plans[i].2 = last - 0.3;
-                }
-                last = plans[i].2;
-            }
-        }
-        // The dam stands on the CREEK, not on the trunk bed line the stations
-        // index (the creek wanders up to ~100 m off it): the creek-line point
-        // nearest the dam station. `down` is the line's downstream direction.
-        let (dline, ddown): (Vec<Vec2>, i64) = match (creek_line.as_ref(), creek_level.as_ref()) {
-            (Some(l), Some(lv)) if l.len() > 2 => {
-                (l.clone(), if lv.first() <= lv.last() { -1 } else { 1 })
-            }
-            _ => (pts.clone(), if bed.last() <= bed.first() { 1 } else { -1 }),
-        };
-        let dam_k = |di: usize| -> usize {
-            let pd = pts[di.min(pts.len() - 1)];
-            (0..dline.len()).min_by(|a, b| dline[*a].distance(pd).partial_cmp(&dline[*b].distance(pd)).unwrap()).unwrap()
-        };
-        if settle_on() {
-            // The dam is virtual until it is built below -- so for the flood
-            // it is first a WALL: a band of the line just downstream of the
-            // dam point, walled to `cap * 1.8` either side (a wall on the
-            // bed line let the pond leak down the creek's own trench).
-            let (line, down) = (&dline, ddown);
-            for &(_, di, _, cap) in &plans {
-                let kd = dam_k(di) as i64;
-                // ~110 m of line beyond the dam (the line runs at ~1 m per point when it is the creek)
-                let step = (line.len() as f64 / (3.0 * EXTENT_M)).max(1.0 / 8.0);   // points per metre, roughly
-                let w = ((110.0 * step).ceil() as i64).max(2);
-                let (k0, k1) = if down > 0 { (kd + 1, (kd + w).min(line.len() as i64 - 1)) }
-                               else { ((kd - w).max(0), kd - 1) };
-                if k0 > k1 {
-                    continue;
-                }
-                let r = (cap * 1.8 / cell).ceil() as i64;
-                for k in k0..=k1 {
-                    let p = line[k as usize];
-                    let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
-                    for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
-                        for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
-                            let q = spec.world_of(gx as u32, gy as u32);
-                            if q.distance(p) > cap * 1.8 {
-                                continue;
-                            }
-                            // beyond the dam: nearer to the walled band than to the dam point itself
-                            if q.distance(line[kd as usize]) > q.distance(p) - 1e-9 {
-                                dam_block[spec.index(gx as u32, gy as u32)] = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let fill = if settle_on() {
-            fill_levels(&spec, &height.data, &vec![false; spec.len()], &dam_block)
-        } else {
-            Vec::new()
-        };
-        let mut made = 0usize;
-        for &(up, di, lvl, cap) in &plans {
-            let mut seeds: Vec<usize> = Vec::new();
-            for si in up.min(di)..=up.max(di) {
-                let p = pts[si.min(pts.len() - 1)];
-                let r = (cap / cell).ceil() as i64;
-                let (cx, cy) = ((p.x / cell).round() as i64,
-                                (p.y / cell).round() as i64);
-                for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
-                    for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
-                        let d = (((gx - cx).pow(2) + (gy - cy).pow(2)) as f64)
-                            .sqrt() * cell;
-                        if d > cap {
-                            continue;
-                        }
-                        let i = gy as usize * spec.nx as usize + gx as usize;
-                        if height.data[i] >= lvl {
-                            continue;      // above the pond surface: dry bank
-                        }
-                        seeds.push(i);
-                    }
-                }
-            }
-            seeds.sort_unstable();
-            seeds.dedup();
-            if settle_on() {
-                let (mut level, mut cells) = settle(&spec, &height.data, &fill, &seeds, lvl, &dam_block);
-                // A pond, not a lake: on a flat floor the settled pond ran
-                // to 24 ha (seed 700124) against the corpus's 0.2-4 ha. The
-                // dam is lowered until the pond holds POND_CAP_HA: six
-                // rounds of bisection between the water at the dam and the
-                // drawn level.
-                const POND_CAP_HA: f64 = 4.0;
-                let cap_cells = (POND_CAP_HA * 1e4 / (cell * cell)) as usize;
-                if cells.len() > cap_cells {
-                    let floor_lvl = seeds.iter().map(|i| height.data[*i]).fold(f64::MAX, f64::min);
-                    let (mut lo, mut hi) = (floor_lvl, lvl);
-                    for _ in 0..6 {
-                        let mid = 0.5 * (lo + hi);
-                        let (l2, c2) = settle(&spec, &height.data, &fill, &seeds, mid, &dam_block);
-                        if c2.len() > cap_cells {
-                            hi = mid;
-                        } else {
-                            lo = mid;
-                            level = l2;
-                            cells = c2;
-                        }
-                    }
-                    if cells.len() > cap_cells {
-                        let (l2, c2) = settle(&spec, &height.data, &fill, &seeds, lo, &dam_block);
-                        level = l2;
-                        cells = c2;
-                    }
-                }
-                let dammed = cells.len() * 2 < seeds.len() && cells.len() <= cap_cells / 2;
-                if dammed {
-                    let mut w = vec![false; spec.len()];
-                    for &i in &seeds {
-                        w[i] = true;
-                    }
-                    berm(&spec, &mut height.data, &w, lvl, &creek_banks(&spec, &creek));
-                    level = lvl;
-                    cells = seeds.clone();
-                }
-                // The dam is made of earth (2026-09-09). First as a berm ring
-                // it was a single-cell ridge with water on both sides once
-                // the next pond's backwater reached it -- a needle across the
-                // lake (700135). Now it is an EMBANKMENT (`embank`): a crest
-                // above the pond, faces at 3:1 both ways, running across the
-                // valley until it meets the rising ground, the creek's own
-                // ribbon left through it as the spillway. The berm ring stays
-                // for the natural shore, where it is a few centimetres.
-                {
-                    let keep = creek_banks(&spec, &creek);
-                    let mut w = vec![false; spec.len()];
-                    for &i in &cells {
-                        w[i] = true;
-                    }
-                    berm(&spec, &mut height.data, &w, level, &keep);
-                    // the spillway through the dam is the wet ribbon plus one
-                    // cell, not the whole bank zone (an 18 m notch cut the
-                    // dam into two stubs)
-                    let ribbon: Vec<bool> = (0..spec.len()).map(|i| creek[i] && surface.data[i].is_finite()).collect();
-                    let mut spill_keep = ribbon.clone();
-                    for y in 0..spec.ny as i64 {
-                        for x in 0..spec.nx as i64 {
-                            let i = spec.index(x as u32, y as u32);
-                            if ribbon[i] { continue; }
-                            for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
-                                let (a, b) = (x + dx, y + dy);
-                                if a >= 0 && b >= 0 && a < spec.nx as i64 && b < spec.ny as i64
-                                    && ribbon[spec.index(a as u32, b as u32)] { spill_keep[i] = true; break; }
-                            }
-                        }
-                    }
-                    embank(&spec, &mut height.data, &dline, dam_k(di), ddown, level, cap, &spill_keep);
-                    // ground raised above its water is dry: the dam's footprint
-                    for i in 0..spec.len() {
-                        if surface.data[i].is_finite() && height.data[i] > surface.data[i] + 0.02 {
-                            surface.data[i] = f64::NAN;
-                            wet_cells -= 1;
-                        }
-                    }
-                }
-                if std::env::var("NET_DEBUG").is_ok() {
-                    eprintln!("  impoundment settle: {} -> {} cells, level {:.2} -> {:.2}{}", seeds.len(), cells.len(), lvl, level,
-                              if dammed { " (dammed)" } else { "" });
-                }
-                for i in cells {
-                    if surface.data[i].is_nan() {
-                        wet_cells += 1;
-                        surface.data[i] = level;
-                    } else {
-                        surface.data[i] = surface.data[i].max(level);
-                    }
-                }
-            } else {
-                for i in seeds {
-                    if surface.data[i].is_nan() {
-                        wet_cells += 1;
-                        surface.data[i] = lvl;
-                    } else {
-                        surface.data[i] = surface.data[i].max(lvl);
-                    }
-                }
-            }
-            made += 1;
-        }
-        if std::env::var("NET_DEBUG").is_ok() {
-            eprintln!("  impoundments: {made}/{n_pond}");
+            let _frac = rng.range_f64(0.12 + 0.24 * k as f64, 0.32 + 0.24 * k as f64);
+            let _rise = rng.range_f64(0.8, 2.6);
+            let _disc = rng.range_f64(38.0, 105.0);
         }
     }
-
     // --- BACKWATER (mixed-run screen, 2026-09-06) ---------------------------
     // An impoundment raises the water on the reach it floods, and the creek
     // upstream of it kept its own, lower level: walking toward the mouth the
@@ -3739,7 +3141,7 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
     // held upstream until the creek's own level exceeds it, the raised cells
     // spread sideways over ground below them (`spread`), and the level the
     // routing sees (`river_z`) is the backwatered one.
-    if settle_on() {
+    {
         if let (Some(line), Some(lv)) = (creek_line.as_ref(), creek_level.as_mut()) {
             let (nx, ny) = (spec.nx as i64, spec.ny as i64);
             // nearest station per creek cell: multi-source BFS from the

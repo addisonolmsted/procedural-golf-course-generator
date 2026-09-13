@@ -1,7 +1,7 @@
 """Before/after viewer for one fix over the mixed run: two screened dirs, stacked.
 
   python3 tools/aeolian/mix_before_after.py <before_dir> <after_dir> <out.html> \
-      [--n 24] [--title ..] [--blurb ..] [--prefix m_] [--pick score|perched|...]
+      [--n 24] [--title ..] [--blurb ..] [--prefix m_] [--pick score|wet|lake|perched|...]
 
 Both dirs must have been screened (`mix_screen.py` writes `screen/<seed>.json`
 and the flag masks). The page: the screen's summary table for both builds side
@@ -19,6 +19,23 @@ import mix_screen as M
 TITLE = "Mixed run, before and after"
 BLURB = "Hold <kbd>b</kbd> to see the build before the change. Flags are the screen's, computed on each build."
 DETAIL_M, TILE_PX = 500.0, 480
+
+
+def largest_body_xy(w, line, c):
+    """World (x, y) of the centroid of the largest standing body: wet cells not within 3 cells of the creek line."""
+    from scipy import ndimage as ndi
+    wet = np.isfinite(w)
+    if line is not None and len(line):
+        on = np.zeros_like(wet)
+        ii = np.clip((line[:, 1] / c).astype(int), 0, wet.shape[0] - 1); jj = np.clip((line[:, 0] / c).astype(int), 0, wet.shape[1] - 1)
+        on[ii, jj] = True
+        wet = wet & ~ndi.binary_dilation(on, iterations=3)
+    lab, n = ndi.label(wet)
+    if n == 0: return None
+    sizes = ndi.sum(wet, lab, range(1, n + 1)); k = int(np.argmax(sizes)) + 1
+    if sizes[k - 1] * c * c < 500: return None
+    iy, ix = ndi.center_of_mass(lab == k)
+    return [float(ix * c), float(iy * c)]
 
 
 def load_rows(d):
@@ -61,7 +78,7 @@ def main():
     rb, ra = load_rows(db), load_rows(da)
     seeds = sorted(set(rb) & set(ra), key=int)
     key = (lambda s: abs(rb[s]["score"] - ra[s]["score"])) if pick == "score" else \
-          (lambda s: abs(rb[s]["wet_pct"] - ra[s]["wet_pct"])) if pick == "wet" else \
+          (lambda s: abs(rb[s]["wet_pct"] - ra[s]["wet_pct"])) if pick in ("wet", "lake") else \
           (lambda s: abs(rb[s]["ha"][pick] - ra[s]["ha"][pick]))
     chosen = sorted(seeds, key=key, reverse=True)[:n_pick]
     cards, total = [], 0
@@ -71,10 +88,23 @@ def main():
         ma = np.load(pathlib.Path(da) / "screen" / f"{s}.npz")["mask"]
         n = zb.shape[0]
         views = [("3 km tile", (slice(0, n), slice(0, n)), TILE_PX)]
-        wx = rb[s]["worst_xy"] or ra[s]["worst_xy"] or [n * c / 2, n * c / 2]
         half = int(DETAIL_M / c / 2)
-        y0 = int(np.clip(wx[1] / c - half, 0, n - 2 * half)); x0 = int(np.clip(wx[0] / c - half, 0, n - 2 * half))
-        views.append((f"{DETAIL_M:.0f} m at the before build's worst spot", (slice(y0, y0 + 2 * half), slice(x0, x0 + 2 * half)), 2 * half * 2))
+        if pick == "lake":
+            # details centred on the largest standing body (off the creek line) of each build
+            spots = []
+            for label, w, line in (("before", wb, lb), ("after", wa, la)):
+                xy = largest_body_xy(w, line, c)
+                if xy is None: continue
+                if any(abs(xy[0] - o[0]) < DETAIL_M / 2 and abs(xy[1] - o[1]) < DETAIL_M / 2 for _, o in spots):
+                    continue
+                spots.append((label, xy))
+            for label, wx in spots:
+                y0 = int(np.clip(wx[1] / c - half, 0, n - 2 * half)); x0 = int(np.clip(wx[0] / c - half, 0, n - 2 * half))
+                views.append((f"{DETAIL_M:.0f} m at the {label} build's largest lake", (slice(y0, y0 + 2 * half), slice(x0, x0 + 2 * half)), 2 * half * 2))
+        else:
+            wx = rb[s]["worst_xy"] or ra[s]["worst_xy"] or [n * c / 2, n * c / 2]
+            y0 = int(np.clip(wx[1] / c - half, 0, n - 2 * half)); x0 = int(np.clip(wx[0] / c - half, 0, n - 2 * half))
+            views.append((f"{DETAIL_M:.0f} m at the before build's worst spot", (slice(y0, y0 + 2 * half), slice(x0, x0 + 2 * half)), 2 * half * 2))
         panels = []
         for cap, sl, px in views:
             bb, wbi, _ = M.view(zb, np.isfinite(wb), c, lb, sl, px)

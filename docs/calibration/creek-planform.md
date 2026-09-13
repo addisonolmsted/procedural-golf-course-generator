@@ -753,3 +753,104 @@ the natural shore, where it is centimetres.
 (the dams' footprints). `never_fills` allows a dam's low tail to 40 cells.
 Viewer republished at https://claude.ai/code/artifact/237e16f8-58a1-46b2-af4e-73db1d7dbf2e,
 screen at 47abbae2.
+
+## 2026-09-13 — fluvial lakes rebuilt: one dam, the valley's own contour
+
+Owner, on the fresh 200-seed screen (seeds 800000+, artifact 0e1b67a2):
+aeolian creeks and rivers look good; fluvial lakes "look quite artificial
+at all points, and the damming looks quite off" — remove creek-line lakes,
+or keep them rarely and rework the damming.
+
+Diagnosis, 51 fluvial tiles, crops beside six real Sandhills-NC ponds
+(Asheboro CC, Pinehurst No. 7, Mid Pines, Dormie, Tobacco Road, Carolina
+Lakes; `tools/golf/corpus/out/tiles`):
+
+1. **The berm ring.** `berm` raised every shore cell to the level plus a
+   lip and dropped a 30 % bank outward: a bathtub with dry ground below
+   the water line all round. 30 of 140 bodies carried it on more than 30 %
+   of their shore; on 800957 and 800077 the whole perimeter. The screen's
+   perched test never saw it (the lip is above the water).
+2. **Radial footprints.** An impoundment was a 38–105 m disc swept along
+   the trunk, settled, then bisected down to 4 ha: a sausage along the
+   valley. A real pond is the valley's contour at the spillway level, with
+   an arm up every side draw and one straight edge at the dam.
+3. **Uncapped depression ponds.** The 4 ha cap applied to impoundments
+   only; ponds filled in closed depressions ran to 21.6 ha (800669), and
+   the opening + compactness passes smoothed them into cut-outs. 53 of 140
+   bodies were over 4 ha against the corpus's typical 0.2–4 ha.
+
+The site rule the owner proposed (large flats at creek level) is inverted
+by the physics: a flat needs a dam around the whole perimeter, which is
+the berm. Real Carolina ponds are dammed creek reaches in a confined
+valley section, where one short embankment holds a lot of water (93 % of
+Sandhills-NC courses carry a body; median 1.7 % water inside the polygon).
+Flats at creek level are wet meadow, a cover class later, not open water.
+
+Shipped (`water.rs`, fluvial only; aeolian untouched):
+- Depression ponds, their opening/compactness/one-lake-per-meander passes,
+  the lake count cap, the under-water flatten and every `berm` call in the
+  fluvial path are deleted (`creek_banks` with them). The `pond_min` draw
+  and the disc-radius draw are still consumed so every later draw keeps
+  its value; the WATER stream ends here, so nothing downstream moves.
+- Impoundment = one dam. For each drawn station the candidates are every
+  8 m of creek arc within ±200 m, ranked by dam length at the crest
+  (`dam_axes` / `dam_extent`: abutment where the ground stands 0.5 m above
+  the crest; no abutment within 240 m, or a dam over 220 m, is rejected —
+  **220 m is provisional, not measured**). Up to six are tried. The pond
+  is a 4-neighbour flood of the untouched ground below the level from a
+  seed on the creek just upstream of the dam plane, blocked at the plane;
+  a flood that reaches the tile edge or three times the cap does not hold.
+  The drawn level is kept if it holds ≤ 4 ha, else the level is bisected
+  (seven rounds) between creek + 0.3 m and the drawn one; under 0.2 ha the
+  candidate is passed over. Chained ponds still step down 0.3 m,
+  upstream first.
+- `embank` unchanged in form (1.2 m freeboard, 5 m crest, 3:1 faces) but
+  the creek's ribbon crosses it as a broad-crested WEIR capped at the
+  pond's level, carrying a sheet of water down the face, instead of a
+  slot to the bed. Ground raised above its water goes dry (the footprint).
+
+51 fluvial seeds, before → after (`out/mix200_new` → `out/mix200_lakes`):
+
+| | before | after |
+|---|---|---|
+| impoundments made / planned | — | 67 / 67 |
+| dam length p10/50/90 m | — | 44 / 68 / 114 |
+| pond area p10/50/90/max ha (impoundments) | — | 0.6 / 2.0 / 4.0 / 4.0 |
+| standing bodies ≥ 0.1 ha per tile | 5.1 | 3.6 |
+| bodies over 4 ha | 27 | 0 |
+| shore below the water line, p90 share | 0.76 | 0.00 |
+| water, median % of tile | 0.94 | 0.50 |
+| screen flagged | 0 / 51 | 0 / 51 |
+
+Tests 79 green. Viewer (`mix_before_after.py --pick lake`, details centred
+on each build's largest lake):
+https://claude.ai/code/artifact/b23a9c26-8b98-4dd7-b12a-45cfcdcf1f30
+Open: the dam-length band and the water share against the real polygons
+are unmeasured; a rim class for the screen; whether an off-channel dug
+pond (Mid Pines has one) is wanted at all.
+
+### 2026-09-13, later — the dams go too: the fluvial terrain carries creeks only
+
+Owner, on the one-dam viewer: "I don't really like the damming too much.
+Even though it is realistic I think the terrain looks weird and
+artificial around it and the water kind of weird." Looked at three dams
+at 0.5 m contours: a 1.2 m embankment with a 5 m crest and a weir notch
+is a block with a slot at 2 m resolution; the pond ends in a straight
+line against it; the creek leaves the toe between banks that stand below
+the pond. Not a bug — what a small earth dam is, and it still reads
+wrong because a structure at terrain resolution has no texture to hide
+behind. Options put to the owner: (A) remove ponds and dams from the
+terrain, the feature is CONSTRUCTION (dug and dammed when the course was
+built, placed relative to holes: stages S7/S8); (B) a natural sill, 1–2 m
+over 60–100 m of valley, an invented landform. Owner chose A: "I am not
+sold on dams needing to be present anyway."
+
+Shipped: `fluvial` draws the pond count, station, rise and disc as
+before and builds nothing; the one-dam build is `pub fn water::impound`
+for the earthmoving stage to call with a hole in mind (`DAM_MAX_M` 220
+still provisional there). 51 fluvial seeds: standing bodies ≥ 0.1 ha per
+tile 5.1 → 0, water median 0.94 → 0.22 % of tile (the creek alone),
+screen flagged 0/51, tests 79 green. Viewer republished at the same URL
+(b23a9c26, details on the before build's largest lake). Aeolian untouched.
+Open for the construction stage: whether courses want water at all, and
+the corpus's 1.7 % inside the polygon as the target if they do.
