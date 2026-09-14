@@ -300,10 +300,10 @@ td,th{{border-bottom:1px solid var(--rule);padding:3px 10px;text-align:right}}td
 main{{max-width:1700px;margin:0 auto;padding:0 26px}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(376px,1fr));gap:16px}}
 .card,.detail{{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:3px;padding:8px}}
-.detail{{width:500px;max-width:100%}}
+.detail{{width:518px;max-width:100%}}
 .stack{{position:relative;width:100%;background:var(--chip)}}
 .stack img{{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:auto}}
-.detail .stack img{{image-rendering:pixelated}}
+.detail .stack img{{image-rendering:auto}}
 figcaption{{margin-top:6px;font-size:11.5px;color:var(--muted);font-family:"IBM Plex Mono",ui-monospace,monospace;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}}
 figcaption b{{color:var(--ink)}}.mode{{color:var(--accent)}}.counts{{display:flex;gap:6px;flex-wrap:wrap}}.counts .k::after{{content:" ha"}}
 .ck{{flex-basis:100%}}

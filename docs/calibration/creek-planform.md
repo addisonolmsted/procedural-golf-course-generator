@@ -920,3 +920,113 @@ gorge tiles carry too. Screen: 149/149 flagged 0. Renders
 `out/mix200_belt`; viewer (`mix_before_after.py --pick slope`, details at
 the before build's steepest belt spot):
 https://claude.ai/code/artifact/b9b99d34-c4a9-4a96-9b88-4e1e6153037b
+
+## 2026-09-13 — final look: 250 random seeds, every seed kept
+
+`mix_dump --all` (seeds 900000+, four workers by stride; `river` / `dry` as
+a fourth index token; the screen page filters on it): 87 aeolian dry, 29
+aeolian river, 118 fluvial dry, 16 fluvial river. Renders `out/final250`,
+page `out/final250/mix_screen.html`, artifact
+https://claude.ai/code/artifact/cada5d33-0067-4727-9965-22b93a9bc23e.
+Screen: flagged 9/250, all fluvial dry, all `perched`; aeolian 0/116.
+Extra audit (scratch `audit/audit.py`): no non-finite cells, no duplicate
+32 x 32 texture blocks on any tile, no flat plateaus (max 1.1 % of a tile
+under 0.3 %), tile-scale periodicity peak ≤ 0.13 (aeolian) / 0.23
+(fluvial, at the 24 m ring floor = none).
+
+Findings for the owner, by concern:
+1. **Pools on the creekless fluvial valleys.** `p_valley_creek` 0.10 puts
+   a creek on 12 % of fluvial tiles; the other 88 % carry "occasional wet
+   reaches" flooded as POOLS on the trunk (water.rs, `!meander` branch):
+   84/118 dry fluvial tiles have them, median 1 and p90 4 bodies of
+   0.7 ha (p90 2.6, max 5.0), 9 tiles perched. These are the valley-floor
+   ponds the owner rejected, on the tiles the 51-seed viewer never showed.
+2. **Fluvial sameness.** Across 134 fluvial tiles slope p99 runs 17–21 %
+   and belt relief 32–47 m (p10–p90); every tile is the same honeycomb of
+   small valleys. Corpus Carolina median relief 46.9 m. Variety by degree
+   only.
+3. **Gorge corridor texture.** On aeolian river tiles the rim runs as a
+   band of ~100 m lumps distinct from the dune field (900119, 900226,
+   900114); plausible at 2 m contours, a pasted corridor at tile scale.
+   The known "rim sawtooth" gap.
+4. **Isolated mound bodies** on a flat sheet with abrupt margins (900116,
+   900166, 900169, 900204); the audit's spikes (|z − median3| > 1.5 m, to
+   79 cells on 900116) all sit on their slip faces.
+5. **Faint axis-aligned lattice** in flat lee ground on some aeolian tiles
+   (900160, 900098, 900225, 900068, 900240; 43–48 m autocorrelation peak
+   0.09–0.13, and an 8–10 m checker in the hillshade): the 8 m macro grid
+   through the upsampling. Cosmetic.
+6. Lakes cut by the tile edge on ~10 % of aeolian tiles (900090, 942 edge
+   cells): a window effect.
+7. Fluvial slope rises 2.8 → 4.5 % from the tile edge to 400 m in,
+   gradually; aeolian 7.5 → 8.9. Not a seam.
+Straight steep runs of up to 2.2 km are the gorge itself (river tiles only).
+
+## 2026-09-14 — final pass, item 5: the axis-aligned crosshatch
+
+Owner: a subtle checker / crosshatch, always aligned with x and y, on the
+500 m details of nearly every aeolian tile (900226, 900114, 900116,
+900144, 900166, 900099, 900231; 900160 and 900034 at tile scale).
+
+**Measured first** (`tools/aeolian/axis_power.py`, new): ratio of spectral
+power within ±8° of the axes to ±8° of the diagonals on the 2–64 m
+residual, per wavelength band; plus the RMS of the 2–16 m band by cell
+index mod 24 (the 48 m patch pitch), max/min. Real 2 m lidar (Dismal
+River, Sand Hills, Ballyneal) measures ~1.0 in every band ≥ 6 m and
+1.5 at 4–4.5 m (the 3DEP 1 m → 2 m bilinear decimation's own lattice);
+ripple 1.02–1.06. Ours, 20 tiles per mode of `out/final250`:
+
+| median | 4–4.5 m | 6–7 | 7.6–8.4 | 8.4–9.5 | ripple x / y |
+|---|---|---|---|---|---|
+| aeolian before | 13.2 | 2.8 | 3.2 | 2.2 | 1.30 / 1.32 |
+| aeolian after | (≈0 power) | 1.22 | 1.02 | 1.32 | 1.10 / 1.08 |
+| fluvial before | 3.3 | 1.16 | 1.60 | 1.40 | 1.14 / 1.16 |
+| fluvial after | (≈0 power) | 0.91 | 1.08 | 1.12 | 1.10 / 1.10 |
+| real NE source tiles | 1.56 | 1.17 | 1.19 | 1.21 | 1.02 / 1.03 |
+
+So the pattern was in the height data, not the viewer, with three sources
+in `texture.rs`, each confirmed by its phase signature:
+
+1. **The 48 m patch-quilt lattice, both modes.** Hann windows sum to 1 at
+   half overlap so the MEAN is flat, but the patches are independent
+   samples and the RMS goes as sqrt(Σw²), which swings 0.5–1 per axis
+   (0.25–1 as the x·y product). The measured RMS-by-phase profile matched
+   that curve at r = 0.86–0.97. Lattice anchored at world (0, 0) on every
+   seed. Fix: accumulate Σw², output `acc / sqrt(Σw²)` (constant RMS;
+   1.01 on synthetic independent patches), each patch's own mean removed
+   at paste time (the pack is a 64 m high-pass of the tile, not of the
+   patch), the lattice phase offset per seed from the draw already taken,
+   and the patch pick a hash of (draw, tile) rather than an arithmetic
+   progression (a thin bucket put the same patch under overlapped
+   neighbours, correlated: ripple 1.13 with the normalisation alone).
+   `OVERLAP_ADD_RMS = 0.76` (the old mean loss, (mean sqrt(w²+(1−w)²))²)
+   applied as a constant so `texture_gain`'s band calibration holds:
+   fine 2–16 m RMS after/before 0.97 (aeolian) / 0.98 (fluvial); without
+   it +17–19 %.
+2. **The 8 m nearest-neighbour texture gate, aeolian.** `g = floor +
+   (1−floor)·smoothstep(mpos)` was read with `round(w/8)` on the macro grid
+   and multiplies the residual by a 3–6x swing: a staircase with 8 m
+   treads in x and y. The excess sat on the two cells straddling each
+   block edge and vanished where the gate saturates. Fix: bilinear on the
+   8 m grid (`Grid { spec: mspec, data: mpos }`).
+3. **Fluvial v2 returned a bilinear 8 → 2 m upsample** (`base.bilinear` at
+   three sites), so the 2026-09-07 Catmull change never reached the
+   fluvial surface, and the residual carried the Catmull−bilinear lattice
+   re-amplified. Fix: `catmull_rom_2d` at all three; the separable 26 m
+   box in the fine/coarse split (Dirichlet nulls on the axes, the "boxy"
+   kernel family) is a gaussian of the same sigma.
+4. **The 2-cell lattice the sources carry** (1.5x in the real tiles,
+   2.4x on ours after the fluvial fine gain): a [1 2 1]/4 in x and y on the
+   normalised residual, before the gate. Absolute 4–4.5 m power fell ~100x
+   (axis 0.15 → 0.002 of the 11–14 m diagonal reference); the band ratio
+   there is now noise over ≈0 power.
+5. **Viewer**: `.detail` sized so the 500 px image sits at 1 px = 1 m and
+   `image-rendering: auto` (a 500 px image in a ≤482 px box under
+   `pixelated` beat at 8–27 px with the window width).
+
+Left as is: `lib.rs` `u2/w2/d2` (gates, bilinear, not height); the
+8.4–14 m aeolian excess (1.24–1.32) matches the real NE source tiles
+(1.21–1.23), i.e. inherited fabric, not ours; ripple 1.08–1.10 against a
+real 1.02–1.06. 79 tests green; screen on the 48 rebuilt tiles: aeolian
+0 flagged, fluvial 1 (a creekless-valley pool, item 1). Viewer
+https://claude.ai/code/artifact/91a69192-4804-445b-baf7-c6cef97c963d. Still an 8 m facet on steep slip faces (900099): the macro's own resolution, not the quilt.

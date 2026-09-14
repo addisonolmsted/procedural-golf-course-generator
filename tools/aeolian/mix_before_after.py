@@ -189,7 +189,7 @@ main{{max-width:1700px;margin:0 auto;padding:0 26px;display:flex;flex-direction:
 .meta{{color:var(--muted);font-size:.78rem;font-weight:400;flex-basis:100%}}.meta b{{color:var(--ink);font-weight:600}}
 {css_k}
 .row{{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;overflow-x:auto}}
-.panel{{margin:0;flex:none;max-width:100%}}
+.panel{{margin:0;flex:none;max-width:100%;image-rendering:auto}}
 .stack{{position:relative;width:100%;background:var(--chip)}}
 .stack img{{position:absolute;inset:0;width:100%;height:100%;display:block}}
 .stack .tag{{position:absolute;left:8px;top:8px;background:var(--tag);color:var(--tagink);font:11px "IBM Plex Mono",ui-monospace,monospace;padding:2px 7px;border-radius:2px;letter-spacing:.04em;text-transform:uppercase}}

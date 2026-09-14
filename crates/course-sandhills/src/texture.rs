@@ -323,12 +323,15 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
-            resid[i] = out.data[i] - base.bilinear(spec.world_of(x, y));
+            resid[i] = out.data[i] - catmull_rom_2d(base, spec.world_of(x, y));
         }
     }
     let mut coarse = resid.clone();
-    let w = (12.0 / TEX_RES_M).round() as usize;      // ~12 m split
-    box_blur(spec, &mut coarse, w, 2);
+    // ~12 m split. A separable BOX (13 cells, two passes) did this and its
+    // Dirichlet nulls at 26/k m sit on the axes -- the same kernel family
+    // that once cut the "boxy" creek. A gaussian of the same sigma
+    // (sqrt((13^2-1)/12) per pass, two passes: 5.3 cells) is isotropic.
+    gauss_blur(spec, &mut coarse, 5.3);
 
     // --- normalised relief, from the MACRO surface --------------------
     // Taken from `base`, not from the textured field, so the texture cannot
@@ -339,7 +342,7 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
         let mut zs: Vec<f64> = Vec::with_capacity(spec.len());
         for y in 0..spec.ny {
             for x in 0..spec.nx {
-                zs.push(base.bilinear(spec.world_of(x, y)));
+                zs.push(catmull_rom_2d(base, spec.world_of(x, y)));
             }
         }
         let mut srt = zs.clone();
@@ -456,12 +459,68 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
-            z.data[i] = base.bilinear(spec.world_of(x, y)) + knee * (inc[i] / knee).tanh();
+            // Catmull-Rom, the same spline `quilt_core` upsampled through.
+            // This was `base.bilinear`: the C0 8 m node lines printed as a
+            // crosshatch on every fluvial tile (measured 2026-09-14, axis
+            // power 2x the diagonal at 8 m, the bilinear phase signature),
+            // and the residual above carried the Catmull-minus-bilinear
+            // lattice and re-amplified it.
+            z.data[i] = catmull_rom_2d(base, spec.world_of(x, y)) + knee * (inc[i] / knee).tanh();
         }
     }
     z
 }
 
+/// [1 2 1]/4 along x then y; edges clamp. A null at the 2-cell period.
+fn binomial3(spec: course_world::grid::GridSpec, a: &mut Vec<f64>) {
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let src = a.clone();
+    for y in 0..ny {
+        for x in 0..nx {
+            let at = |xx: i64| src[spec.index(xx.clamp(0, nx - 1) as u32, y as u32)];
+            a[spec.index(x as u32, y as u32)] = 0.25 * at(x - 1) + 0.5 * at(x) + 0.25 * at(x + 1);
+        }
+    }
+    let src = a.clone();
+    for y in 0..ny {
+        for x in 0..nx {
+            let at = |yy: i64| src[spec.index(x as u32, yy.clamp(0, ny - 1) as u32)];
+            a[spec.index(x as u32, y as u32)] = 0.25 * at(y - 1) + 0.5 * at(y) + 0.25 * at(y + 1);
+        }
+    }
+}
+
+/// Separable gaussian, `sigma` in cells, kernel to 3 sigma; edges clamp.
+fn gauss_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, sigma: f64) {
+    let r = (3.0 * sigma).ceil() as i64;
+    let k: Vec<f64> = (-r..=r).map(|i| (-(i * i) as f64 / (2.0 * sigma * sigma)).exp()).collect();
+    let ks: f64 = k.iter().sum();
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let src = a.clone();
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut s = 0.0;
+            for (j, kk) in k.iter().enumerate() {
+                let xx = (x + j as i64 - r).clamp(0, nx - 1) as u32;
+                s += kk * src[spec.index(xx, y as u32)];
+            }
+            a[spec.index(x as u32, y as u32)] = s / ks;
+        }
+    }
+    let src = a.clone();
+    for y in 0..ny {
+        for x in 0..nx {
+            let mut s = 0.0;
+            for (j, kk) in k.iter().enumerate() {
+                let yy = (y + j as i64 - r).clamp(0, ny - 1) as u32;
+                s += kk * src[spec.index(x as u32, yy)];
+            }
+            a[spec.index(x as u32, y as u32)] = s / ks;
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, w: usize,
             passes: usize) {
     if w < 1 {
@@ -591,13 +650,18 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     let step = p / 2;
     let win = window(p);
     let mut acc = vec![0.0f64; spec.len()];
-    let mut wsum = vec![0.0f64; spec.len()];
+    let mut wsq = vec![0.0f64; spec.len()];
     let k0 = rng.next_u32() as usize;
+    // The lattice phase. Patches were laid on a `step` grid anchored at world
+    // (0, 0) on every seed, so the pitch was world-locked across the whole
+    // corpus of tiles; the phase now comes off the draw already taken (no
+    // new draw), one offset per seed. The pitch itself is dealt with below.
+    let (dx, dy) = ((k0 % step) as i64, ((k0 / step) % step) as i64);
 
     let mut tile = 0usize;
-    let mut y0 = 0i64;
+    let mut y0 = -dy;
     while y0 < spec.ny as i64 {
-        let mut x0 = 0i64;
+        let mut x0 = -dx;
         while x0 < spec.nx as i64 {
             // Condition on the macro at this patch's centre.
             let wc = spec.world_of((x0 + step as i64).clamp(0, spec.nx as i64 - 1) as u32,
@@ -620,7 +684,32 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // wall fabric is directional enough that "most agreeable" and
             // "most repetitive" are the same patch. Pseudo-random selection
             // it is; the character has to come from the LANDFORM instead.
-            let k = k0.wrapping_add(tile.wrapping_mul(2_654_435_761));
+            // A hash of (draw, tile), not an arithmetic progression: the
+            // old `k0 + tile * 2654435761` stepped k by a constant modulo
+            // the bucket's count, and in a thin bucket that put the SAME
+            // patch under neighbouring windows, which are 50 % overlapped --
+            // correlated, so the overlap-add's RMS rippled at the pitch
+            // however it was normalised (measured 2026-09-14: 1.13 left of
+            // the 1.30 after the normalisation below; independent patches
+            // give 1.01).
+            let k = {
+                let mut h = (k0 as u64) ^ (tile as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                h ^= h >> 31;
+                h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                h ^= h >> 29;
+                (h >> 16) as usize
+            };
+            // The patch's own mean comes off. The pack is a 64 m high-pass of
+            // the TILE it was cut from, not of each patch, so every 96 m patch
+            // carries a DC of its own -- and DC laid on the lattice prints the
+            // lattice.
+            let mut mean = 0.0;
+            for yy in 0..p {
+                for xx in 0..p {
+                    mean += pack.sample(b, k, yy, xx);
+                }
+            }
+            mean /= (p * p) as f64;
             for yy in 0..p {
                 let gy = y0 + yy as i64;
                 if gy < 0 || gy >= spec.ny as i64 {
@@ -633,8 +722,8 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
                     }
                     let w = win[yy] * win[xx];
                     let gi = spec.index(gx as u32, gy as u32);
-                    acc[gi] += w * pack.sample(b, k, yy, xx);
-                    wsum[gi] += w;
+                    acc[gi] += w * (pack.sample(b, k, yy, xx) - mean);
+                    wsq[gi] += w * w;
                 }
             }
             tile += 1;
@@ -643,32 +732,65 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
         y0 += step as i64;
     }
 
+    // The gate is read BILINEARLY off the 8 m macro. Read nearest, it was a
+    // staircase with 8 m treads in x and y, and since it multiplies the
+    // residual by a 3-6x swing every tread printed as a crosshatch: measured
+    // 2026-09-14, axis-aligned spectral power 3.5-5x the diagonal at 8 m on
+    // aeolian tiles, sitting on the two cells straddling each block edge and
+    // gone wherever the gate saturates. Real lidar measures 1.0.
+    let mpos_g = Grid { spec: mspec, data: mpos };
+    // The residual, RMS-normalised (see below), then a 3-tap binomial in x
+    // and in y. The packs are cut from 3DEP tiles decimated 1 m -> 2 m by
+    // bilinear resampling with no prefilter, and that gridding leaves an
+    // axis-aligned lattice at the 2-cell period in the SOURCE (real NC and
+    // NE tiles measure 1.5x the diagonal at 4-4.5 m; the fluvial fine gain
+    // then took ours to 2.4x). [1 2 1]/4 has a null at the 2-cell period
+    // and costs 4 % of the 2-16 m band RMS (measured).
+    // `OVERLAP_ADD_RMS`: the Hann overlap-add's RMS, averaged over the
+    // lattice phase, was 0.76 of one patch's (mean of sqrt(w^2 + (1-w)^2)
+    // squared for the x*y product), and `texture_gain` was calibrated to
+    // the corpus band ON TOP of that loss. Normalising per cell removes
+    // the ripple; the same mean loss is applied as a constant so the band
+    // calibration holds (measured without it: fine 2-16 m RMS +17-19 %).
+    const OVERLAP_ADD_RMS: f64 = 0.76;
+    let mut res = vec![0.0f64; spec.len()];
+    for i in 0..spec.len() {
+        if wsq[i] > 1e-12 {
+            res[i] = OVERLAP_ADD_RMS * acc[i] / wsq[i].sqrt();
+        }
+    }
+    binomial3(spec, &mut res);
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let i = spec.index(x, y);
-            if wsum[i] <= 1e-9 {
+            if wsq[i] <= 1e-12 {
                 continue;
             }
             let w = spec.world_of(x, y);
-            let mx = ((w.x / RES_M).round() as i64).clamp(0, mspec.nx as i64 - 1) as u32;
-            let my = ((w.y / RES_M).round() as i64).clamp(0, mspec.ny as i64 - 1) as u32;
-            let mi = mspec.index(mx, my);
             let g = match fields {
                 // proximity gate: prox is 1 in the valley zone, 0 far out
                 Some((_, prox)) => d.texture_floor
-                    + (1.0 - d.texture_floor) * prox.data[mi].clamp(0.0, 1.0),
+                    + (1.0 - d.texture_floor) * prox.bilinear(w).clamp(0.0, 1.0),
                 None => d.texture_floor
                     + (1.0 - d.texture_floor)
-                        * math::smoothstep(0.30, 0.62, mpos[mi]),
+                        * math::smoothstep(0.30, 0.62, mpos_g.bilinear(w)),
             };
-            out.data[i] += d.texture_gain * g * acc[i] / wsum[i];
+            // Normalised by sqrt(sum w^2), not sum w: the patches are
+            // independent samples, so the overlap-add's RMS goes as the root
+            // of the squared weights. A Hann pair sums to 1 (the mean is
+            // flat) but its squares swing 0.5..1 -- 0.25..1 as the x*y
+            // product -- and that printed the 48 m pitch as a checker on
+            // every tile (measured 2026-09-14: the RMS profile by cell mod 24
+            // matched sqrt(w^2 + (1-w)^2) at r = 0.86-0.97, both modes).
+            out.data[i] += d.texture_gain * g * res[i];
         }
     }
     out
 }
 
-/// Raised cosine (Hann). Sums to a constant at half-overlap, so overlap-add
-/// leaves no periodic amplitude ripple at the patch pitch.
+/// Raised cosine (Hann). Sums to a constant at half-overlap, so the MEAN of
+/// the overlap-add carries no ripple at the patch pitch; the RMS does (the
+/// squares sum to 0.5..1), which `quilt_core` normalises out.
 fn window(n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| {
