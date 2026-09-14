@@ -183,11 +183,12 @@ def main():
     if "--details" in a: i = a.index("--details"); n_details = int(a[i + 1]); a = a[:i] + a[i + 2:]
     if "--rescreen" in a: rescreen = True; a.remove("--rescreen")
     d, out_html = pathlib.Path(a[0]), a[1]
-    modes = {}
+    modes, waters = {}, {}
     for f in d.glob("index_*.txt"):
         for l in open(f):
             p = l.split()
             if len(p) >= 2: modes[p[0]] = p[1]
+            waters[p[0]] = p[3] if len(p) >= 4 else "river"
     seeds = sorted(s for s in modes if (d / f"{prefix}{s}.cgrid").exists())
     sd = d / "screen"; sd.mkdir(exist_ok=True)
     rows = {}
@@ -200,7 +201,7 @@ def main():
             mask, st = screen(z, w, c, line, modes[s])
         except Exception as e:
             print(f"  {s}: {e}"); continue
-        st["mode"] = modes[s]
+        st["mode"] = modes[s]; st["water_class"] = waters.get(s, "river")
         json.dump(st, open(jp, "w")); np.savez_compressed(mp, mask=mask)
         rows[s] = st
         print(f"  screened {s} ({modes[s]}): score {st['score']:.1f}", flush=True)
@@ -222,7 +223,7 @@ def main():
         ck = (f'cut max {cr["cut_max"]:.1f} m · rise {cr["reversal_m"]:.2f} m' if cr else "")
         flagged = "flagged" if st["notable"] else "clean"
         cards.append(
-            f'<figure class="card {st["mode"]} {flagged}" data-seed="{s}" data-score="{st["score"]:.2f}" data-mode="{st["mode"]}">'
+            f'<figure class="card {st["mode"]} {st.get("water_class", waters.get(s, "river"))} {flagged}" data-seed="{s}" data-score="{st["score"]:.2f}" data-mode="{st["mode"]}">'
             f'<div class="stack" style="aspect-ratio:1"><img class="base" src="{bu}" alt="terrain"><img class="water" src="{wu}" alt="water">'
             f'<img class="flags" src="{fu}" alt="flags"></div>'
             f'<figcaption><b>{s}</b> <span class="mode">{st["mode"]}</span> <span class="score">score {st["score"]:.0f}</span>'
@@ -313,10 +314,12 @@ body.no-creek .creek{{display:none}}
 body.only-flagged .card.clean{{display:none}}
 body.mode-aeolian .card.fluvial,body.mode-aeolian .detail.fluvial{{display:none}}
 body.mode-fluvial .card.aeolian,body.mode-fluvial .detail.aeolian{{display:none}}
+body.water-river .card.dry{{display:none}}
+body.water-dry .card.river{{display:none}}
 </style>
 <header>
 <div><h1>Mixed run, {len(seeds)} tiles with running water</h1>
-<p>{n_a} aeolian and {n_f} fluvial tiles, each seed's mode from its own coin, kept only when it carries a creek or river. Every tile is screened for what a reviewer would call suspicious and the finds are drawn as a layer you can switch off. Nothing here is a fix.</p>
+<p>{n_a} aeolian and {n_f} fluvial tiles, each seed's mode from its own coin{", " + str(sum(1 for s in seeds if rows[s].get("water_class") == "river")) + " with a creek or river and " + str(sum(1 for s in seeds if rows[s].get("water_class") == "dry")) + " without" if any(rows[s].get("water_class") == "dry" for s in seeds) else ", kept only when it carries a creek or river"}. Every tile is screened for what a reviewer would call suspicious and the finds are drawn as a layer you can switch off. Nothing here is a fix.</p>
 <p>Scores weight flagged hectares by class: steps, walls and level reversals count hardest. Thumbnails are 1 px = 8 m; the flag layer is grown so single cells stay visible, so read the hectares, not the paint.</p></div>
 {table}
 </header>
@@ -327,6 +330,7 @@ body.mode-fluvial .card.aeolian,body.mode-fluvial .detail.aeolian{{display:none}
 <label><input type="checkbox" id="t-only"> flagged only</label>
 <span class="hint" title="hectares: step 0.5, wall 2, perched 0.1, reversal / deepcut / flat any; steep never on its own">notable = above a per-class size</span>
 <label>mode <select id="s-mode"><option value="all">all</option><option value="aeolian">aeolian</option><option value="fluvial">fluvial</option></select></label>
+<label>water <select id="s-water"><option value="all">all</option><option value="river">river / creek</option><option value="dry">none</option></select></label>
 <label>sort <select id="s-sort"><option value="score">score</option><option value="seed">seed</option></select></label>
 <span class="legend">{legend}</span>
 </div>
@@ -350,6 +354,7 @@ function sortBy(k) {{
   cards.forEach(c => grid.appendChild(c));
 }}
 document.getElementById('s-sort').onchange = e => sortBy(e.target.value);
+document.getElementById('s-water').onchange = e => {{ b.classList.remove('water-river','water-dry'); if (e.target.value !== 'all') b.classList.add('water-' + e.target.value); }};
 sortBy('score');
 </script>"""
     open(out_html, "w").write(html)

@@ -1,7 +1,10 @@
 //! Dump a MIXED run: each seed's mode comes from its own coin (`draw::site`
 //! with nothing forced), and only tiles that carry a creek or river are kept.
 //!
-//!   mix_dump <out_dir> <first_seed> <keep_n> [--stride k --offset j] [--seeds a,b,c]
+//!   mix_dump <out_dir> <first_seed> <keep_n> [--stride k --offset j] [--seeds a,b,c] [--all]
+//!
+//! `--all` keeps every seed, river or not (an empty creek file, and `river` /
+//! `dry` as a fourth index token), for a representative run.
 //!
 //! Walks seeds first_seed + offset, + offset + stride, ... until `keep_n`
 //! tiles with a river line are written. Files: `m_<seed>.cgrid`,
@@ -25,6 +28,7 @@ fn main() {
         a.iter().position(|x| x == k).map(|i| a[i + 1].parse().unwrap()).unwrap_or(d)
     };
     let (stride, offset) = (opt("--stride", 1), opt("--offset", 0));
+    let keep_all = a.iter().any(|x| x == "--all");
     // `--seeds a,b,c`: exactly these seeds, kept or skipped on the same rule
     let only: Option<Vec<u64>> = a.iter().position(|x| x == "--seeds")
         .map(|i| a[i + 1].split(',').map(|v| v.parse().unwrap()).collect());
@@ -64,7 +68,10 @@ fn main() {
                 (tex, w.surface, w.river, w.lake_frac, bl, w.river_z)
             }
         };
-        if let Some(r) = river.filter(|r| r.len() > 1) {
+        let river = river.filter(|r| r.len() > 1);
+        if river.is_some() || keep_all {
+            let has_river = river.is_some();
+            let r = river.unwrap_or_default();
             gridio::write_grid_f32(&out.join(format!("m_{seed}.cgrid")), &height).unwrap();
             gridio::write_grid_f32(&out.join(format!("m_{seed}.water.cgrid")), &water).unwrap();
             let txt: String = r.iter().map(|p| format!("{:.2} {:.2}\n", p.x, p.y)).collect();
@@ -76,8 +83,9 @@ fn main() {
                 let txt: String = z.iter().map(|v| format!("{v:.3}\n")).collect();
                 std::fs::write(out.join(format!("m_{seed}.creek_z.txt")), txt).unwrap();
             }
-            writeln!(index, "{seed} {} {lake_frac:.4}",
-                     match mode { Mode::Aeolian => "aeolian", Mode::Fluvial => "fluvial" }).unwrap();
+            writeln!(index, "{seed} {} {lake_frac:.4} {}",
+                     match mode { Mode::Aeolian => "aeolian", Mode::Fluvial => "fluvial" },
+                     if has_river { "river" } else { "dry" }).unwrap();
             kept += 1;
             println!("seed {seed}: {mode:?}, kept ({kept}/{keep_n}, {tried} tried)");
         } else {
