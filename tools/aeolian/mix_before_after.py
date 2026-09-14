@@ -1,7 +1,7 @@
 """Before/after viewer for one fix over the mixed run: two screened dirs, stacked.
 
   python3 tools/aeolian/mix_before_after.py <before_dir> <after_dir> <out.html> \
-      [--n 24] [--title ..] [--blurb ..] [--prefix m_] [--pick score|wet|lake|perched|...]
+      [--n 24] [--title ..] [--blurb ..] [--prefix m_] [--pick score|wet|lake|slope|perched|...]
 
 Both dirs must have been screened (`mix_screen.py` writes `screen/<seed>.json`
 and the flag masks). The page: the screen's summary table for both builds side
@@ -79,6 +79,7 @@ def main():
     seeds = sorted(set(rb) & set(ra), key=int)
     key = (lambda s: abs(rb[s]["score"] - ra[s]["score"])) if pick == "score" else \
           (lambda s: abs(rb[s]["wet_pct"] - ra[s]["wet_pct"])) if pick in ("wet", "lake") else \
+          (lambda s: abs(rb[s]["slope_p99"] - ra[s]["slope_p99"])) if pick == "slope" else \
           (lambda s: abs(rb[s]["ha"][pick] - ra[s]["ha"][pick]))
     chosen = sorted(seeds, key=key, reverse=True)[:n_pick]
     cards, total = [], 0
@@ -101,6 +102,16 @@ def main():
             for label, wx in spots:
                 y0 = int(np.clip(wx[1] / c - half, 0, n - 2 * half)); x0 = int(np.clip(wx[0] / c - half, 0, n - 2 * half))
                 views.append((f"{DETAIL_M:.0f} m at the {label} build's largest lake", (slice(y0, y0 + 2 * half), slice(x0, x0 + 2 * half)), 2 * half * 2))
+        elif pick == "slope":
+            # detail centred on the before build's steepest 100 m belt spot, and a second on its highest crest
+            from scipy import ndimage as ndi
+            belt = ndi.gaussian_filter(zb, 100.0 / c / 2.355)
+            gy, gx = np.gradient(belt, c); sl = np.hypot(gx, gy)
+            m = int(DETAIL_M / c); sl[:m, :] = sl[-m:, :] = sl[:, :m] = sl[:, -m:] = 0
+            iy, ix = np.unravel_index(np.argmax(sl), sl.shape)
+            for label, (iy2, ix2) in (("steepest belt", (iy, ix)),):
+                y0 = int(np.clip(iy2 - half, 0, n - 2 * half)); x0 = int(np.clip(ix2 - half, 0, n - 2 * half))
+                views.append((f"{DETAIL_M:.0f} m at the before build's {label}", (slice(y0, y0 + 2 * half), slice(x0, x0 + 2 * half)), 2 * half * 2))
         else:
             wx = rb[s]["worst_xy"] or ra[s]["worst_xy"] or [n * c / 2, n * c / 2]
             y0 = int(np.clip(wx[1] / c - half, 0, n - 2 * half)); x0 = int(np.clip(wx[0] / c - half, 0, n - 2 * half))

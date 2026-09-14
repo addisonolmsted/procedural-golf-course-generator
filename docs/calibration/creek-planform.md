@@ -854,3 +854,69 @@ screen flagged 0/51, tests 79 green. Viewer republished at the same URL
 (b23a9c26, details on the before build's largest lake). Aeolian untouched.
 Open for the construction stage: whether courses want water at all, and
 the corpus's 1.7 % inside the polygon as the target if they do.
+
+## 2026-09-13 — the belt tier re-measured against the real COURSE tiles
+
+The 2026-09-09 belt-tier gap (Train belt p99 36 vs real 18, "2x too
+steep") was measured against the 24 clean Nebraska dune lidar tiles, which
+04-landform-literature.md already notes were the GENTLE tiles. The right
+population for a course generator is the real course tiles: the 32
+`sandhills_ne` courses in `tools/golf/corpus/out/tiles` (2 m, 3–4.5 km,
+water masked). Tiers as before: belt = 100 m gaussian, hummock = 16 m
+band minus belt; relief = belt p1..p99 over the tile
+(scratch `belt/measure.py`, ours = the 149 aeolian tiles of the fresh
+200-seed run — all river seeds, so the gorge is in every one).
+
+Most of the 32 are town courses on river flats (median relief 36 m, belt
+p99 9). The dune-country ones, by name and relief: Dismal River 109 m
+(belt p90/99 16/34, hummock std 2.1), Sand Hills GC 83 (12/24, 1.8),
+Frederick Peak 83 (19/35, 3.0), Ballyneal 42 (8/14, 1.5); Chamberlain,
+Pelican Beach and Bayside are Missouri-bluff and Lake McConaughy sites,
+not dunes.
+
+| p10 / 50 / 90 over tiles | relief m | full slope p99 % | belt p90 % | belt p99 % | hummock std m |
+|---|---|---|---|---|---|
+| ours Train (63) | 66 / 99 / 127 | 60 / 68 / 76 | 14 / 21 / 25 | 26 / 34 / 44 | 2.2 / 3.1 / 3.8 |
+| ours Mound (86) | 49 / 79 / 96 | 58 / 66 / 72 | 11 / 17 / 22 | 20 / 28 / 36 | 2.1 / 2.9 / 3.5 |
+| real dune-field courses (8) | 44 / 80 / 99 | 43 / 58 / 70 | 8 / 13 / 17 | 14 / 24 / 34 | 1.5 / 2.0 / 2.6 |
+
+Read: every one of our tiles is a Dismal River. Train relief and belt
+slopes sit at the TOP of the real course band (median = real p90), Mound
+relief matches the real median with belt slopes a third over, and the
+hummock tier is ~1.5x the real dune courses for both forms (the gorge is
+in both populations' steep tiles, so that is not the whole excess). The
+gentler Sand Hills / Ballyneal end of real dune golf is not produced.
+Drawn `dune_relief_m` for Train on these seeds: p10/50/90 37/53/68.
+Decision belongs to the owner (the dial is "measured (course sites)").
+
+### 2026-09-13 — option 2 built: Train relief 28–64 m, hummock relief x0.7
+
+Owner chose option 2 (pull toward the real median; Dismal River stays at
+the top, Sand Hills and Ballyneal become possible). `record.rs`: Train
+`dune_relief_m` 32–74 → 28–64; `hummock_relief_m` Train 12–21 → 8.5–15,
+Mound 11–19 → 8–13.5. `surface.rs` ablation threshold 1.5 → 1.3 (seed 19
+measures 1.47; the test is about the band existing). 79 tests green.
+
+Whole-tile numbers barely moved (Train belt p99 34 → 33, hummock std 3.1
+→ 2.8) because every mixed-run tile carries a gorge, and the gorge sets
+the tile-wide p99s — exactly as it does on the real Dismal River tile
+(whole-tile belt p99 34, 24 with the river masked). Measured again with
+everything within 500 m of the river line (ours) or the water mask (real)
+excluded, i.e. the DUNES ALONE:
+
+| p10 / 50 / 90 over tiles, dunes only | relief m | belt p90 % | belt p99 % | hummock std m |
+|---|---|---|---|---|
+| Train before → after | 68 → 61 | 15 → 13 | 27 → 24 | 2.5 → 2.1 |
+| Mound before → after | 41 → 40 | 11 → 10 | 20 → 19 | 2.3 → 2.1 |
+| real dune courses (8), median | 82 | 13 | 21 | 1.8 |
+| Dismal River / Sand Hills | 110 / 83 | 15 / 12 | 24 / 24 | 1.9 / 1.8 |
+| Ballyneal / Meadowlark | 42 / 44 | 8 / 8 | 14 / 10 | 1.5 / 1.4 |
+
+After the pull a Train tile's dunes measure as Dismal River or Sand Hills
+(belt p90 13 = the real median, p99 24 = both, hummock 2.1 vs 1.9), and a
+Mound tile's as the gentler Ballyneal / Meadowlark end. The whole-tile
+excess that remains is the gorge on every river seed, which the real
+gorge tiles carry too. Screen: 149/149 flagged 0. Renders
+`out/mix200_belt`; viewer (`mix_before_after.py --pick slope`, details at
+the before build's steepest belt spot):
+https://claude.ai/code/artifact/b9b99d34-c4a9-4a96-9b88-4e1e6153037b

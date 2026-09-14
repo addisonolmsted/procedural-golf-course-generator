@@ -618,8 +618,12 @@ mod tests {
                 }
                 (acc / n).sqrt()
             };
-            assert!(rough(&b.height) > rough(&a.height) * 1.5,
-                    "seed {s}: the hummock tier added no short-scale energy");
+            let ratio = rough(&b.height) / rough(&a.height);
+            // 1.5 -> 1.3 (2026-09-13): the hummock relief was pulled x0.7 to
+            // the real dune courses and seed 19 measures 1.47; the ablation
+            // is about the band existing, not its size
+            assert!(ratio > 1.3,
+                    "seed {s}: the hummock tier added no short-scale energy (ratio {ratio:.2})");
             assert!(relief(&b.height) < relief(&a.height) * 1.9,
                     "seed {s}: the hummock tier is doing megaform work");
         }

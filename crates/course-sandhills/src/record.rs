@@ -331,7 +331,13 @@ pub const SANDHILLS: Record = Record {
         // out to be far below the ground Sand Hills and Dismal River are
         // actually built on, and it was the upstream blocker on the river
         // gorge -- a valley cannot be deeper than its landscape is tall.
-        dune_relief_m: Range::new(32.0, 74.0),     // measured (course sites)
+        // 2026-09-13, re-measured against the 32 real Sandhills course
+        // tiles (docs/calibration/creek-planform.md, belt section): at
+        // 32-74 every Train tile was a Dismal River (relief median 99 m =
+        // the real dune courses' p90; Sand Hills 83, Ballyneal 42), so the
+        // band is pulled to 28-64 -- Dismal River stays at the top, Sand
+        // Hills and Ballyneal become possible.
+        dune_relief_m: Range::new(28.0, 64.0),     // measured (course sites, 2026-09-13)
         wind_wander_rad: Range::new(0.20, 0.40),   // guess
         wind_wander_m: Range::new(1800.0, 3200.0), // guess
         // 8-20, raised from 5-12. The old floor admitted direction spreads
@@ -363,7 +369,9 @@ pub const SANDHILLS: Record = Record {
         // lambda alone took the golf proxy from 20/24 to 3/20.
         // scaled 1.5x against the megaform's 2x, so the hummock tier does
         // not start doing the megaform's job (surface.rs ablation test)
-        hummock_relief_m: Range::new(12.0, 21.0),
+        // x0.7 (2026-09-13): the hummock tier measured 1.5x the real dune
+        // courses (std 3.1 m vs Dismal River 2.1 / Sand Hills 1.8).
+        hummock_relief_m: Range::new(8.5, 15.0),
         hummock_kappa: Range::new(0.35, 1.10),      // 16-seed sweep -> A ~0.26
         hummock_gate: Range::new(0.30, 0.48),
         // Per-class, like texture_floor: the SS12 0.30-0.50 was calibrated on
@@ -434,7 +442,8 @@ pub const SANDHILLS: Record = Record {
         // bodies (300-800 m on t04184/t04187).
         belt_patch_m: Range::new(420.0, 900.0),
         hummock_spread: Range::new(0.50, 0.80),
-        hummock_relief_m: Range::new(11.0, 19.0),
+        // x0.7 (2026-09-13), as for the train: measured 2.9 m vs real 1.8-2.1
+        hummock_relief_m: Range::new(8.0, 13.5),
         // 1.10-2.70 -> 3.50-7.00 (review 2026-08-28): the wormy wiggle the
         // review called out was substantially THIS tier -- near-isotropic
         // hummock wave directions superpose into wandering iso-bands. High
