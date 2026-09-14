@@ -899,12 +899,21 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         }
     }
     let rr = (FLOOR_R_M / dspec0.cell_size).round() as i64;
-    let mut floor_f = Grid::filled(dspec0, floor_off);
+    // Computed on a 24 m grid and read bilinearly (2026-09-14): a 700 m
+    // window's 1/12 percentile does not change across 24 m, and doing it at
+    // every 8 m node with a full sort of ~3,400 samples was 7.2 s of a
+    // 7.7 s aeolian seed (measured with SAND_TIME). Quickselect, not sort.
+    const FLOOR_STEP: u32 = 3;
+    let cspec = course_world::grid::GridSpec::new(
+        dspec0.origin, dspec0.cell_size * FLOOR_STEP as f64,
+        dspec0.nx.div_ceil(FLOOR_STEP), dspec0.ny.div_ceil(FLOOR_STEP));
+    let mut floor_c = Grid::filled(cspec, floor_off);
     let mut buf: Vec<f64> = Vec::new();
-    for y in 0..dspec0.ny {
-        for x in 0..dspec0.nx {
+    for cy8 in 0..cspec.ny {
+        for cx8 in 0..cspec.nx {
             buf.clear();
-            let (cx, cy) = (x as i64, y as i64);
+            let (cx, cy) = ((cx8 * FLOOR_STEP).min(dspec0.nx - 1) as i64,
+                            (cy8 * FLOOR_STEP).min(dspec0.ny - 1) as i64);
             // MIRROR at the boundary, never clip. A clipped neighbourhood is
             // a smaller sample, so the local floor estimate is noisier at the
             // tile edge and |ground - floor| reaches its extremes there --
@@ -938,9 +947,16 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             if buf.len() < 8 {
                 continue;
             }
-            buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let local = buf[buf.len() / 12];
-            floor_f.set(x, y, floor_off + FLOOR_DAMP * (local - floor_off));
+            let k = buf.len() / 12;
+            let (_, local, _) = buf.select_nth_unstable_by(k, |a, b| a.partial_cmp(b).unwrap());
+            let local = *local;
+            floor_c.set(cx8, cy8, floor_off + FLOOR_DAMP * (local - floor_off));
+        }
+    }
+    let mut floor_f = Grid::filled(dspec0, floor_off);
+    for y in 0..dspec0.ny {
+        for x in 0..dspec0.nx {
+            floor_f.set(x, y, floor_c.bilinear(dspec0.world_of(x, y)));
         }
     }
     // RIVER DRAWDOWN. A river drains its corridor: the local water table is
@@ -1067,11 +1083,16 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             }
         }
     }
+    let timing = std::env::var("SAND_TIME").is_ok();
+    let mut t0 = std::time::Instant::now();
     let fill = if settle_on() {
         fill_levels(&spec, &height.data, &vec![false; spec.len()], &wall)
     } else {
         Vec::new()
     };
+    if timing { eprintln!("  time   find/fill    {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3); t0 = std::time::Instant::now(); }
+    let mut n_candidates = 0usize;
+    let mut n_settled = 0usize;
     // connected components, 4-neighbour flood fill
     let mut comp = vec![0u32; spec.len()];
     let mut next = 0u32;
@@ -1110,6 +1131,7 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         if cells.len() < 125 {
             continue; // < 500 m2 at 2 m
         }
+        n_candidates += 1;
         // one FLAT level per lake
         let mut lv: Vec<f64> = cells.iter().map(|i| table[*i]).collect();
         lv.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -1131,6 +1153,7 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             // at the level instead (see `berm`)
             let seeds: Vec<usize> =
                 cells.iter().copied().filter(|i| height.data[*i] < level).collect();
+            n_settled += 1;
             let (lv2, c2) = settle(&spec, &height.data, &fill, &seeds, level, &wall);
             if c2.len() * 2 >= seeds.len() {
                 level = lv2;
@@ -1154,6 +1177,7 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
             lake_cells += 1;
         }
     }
+    if timing { eprintln!("  time   find/bodies  {:7.1} ms ({n_candidates} candidates, {n_settled} settled)", t0.elapsed().as_secs_f64() * 1e3); t0 = std::time::Instant::now(); }
     // FINAL sweep: the level cut can SPLIT a component -- cells above the
     // level in its middle go dry and disconnect it -- so gating per source
     // component still let 28 m2 slivers through. Relabel the finished wet
@@ -1263,6 +1287,7 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
         }
     }
 
+    if timing { eprintln!("  time   find/sweep+cap {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3); }
     let lake_frac = lake_cells as f64 / spec.len() as f64;
     Water { surface, lake_frac, river: None, river_z: None }
 }

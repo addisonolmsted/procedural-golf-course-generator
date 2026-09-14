@@ -1177,3 +1177,26 @@ excess matches the real source tiles; Mound lowland relief ~0.6× real;
 prominence instrument too noisy to tune against; creek-ribbon banks on
 river tiles carry the only shore-below cells (0.06 worst, pre-existing).
 Artifact: https://claude.ai/code/artifact/f8032308-90ca-4eae-9e90-633d1b8682ca.
+
+## 2026-09-14 — freeze: timing, and the aeolian water table's 7 seconds
+
+`final_pass` (the real entry point, timer around the generator only),
+100 seeds from 910000, single thread, release: aeolian tiles took a
+median 7.8 s against ~0.5 s in August. `SAND_TIME=1` stage timers (new,
+`lib.rs::build_full` and `water::find`): 7.2 s of it was the water
+table's local floor (2026-08-29): a 700 m window of ~3,400 samples fully
+SORTED at every one of the 141k 8 m nodes. Now computed on a 24 m grid
+with quickselect and read bilinearly (a 700 m-window percentile does not
+change across 24 m): `water::find` 7.4 s → 0.43 s. 116 aeolian seeds
+re-rendered: mean lake share identical, 115/116 within 1e-4, height
+unchanged but on one tile's berm (0.8 m); screen 0 flagged; 83 tests.
+
+| ms per seed, n = 100 | median | mean | sd | min | max |
+|---|---|---|---|---|---|
+| all | 1288 | 1250 | 400 | 689 | 2075 |
+| aeolian (54) | 791 | 986 | 343 | 689 | 2075 |
+| aeolian, no river (32) | 723 | | 38 | | |
+| aeolian, river (22) | 1241 | | 278 | | |
+| fluvial (46) | 1577 | 1560 | 177 | 1310 | 1938 |
+
+Branch `sandhills` pushed to origin for the first time (2026-09-14).

@@ -277,7 +277,17 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let hw = wind::build(&mut hr, d.wind_rad, d.hummock_lambda_m, d.wind_wander_rad,
                          d.wind_wander_m * 0.45, d.hummock_kappa, d.hummock_spread);
     let mut br = rng::stream(id, rng::PATCHY);
+    // stage timing, `SAND_TIME=1`: where a seed's milliseconds go
+    let timing = std::env::var("SAND_TIME").is_ok();
+    let mut t0 = std::time::Instant::now();
+    let mut lap = |tag: &str, t0: &mut std::time::Instant| {
+        if timing {
+            eprintln!("  time {tag:14} {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3);
+            *t0 = std::time::Instant::now();
+        }
+    };
     let mut sf = surface::build(&mut br, &w, &hw, &d);
+    lap("surface", &mut t0);
 
     // megaform position at 8 m — the shared axis every gate keys on
     let spec8 = sf.height.spec;
@@ -298,6 +308,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     let blowouts_on = !std::env::var("BLOWOUT").map(|v| v == "off").unwrap_or(false);
     let quilt_on = !std::env::var("QUILT").map(|v| v == "off").unwrap_or(false);
     let _pan = if blowouts_on { blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d) } else { Default::default() };
+    lap("pans", &mut t0);
 
     // A6a: the river GORGE, cut into the macro before texture — the valley
     // is a landform and belongs under the quilt.
@@ -312,6 +323,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     } else {
         None
     };
+    lap("gorge", &mut t0);
 
     // T: texture at 2 m — now covering the corridor floor too
     let mut tr = rng::stream(id, rng::TEXTURE);
@@ -322,6 +334,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
         d0.texture_gain = 0.0;
         texture::quilt(&mut tr, pack, &sf.height, &d0)
     };
+    lap("quilt", &mut t0);
 
     // A5b: blowouts over the texture. A blowout inside the canyon would be
     // a dune feature cut into a river valley, so the gorge keeps them out.
@@ -341,6 +354,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     diag_line("after quilt", &height);
     let blowouts = if blowouts_on { blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid) } else { Vec::new() };
     diag_line("after blowouts", &height);
+    lap("blowouts", &mut t0);
 
     // A6b: lakes on the finished ground, then the sharp creek slot.
     // The gorge supplies the table drawdown: its floor sits ~50 m below the
@@ -353,6 +367,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
         reach: 620.0,
     });
     let mut water = water::find(&mut height, &sf.datum, &d, dd.as_ref(), &blowouts);
+    lap("water::find", &mut t0);
     // No standing lakes on the valley floor beside running water. Done
     // BEFORE cut_creek so it cannot remove the river it just laid down.
     if let Some(g) = &gorge {
@@ -369,6 +384,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     } else {
         None
     };
+    lap("creek", &mut t0);
 
     Tile { d, height, water: water.surface, lake_frac: water.lake_frac,
            blowouts, river }
