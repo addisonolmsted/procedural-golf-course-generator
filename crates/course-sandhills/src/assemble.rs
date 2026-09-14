@@ -179,25 +179,6 @@ fn chamfer(spec: course_world::grid::GridSpec, seed: &[(u32, u32, f64)])
 /// right around the tile rim. Every field here — bed, distance, u, w, H —
 /// runs through this, so the bug reached all of them.
 fn blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, passes: usize) {
-    // DIAGNOSTIC ONLY (SAND_OLD_BLUR=1): the border-skipping form, kept so
-    // the fix can be demonstrated against itself on identical seeds.
-    if std::env::var("SAND_OLD_BLUR").is_ok() {
-        for _ in 0..passes {
-            let src = a.clone();
-            for y in 1..spec.ny - 1 {
-                for x in 1..spec.nx - 1 {
-                    let i = spec.index(x, y);
-                    a[i] = 0.2
-                        * (src[i]
-                            + src[spec.index(x - 1, y)]
-                            + src[spec.index(x + 1, y)]
-                            + src[spec.index(x, y - 1)]
-                            + src[spec.index(x, y + 1)]);
-                }
-            }
-        }
-        return;
-    }
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     for _ in 0..passes {
         let src = a.clone();
@@ -255,9 +236,6 @@ fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, r: i64,
 /// removes the whole class at once, and it is loose enough (22%) that no
 /// real cross-valley bed gradient is touched.
 fn slope_limit(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, max_grade: f64) {
-    if std::env::var("SAND_NO_SLOPELIMIT").is_ok() {
-        return;                                  // DIAGNOSTIC ONLY
-    }
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
     let (o, dg) = (max_grade * CELL, max_grade * CELL * std::f64::consts::SQRT_2);
     for _ in 0..2 {
@@ -364,15 +342,12 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // (measured — seed 9513 gained a hard-edged bay at a tributary head the
     // first time this was tried). Only the valley SHAPE uses the corrected
     // field.
-    // Overridable for the ladder viewer (SAND_HEAD_ALPHA), in the same
-    // spirit as the other SAND_* diagnostic toggles. Read once, not per cell.
-    let head_alpha: f64 = std::env::var("SAND_HEAD_ALPHA").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(2.6);
+    const HEAD_ALPHA: f64 = 2.6;      // along-axis stretch beyond the tip
     const HEAD_REACH: f64 = 260.0;    // no tip governs ground further than this
     let mut dist_v = dist.clone();
     for (ci, (pts, _)) in beds.iter().enumerate() {
         let tier = tiers.get(ci).copied().unwrap_or(1);
-        if head_alpha <= 1.0 || tier < 2 || pts.len() < 2 {
+        if tier < 2 || pts.len() < 2 {
             continue;                 // the trunk runs off-tile at both ends
         }
         let tip = pts[pts.len() - 1];
@@ -415,7 +390,7 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
                     continue;
                 }
                 let q = (de * de - s_ax * s_ax).max(0.0).sqrt();
-                let dn = ((head_alpha * s_ax).powi(2) + q * q).sqrt();
+                let dn = ((HEAD_ALPHA * s_ax).powi(2) + q * q).sqrt();
                 if dn > dist_v[i] {
                     dist_v[i] += wt * (dn - dist_v[i]);
                 }
@@ -529,12 +504,9 @@ pub fn assemble(rng: &mut DetRng, beds: &[(Vec<Vec2>, Vec<f64>)],
     // of a tile's 40 sharpest cells sat within 40 m of a channel head. Two
     // blur passes round the tips; the valley floors, being lines rather
     // than points, are barely touched.
-    // Floor-flattening strength and the valley-width window it ramps over.
-    // Overridable for the ladder viewer.
-    // Descriptor-driven now (the Pinehurst variant lowers it); the env var
-    // stays as an override so the ladder viewer still works.
-    let floor_p: f64 = std::env::var("SAND_FLOOR_P").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(d.floor_p);
+    // Floor-flattening strength: descriptor-driven (the Pinehurst variant
+    // lowers it).
+    let floor_p: f64 = d.floor_p;
     let mut hf = vec![0.0f64; spec.len()];
     for i in 0..spec.len() {
         // MEASURED 2026-08-27 with valley_compare's own ruler (HAND < 2 m

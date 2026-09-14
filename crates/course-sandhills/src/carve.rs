@@ -52,6 +52,11 @@ fn hack(up_len_m: f64) -> f64 {
 /// Per-channel carve program: the bed and the arc table, plus the drawn
 /// organ seeds. Beds are built junction-first so a tributary floor MEETS
 /// its parent floor exactly.
+///
+/// Only `pts` and `bed` leave this function since the catena stamp was
+/// retired for the HAND profile; the other fields are still filled because
+/// the organ seeds are RNG draws that later draws depend on.
+#[allow(dead_code)]
 struct Program {
     pts: Vec<Vec2>,
     bed: Vec<f64>,
@@ -80,20 +85,20 @@ pub fn beds(rng: &mut DetRng, net: &Network, datum: &Grid<f64>,
             d: &Descriptors) -> Vec<(Vec<Vec2>, Vec<f64>)> {
     // ---- per-tile draws -------------------------------------------------
     let depth_unit = d.valley_depth_m;
-    let floor_unit = d.valley_floor_m;
-    let wall_unit = d.valley_wall_m;
     let trunk_credit = rng.range_f64(TRUNK_CREDIT_M.0, TRUNK_CREDIT_M.1);
     let frag_credit = rng.range_f64(FRAG_CREDIT_M.0, FRAG_CREDIT_M.1);
-    let out_grade = rng.range_f64(0.012, 0.020);
+    // drawn, unused: kept so later draws keep their values
+    let _out_grade = rng.range_f64(0.012, 0.020);
     // Flint's-law steepness: slope(a) = s0 * (up_len/1500)^-0.45, capped at
     // 2% near heads. `measured 2026-08-25` (trunk_profile on 4 real tiles):
     // mainstems run 0.1-0.2% in-tile with the climb in the headwaters —
     // the datum-following bed was linear-to-convex against that.
     let s0 = rng.range_f64(0.0022, 0.0034);
-    let p_base = rng.range_f64(1.5, 2.1);
-    let s_cat1 = rng.next_u32();
-    let s_cat2 = rng.next_u32();
-    let s_floor = rng.next_u32();
+    // drawn, unused: kept so later draws keep their values
+    let _p_base = rng.range_f64(1.5, 2.1);
+    let _s_cat1 = rng.next_u32();
+    let _s_cat2 = rng.next_u32();
+    let _s_floor = rng.next_u32();
 
     // ---- junction-first beds -------------------------------------------
     let mut progs: Vec<Program> = Vec::with_capacity(net.chans.len());

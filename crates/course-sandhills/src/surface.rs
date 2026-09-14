@@ -35,7 +35,7 @@ use course_world::grid::Grid;
 use course_world::math::{self, Vec2};
 
 use crate::draw::Descriptors;
-use crate::wind::{macro_spec, WindField, RES_M};
+use crate::wind::{macro_spec, WindField};
 
 pub struct Surface {
     pub height: Grid<f64>,
@@ -128,7 +128,6 @@ pub fn profile(t: f64, stoss_share: f64) -> f64 {
 /// for free.
 fn advect(z: &Grid<f64>, tnorm: &[f64], wind_rad: f64, offset_m: f64) -> Grid<f64> {
     let spec = z.spec;
-    let offset_m = if std::env::var("SURFACE_ADVECT").map(|v| v == "off").unwrap_or(false) { 0.0 } else { offset_m };
     let w = Vec2::new(math::cos(wind_rad), math::sin(wind_rad));
     let mut out = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
@@ -168,15 +167,13 @@ fn shape_body(t: f64, p: f64) -> f64 {
         0.15 * t
     } else if t <= 1.0 {
         t.powf(p)
-    } else if tail_saturates() {
+    } else {
         // The crest tail SATURATES (2026-09-07). Linear continuation at slope
         // p let the top 5 % of the field run away: on the mixed run a mound
         // stood 65 m over a 25 m drawn relief, 100 m wide, with 200 % sides
         // -- (max - p95)/(p95 - p5) of 1.6 against 0.43 on the real tiles.
         // Same slope p at t = 1 (C1), asymptote 1 + TAIL.
         1.0 + TAIL * (1.0 - math::exp(-p * (t - 1.0) / TAIL))
-    } else {
-        1.0 + p * (t - 1.0)
     }
 }
 
@@ -185,24 +182,16 @@ fn shape_body(t: f64, p: f64) -> f64 {
 /// p90 ~0.8.
 const TAIL: f64 = 0.6;
 
-fn tail_saturates() -> bool {
-    !std::env::var("SURFACE_TAIL").map(|v| v == "off").unwrap_or(false)
-}
-
 /// Angle of repose (2026-09-07). Sand does not stand steeper than ~32
 /// degrees, and the real 8 m macro never exceeds 69 % (p99 39 %) on 24
 /// Nebraska tiles, while ours reached 538 %. A fixed number of relaxation
 /// passes moves material from the higher cell to the lower wherever a
 /// neighbour pair exceeds TALUS, mass-conserving, so a cliff becomes a slip
-/// face and the calibrated relief (p5-p95) is barely touched. Ablation:
-/// `SURFACE_TALUS=off`.
+/// face and the calibrated relief (p5-p95) is barely touched.
 const TALUS: f64 = 0.50;
 const TALUS_PASSES: usize = 40;
 
 fn talus(g: &mut Grid<f64>) {
-    if std::env::var("SURFACE_TALUS").map(|v| v == "off").unwrap_or(false) {
-        return;
-    }
     talus_at(g, TALUS);
 }
 
@@ -405,7 +394,6 @@ pub fn build(rng: &mut DetRng, w: &WindField, hw: &WindField, d: &Descriptors) -
     let mut hum = Grid::filled(spec, 0.0f64);
     for y in 0..ny {
         for x in 0..nx {
-            let li = spec.index(x, y);
             hum.set(x, y, height.get(x, y) - belts.get(x, y));
         }
     }
@@ -487,6 +475,7 @@ pub fn relief(g: &Grid<f64>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wind::RES_M;
     use crate::{draw, rng, wind, Mode};
     use course_seed::RunIdentity;
 

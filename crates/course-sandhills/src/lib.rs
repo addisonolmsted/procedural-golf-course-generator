@@ -177,15 +177,6 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
         }
         g
     };
-    let d2 = {
-        let mut g = Grid::filled(tex.spec, 0.0f64);
-        for y in 0..tex.spec.ny {
-            for x in 0..tex.spec.nx {
-                g.set(x, y, asm.dist.bilinear(tex.spec.world_of(x, y)));
-            }
-        }
-        g
-    };
     // Bays retired at the reviewer's call (2026-08-26). The stream is still
     // opened and `u2` still built, and the `n_bays` DRAW is still taken in
     // draw.rs, so the transcript and every aeolian tile stay byte-stable --
@@ -280,7 +271,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     // stage timing, `SAND_TIME=1`: where a seed's milliseconds go
     let timing = std::env::var("SAND_TIME").is_ok();
     let mut t0 = std::time::Instant::now();
-    let mut lap = |tag: &str, t0: &mut std::time::Instant| {
+    let lap = |tag: &str, t0: &mut std::time::Instant| {
         if timing {
             eprintln!("  time {tag:14} {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3);
             *t0 = std::time::Instant::now();
@@ -304,10 +295,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
 
     // A5a: deflation pans, under the texture
     let mut pr = rng::stream(id, rng::BLOWOUT);
-    // ablations for the slope diagnosis (2026-09-07): BLOWOUT=off, QUILT=off
-    let blowouts_on = !std::env::var("BLOWOUT").map(|v| v == "off").unwrap_or(false);
-    let quilt_on = !std::env::var("QUILT").map(|v| v == "off").unwrap_or(false);
-    let _pan = if blowouts_on { blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d) } else { Default::default() };
+    let _pan = blowout::pans(&mut pr, &mut sf.height, &tnorm8.data, &d);
     lap("pans", &mut t0);
 
     // A6a: the river GORGE, cut into the macro before texture — the valley
@@ -327,13 +315,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
 
     // T: texture at 2 m — now covering the corridor floor too
     let mut tr = rng::stream(id, rng::TEXTURE);
-    let mut height = if quilt_on {
-        texture::quilt(&mut tr, pack, &sf.height, &d)
-    } else {
-        let mut d0 = d.clone();
-        d0.texture_gain = 0.0;
-        texture::quilt(&mut tr, pack, &sf.height, &d0)
-    };
+    let mut height = texture::quilt(&mut tr, pack, &sf.height, &d);
     lap("quilt", &mut t0);
 
     // A5b: blowouts over the texture. A blowout inside the canyon would be
@@ -352,7 +334,7 @@ pub fn build_full(id: &RunIdentity, pack: &texture::PatchPack,
     // NET_DEBUG: the graded floor is what the creek stage inherits.
     diag_line("after gorge (8 m macro)", &sf.height);
     diag_line("after quilt", &height);
-    let blowouts = if blowouts_on { blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid) } else { Vec::new() };
+    let blowouts = blowout::carve(&mut pr, &mut height, &tnorm8, &d, avoid);
     diag_line("after blowouts", &height);
     lap("blowouts", &mut t0);
 

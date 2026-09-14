@@ -27,7 +27,6 @@
 use course_seed::DetRng;
 use course_world::grid::{Grid, GridSpec};
 use course_world::math::{self, Vec2};
-use course_world::noise;
 use course_world::world::EXTENT_M;
 
 /// Macro resolution. 8 m: the signal is km-scale and this is the grid the
@@ -215,7 +214,7 @@ pub fn build(rng: &mut DetRng, wind_rad: f64, lambda_m: f64,
     }
 
     // How much of the target gradient field is curl -- the defect budget.
-    let (mut grad_e, mut curl_e) = (0.0f64, 0.0f64);
+    let mut curl_e = 0.0f64;
     for m in &modes {
         let qm = m.q.length();
         if qm <= 0.0 {
@@ -224,7 +223,6 @@ pub fn build(rng: &mut DetRng, wind_rad: f64, lambda_m: f64,
         let qh = Vec2::new(m.q.x / qm, m.q.y / qm);
         let along = w_perp.dot(qh); // gradient part
         let across = (1.0 - along * along).max(0.0).sqrt(); // curl part
-        grad_e += (m.a * along).powi(2);
         curl_e += (m.a * across).powi(2);
     }
     let curl_mag = curl_e.sqrt();

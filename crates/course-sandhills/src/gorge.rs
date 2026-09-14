@@ -45,61 +45,23 @@ pub struct Gorge {
     pub salt: u32,
 }
 
-/// Valley half-width by tier, metres -- the distance at which the cut dies.
+/// The trunk's valley half-width, metres -- the distance at which the cut
+/// dies.
 ///
 /// Measured, `tools/aeolian/dismal_profile.py`: the Dismal reach reaches 90% of
 /// its rim height at a half-width of 534 m (744 and 1044 on the two incised
 /// tiles), against 393 m for the pre-round-10 generator. The old 440 m trunk
 /// was not a wide canyon, it was a narrow one -- what made it *read* narrow was
 /// the wall exponent, not this number. Widened to put the apron on the measured
-/// band; the trench stays crisp because of FLOOR_FRAC and WALL_P below.
-fn half_width(tier: u8) -> f64 {
-    match tier {
-        1 => 1400.0,
-        2 => 260.0,
-        _ => 140.0,
-    }
-}
+/// band; the trench stays crisp because of FLOOR_FRAC and the layer exponents
+/// in TRUNK_LAYERS below.
+const HALF_WIDTH: f64 = 1400.0;
 
 /// Fraction of the half-width that is flat valley floor before the wall
 /// starts. Measured: the real sections sit within 5 m of the channel out to
 /// ~100 m and do not climb at all for the first ~40 m, against 16 m for ours
 /// -- we cut a V where the Dismal has a trough with a floor.
 const FLOOR_FRAC: f64 = 0.10;
-
-/// Only the trunk has a floor. A tributary catena is a V all the way down --
-/// giving it the trunk's flat bottom turned every one into a flat-floored
-/// tube with a rounded end, floating on the apron like a worm.
-fn floor_frac(tier: u8) -> f64 {
-    if tier == 1 { FLOOR_FRAC } else { 0.0 }
-}
-
-/// A tributary's cut must shallow to nothing at its head, or it arrives at
-/// full depth and stops -- which is the other half of the worm. Exponent
-/// below 1 keeps it deep for most of its length and closes it out quickly.
-const HEAD_SHALLOW: f64 = 0.55;
-
-/// Wall exponent by tier, on the normalised wall coordinate.
-///
-/// The trunk and its tributaries are shaped by different processes and the
-/// reference shows it: the trunk carries a broad gentle apron, while the side
-/// catenas are thin, sharp incisions cutting ACROSS that apron. Giving the
-/// tributaries the trunk's wide gentle profile turned them into smooth lobes
-/// -- the metrics were on band and the render read as scalloped ramp. Above 1
-/// puts a sharp V on them, which is what "thin and sharp" actually means.
-fn wall_p(tier: u8) -> f64 {
-    if tier == 1 { WALL_P } else { 1.05 }
-}
-
-/// Wall exponent for the TRUNK, on the normalised wall coordinate.
-///
-/// This was 1.22, and being above 1 it made the wall SHALLOWEST at the floor
-/// and steepest at the rim: a V with a hard edge. The measured Dismal does the
-/// opposite -- the surface gains height fastest just outside the trench and
-/// gentles as it goes out (8.7% from +5 to +15 m, 6.4% to +30, 3.4% to +45).
-/// Below 1 reproduces that, which is what makes a crisp inner trench sit
-/// inside an apron gentle enough to read as dune land rather than as valley.
-const WALL_P: f64 = 0.72;
 
 /// How quickly the dune grain reappears out of the trench, as a fraction of
 /// the wall coordinate. Below this the floor is flat; above it the dunes are
@@ -160,12 +122,15 @@ const WALL_ROUGH: f64 = 0.52;
 /// this the wall is a clean surface however ragged its outline is.
 const WALL_TEX: f64 = 0.085;
 
-/// A tributary's valley is as wide as the trunk's where it joins and narrows
-/// to a point at its head. That taper cut the discrete, flat-bottomed
-/// embayments the real rim shows -- it swings between 150 and 500 m over a
-/// ~330 m pitch. NOTE: tributaries no longer cut (review 2026-08-27, see
-/// `build`: `if tier != 1 { continue }`); the width swing and wall warp do
-/// the rim's raggedness now, and this constant is dormant.
+/// Head taper: the valley half-width at the channel's head as a fraction of
+/// HALF_WIDTH, widening linearly to the full width at the mouth. Written for
+/// the tributaries -- a tributary's valley was as wide as the trunk's where
+/// it joined and narrowed to a point at its head, and that taper cut the
+/// discrete, flat-bottomed embayments the real rim shows (150 to 500 m over
+/// a ~330 m pitch). Tributaries no longer cut (review 2026-08-27, see
+/// `build`: `if tier != 1 { continue }`) and the width swing and wall warp
+/// do the rim's raggedness now, but the trunk's own half-width field is
+/// still seeded through this taper, so it is live.
 const HEAD_TAPER: f64 = 0.30;
 
 /// No cell is cut more than this far below the ground it started at. A relief
@@ -180,30 +145,29 @@ const MAX_CUT_M: f64 = 62.0;
 /// rim (1.15x the mean on the trench) at the real p99.9.
 const WALL_SLOPE_MAX: f64 = 0.60;
 
-/// The saturation above is a valley-scale relief valve, and it left the
-/// river with nowhere to run: where the trunk crosses a dune train the cut
-/// stops MAX_CUT_M short, the "floor" is the dune surface lowered bodily,
-/// and the water level -- which must descend -- ends up 17 m below the
-/// ground beside it (measured, seed 600032: floor above the graded bed
-/// p50 5.7 m, p90 18.6 m, max 27.7 m ON THE TRUNK LINE). The creek crease
-/// then dug a slot with near-vertical walls through the residual.
-///
-/// A river that was there before the dunes cuts THROUGH them: the valley
-/// floor may rise over the train, but the inner gorge goes to grade. So the
-/// trench layer cuts the residual the saturated apron leaves, and widens
-/// with the extra depth so its wall slope does not blow up:
-/// `hw *= sqrt(1 + res / trench_depth)`.
-///
-/// The same rule runs the other way. The cut never fills, so a deflation pan
-/// or an interdune hollow lying on the trunk line stayed a hole in the floor
-/// (seed 600006: a pan at -9.9 m on a bed at +3 m), and the creek's
-/// descending level dragged the whole downstream reach to the hole's depth --
-/// 4 km of creek 13-20 m below its floor. A river aggrades its floor: within
-/// the trench, ground below the graded floor is raised to it, the raise
-/// fading out across the lower wall so nothing steps. Ablation: same toggle.
-fn through_cut() -> bool {
-    std::env::var("GORGE_THROUGH").map(|v| v != "off").unwrap_or(true)
-}
+// The through-cut.
+//
+// The saturation above is a valley-scale relief valve, and it left the
+// river with nowhere to run: where the trunk crosses a dune train the cut
+// stops MAX_CUT_M short, the "floor" is the dune surface lowered bodily,
+// and the water level -- which must descend -- ends up 17 m below the
+// ground beside it (measured, seed 600032: floor above the graded bed
+// p50 5.7 m, p90 18.6 m, max 27.7 m ON THE TRUNK LINE). The creek crease
+// then dug a slot with near-vertical walls through the residual.
+//
+// A river that was there before the dunes cuts THROUGH them: the valley
+// floor may rise over the train, but the inner gorge goes to grade. So the
+// trench layer cuts the residual the saturated apron leaves, and widens
+// with the extra depth so its wall slope does not blow up:
+// `hw *= sqrt(1 + res / trench_depth)`.
+//
+// The same rule runs the other way. The cut never fills, so a deflation pan
+// or an interdune hollow lying on the trunk line stayed a hole in the floor
+// (seed 600006: a pan at -9.9 m on a bed at +3 m), and the creek's
+// descending level dragged the whole downstream reach to the hole's depth --
+// 4 km of creek 13-20 m below its floor. A river aggrades its floor: within
+// the trench, ground below the graded floor is raised to it, the raise
+// fading out across the lower wall so nothing steps.
 
 /// Cut the gorge into `height` (8 m macro grid). Returns None when the seed
 /// draws no river.
@@ -241,17 +205,6 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     let depth_k = if wide { 0.52 } else { 1.0 };
     dg.valley_depth_m = d.valley_depth_m * 3.4 * depth_k;
     let max_cut = MAX_CUT_M * depth_k;
-    let through = through_cut();
-    let slope_bound = std::env::var("GORGE_SLOPE").map(|v| v != "off").unwrap_or(true);
-    // ablations for the wall-slope diagnosis
-    let wall_tex = if std::env::var("GORGE_TEX").map(|v| v == "off").unwrap_or(false) { 0.0 } else { WALL_TEX };
-    let wall_rough = if std::env::var("GORGE_ROUGH").map(|v| v == "off").unwrap_or(false) { 0.0 } else { WALL_ROUGH };
-    let detail_on = !std::env::var("GORGE_DETAIL").map(|v| v == "off").unwrap_or(false);
-    let fill_on = !std::env::var("GORGE_FILL").map(|v| v == "off").unwrap_or(false);
-    let blur_on = !std::env::var("GORGE_BLUR").map(|v| v == "off").unwrap_or(false);
-    if std::env::var("GORGE").map(|v| v == "off").unwrap_or(false) {
-        return None;
-    }
     let mut beds = carve::beds(rng, &net, &datum, &dg);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
     // The bed runs no higher than the ground beside it would let water stand
@@ -264,8 +217,8 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // -- and the profile is made monotone toward the mouth again, which is
     // what carries a low crossed near the head down the rest of the trunk
     // as a deeper cut. An enclosed pan keeps its rim above the bed and
-    // changes nothing. Ablation: `GORGE_BEDLOW=off`.
-    if std::env::var("GORGE_BEDLOW").map(|v| v != "off").unwrap_or(true) {
+    // changes nothing.
+    {
         const BED_LOW_R: f64 = 100.0;
         let spill = crate::water::fill_levels(&spec, &height.data, &vec![false; spec.len()], &vec![false; spec.len()]);
         let rc = (BED_LOW_R / cell).ceil() as i64;
@@ -353,7 +306,8 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     let h0s: Vec<f64> = h0g.data.clone();
     let mut target: Vec<f64> = h0.clone();
     // The graded floor the trunk's trench guarantees, and how firmly (1 on
-    // the flat floor, 0 by the middle of the trench wall). See `through_cut`.
+    // the flat floor, 0 by the middle of the trench wall). See the through-cut
+    // note above `build`.
     let mut fill_t: Vec<f64> = vec![f64::NEG_INFINITY; spec.len()];
     let mut fill_w: Vec<f64> = vec![0.0; spec.len()];
     // The apron's own surface, per cell, for the trench to ride on (see the
@@ -369,27 +323,18 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         if tier != 1 {
             continue;
         }
-        let layers: &[(f64, f64, f64, f64, bool)] = if tier == 1 {
-            &TRUNK_LAYERS
-        } else {
-            &[(0.0, 0.0, 0.0, 1.0, false)]   // filled per tier below
-        };
-        let hw0 = half_width(tier);
-        let wp = wall_p(tier);
-        let ff = floor_frac(tier);
+        let layers: &[(f64, f64, f64, f64, bool)] = &TRUNK_LAYERS;
+        let hw0 = HALF_WIDTH;
         // Which end is downstream? The bed falls toward the mouth.
         let mouth_last = bed.last().copied().unwrap_or(0.0) <= bed[0];
         let mut bed_seed: Vec<(u32, u32, f64)> = Vec::new();
         let mut hw_seed: Vec<(u32, u32, f64)> = Vec::new();
-        let mut ds_seed: Vec<(u32, u32, f64)> = Vec::new();
         for k in 0..pts.len() - 1 {
             let (a, b) = (pts[k], pts[k + 1]);
             // Position along the channel, 0 at the head and 1 at the mouth.
             let f = k as f64 / (pts.len() - 1) as f64;
             let f = if mouth_last { f } else { 1.0 - f };
             let hw = hw0 * (HEAD_TAPER + (1.0 - HEAD_TAPER) * f);
-            // Depth taper: the trunk holds its depth, a catena closes out.
-            let ds = if tier == 1 { 1.0 } else { f.powf(HEAD_SHALLOW) };
             let seg = a.distance(b);
             let n = (seg / (cell * 0.5)).ceil().max(1.0) as usize;
             for j in 0..=n {
@@ -400,7 +345,6 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
                 let z = bed[k] + (bed[k + 1] - bed[k]) * t;
                 bed_seed.push((x, y, z));
                 hw_seed.push((x, y, hw));
-                ds_seed.push((x, y, ds));
             }
         }
         if bed_seed.is_empty() {
@@ -425,23 +369,17 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         // the wall, which is governed by dist/hw over hundreds of metres.
         blur_vec(&spec, &mut dist_c, 2);
         let (_, mut hw_c) = edt(&spec, &hw_seed);
-        let (_, mut ds_c) = edt(&spec, &ds_seed);
-        blur_vec(&spec, &mut ds_c, 4);
         // Light smoothing only: this field now varies along ONE channel, so
         // there is no tier jump to erase -- just the taper's own steps.
         blur_vec(&spec, &mut hw_c, 12);
         let mut cum = 0.0f64;
         for li in 0..layers.len() {
-            let (lhw, lwp, lff, ldep, ltan) = if tier == 1 {
-                layers[li]
-            } else {
-                (hw0, wp, ff, 1.0, false)
-            };
+            let (lhw, lwp, lff, ldep, ltan) = layers[li];
             let before = cum;
             cum += ldep;
         for i in 0..spec.len() {
-            // For the trunk each layer has its own absolute half-width; for a
-            // tributary the chamfered, tapered field is the half-width.
+            // Each layer has its own absolute half-width, scaled by the
+            // trunk's tapered width field (`hw_c / hw0`).
             // The width swing is a SMOOTH 2-D field, not a per-station value
             // on the channel. Seeding it along the channel and reading it back
             // through the nearest-feature transform made every station-to-
@@ -459,13 +397,14 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // and put a kink wherever the two branches cross, which on a
             // bumpy dune surface is a ragged line -- 809% slopes. tanh
             // saturates at the same limit with no corner anywhere.
-            let ds = ds_c[i].clamp(0.0, 1.0);
             let want = (h0s[i] - bed_c[i]).max(0.0);
-            let full = max_cut * (want / max_cut).tanh() * ds;
-            // The innermost trunk layer carries the river to grade: it takes
-            // the residual the saturation left (see `through_cut`).
-            let res = if through && tier == 1 && li == layers.len() - 1 {
-                (want * ds - full).max(0.0)
+            let full = max_cut * (want / max_cut).tanh();
+            // The innermost layer -- the trench -- carries the river to grade:
+            // it takes the residual the saturation left (see the through-cut
+            // note above `build`).
+            let trench_on_apron = li == layers.len() - 1;
+            let res = if trench_on_apron {
+                (want - full).max(0.0)
             } else {
                 0.0
             };
@@ -474,11 +413,8 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             } else {
                 1.0
             };
-            let hw = (if tier == 1 {
-                lhw * (hw_c[i] / hw0).clamp(0.0, 1.0)
-            } else {
-                hw_c[i]
-            } * (1.0 + WIDTH_SWING * wide[i]).clamp(0.30, 1.95)
+            let hw = (lhw * (hw_c[i] / hw0).clamp(0.0, 1.0)
+                * (1.0 + WIDTH_SWING * wide[i]).clamp(0.30, 1.95)
                 * widen)
             .max(1.0);
             // The wall is never steeper than the real one. The width swing
@@ -490,21 +426,16 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // 50 %, p99.9 62 %, max 80 % within 400 m of the trunk. So the
             // wall's width is at least what its depth needs at WALL_SLOPE_MAX
             // (mean grade; the power law's rim is p times that), measured
-            // AFTER the roughness warp. Ablation: `GORGE_SLOPE=off`.
-            let warp = 1.0 + wall_rough * rough[i];
-            let trench_on_apron = through && tier == 1 && li == layers.len() - 1;
-            let hw = if slope_bound {
-                // the trench's wall climbs from the bed to the APRON SURFACE
-                let depth_l = if trench_on_apron {
-                    (t_apron[i] - bed_c[i]).max(0.0)
-                } else {
-                    full * ldep + res
-                };
-                let need = lwp * depth_l / (WALL_SLOPE_MAX * (1.0 - lff)) * warp.max(0.2);
-                hw.max(need)
+            // AFTER the roughness warp.
+            let warp = 1.0 + WALL_ROUGH * rough[i];
+            // the trench's wall climbs from the bed to the APRON SURFACE
+            let depth_l = if trench_on_apron {
+                (t_apron[i] - bed_c[i]).max(0.0)
             } else {
-                hw
+                full * ldep + res
             };
+            let need = lwp * depth_l / (WALL_SLOPE_MAX * (1.0 - lff)) * warp.max(0.2);
+            let hw = hw.max(need);
             let x = (dist_c[i] / hw * warp).clamp(0.0, 1.0);
             if x >= 1.0 {
                 continue;
@@ -526,14 +457,14 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             // dune surface -- that is what puts the break in slope at its rim.
             let base = h0s[i] - full * before;
             let floor_z = base - cut;
-            let detail = if detail_on { h0[i] - h0s[i] } else { 0.0 };
+            let detail = h0[i] - h0s[i];
             let g = (xs / DETAIL_KNEE).clamp(0.0, 1.0);
             let shape = if ltan {
                 1.0 - (1.0 - xs).powf(lwp)
             } else {
                 xs.powf(lwp)
             };
-            let tex = wall_tex * fine[i] * (4.0 * xs * (1.0 - xs)).max(0.0);
+            let tex = WALL_TEX * fine[i] * (4.0 * xs * (1.0 - xs)).max(0.0);
             // The floor converges on the river at the measured 5 % (see
             // `assemble::FLOOR_CONV_*`): the same rise the Carolina floor
             // gets, applied across the flat floor and fading as the wall
@@ -564,13 +495,13 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
             } else {
                 floor_z + cut * (shape + tex) + detail * g + conv * (1.0 - xs)
             };
-            if tier == 1 && li == 0 {
+            if li == 0 {
                 t_apron[i] = t;
             }
             if t < target[i] {
                 target[i] = t;
             }
-            if through && fill_on && tier == 1 && li == layers.len() - 1 {
+            if trench_on_apron {
                 fill_t[i] = bed_c[i] + conv * (1.0 - xs);
                 fill_w[i] = 1.0 - course_world::ease::smoothstep(0.0, 0.6, xs);
             }
@@ -591,14 +522,11 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // flood from the tile edge): an enclosed hollow still fills to the bed,
     // one open to lower ground fills only to its rim, and the creek's level
     // then dips there and pools, which is what the low ground would do to
-    // it. Ablation: `GORGE_LEVEE=allow`.
-    let levee_cap = !std::env::var("GORGE_LEVEE").map(|v| v == "allow").unwrap_or(false);
-    let spill = if levee_cap {
+    // it.
+    let spill = {
         let mut sp = crate::water::fill_levels(&spec, &height.data, &vec![false; spec.len()], &vec![false; spec.len()]);
         blur_vec(&spec, &mut sp, 4);      // a rim, not a scarp, where the cap changes
         sp
-    } else {
-        vec![f64::INFINITY; spec.len()]
     };
     for i in 0..spec.len() {
         // ground below the graded floor, inside the trench: raise it, but
@@ -617,11 +545,8 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // on the apron. Rather than retune each term, the cut gets the pass
     // the dunes get (`surface::talus_at`), at the real wall's limit: 2 m
     // max 80 % within 400 m of the Dismal, so 0.60 on the 8 m macro.
-    // Crenulation survives wherever its walls stand at repose. Ablation:
-    // `GORGE_TALUS=off`.
-    if !std::env::var("GORGE_TALUS").map(|v| v == "off").unwrap_or(false) {
-        crate::surface::talus_at(height, 0.60);
-    }
+    // Crenulation survives wherever its walls stand at repose.
+    crate::surface::talus_at(height, 0.60);
     // --- the rim ring, smoothed at the scale of its own lumps (2026-09-14) --
     // The width swing and the wall warp run at 62-165 m and nothing above
     // smoothed the cut at that scale (`h0g` is ~15 m, the pass below ~4 m,
@@ -646,9 +571,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     }
     // One light pass to take the corner off the rim, where the cut meets
     // untouched ground. The attribution seams are gone at source now.
-    if blur_on {
-        blur8(height, 1);
-    }
+    blur8(height, 1);
 
     // --- the creek on the trunk floor -------------------------------------
     // The trunk is the straight element; the creek is where the wiggle went.
@@ -689,7 +612,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     //
     // The base line is already smoothed six passes above, so the planform is
     // told not to smooth it again. Room is the trunk's flat floor half-width
-    // (`FLOOR_FRAC * half_width(1)`), kept off the wall by a margin; at these
+    // (`FLOOR_FRAC * HALF_WIDTH`), kept off the wall by a margin; at these
     // amplitudes the curvature floor is what actually binds, which is why the
     // old `limit_curvature(95 m)` guard and `MEANDER_RATIO` are gone with the
     // sine that needed them.
@@ -697,7 +620,7 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
         smooth_passes: 0,
         ..crate::planform::Params::from_draws(lam, swing, phase, d.river_w_m)
     };
-    let room_max = 0.85 * FLOOR_FRAC * half_width(1);
+    let room_max = 0.85 * FLOOR_FRAC * HALF_WIDTH;
     // Room is what the CUT FLOOR actually offers (2026-09-07), not the
     // nominal flat-floor half-width: the width swing shrinks the trench
     // floor to ~20 m in places, and a creek given 119 m there climbed the
@@ -705,16 +628,11 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // spot with the ground high on ONE side only. At each base point the
     // room is the distance, either side along the normal, at which the cut
     // surface first stands ROOM_RISE_M above the floor, less a margin.
-    // Ablation: `GORGE_ROOM=fixed`.
     const ROOM_RISE_M: f64 = 2.0;
     const ROOM_MARGIN_M: f64 = 8.0;
     const ROOM_MIN_M: f64 = 6.0;
-    let fixed_room = std::env::var("GORGE_ROOM").map(|v| v == "fixed").unwrap_or(false);
     let hgt: &Grid<f64> = height;
     let room_at = |q: Vec2| -> f64 {
-        if fixed_room {
-            return room_max;
-        }
         let mut k = 0usize;
         let mut best = f64::MAX;
         for (j, p) in tp.iter().enumerate() {
@@ -846,60 +764,12 @@ fn blur8(g: &mut Grid<f64>, n: usize) {
     }
 }
 
-/// Borgefors 5x5 chamfer with nearest-seed value carry. Same weights as
-/// `assemble::chamfer`; duplicated rather than exported because that one is a
-/// private detail of a module the gorge deliberately does not use.
-fn chamfer(spec: &course_world::grid::GridSpec, seed: &[(u32, u32, f64)])
-    -> (Vec<f64>, Vec<f64>) {
-    let big = 1e18f64;
-    let mut d = vec![big; spec.len()];
-    let mut v = vec![0.0f64; spec.len()];
-    for &(x, y, val) in seed {
-        let i = spec.index(x, y);
-        d[i] = 0.0;
-        v[i] = val;
-    }
-    let c = spec.cell_size;
-    let (a, b, e) = (c, c * 1.4, c * 2.2);
-    let fwd: [(i64, i64, f64); 8] = [
-        (-1, -2, e), (1, -2, e), (-2, -1, e), (-1, -1, b),
-        (0, -1, a), (1, -1, b), (2, -1, e), (-1, 0, a),
-    ];
-    let bwd: [(i64, i64, f64); 8] = [
-        (1, 2, e), (-1, 2, e), (2, 1, e), (1, 1, b),
-        (0, 1, a), (-1, 1, b), (-2, 1, e), (1, 0, a),
-    ];
-    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
-    let mut sweep = |order: &[(i64, i64, f64); 8], rev: bool| {
-        let ys: Vec<i64> = if rev { (0..ny).rev().collect() } else { (0..ny).collect() };
-        let xs: Vec<i64> = if rev { (0..nx).rev().collect() } else { (0..nx).collect() };
-        for &y in &ys {
-            for &x in &xs {
-                let i = spec.index(x as u32, y as u32);
-                for &(ox, oy, w) in order.iter() {
-                    let (px, py) = (x + ox, y + oy);
-                    if px < 0 || py < 0 || px >= nx || py >= ny {
-                        continue;
-                    }
-                    let j = spec.index(px as u32, py as u32);
-                    if d[j] + w < d[i] {
-                        d[i] = d[j] + w;
-                        v[i] = v[j];
-                    }
-                }
-            }
-        }
-    };
-    sweep(&fwd, false);
-    sweep(&bwd, true);
-    (d, v)
-}
-
 /// Exact Euclidean distance transform with a feature transform
 /// (Felzenszwalb & Huttenlocher, *Distance Transforms of Sampled Functions*),
 /// returning distance in metres and the value carried by the nearest seed.
 ///
-/// This replaces a 5x5 Borgefors chamfer. The chamfer builds its field by
+/// This replaces a 5x5 Borgefors chamfer (a local copy of `assemble::chamfer`,
+/// same weights). The chamfer builds its field by
 /// propagating along a fixed set of step vectors, so far from the seed the
 /// value at a cell depends on WHICH chain of steps reached it, and the
 /// boundaries between chains are dead-straight rays. Measured on the field

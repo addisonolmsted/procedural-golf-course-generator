@@ -520,43 +520,6 @@ fn gauss_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, sigma: f64) 
     }
 }
 
-#[allow(dead_code)]
-fn box_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, w: usize,
-            passes: usize) {
-    if w < 1 {
-        return;
-    }
-    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
-    for _ in 0..passes {
-        let src = a.clone();
-        for y in 0..ny {
-            for x in 0..nx {
-                let mut s = 0.0;
-                let mut n = 0.0;
-                for k in -(w as i64)..=(w as i64) {
-                    let xx = (x + k).clamp(0, nx - 1) as u32;
-                    s += src[spec.index(xx, y as u32)];
-                    n += 1.0;
-                }
-                a[spec.index(x as u32, y as u32)] = s / n;
-            }
-        }
-        let src = a.clone();
-        for y in 0..ny {
-            for x in 0..nx {
-                let mut s = 0.0;
-                let mut n = 0.0;
-                for k in -(w as i64)..=(w as i64) {
-                    let yy = (y + k).clamp(0, ny - 1) as u32;
-                    s += src[spec.index(x as u32, yy)];
-                    n += 1.0;
-                }
-                a[spec.index(x as u32, y as u32)] = s / n;
-            }
-        }
-    }
-}
-
 /// Catmull-Rom (bicubic, C1) sample of a grid at a world point; edges clamp.
 fn catmull_rom_2d(g: &Grid<f64>, world: math::Vec2) -> f64 {
     let s = &g.spec;
@@ -606,13 +569,12 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // mean) sat on those walls on 155/155 aeolian tiles -- the real tiles
     // have none. Catmull-Rom is C1 through the same nodes, so the walls
     // are smooth between them and nothing else moves by more than the
-    // node spacing's curvature allows. Ablation: `TEX_UPSAMPLE=bilinear`.
-    let bilinear = std::env::var("TEX_UPSAMPLE").map(|v| v == "bilinear").unwrap_or(false);
+    // node spacing's curvature allows.
     let mut out = Grid::filled(spec, 0.0f64);
     for y in 0..spec.ny {
         for x in 0..spec.nx {
             let w = spec.world_of(x, y);
-            out.set(x, y, if bilinear { macro_h.bilinear(w) } else { catmull_rom_2d(macro_h, w) });
+            out.set(x, y, catmull_rom_2d(macro_h, w));
         }
     }
 
