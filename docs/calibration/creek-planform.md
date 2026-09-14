@@ -1229,3 +1229,36 @@ network (220 ms) are sequential algorithms; the aeolian river adds the
 gorge and the 2 m priority flood (`fill_levels`, 175 ms). Next levers, if
 wanted: one assemble pass (the first exists only to re-base hanging
 gullies), and the gorge's per-channel EDT.
+
+## 2026-09-14 — S6 in Rust: the routing prototype ported, 250/250 identical
+
+The Python prototype (`tools/golf/{siting,greens,routing}.py`,
+`dtm_primitives/geomorphons.py`, ~2,600 lines) is ported into
+`crates/course-routing` (~6,500 lines: terrain, img, geom, fields, morph,
+siting, greens, route, dump; `examples/route_batch.rs`). Owner's scope:
+the router consumes the frozen Sandhills terrain directly (2 m height +
+water surface + creek lines) — the v2 C2/C3 contracts are retired on this
+branch, par is a router output — and is accepted on STATISTICAL parity
+with the prototype. It came out stronger than that.
+
+Reference: `tools/golf/batch_route.py` (new) ran the Python prototype on
+the 250 frozen seeds (`out/final250_v2` → `out/route_ref/*.jsonl`):
+250/250 routed, mix (2,5,2)/(3,3,3)/(1,7,1) = 229/14/7, total length
+p10/50/90 3121/3157/3215 m, 0 crossings, 38.9 s per seed. The Rust batch
+(`route_batch`, same record shape via `dump.rs`) on the same 250:
+250/250 routed, the SAME pars, total lengths (to 0.1 m), clubhouse and
+all nine greens on every tile — 0 differences — at 0.33 s median, 0.45 s
+max (S6 budget 1300 ms; Python 39 s).
+
+The kernels (`img.rs`) are verified against SciPy 1.16 / NumPy 2.1 on 430
+reference cases (edt, rect/disc/ring filters, gaussian, gradient,
+percentile; reflect borders, ties) to 1e-9 or exactly. Deliberate
+deviations, all documented in-file: the beam's `round(-score, 6)` tie-break
+is a total order (score, green tuple, par tuple); the prototype's no-op
+loop and double diagnostic assignment are gone; the joint tee x LZ retry
+has an explicit cap; `place_lz` has the prototype's actual 23 bearings
+(the docstring said 24); SciPy's `percentile_filter` is an order statistic,
+not linear interpolation, and is ported as such; Python's banker's
+rounding is reproduced where `int(round())` set a cell. No annealing pass
+(the prototype has none). 61 tests. Sheet:
+`tools/golf/route_sheet_json.py` renders routes from the batch records.
