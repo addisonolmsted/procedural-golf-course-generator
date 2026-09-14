@@ -1150,4 +1150,30 @@ of the 30 m-smoothed 8.2 → 4.5; slope p99 66 → 49 % (real Dismal at 2 m
 near the river: p99 50, p99.9 62), p90 43 → 30. Screen: flagged 0/29,
 wall 1 → 0 tiles. By eye (900119, 900114 at 1 km): the polygonal facets
 are rounded, the notches remain. Viewer
-https://claude.ai/code/artifact/rim-placeholder.
+https://claude.ai/code/artifact/31efc5d4-6fc7-402d-92b7-22a1794ba588.
+
+## 2026-09-14 — the 250 seeds again, with all four fixes
+
+Same seeds as the final look (`out/final250` list), rendered at the head
+with items 5, 1, 4 and 3 in: `out/final250_v2`, page
+`out/final250_v2/mix_screen.html`.
+
+| | before (cada5d33) | after |
+|---|---|---|
+| tiles flagged | 9 / 250 | 0 / 250 |
+| perched, any / notable | 79 / 9 | 0 / 0 |
+| step, any tiles | 132 | 6 |
+| wall, any tiles | 66 | 6 |
+| spikes (\|z − median3\| > 1.5 m), p90 cells | 5 | 0 |
+| standing bodies, tiles with any | 84 fluvial (pools) | 77 fluvial (basin lakes) + 46 aeolian (interdune) |
+| axis power, 8 m band, aeolian / fluvial | 3.2 / 1.6 | 1.00 / 1.09 |
+| pitch ripple, aeolian / fluvial | 1.30 / 1.15 | 1.10 / 1.09 |
+| Mound sparse-style tiles | 15 / 50 | 0 / 67 |
+| aeolian slope p99, median % | 52 | 46 |
+
+No duplicate texture blocks, no flat plateaus, no reversal or deep cut,
+no non-finite cell. Left as recorded per item: the 8.4–14 m aeolian axis
+excess matches the real source tiles; Mound lowland relief ~0.6× real;
+prominence instrument too noisy to tune against; creek-ribbon banks on
+river tiles carry the only shore-below cells (0.06 worst, pre-existing).
+Artifact: https://claude.ai/code/artifact/f8032308-90ca-4eae-9e90-633d1b8682ca.
