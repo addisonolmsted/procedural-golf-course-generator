@@ -66,7 +66,7 @@ def card(dump, prefix, rec, px=640):
         for k, (ty, tx) in enumerate(h["tees"]):
             cx, cy = P(ty, tx); r = max(2, 7 / c * scale / 2)
             dr.rectangle([cx - r, cy - r, cx + r, cy + r], fill=(150, 240, 150) if k < 2 else (240, 210, 120))
-        gy, gx = P(*h["green"]); dr.ellipse([gx - 5, gy - 5, gx + 5, gy + 5], fill=col, outline=(20, 20, 20))
+        gx, gy = P(*h["green"]); dr.ellipse([gx - 5, gy - 5, gx + 5, gy + 5], fill=col, outline=(20, 20, 20))
         dr.text((gx + 6, gy - 6), str(h.get("index", 0) + 1) if "index" in h else "", fill=(20, 20, 20))
         prev_green = tuple(h["green"])
     cx, cy = P(*rec["clubhouse"]); dr.ellipse([cx - 6, cy - 6, cx + 6, cy + 6], fill=(235, 50, 50))
