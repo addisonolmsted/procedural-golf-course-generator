@@ -279,7 +279,18 @@ fn supply(rng: &mut DetRng, spec: course_world::grid::GridSpec,
                                                       p.y / (corr_m * 0.38), s ^ 0x9E37);
             // Threshold with a soft knee. `patchiness` moves the threshold up,
             // so more of the tile falls below it and more belt is erased.
-            let t = math::smoothstep(-0.30 + 0.55 * patchiness, 0.28, n);
+            // The knee's WIDTH has a floor (2026-09-14): with the upper edge
+            // pinned at 0.28 it shrank from 0.45 to 0.11 as patchiness rose
+            // 0.24 -> 0.85, so a patchy field also got margins four times
+            // sharper -- coverage and abruptness through one expression.
+            // That, with `body_p`, made the isolated-mound style: measured
+            // against the 39 real mound-like tiles, twice the bodies per
+            // km^2, each smaller, on lowlands with half the relief. The
+            // floor binds only above patchiness ~0.53, so every Train tile
+            // (0.24-0.52) is byte-identical.
+            const KNEE_MIN: f64 = 0.29;
+            let lo = -0.30 + 0.55 * patchiness;
+            let t = math::smoothstep(lo, 0.28f64.max(lo + KNEE_MIN), n);
             v[spec.index(x, y)] = 1.0 - patchiness + patchiness * t;
         }
     }

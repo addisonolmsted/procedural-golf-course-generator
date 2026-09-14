@@ -204,7 +204,9 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         },
         upland: false,
         floor_p: 1.60,
-        body_p: match form { FormClass::Mound => 1.6, FormClass::Train => 1.0 },
+        // Mound 1.6 -> 1.3 (2026-09-14): compounding with the supply floor it
+        // crushed the lowlands to a flat sheet (`surface::supply`, mound_bodies.py).
+        body_p: match form { FormClass::Mound => 1.15, FormClass::Train => 1.0 },
         regular: false,
     };
 

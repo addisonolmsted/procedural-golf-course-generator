@@ -1078,3 +1078,50 @@ Screen: flagged 0/134, perched 0, `shore_below` 0 on every creekless tile
 byte-identical to the texture-fix render. New screen rows: standing
 bodies per tile, body area, shore-below share. Viewer
 https://claude.ai/code/artifact/62d5ec46-35c7-4125-b7e5-264714c0b167.
+
+## 2026-09-14 — final pass, item 4: the Mound form's isolated bodies
+
+Owner: three styles of creekless aeolian tile — dune train (900043),
+dune-dominant (900098), isolated mounds (900116) — the last too frequent;
+is it real, how to fix, how to tune its likelihood.
+
+**Instrument** (`tools/aeolian/mound_bodies.py`, new; there was none):
+on the 100 m belt above a 1.2 km rolling floor, cover (belt > 30 % of
+p95), bodies/km² (8-connected), lowland relief (belt − floor, std, off
+the bodies), margin slope, and the sparse flag (cover < 0.40 and > 1.2
+bodies/km²). Real = the 54 Nebraska tiles split by a spectral
+orientation proxy (A < 0.5 mound-like, n = 39).
+
+| p10 / 50 / 90 | cover | bodies / km² | lowland relief m | margin % | sparse |
+|---|---|---|---|---|---|
+| real mound-like (39) | 0.39 / 0.54 / 0.87 | 0.22 / 0.56 / 1.13 | 1.3 / 2.5 / 4.8 | 4.5 / 6.3 / 8.1 | 2 / 39 |
+| ours before (50 Mound dry) | 0.30 / 0.45 / 0.63 | 0.32 / 1.00 / 1.90 | 0.9 / 1.3 / 1.9 | 2.8 / 3.9 / 4.9 | 15 / 50 |
+| ours after | 0.51 / 0.60 / 0.72 | 0.22 / 0.55 / 1.00 | 0.9 / 1.4 / 2.0 | 2.2 / 3.2 / 4.2 | 0 / 50 |
+
+Not real: twice the bodies, each smaller, on a lowland with half the
+relief; margins were never steeper than real — the flat sheet is what
+read as abrupt. Mechanism (`surface::supply`, `shape_body`): the knee
+`smoothstep(-0.30 + 0.55p, 0.28, n)` narrowed from 0.45 to 0.11 as
+patchiness rose, so coverage and margin sharpness were one dial; the
+off-patch floor kept only 1 − p of the megaform; `body_p` 1.6 crushed
+what survived. The owner's reading (a low-frequency high-relief draw
+with a low-amplitude high-frequency one) is what that produces.
+
+**Shipped:** the knee's width has a floor (`KNEE_MIN` 0.29, binding only
+above patchiness ~0.53, so every Train tile is byte-identical — checked
+on 10); Mound `belt_patchiness` 0.45–0.85 → 0.50–0.85 with the width
+floor; `body_p` Mound 1.6 → 1.15. Tried and reverted: hummocks let into
+the lows (`hummock_gate` 0.12–0.28, `hummock_floor` 0.30–0.45) — the
+lowland relief did not move and playable pads fell 0.72 → 0.59;
+`dune_relief_m` +10 % — the prominence instrument swung 0.82 → 1.19
+between near-identical builds (`dune_stats.py prominence_p50` is ±40 %
+tile to tile, nan on a third), so relief stays at the calibrated 15–31.
+Final prominence 0.76× real (p25/75 5.3/11.6 m) — recorded, not chased.
+Playable-pad share (≤ 8 % at 30 m in ≥ 40 m pads) 0.73 → 0.73. Screen 0
+flagged on 50. Lowland relief stays ~0.57× real: that is the small dunes
+real interdunes carry, and it costs playability to add.
+
+**Tuning the likelihood:** the sparse style is the top of the
+`belt_patchiness` draw. 0.85 lands it at 0–2 in 50 (real 2 in 39); a
+lower ceiling removes it, a higher one brings it back. Viewer
+https://claude.ai/code/artifact/6043838c-0f62-43e1-a905-b315481974b7.

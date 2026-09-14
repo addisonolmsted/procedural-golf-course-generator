@@ -445,7 +445,13 @@ pub const SANDHILLS: Record = Record {
         // hummocks at the train's kappa inherited that disorder on top of
         // their own and measured A 0.127 against a 0.291 target.
         hummock_lambda_m: Range::new(160.0, 230.0),
-        belt_patchiness: Range::new(0.45, 0.85),
+        // 0.45-0.85 -> 0.35-0.70 (2026-09-14, `tools/aeolian/mound_bodies.py`):
+        // the off-patch floor keeps 1 - p of the megaform, and at 0.85 the
+        // lowlands carried 1.5 m of belt relief against the real mound-like
+        // tiles' 4.5 m (p50), with twice their bodies per km^2. The sparse
+        // style (cover < 0.40, > 1.2 bodies/km^2) is the top of this draw:
+        // 0.70 leaves it ~1 in 10 like the real tiles, 0.60 removes it.
+        belt_patchiness: Range::new(0.50, 0.85),
         // 700-1500 halved (review 2026-08-28): at the old patch scale the
         // supply field kept whole belts, which read as few large blobby
         // masses; 420-900 grains the on/off at the size of the real discrete
