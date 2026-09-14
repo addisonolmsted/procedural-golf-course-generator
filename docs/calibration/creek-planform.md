@@ -1125,3 +1125,29 @@ real interdunes carry, and it costs playability to add.
 `belt_patchiness` draw. 0.85 lands it at 0–2 in 50 (real 2 in 39); a
 lower ceiling removes it, a higher one brings it back. Viewer
 https://claude.ai/code/artifact/6043838c-0f62-43e1-a905-b315481974b7.
+
+## 2026-09-14 — final pass, item 3: the gorge rim, a masked blur
+
+Owner: the rim band reads fine, a quick fix only, no rework. Diagnosis
+(`gorge.rs`): tributaries no longer cut (the comments at `HEAD_TAPER`
+and in `build` said they did — corrected); the rim's lumps are the
+plan-view fields `wide` (300/118 m, `WIDTH_SWING` 0.70 on the half-width)
+and `rough` (165/62 m, `WALL_ROUGH` 0.52 warping the wall coordinate),
+and the 8 m macro's own facets on a 60 % wall; nothing smoothed the cut at
+that scale (`h0g` ~15 m, the final pass ~4 m, `talus_at` clips slopes
+only). The comment claiming 420/155 m octaves was wrong (300/118 ship);
+the owner kept the shipped pitch.
+
+**Shipped:** after `talus_at`, the cut above the trench floor — 0.3 to
+60 m of cut, fading out over the deepest 30 m — takes a 25 m blur
+(`blur8` × 40 on the 8 m macro), the 2 m quilt landing afterwards. A
+first cut at 0.3–10 m (the shallow apron ring only) did nothing visible:
+the lumps sit on the apron and upper wall where the cut is deeper.
+
+29 aeolian river seeds of the final look (`out/rim_fix`), corridor 60–500 m
+from the river: |∇²| RMS of the 12 m-smoothed surface 15.2 → 9.1 (−40 %),
+of the 30 m-smoothed 8.2 → 4.5; slope p99 66 → 49 % (real Dismal at 2 m
+near the river: p99 50, p99.9 62), p90 43 → 30. Screen: flagged 0/29,
+wall 1 → 0 tiles. By eye (900119, 900114 at 1 km): the polygonal facets
+are rounded, the notches remain. Viewer
+https://claude.ai/code/artifact/rim-placeholder.

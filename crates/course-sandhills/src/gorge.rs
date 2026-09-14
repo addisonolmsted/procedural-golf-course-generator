@@ -144,8 +144,9 @@ const TRUNK_LAYERS: [(f64, f64, f64, f64, bool); 2] = [
 /// and its rim sawtooth still measured a third of the real one. On the real
 /// Dismal the ragged edge is not a drainage pattern at all: it is the dune
 /// topography intersecting the valley, so the width wanders on the dunes' own
-/// scale. Two octaves at 420 m and 155 m, which brackets the measured 320 m
-/// notch pitch.
+/// scale. Two octaves at 300 m and 118 m ship (`wide`, below); the 420 m
+/// and 155 m this note once claimed were never what the code ran, and
+/// the owner kept the shipped pitch (2026-09-14).
 const WIDTH_SWING: f64 = 0.70;
 
 /// Plan-view raggedness of the valley edge, as a fraction of the wall
@@ -160,9 +161,11 @@ const WALL_ROUGH: f64 = 0.52;
 const WALL_TEX: f64 = 0.085;
 
 /// A tributary's valley is as wide as the trunk's where it joins and narrows
-/// to a point at its head. That taper is what cuts the discrete, flat-bottomed
+/// to a point at its head. That taper cut the discrete, flat-bottomed
 /// embayments the real rim shows -- it swings between 150 and 500 m over a
-/// ~330 m pitch -- and what leaves the heads pointed instead of rounded.
+/// ~330 m pitch. NOTE: tributaries no longer cut (review 2026-08-27, see
+/// `build`: `if tier != 1 { continue }`); the width swing and wall warp do
+/// the rim's raggedness now, and this constant is dormant.
 const HEAD_TAPER: f64 = 0.30;
 
 /// No cell is cut more than this far below the ground it started at. A relief
@@ -313,10 +316,9 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // cannot arise at all this way -- a min of continuous fields is
     // continuous -- so that relaxation is gone with it.
     //
-    // This is also what cuts the embayments: where a tributary joins, its own
-    // valley (full width at the mouth, tapering to a point at the head) is
-    // unioned with the trunk's, which is exactly the flat-bottomed bite the
-    // real rim shows swinging between 150 and 500 m.
+    // (Tributaries once cut embayments here -- their valleys unioned with
+    // the trunk's -- but only the trunk cuts since 2026-08-27; the rim's
+    // raggedness is the width swing and wall warp below.)
     // Noise seeds from the descriptors, not from `rng`: this keeps the DRAW
     // transcript for the stage exactly where it was, so the creek downstream
     // still draws the same style, lambda and swing it did before.
@@ -619,6 +621,28 @@ pub fn build(rng: &mut DetRng, height: &mut Grid<f64>, d: &Descriptors)
     // `GORGE_TALUS=off`.
     if !std::env::var("GORGE_TALUS").map(|v| v == "off").unwrap_or(false) {
         crate::surface::talus_at(height, 0.60);
+    }
+    // --- the rim ring, smoothed at the scale of its own lumps (2026-09-14) --
+    // The width swing and the wall warp run at 62-165 m and nothing above
+    // smoothed the cut at that scale (`h0g` is ~15 m, the pass below ~4 m,
+    // `talus_at` only clips slopes), so on the 250-seed final look the rim
+    // ran as a band of ~100 m lumps distinct from the dune field: plausible
+    // at 2 m contours, a pasted corridor at tile scale (900119, 900226,
+    // 900114). The cut above the trench floor -- 0.3 to 60 m of cut, the
+    // apron and the upper wall, fading out over the deepest 30 m -- takes a
+    // 25 m blur on this
+    // 8 m macro; the 2 m quilt lands afterwards, so the fabric is untouched
+    // and the inner wall and floor keep their crenulation. Owner's call:
+    // smoothing only, the octaves stay as they ship.
+    {
+        let mut blurred = height.clone();
+        blur8(&mut blurred, 40);          // sigma ~3.2 cells = 25 m
+        for i in 0..spec.len() {
+            let cut = h0[i] - height.data[i];
+            let rim = course_world::ease::smoothstep(0.3, 1.5, cut)
+                * (1.0 - course_world::ease::smoothstep(30.0, 60.0, cut));
+            height.data[i] += rim * (blurred.data[i] - height.data[i]);
+        }
     }
     // One light pass to take the corner off the rim, where the cut meets
     // untouched ground. The attribution seams are gone at source now.
