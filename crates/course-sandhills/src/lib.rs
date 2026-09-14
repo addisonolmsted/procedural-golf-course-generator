@@ -86,6 +86,14 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
         water::Water, Vec<blowout::Bay>) {
     let (d, net, asm, beds_for_water) = build_fluvial_macro_beds(id, prof);
     let spec = asm.height.spec;
+    let timing = std::env::var("SAND_TIME").is_ok();
+    let mut t0 = std::time::Instant::now();
+    let lap = |tag: &str, t0: &mut std::time::Instant| {
+        if timing {
+            eprintln!("  time {tag:14} {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3);
+            *t0 = std::time::Instant::now();
+        }
+    };
 
     // Grain = the local channel tangent, from the assembler's own distance
     // field, derived exactly as the patch pack derives it from a real
@@ -163,6 +171,7 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
         Err(_) => texture::quilt_fluvial(&mut tr, pack, &asm.height, &grain,
                                          &gate, &dt),
     };
+    lap("quilt", &mut t0);
     let _ = &gate;
 
     // C6 — Carolina bays, at 2 m and OVER the texture: they are the sharpest
@@ -210,8 +219,10 @@ pub fn build_fluvial_textured(id: &RunIdentity, prof: &assemble::HandProfile,
     // back to a straight bank (`CreekSections::builtin`), visibly.
     let csec = water::CreekSections::load(std::path::Path::new(
         "assets/sandhills_creek_sections.txt")).ok();
+    lap("fields", &mut t0);
     let water = water::fluvial(&mut wr2, &mut tex, &beds_for_water, &tiers, &u2, &w2, &d,
                                csec.as_ref());
+    lap("water", &mut t0);
     (d, net, asm, tex, water, bays)
 }
 
@@ -230,11 +241,22 @@ pub fn build_fluvial_macro_beds(id: &RunIdentity, prof: &assemble::HandProfile)
     -> (Descriptors, channel::Network, assemble::Assembled,
         Vec<(Vec<course_world::math::Vec2>, Vec<f64>)>) {
     let d = draw::site(id, Some(Mode::Fluvial), None);
+    // stage timing, `SAND_TIME=1`
+    let timing = std::env::var("SAND_TIME").is_ok();
+    let mut t0 = std::time::Instant::now();
+    let lap = |tag: &str, t0: &mut std::time::Instant| {
+        if timing {
+            eprintln!("  time {tag:14} {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3);
+            *t0 = std::time::Instant::now();
+        }
+    };
     let mut dr = rng::stream(id, rng::DATUM);
     let datum = channel::datum(&mut dr, &d);
     let mut cr = rng::stream(id, rng::CHANNEL);
     let net = channel::grow(&mut cr, &datum, &d);
+    lap("network", &mut t0);
     let mut beds = carve::beds(&mut cr, &net, &datum, &d);
+    lap("beds", &mut t0);
     let mut ar = rng::stream(id, rng::HAND);
     // pass 1: the trunk-and-tributary skeleton defines the valley floors
     let main: Vec<(Vec<course_world::math::Vec2>, Vec<f64>)> = beds
@@ -246,11 +268,13 @@ pub fn build_fluvial_macro_beds(id: &RunIdentity, prof: &assemble::HandProfile)
     let main_tiers: Vec<u8> = net.chans.iter().filter(|c| c.tier < 4)
         .map(|c| c.tier).collect();
     let first = assemble::assemble(&mut ar, &main, &main_tiers, prof, &d);
+    lap("assemble 1", &mut t0);
     // pass 2: hanging gullies re-based onto that ground, then everything
     carve::rebase_hanging(&mut beds, &net, &first.height);
     let mut ar2 = rng::stream(id, rng::HAND);
     let tiers: Vec<u8> = net.chans.iter().map(|c| c.tier).collect();
     let asm = assemble::assemble(&mut ar2, &beds, &tiers, prof, &d);
+    lap("assemble 2", &mut t0);
     (d, net, asm, beds)
 }
 

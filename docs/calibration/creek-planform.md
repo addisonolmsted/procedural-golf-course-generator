@@ -1200,3 +1200,32 @@ unchanged but on one tile's berm (0.8 m); screen 0 flagged; 83 tests.
 | fluvial (46) | 1577 | 1560 | 177 | 1310 | 1938 |
 
 Branch `sandhills` pushed to origin for the first time (2026-09-14).
+
+## 2026-09-14 — speed: the fluvial quilt, and rayon on the per-cell loops
+
+`SAND_TIME=1` on a fluvial seed: network 220, assemble 2 × 227, quilt
+679, fields 30, water 300 ms. The quilt's 679 against the aeolian 97:
+the fluvial variant sampled the Catmull upsample three times over the
+grid and sorted 2.25 M cells for two percentiles (selection now; same
+values), then 277 ms of per-cell gains (three Perlin octaves per cell).
+Every per-cell loop of the 2 m texture is a pure function of its inputs,
+so they run in parallel (rayon, row chunks) with output bit-identical to
+the serial form — proved the same way as the clean-up, 96/96 files
+identical on the 32-seed sample. Also the aeolian lake finder's per-cell
+table loop. Fluvial quilt 679 → 192 ms, aeolian 97 → 53, `find` 434 →
+382. The overlap-add paste itself stays serial (its float sums would
+reorder under a parallel split).
+
+| ms per seed, n = 100, release, 10-core M-series | median | mean | sd | min | max |
+|---|---|---|---|---|---|
+| all | 944 | 971 | 291 | 599 | 2004 |
+| aeolian (54) | 706 | 901 | 347 | 599 | 2004 |
+| aeolian, no river (32) | 640 | | 39 | | |
+| aeolian, river (22) | 1154 | | 281 | | |
+| fluvial (46) | 1071 | 1054 | 175 | 808 | 1435 |
+
+Where the rest sits: fluvial assemble (two 8 m passes, 455 ms) and the
+network (220 ms) are sequential algorithms; the aeolian river adds the
+gorge and the 2 m priority flood (`fill_levels`, 175 ms). Next levers, if
+wanted: one assemble pass (the first exists only to re-base hanging
+gullies), and the gorge's per-channel EDT.

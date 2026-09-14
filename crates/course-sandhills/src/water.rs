@@ -986,14 +986,19 @@ pub fn find(height: &mut Grid<f64>, datum8: &Grid<f64>, d: &Descriptors,
     }
 
     let mut margin = vec![0.0f64; spec.len()];
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let li = spec.index(x, y);
-            let p = spec.world_of(x, y);
-            table[li] = datum8.bilinear(p) + floor_f.bilinear(p)
-                - d.water_table_m - ddown.bilinear(p);
-            margin[li] = height.data[li] - table[li];
-        }
+    {
+        use rayon::prelude::*;
+        let nxu = spec.nx as usize;
+        let (datum_r, floor_r, ddown_r, h_r) = (datum8, &floor_f, &ddown, &height.data);
+        let wt = d.water_table_m;
+        table.par_chunks_mut(nxu).zip(margin.par_chunks_mut(nxu)).enumerate()
+            .for_each(|(y, (trow, mrow))| {
+                for x in 0..nxu {
+                    let p = spec.world_of(x as u32, y as u32);
+                    trow[x] = datum_r.bilinear(p) + floor_r.bilinear(p) - wt - ddown_r.bilinear(p);
+                    mrow[x] = h_r[y * nxu + x] - trow[x];
+                }
+            });
     }
     // AREA-PRESERVING LEVEL. Referencing the table to the LOCAL floor also
     // raises the bar everywhere -- the ground must now dip below its own

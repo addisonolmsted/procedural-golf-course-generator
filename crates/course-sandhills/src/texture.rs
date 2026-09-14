@@ -18,6 +18,7 @@
 //! measured into band cannot be moved by this one. A test pins it.
 
 use course_seed::DetRng;
+use rayon::prelude::*;
 use course_world::grid::Grid;
 use course_world::math;
 
@@ -315,23 +316,41 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
 {
     let base = macro_h;
     let unit = Grid::filled(uf.spec, 1.0f64);
+    let timing = std::env::var("SAND_TIME").is_ok();
+    let mut t0 = std::time::Instant::now();
+    let lap = |tag: &str, t0: &mut std::time::Instant| {
+        if timing {
+            eprintln!("    time   quilt/{tag:9} {:7.1} ms", t0.elapsed().as_secs_f64() * 1e3);
+            *t0 = std::time::Instant::now();
+        }
+    };
     let out = quilt_core(rng, pack, base, d, Some((grain, &unit)));
     let spec = out.spec;
+    lap("core", &mut t0);
 
+    // the macro at 2 m, once: the same Catmull-Rom sample `quilt_core` took
+    // (this was evaluated three times over the grid, 2/3 of the fluvial
+    // quilt's 670 ms -- measured with SAND_TIME, 2026-09-14)
+    let nxu = spec.nx as usize;
+    let mut base2 = vec![0.0f64; spec.len()];
+    base2.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, v) in row.iter_mut().enumerate() {
+            *v = catmull_rom_2d(base, spec.world_of(x as u32, y as u32));
+        }
+    });
     // the pasted residual, split into a fine and a coarse half
     let mut resid = vec![0.0f64; spec.len()];
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let i = spec.index(x, y);
-            resid[i] = out.data[i] - catmull_rom_2d(base, spec.world_of(x, y));
-        }
+    for i in 0..spec.len() {
+        resid[i] = out.data[i] - base2[i];
     }
     let mut coarse = resid.clone();
     // ~12 m split. A separable BOX (13 cells, two passes) did this and its
     // Dirichlet nulls at 26/k m sit on the axes -- the same kernel family
     // that once cut the "boxy" creek. A gaussian of the same sigma
     // (sqrt((13^2-1)/12) per pass, two passes: 5.3 cells) is isotropic.
+    lap("catmull", &mut t0);
     gauss_blur(spec, &mut coarse, 5.3);
+    lap("gauss", &mut t0);
 
     // --- normalised relief, from the MACRO surface --------------------
     // Taken from `base`, not from the textured field, so the texture cannot
@@ -339,22 +358,20 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // the corpus curve was measured.
     let mut hrel = vec![0.5f64; spec.len()];
     if rprof.is_some() {
-        let mut zs: Vec<f64> = Vec::with_capacity(spec.len());
-        for y in 0..spec.ny {
-            for x in 0..spec.nx {
-                zs.push(catmull_rom_2d(base, spec.world_of(x, y)));
-            }
-        }
-        let mut srt = zs.clone();
-        srt.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let lo = srt[(srt.len() as f64 * 0.02) as usize];
-        let hi = srt[(srt.len() as f64 * 0.98) as usize];
+        // the two percentiles by selection, not a full sort of 2.25 M cells
+        // (that sort was ~300 ms of the fluvial quilt; same values exactly)
+        let mut srt = base2.clone();
+        let n = srt.len();
+        let (klo, khi) = ((n as f64 * 0.02) as usize, (n as f64 * 0.98) as usize);
+        let lo = *srt.select_nth_unstable_by(klo, |a, b| a.partial_cmp(b).unwrap()).1;
+        let hi = *srt.select_nth_unstable_by(khi, |a, b| a.partial_cmp(b).unwrap()).1;
         let span = (hi - lo).max(1e-6);
         for i in 0..spec.len() {
-            hrel[i] = ((zs[i] - lo) / span).clamp(0.0, 1.0);
+            hrel[i] = ((base2[i] - lo) / span).clamp(0.0, 1.0);
         }
     }
 
+    lap("hrel", &mut t0);
     // --- normalise the relief curve ON THE LOW THIRD ------------------
     // Not on the tile mean: a mean-preserving rescale only moves energy from
     // the tops into the valleys, so the high ground never actually loses any
@@ -383,11 +400,17 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     let (sp1, sp2) = (rng.next_u32(), rng.next_u32());
     let mut z = Grid::filled(spec, 0.0f64);
     let mut inc = vec![0.0f64; spec.len()];
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let i = spec.index(x, y);
-            let p = spec.world_of(x, y);
-            let u = uf.bilinear(p);
+    // `uf` is the 2 m valley coordinate on this same grid (lib.rs builds it
+    // on `tex.spec`); a bilinear read at its own node is the node
+    let same_spec = uf.spec.nx == spec.nx && uf.spec.ny == spec.ny
+        && uf.spec.cell_size == spec.cell_size
+        && uf.spec.origin.x == spec.origin.x && uf.spec.origin.y == spec.origin.y;
+    let (resid_r, coarse_r, hrel_r) = (&resid, &coarse, &hrel);
+    inc.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, o) in row.iter_mut().enumerate() {
+            let i = y * nxu + x;
+            let p = spec.world_of(x as u32, y as u32);
+            let u = if same_spec { uf.data[i] } else { uf.bilinear(p) };
             // measured: band 0 is the finest, band 2 the broad fabric
             let gf = prof.gain(0, u);
             // MEASURED 2026-08-25 against the 65-tile NC corpus at 2 m:
@@ -424,15 +447,16 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // "bumps and pocks" of the review, while the high ground keeps
             // its broad swells and loses the grain.
             let (rf, rc) = match rprof {
-                Some(rp) => (relief_raw(rp, 1, hrel[i]) / nf,
-                             relief_raw(rp, 3, hrel[i]) / nc),
+                Some(rp) => (relief_raw(rp, 1, hrel_r[i]) / nf,
+                             relief_raw(rp, 3, hrel_r[i]) / nc),
                 None => (1.0, 1.0),
             };
-            let fine = resid[i] - coarse[i];
-            inc[i] = calm * sup * (gf * rf * fine + gc * rc * coarse[i]);
+            let fine = resid_r[i] - coarse_r[i];
+            *o = calm * sup * (gf * rf * fine + gc * rc * coarse_r[i]);
         }
-    }
+    });
 
+    lap("gains", &mut t0);
     // --- SOFT-CLAMP the pasted increment -------------------------------
     // The quilt pastes 2 m residual cut from real NC tiles, and those tiles
     // carry man-made cuts — road prisms, borrow pits, unmasked pond edges
@@ -465,29 +489,33 @@ pub fn quilt_fluvial_v2(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // power 2x the diagonal at 8 m, the bilinear phase signature),
             // and the residual above carried the Catmull-minus-bilinear
             // lattice and re-amplified it.
-            z.data[i] = catmull_rom_2d(base, spec.world_of(x, y)) + knee * (inc[i] / knee).tanh();
+            z.data[i] = base2[i] + knee * (inc[i] / knee).tanh();
         }
     }
+    lap("clamp", &mut t0);
     z
 }
 
 /// [1 2 1]/4 along x then y; edges clamp. A null at the 2-cell period.
 fn binomial3(spec: course_world::grid::GridSpec, a: &mut Vec<f64>) {
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let nxu = spec.nx as usize;
     let src = a.clone();
-    for y in 0..ny {
-        for x in 0..nx {
+    a.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, o) in row.iter_mut().enumerate() {
+            let x = x as i64;
             let at = |xx: i64| src[spec.index(xx.clamp(0, nx - 1) as u32, y as u32)];
-            a[spec.index(x as u32, y as u32)] = 0.25 * at(x - 1) + 0.5 * at(x) + 0.25 * at(x + 1);
+            *o = 0.25 * at(x - 1) + 0.5 * at(x) + 0.25 * at(x + 1);
         }
-    }
+    });
     let src = a.clone();
-    for y in 0..ny {
-        for x in 0..nx {
+    a.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        let y = y as i64;
+        for (x, o) in row.iter_mut().enumerate() {
             let at = |yy: i64| src[spec.index(x as u32, yy.clamp(0, ny - 1) as u32)];
-            a[spec.index(x as u32, y as u32)] = 0.25 * at(y - 1) + 0.5 * at(y) + 0.25 * at(y + 1);
+            *o = 0.25 * at(y - 1) + 0.5 * at(y) + 0.25 * at(y + 1);
         }
-    }
+    });
 }
 
 /// Separable gaussian, `sigma` in cells, kernel to 3 sigma; edges clamp.
@@ -496,28 +524,30 @@ fn gauss_blur(spec: course_world::grid::GridSpec, a: &mut Vec<f64>, sigma: f64) 
     let k: Vec<f64> = (-r..=r).map(|i| (-(i * i) as f64 / (2.0 * sigma * sigma)).exp()).collect();
     let ks: f64 = k.iter().sum();
     let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let nxu = spec.nx as usize;
     let src = a.clone();
-    for y in 0..ny {
-        for x in 0..nx {
+    let k_r = &k;
+    a.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, o) in row.iter_mut().enumerate() {
             let mut s = 0.0;
-            for (j, kk) in k.iter().enumerate() {
-                let xx = (x + j as i64 - r).clamp(0, nx - 1) as u32;
+            for (j, kk) in k_r.iter().enumerate() {
+                let xx = (x as i64 + j as i64 - r).clamp(0, nx - 1) as u32;
                 s += kk * src[spec.index(xx, y as u32)];
             }
-            a[spec.index(x as u32, y as u32)] = s / ks;
+            *o = s / ks;
         }
-    }
+    });
     let src = a.clone();
-    for y in 0..ny {
-        for x in 0..nx {
+    a.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, o) in row.iter_mut().enumerate() {
             let mut s = 0.0;
-            for (j, kk) in k.iter().enumerate() {
-                let yy = (y + j as i64 - r).clamp(0, ny - 1) as u32;
+            for (j, kk) in k_r.iter().enumerate() {
+                let yy = (y as i64 + j as i64 - r).clamp(0, ny - 1) as u32;
                 s += kk * src[spec.index(x as u32, yy)];
             }
-            a[spec.index(x as u32, y as u32)] = s / ks;
+            *o = s / ks;
         }
-    }
+    });
 }
 
 /// Catmull-Rom (bicubic, C1) sample of a grid at a world point; edges clamp.
@@ -571,12 +601,12 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // are smooth between them and nothing else moves by more than the
     // node spacing's curvature allows.
     let mut out = Grid::filled(spec, 0.0f64);
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let w = spec.world_of(x, y);
-            out.set(x, y, catmull_rom_2d(macro_h, w));
+    let nxu = spec.nx as usize;
+    out.data.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, v) in row.iter_mut().enumerate() {
+            *v = catmull_rom_2d(macro_h, spec.world_of(x as u32, y as u32));
         }
-    }
+    });
 
     // Conditioning fields, computed on the macro at ITS own resolution.
     let (mut slope, mut tpi, mut aspect) =
@@ -716,26 +746,27 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
     // calibration holds (measured without it: fine 2-16 m RMS +17-19 %).
     const OVERLAP_ADD_RMS: f64 = 0.76;
     let mut res = vec![0.0f64; spec.len()];
-    for i in 0..spec.len() {
+    res.par_iter_mut().enumerate().for_each(|(i, v)| {
         if wsq[i] > 1e-12 {
-            res[i] = OVERLAP_ADD_RMS * acc[i] / wsq[i].sqrt();
+            *v = OVERLAP_ADD_RMS * acc[i] / wsq[i].sqrt();
         }
-    }
+    });
     binomial3(spec, &mut res);
-    for y in 0..spec.ny {
-        for x in 0..spec.nx {
-            let i = spec.index(x, y);
-            if wsq[i] <= 1e-12 {
+    let (res_r, wsq_r, mpos_r) = (&res, &wsq, &mpos_g);
+    out.data.par_chunks_mut(nxu).enumerate().for_each(|(y, row)| {
+        for (x, o) in row.iter_mut().enumerate() {
+            let i = y * nxu + x;
+            if wsq_r[i] <= 1e-12 {
                 continue;
             }
-            let w = spec.world_of(x, y);
+            let w = spec.world_of(x as u32, y as u32);
             let g = match fields {
                 // proximity gate: prox is 1 in the valley zone, 0 far out
                 Some((_, prox)) => d.texture_floor
                     + (1.0 - d.texture_floor) * prox.bilinear(w).clamp(0.0, 1.0),
                 None => d.texture_floor
                     + (1.0 - d.texture_floor)
-                        * math::smoothstep(0.30, 0.62, mpos_g.bilinear(w)),
+                        * math::smoothstep(0.30, 0.62, mpos_r.bilinear(w)),
             };
             // Normalised by sqrt(sum w^2), not sum w: the patches are
             // independent samples, so the overlap-add's RMS goes as the root
@@ -744,9 +775,9 @@ fn quilt_core(rng: &mut DetRng, pack: &PatchPack, macro_h: &Grid<f64>,
             // product -- and that printed the 48 m pitch as a checker on
             // every tile (measured 2026-09-14: the RMS profile by cell mod 24
             // matched sqrt(w^2 + (1-w)^2) at r = 0.86-0.97, both modes).
-            out.data[i] += d.texture_gain * g * res[i];
+            *o += d.texture_gain * g * res_r[i];
         }
-    }
+    });
     out
 }
 

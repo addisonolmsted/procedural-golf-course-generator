@@ -50,6 +50,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+rayon = "1.10"
 course-seed = { path = "crates/course-seed" }
 course-world = { path = "crates/course-world" }
 course-viz = { path = "crates/course-viz" }

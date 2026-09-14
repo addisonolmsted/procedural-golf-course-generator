@@ -10,3 +10,6 @@ license.workspace = true
 [dependencies]
 course-world = { workspace = true }
 course-seed = { workspace = true }
+# Per-cell loops of the 2 m texture run in parallel; every cell is a pure
+# function of its inputs, so the output is bit-identical to the serial form.
+rayon = { workspace = true }
