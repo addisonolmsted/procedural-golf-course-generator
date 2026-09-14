@@ -212,6 +212,363 @@ fn berm(spec: &course_world::grid::GridSpec, ground: &mut [f64], wet: &[bool], l
     }
 }
 
+/// A basin lake's outcome: the settled level, the scoop depth that gave it,
+/// its area, its cells, and where its sill sits along the trunk.
+pub(crate) struct LakeReport {
+    pub level: f64,
+    pub depth: f64,
+    pub ha: f64,
+    pub cells: Vec<usize>,
+    pub sill_arc: f64,
+    pub reach: (f64, f64),
+}
+
+/// Priority flood on a LOCAL window, 8-connected: every cell's spill
+/// elevation, the lowest level water standing on it can reach the window's
+/// border at. The window's border is the sink.
+fn fill8(nx: usize, ny: usize, ground: &[f64]) -> Vec<f64> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let key = |z: f64| -> i64 { (z * 1000.0).round() as i64 };
+    let mut fill = vec![f64::INFINITY; nx * ny];
+    let mut done = vec![false; nx * ny];
+    let mut heap: BinaryHeap<Reverse<(i64, usize)>> = BinaryHeap::new();
+    for y in 0..ny {
+        for x in 0..nx {
+            if x == 0 || y == 0 || x == nx - 1 || y == ny - 1 {
+                let i = y * nx + x;
+                fill[i] = ground[i];
+                done[i] = true;
+                heap.push(Reverse((key(ground[i]), i)));
+            }
+        }
+    }
+    while let Some(Reverse((_, i))) = heap.pop() {
+        let (x, y) = ((i % nx) as i64, (i / nx) as i64);
+        for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let (a, b) = (x + dx, y + dy);
+                if a < 0 || b < 0 || a >= nx as i64 || b >= ny as i64 {
+                    continue;
+                }
+                let j = b as usize * nx + a as usize;
+                if done[j] {
+                    continue;
+                }
+                done[j] = true;
+                fill[j] = ground[j].max(fill[i]);
+                heap.push(Reverse((key(fill[j]), j)));
+            }
+        }
+    }
+    fill
+}
+
+/// `settle` on a local window, 8-connected: from `seeds`, the level is
+/// lowered to the lowest spill the body reaches and every connected cell
+/// below it is wet. Returns (level, cells); `touched_border` is set when the
+/// body reaches the window's edge, i.e. the window was too small to say.
+fn settle8(nx: usize, ny: usize, ground: &[f64], fill: &[f64], seeds: &[usize],
+           level_max: f64) -> (f64, Vec<usize>, bool) {
+    let mut level = level_max;
+    let mut cells: Vec<usize> = Vec::new();
+    let mut touched = false;
+    for _ in 0..4 {
+        let mut seen = vec![false; nx * ny];
+        let mut stack: Vec<usize> = Vec::new();
+        cells.clear();
+        touched = false;
+        for &i in seeds {
+            if !seen[i] && ground[i] < level {
+                seen[i] = true;
+                stack.push(i);
+            }
+        }
+        let mut spill = f64::INFINITY;
+        while let Some(i) = stack.pop() {
+            cells.push(i);
+            spill = spill.min(fill[i]);
+            let (x, y) = ((i % nx) as i64, (i / nx) as i64);
+            if x == 0 || y == 0 || x == nx as i64 - 1 || y == ny as i64 - 1 {
+                touched = true;
+            }
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let (a, b) = (x + dx, y + dy);
+                    if a < 0 || b < 0 || a >= nx as i64 || b >= ny as i64 {
+                        continue;
+                    }
+                    let j = b as usize * nx + a as usize;
+                    if !seen[j] && ground[j] < level {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        if spill >= level - 1e-6 {
+            break;
+        }
+        level = spill;
+    }
+    (level, cells, touched)
+}
+
+/// A natural basin lake on a creekless trunk valley (2026-09-14).
+///
+/// The creekless Carolina valley used to carry "wet reaches" flooded as
+/// pools: a 68 m disc per station at the downstream bed + 0.42 with no
+/// spill test, and they stood above their own shores on 9/118 tiles of the
+/// 250-seed final look. A lake that cannot perch needs a real closed basin
+/// in the ground it sits on. So: a smooth SCOOP is sunk into the finished
+/// 2 m ground along a reach of the trunk -- subtraction only, the pasted
+/// texture survives exactly (the `creek_crease` idiom, "lower the surface,
+/// do not replace it") -- deepest just above the untouched downstream sill
+/// and shoaling upstream like a drowned valley, its footprint following
+/// the valley's own coordinate `u` so it takes every side draw's floor
+/// with it. Then the water is FOUND: an 8-connected priority flood gives
+/// every cell its spill, the level settles to the lowest spill the body
+/// reaches (the sill), and every connected cell below it is wet. No berm,
+/// no dam, no drawn outline: the shore is the ground's contour, and a dry
+/// cell beside the water always stands at or above it, by construction.
+/// The depth is bisected so the lake lands at `target_ha` (its area grows
+/// monotonically with depth once the level is pinned by the sill); a reach
+/// that holds under 0.2 ha, runs off the window, or lies within 400 m of
+/// a lake already made is passed over (draws stay consumed).
+///
+/// Pure: no draws. `frac` places the sill along the trunk arc, `len` the
+/// reach upstream of it, `s_shape` salts the along-arc modulation.
+pub(crate) fn basin_lake(height: &mut Grid<f64>, surface: &mut Grid<f64>,
+                         u_field: &Grid<f64>, w_field: &Grid<f64>,
+                         pts: &[Vec2], bed: &[f64], frac: f64, len: f64, target_ha: f64,
+                         s_shape: u32, taken: &[(f64, f64)]) -> Option<LakeReport> {
+    basin_lake_why(height, surface, u_field, w_field, pts, bed, frac, len, target_ha, s_shape, taken).ok()
+}
+
+/// `basin_lake`, with the reason a reach was passed over.
+pub(crate) fn basin_lake_why(height: &mut Grid<f64>, surface: &mut Grid<f64>,
+                             u_field: &Grid<f64>, w_field: &Grid<f64>,
+                             pts: &[Vec2], bed: &[f64], frac: f64, len: f64, target_ha: f64,
+                             s_shape: u32, taken: &[(f64, f64)]) -> Result<LakeReport, &'static str> {
+    const POND_MIN_HA: f64 = 0.2;
+    const POND_MAX_HA: f64 = 4.0;
+    const D_MAX: f64 = 2.6;          // the scoop's depth at its deepest
+    const D_MIN: f64 = 0.4;          // the least water over the basin's floor
+    const SNAP_M: f64 = 120.0;        // the sill may move this far to a wider floor
+    const GAP_M: f64 = 400.0;         // between lakes
+    const MARGIN_M: f64 = 520.0;      // window beyond the reach, each way
+    let spec = height.spec;
+    let cell = spec.cell_size;
+    let n = pts.len();
+    if n < 4 || bed.len() != n {
+        return Err("no trunk");
+    }
+    let mut arc = vec![0.0f64; n];
+    for k in 1..n {
+        arc[k] = arc[k - 1] + pts[k].distance(pts[k - 1]);
+    }
+    let total = arc[n - 1];
+    if total < 2.0 * len {
+        return Err("trunk too short");
+    }
+    // the index direction that climbs: the bed rises upstream
+    let up: f64 = if bed[n - 1] > bed[0] { 1.0 } else { -1.0 };
+    // the sill: the widest floor within SNAP_M of the drawn station, clear
+    // of the tile's outer eighths
+    let a0 = frac * total;
+    let mut kd: Option<usize> = None;
+    for k in 0..n {
+        if (arc[k] - a0).abs() > SNAP_M || arc[k] < 0.12 * total || arc[k] > 0.88 * total {
+            continue;
+        }
+        if kd.map_or(true, |j| w_field.bilinear(pts[k]) > w_field.bilinear(pts[j])) {
+            kd = Some(k);
+        }
+    }
+    let kd = kd.ok_or("no station in the window")?;
+    let a_dn = arc[kd];
+    let a_up = a_dn + up * len;
+    if a_up < 0.05 * total || a_up > 0.95 * total {
+        return Err("reach runs off the trunk");
+    }
+    let reach = (a_dn.min(a_up), a_dn.max(a_up));
+    for &(lo, hi) in taken {
+        if reach.0 < hi + GAP_M && reach.1 > lo - GAP_M {
+            return Err("too near the last lake");
+        }
+    }
+    // along-arc weight per station: distance upstream of the sill
+    let along: Vec<f64> = (0..n).map(|k| {
+        let s = (arc[k] - a_dn) * up;
+        if s < 0.0 || s > len {
+            return 0.0;
+        }
+        let a = math::smoothstep(0.0, 70.0, s) * (1.0 - math::smoothstep(0.45 * len, len, s));
+        (a * (1.0 + 0.15 * course_world::noise::perlin1(s / 140.0, s_shape))).max(0.0)
+    }).collect();
+    let stations: Vec<usize> = (0..n).filter(|&k| along[k] > 0.0).collect();
+    if stations.len() < 3 {
+        return Err("too few stations");
+    }
+    let radius = |k: usize| -> f64 { (0.6 * w_field.bilinear(pts[k])).clamp(120.0, 260.0) };
+    // the along-arc weight as a function of distance upstream of the sill,
+    // for a CELL: read at its nearest station, so nothing downstream of the
+    // sill is ever lowered (a disc per station reached past it)
+    let along_at = |s: f64| -> f64 {
+        if s < 0.0 || s > len {
+            return 0.0;
+        }
+        let a = math::smoothstep(0.0, 70.0, s) * (1.0 - math::smoothstep(0.45 * len, len, s));
+        (a * (1.0 + 0.15 * course_world::noise::perlin1(s / 140.0, s_shape))).max(0.0)
+    };
+    // stations the window's cells may be nearest to: the reach and a margin
+    let near_stations: Vec<usize> = (0..n).filter(|&k| {
+        let s = (arc[k] - a_dn) * up;
+        s > -400.0 && s < len + 400.0
+    }).collect();
+    // the window
+    let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+    let m = (MARGIN_M / cell).ceil() as i64;
+    let (mut x0, mut y0, mut x1, mut y1) = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
+    for &k in &stations {
+        let (cx, cy) = ((pts[k].x / cell).round() as i64, (pts[k].y / cell).round() as i64);
+        x0 = x0.min(cx - m); y0 = y0.min(cy - m); x1 = x1.max(cx + m); y1 = y1.max(cy + m);
+    }
+    let (x0, y0, x1, y1) = (x0.max(0), y0.max(0), x1.min(nx - 1), y1.min(ny - 1));
+    let (wx, wy) = ((x1 - x0 + 1) as usize, (y1 - y0 + 1) as usize);
+    let gidx = |lx: usize, ly: usize| -> usize { spec.index((x0 + lx as i64) as u32, (y0 + ly as i64) as u32) };
+    // the scoop's footprint weight
+    let mut wt = vec![0.0f64; wx * wy];
+    for ly in 0..wy {
+        for lx in 0..wx {
+            let gi = gidx(lx, ly);
+            let q = spec.world_of((x0 + lx as i64) as u32, (y0 + ly as i64) as u32);
+            // nearest trunk station: its arc is the cell's along-arc position
+            let (mut kn, mut dn) = (usize::MAX, f64::MAX);
+            for &k in &near_stations {
+                let dd = q.distance(pts[k]);
+                if dd < dn {
+                    dn = dd;
+                    kn = k;
+                }
+            }
+            let mut best = 0.0f64;
+            if kn != usize::MAX {
+                let r = radius(kn);
+                if dn < r {
+                    best = along_at((arc[kn] - a_dn) * up) * (1.0 - math::smoothstep(0.75 * r, r, dn));
+                }
+            }
+            if best > 0.0 {
+                // the valley's own coordinate: 1 on the inner floor, fading
+                // across the lower wall, 0 on the slopes -- and 0-valued on
+                // every tributary floor, which is what gives the lake its arms
+                let u = u_field.data[gi].clamp(0.0, 1.0);
+                best *= 1.0 - math::smoothstep(0.28, 0.50, u);
+            }
+            wt[ly * wx + lx] = best;
+        }
+    }
+    for _ in 0..2 {
+        let src = wt.clone();
+        for ly in 1..wy - 1 {
+            for lx in 1..wx - 1 {
+                let i = ly * wx + lx;
+                wt[i] = 0.5 * src[i] + 0.125 * (src[i - 1] + src[i + 1] + src[i - wx] + src[i + wx]);
+            }
+        }
+    }
+    let h0: Vec<f64> = (0..wx * wy).map(|i| height.data[gidx(i % wx, i / wx)]).collect();
+    let seeds: Vec<usize> = stations.iter().filter(|&&k| along[k] > 0.5).map(|&k| {
+        let (cx, cy) = ((pts[k].x / cell).round() as i64 - x0, (pts[k].y / cell).round() as i64 - y0);
+        cy.clamp(0, wy as i64 - 1) as usize * wx + cx.clamp(0, wx as i64 - 1) as usize
+    }).collect();
+    if seeds.is_empty() {
+        return Err("no seed");
+    }
+    let cap_cells = (POND_MAX_HA * 1e4 / (cell * cell)) as usize;
+    let min_cells = (POND_MIN_HA * 1e4 / (cell * cell)) as usize;
+    let target_cells = (target_ha.clamp(POND_MIN_HA, POND_MAX_HA) * 1e4 / (cell * cell)) as usize;
+    // The scoop at a fixed depth; the LEVEL is what sizes the lake. Where
+    // the sill stands well above the reach's floor (the trunk's own fall
+    // over the reach, a natural hollow) the water at the spill floods
+    // hectares whatever the scoop, so the level is bisected between the
+    // basin's floor and its spill for the largest that holds `target_ha`.
+    // A lake below its spill is not perched -- every cell around it stands
+    // higher -- it is a lake that is not full to the brim, as most are.
+    let depth = D_MAX;
+    let g: Vec<f64> = (0..wx * wy).map(|i| h0[i] - depth * wt[i]).collect();
+    let fill = fill8(wx, wy, &g);
+    let seed_min = seeds.iter().map(|&i| g[i]).fold(f64::MAX, f64::min);
+    let spill = seeds.iter().map(|&i| fill[i]).fold(f64::MAX, f64::min);
+    let debug = std::env::var("NET_DEBUG").map(|v| v == "lake").unwrap_or(false);
+    // the lake at a level -- returned with the level it SETTLED to, which
+    // is what gets written (the body's own lowest spill may lie below the
+    // seeds'); None when the window cannot say
+    let flood = |level: f64| -> Option<(f64, Vec<usize>)> {
+        let (lv, cells, touched) = settle8(wx, wy, &g, &fill, &seeds, level);
+        if debug {
+            eprintln!("    level {level:.2} (floor {seed_min:.2}, spill {spill:.2}): settled {lv:.2}, {} cells, touched {touched}", cells.len());
+        }
+        if touched || cells.len() > 3 * cap_cells {
+            return None;
+        }
+        Some((lv, cells))
+    };
+    let lo0 = seed_min + D_MIN;
+    if spill <= lo0 {
+        return Err("no basin: the spill is at the floor");
+    }
+    let mut best: Option<(f64, Vec<usize>)> = None;
+    match flood(spill) {
+        Some((lv, c)) if c.len() <= target_cells => best = Some((lv, c)),
+        _ => {
+            let (mut lo, mut hi) = (lo0, spill);
+            for _ in 0..8 {
+                let mid = 0.5 * (lo + hi);
+                match flood(mid) {
+                    Some((lv, c)) if c.len() <= target_cells => {
+                        lo = mid;
+                        best = Some((lv, c));
+                    }
+                    _ => hi = mid,
+                }
+            }
+            if best.is_none() {
+                if let Some((lv, c)) = flood(lo0) {
+                    if c.len() <= cap_cells {
+                        best = Some((lv, c));
+                    }
+                }
+            }
+        }
+    }
+    let (level, cells) = best.ok_or("floods over 4 ha at the least level")?;
+    if cells.len() < min_cells {
+        return Err("under 0.2 ha");
+    }
+    // write it: the scoop, then the water
+    for i in 0..wx * wy {
+        if wt[i] > 0.0 {
+            height.data[gidx(i % wx, i / wx)] = h0[i] - depth * wt[i];
+        }
+    }
+    let mut out: Vec<usize> = Vec::with_capacity(cells.len());
+    for &i in &cells {
+        let gi = gidx(i % wx, i / wx);
+        surface.data[gi] = if surface.data[gi].is_nan() { level } else { surface.data[gi].max(level) };
+        out.push(gi);
+    }
+    let ha = out.len() as f64 * cell * cell / 1e4;
+    Ok(LakeReport { level, depth, ha, cells: out, sill_arc: a_dn, reach })
+}
+
 /// The earth dam's numbers: freeboard over the pond, half the crest width,
 /// and the face grade (3:1) both ways.
 const DAM_FREEBOARD: f64 = 1.2;
@@ -2758,81 +3115,15 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
         // a fifth, in a couple of separated runs.
         let reach_lo = if meander { -1.0 } else { rng.range_f64(0.30, 0.58) };
 
-        // --- a trunk wet reach is a POOL, not a thread --------------------
-        // Drawing the reach as a fixed-half-width ribbon gave a 5 m line: a
-        // hairline, which is exactly what the review rejected. A pool is
-        // instead FLOODED to a level and lets the valley floor decide its
-        // own width, so it comes out short and broad — "small length and
-        // width, but not hairline" — with a shoreline that belongs to the
-        // ground rather than to the centre-line.
+        // --- no pools on a creekless trunk (2026-09-14) --------------------
+        // A trunk wet reach was a POOL: 68 m discs per station flooded to
+        // the downstream bed + 0.42 with no spill test and no backwater
+        // (that pass needs a creek line). It stood above its own shore on
+        // 9/118 creekless tiles of the 250-seed final look. The creekless
+        // valley's standing water is the basin lake now (`basin_lake`, at
+        // the tail of this function); the draws above stay consumed.
         if !meander {
-            let mut a0 = 0.0f64;
-            let mut run: Vec<(Vec2, f64)> = Vec::new();
-            let mut flush = |run: &mut Vec<(Vec2, f64)>, wet: &mut usize| {
-                let len: f64 = run.windows(2).map(|w| w[0].0.distance(w[1].0)).sum();
-                if run.len() < 2 || len < 150.0 {
-                    run.clear();
-                    return;
-                }
-                // "Small in length" (review): a wet reach is a pool, not a
-                // reservoir. A long run is trimmed to its DOWNSTREAM end,
-                // which is where the water would actually stand.
-                let mut back = 0.0f64;
-                let mut cut = 0usize;
-                for k in (1..run.len()).rev() {
-                    back += run[k - 1].0.distance(run[k].0);
-                    if back > 420.0 {
-                        cut = k - 1;
-                        break;
-                    }
-                }
-                if cut > 0 {
-                    run.drain(..cut);
-                }
-                // level set by the DOWNSTREAM lip: a pool is impounded from
-                // below, so it can never be deeper than its own outlet.
-                // Lowered 2026-08-27 with the wider floors. A pool is
-                // impounded to a LEVEL, so the area it covers is set by the
-                // floor it sits on: the same +0.75 m that made a tidy pool on
-                // a 192 m floor spreads across a 274 m one. The level and the
-                // reach both come down so the pool stays a pool.
-                let lip = run.last().unwrap().1;
-                let lvl = lip + 0.42;
-                for (p, _) in run.iter() {
-                    let r = (68.0 / cell).ceil() as i64;
-                    let (cx, cy) = ((p.x / cell).round() as i64, (p.y / cell).round() as i64);
-                    for gy in (cy - r).max(0)..=(cy + r).min(spec.ny as i64 - 1) {
-                        for gx in (cx - r).max(0)..=(cx + r).min(spec.nx as i64 - 1) {
-                            let q = spec.world_of(gx as u32, gy as u32);
-                            if q.distance(*p) > 68.0 {
-                                continue;
-                            }
-                            let i = spec.index(gx as u32, gy as u32);
-                            if height.data[i] >= lvl {
-                                continue;
-                            }
-                            if surface.data[i].is_nan() {
-                                *wet += 1;
-                                surface.data[i] = lvl;
-                            } else {
-                                surface.data[i] = surface.data[i].max(lvl);
-                            }
-                        }
-                    }
-                }
-                run.clear();
-            };
-            for k in 0..pts.len() {
-                if k > 0 {
-                    a0 += pts[k - 1].distance(pts[k]);
-                }
-                if course_world::noise::perlin1(a0 / 420.0, s_reach) < reach_lo {
-                    flush(&mut run, &mut wet_cells);
-                } else {
-                    run.push((pts[k], bed[k]));
-                }
-            }
-            flush(&mut run, &mut wet_cells);
+            let _ = (hw, s_reach, reach_lo);
             continue;
         }
 
@@ -3130,6 +3421,48 @@ pub fn fluvial(rng: &mut DetRng, height: &mut Grid<f64>,
             let _frac = rng.range_f64(0.12 + 0.24 * k as f64, 0.32 + 0.24 * k as f64);
             let _rise = rng.range_f64(0.8, 2.6);
             let _disc = rng.range_f64(38.0, 105.0);
+        }
+    }
+    // --- BASIN LAKES on a creekless valley (2026-09-14) ---------------------
+    // Golf wants some water and the corpus has it (93 % of real Sandhills-NC
+    // courses carry a body); the owner wants it natural and never perched.
+    // See `basin_lake`. Draws at the tail of the WATER stream, always the
+    // same two slots whatever the count, so every seed's earlier draws and
+    // every creek tile (`meander`, where nothing below runs) keep their
+    // values.
+    if !meander {
+        if let Some((pts, bed)) = beds.iter().zip(tiers.iter()).find(|(_, t)| **t == 1).map(|(b, _)| b) {
+            let n_lake = {
+                let u = rng.next_f64();
+                let w = d.lake_weights;
+                if u < w[0] { 0 } else if u < w[0] + w[1] { 1 } else { 2 }
+            };
+            let mut plans: Vec<(f64, f64, f64, u32)> = Vec::new();
+            for _ in 0..2 {
+                let frac = rng.range_f64(0.15, 0.85);
+                let len = rng.range_f64(260.0, 420.0);
+                let target = rng.range_f64(d.lake_ha.lo.ln(), d.lake_ha.hi.ln()).exp();
+                let s_shape = rng.next_u32();
+                plans.push((frac, len, target, s_shape));
+            }
+            let mut taken: Vec<(f64, f64)> = Vec::new();
+            for &(frac, len, target, s_shape) in plans.iter().take(n_lake) {
+                match basin_lake_why(height, &mut surface, u_field, w_field, pts, bed, frac, len, target, s_shape, &taken) {
+                    Ok(r) => {
+                        wet_cells += r.cells.len();
+                        taken.push(r.reach);
+                        if std::env::var("NET_DEBUG").is_ok() {
+                            eprintln!("  basin lake: sill at {:.0} m of the trunk, reach {:.0} m, depth {:.2} m, level {:.2}, {:.2} ha (target {:.2})",
+                                      r.sill_arc, len, r.depth, r.level, r.ha, target);
+                        }
+                    }
+                    Err(why) => {
+                        if std::env::var("NET_DEBUG").is_ok() {
+                            eprintln!("  basin lake: passed over, {why} (frac {frac:.2}, len {len:.0}, target {target:.2} ha)");
+                        }
+                    }
+                }
+            }
         }
     }
     // --- BACKWATER (mixed-run screen, 2026-09-06) ---------------------------
@@ -4129,6 +4462,45 @@ mod transcript_guard {
     }
     /// Recorded 2026-09-01 against the two-sine creek at 3839dcb.
     const GOLDEN: u32 = 1554183941;
+
+    /// The same pin on a CREEKLESS seed: the basin-lake draws sit at the
+    /// stream's tail and must stay exactly two slots whatever the count.
+    fn run_dry() -> (u64, u32) {
+        let mut seed = 600035u64;
+        let (id, d) = loop {
+            let id = course_seed::RunIdentity::from_seed(seed);
+            let d = crate::draw::site(&id, Some(crate::mode::Mode::Fluvial), None);
+            if crate::rng::stream(&id, crate::rng::WATER).next_f64() >= d.p_valley_creek {
+                break (id, d);
+            }
+            seed += 1;
+        };
+        let spec = GridSpec::new(Vec2::new(0.0, 0.0), 2.0, 300, 300);
+        let mut height = Grid::filled(spec, 0.0f64);
+        let mut u = Grid::filled(spec, 0.0f64);
+        for y in 0..300u32 {
+            for x in 0..300u32 {
+                let p = spec.world_of(x, y);
+                let dx = (p.x - 300.0).abs();
+                height.set(x, y, 0.02 * p.y + 0.03 * dx);
+                u.set(x, y, (dx / 150.0).min(1.0));
+            }
+        }
+        let pts: Vec<Vec2> = (0..=100).map(|i| Vec2::new(300.0, i as f64 * 6.0)).collect();
+        let bed: Vec<f64> = pts.iter().map(|p| 0.02 * p.y - 0.4).collect();
+        let mut rng = crate::rng::stream(&id, crate::rng::WATER);
+        let _w = fluvial_guarded(&mut rng, &mut height, &[(pts, bed)], &[1u8], &u, &d);
+        (seed, rng.next_u32())
+    }
+
+    #[test]
+    fn water_stream_position_after_fluvial_is_pinned_dry() {
+        let (seed, got) = run_dry();
+        eprintln!("WATER stream next_u32 after fluvial, dry seed {seed}: {got}");
+        assert_eq!(got, GOLDEN_DRY, "the WATER transcript shifted on a creekless seed");
+    }
+    /// Recorded 2026-09-14 with the basin-lake draws at the tail.
+    const GOLDEN_DRY: u32 = 3992857827;
 }
 
 #[cfg(test)]
@@ -4473,5 +4845,163 @@ mod slot_lowered_tests {
         let (rb, rf) = (rms(&bank), rms(&far));
         eprintln!("slot_lowered texture rms on the bank {rb:.3}  away {rf:.3}");
         assert!(rb >= 0.6 * rf, "the bank lost its texture: {rb:.3} vs {rf:.3}");
+    }
+}
+
+#[cfg(test)]
+mod basin_lakes {
+    //! A basin lake is the ground's own contour at its true spill: never
+    //! perched, one flat level, an open outlet, nothing raised, texture
+    //! kept. Synthetic 600 x 600 m tile at 2 m: a straight trunk down
+    //! x = 300 falling toward y = 0 (index 0 = mouth), a 3 % floor either
+    //! side, two-octave texture.
+    use super::*;
+    use course_world::grid::GridSpec;
+
+    fn tile() -> (Grid<f64>, Grid<f64>, Grid<f64>, Vec<Vec2>, Vec<f64>) {
+        let spec = GridSpec::new(Vec2::new(0.0, 0.0), 2.0, 300, 300);
+        let mut height = Grid::filled(spec, 0.0f64);
+        let mut u = Grid::filled(spec, 0.0f64);
+        for y in 0..300u32 {
+            for x in 0..300u32 {
+                let p = spec.world_of(x, y);
+                let dx = (p.x - 300.0).abs();
+                let tex = 0.25 * course_world::noise::perlin2(p.x / 9.0, p.y / 9.0, 7)
+                    + 0.12 * course_world::noise::perlin2(p.x / 4.5, p.y / 4.5, 9);
+                height.set(x, y, 0.004 * p.y + 0.03 * dx + tex);
+                u.set(x, y, (dx / 150.0).min(1.0));
+            }
+        }
+        let w = Grid::filled(spec, 150.0f64);
+        let pts: Vec<Vec2> = (0..=100).map(|i| Vec2::new(300.0, i as f64 * 6.0)).collect();
+        let bed: Vec<f64> = pts.iter().map(|p| 0.004 * p.y - 0.4).collect();
+        (height, u, w, pts, bed)
+    }
+
+    fn run(target_ha: f64) -> (Grid<f64>, Grid<f64>, Grid<f64>, LakeReport, Vec<Vec2>) {
+        let (mut height, u, w, pts, bed) = tile();
+        let h0 = height.clone();
+        let mut surface = Grid::filled(height.spec, f64::NAN);
+        let r = basin_lake(&mut height, &mut surface, &u, &w, &pts, &bed, 0.40, 300.0, target_ha, 11, &[])
+            .expect("a lake");
+        (h0, height, surface, r, pts)
+    }
+
+    #[test]
+    fn one_body_in_band_never_perched_outlet_open() {
+        let (h0, h, s, r, pts) = run(1.0);
+        let spec = h.spec;
+        let (nx, ny) = (spec.nx as i64, spec.ny as i64);
+        assert!(r.ha >= 0.2 && r.ha <= 4.0, "{} ha", r.ha);
+        assert!((r.ha - 1.0).abs() < 0.3, "{} ha against 1.0", r.ha);
+        // one flat level, and nothing raised anywhere
+        let mut n_wet = 0;
+        for i in 0..spec.len() {
+            assert!(h.data[i] <= h0.data[i] + 1e-9, "raised at {i}");
+            if s.data[i].is_finite() {
+                n_wet += 1;
+                assert!((s.data[i] - r.level).abs() < 1e-9, "two levels");
+                assert!(h.data[i] < r.level, "wet cell above its water");
+            }
+        }
+        assert_eq!(n_wet, r.cells.len());
+        // never perched: every dry 8-neighbour of a wet cell stands at or above the level
+        for y in 0..ny {
+            for x in 0..nx {
+                let i = spec.index(x as u32, y as u32);
+                if !s.data[i].is_finite() {
+                    continue;
+                }
+                for dy in -1i64..=1 {
+                    for dx in -1i64..=1 {
+                        let (a, b) = (x + dx, y + dy);
+                        if a < 0 || b < 0 || a >= nx || b >= ny {
+                            continue;
+                        }
+                        let j = spec.index(a as u32, b as u32);
+                        if s.data[j].is_nan() {
+                            assert!(h.data[j] >= r.level - 1e-9, "perched at ({a},{b}): ground {} under level {}", h.data[j], r.level);
+                        }
+                    }
+                }
+            }
+        }
+        // one body: 8-connected flood from the first wet cell reaches all of them
+        let first = (0..spec.len()).find(|&i| s.data[i].is_finite()).unwrap();
+        let mut seen = vec![false; spec.len()];
+        let mut stack = vec![first];
+        seen[first] = true;
+        let mut count = 0;
+        while let Some(i) = stack.pop() {
+            count += 1;
+            let (x, y) = ((i % spec.nx as usize) as i64, (i / spec.nx as usize) as i64);
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    let (a, b) = (x + dx, y + dy);
+                    if a < 0 || b < 0 || a >= nx || b >= ny {
+                        continue;
+                    }
+                    let j = spec.index(a as u32, b as u32);
+                    if !seen[j] && s.data[j].is_finite() {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        assert_eq!(count, n_wet, "more than one body");
+        // open outlet: the water stands no higher than the sill's own untouched
+        // ground (the level IS the spill), and none of it lies downstream of the sill
+        let sill_max = pts.iter().filter(|p| (p.y - r.sill_arc).abs() <= 20.0)
+            .map(|p| h.data[spec.index((p.x / 2.0).round() as u32, (p.y / 2.0).round() as u32)])
+            .fold(f64::MIN, f64::max);
+        assert!(r.level <= sill_max + 1e-6, "level {} above the sill's ground {}", r.level, sill_max);
+        for &i in &r.cells {
+            let y = (i / spec.nx as usize) as f64 * 2.0;
+            assert!(y >= r.sill_arc - 20.0, "water {} m downstream of the sill", r.sill_arc - y);
+        }
+        // texture survives on the dry ground inside the scoop's footprint
+        let rms = |sel: &dyn Fn(usize) -> bool| -> f64 {
+            let (mut acc, mut n) = (0.0f64, 0.0f64);
+            for y in 2..ny - 2 {
+                for x in 2..nx - 2 {
+                    let i = spec.index(x as u32, y as u32);
+                    if !sel(i) || s.data[i].is_finite() {
+                        continue;
+                    }
+                    let mut box_ = 0.0;
+                    for dy in -2i64..=2 {
+                        for dx in -2i64..=2 {
+                            box_ += h.data[spec.index((x + dx) as u32, (y + dy) as u32)];
+                        }
+                    }
+                    let d = h.data[i] - box_ / 25.0;
+                    acc += d * d;
+                    n += 1.0;
+                }
+            }
+            (acc / n.max(1.0)).sqrt()
+        };
+        let inside = |i: usize| h.data[i] < h0.data[i] - 0.05;
+        let outside = |i: usize| h.data[i] >= h0.data[i] - 1e-9;
+        let (ri, ro) = (rms(&inside), rms(&outside));
+        assert!(ri > 0.8 * ro, "texture lost inside the scoop: {ri:.3} vs {ro:.3}");
+    }
+
+    #[test]
+    fn deterministic_and_sized() {
+        let (_, a, _, ra, _) = run(0.5);
+        let (_, b, _, rb, _) = run(0.5);
+        assert!(a.data.iter().zip(b.data.iter()).all(|(x, y)| x == y));
+        assert!((ra.level - rb.level).abs() < 1e-12);
+        assert!(ra.ha <= 0.5 + 0.15 && ra.ha >= 0.2, "{} ha against 0.5", ra.ha);
+    }
+
+    #[test]
+    fn a_taken_reach_is_passed_over() {
+        let (mut height, u, w, pts, bed) = tile();
+        let mut surface = Grid::filled(height.spec, f64::NAN);
+        let r = basin_lake(&mut height, &mut surface, &u, &w, &pts, &bed, 0.40, 300.0, 1.0, 11, &[(150.0, 500.0)]);
+        assert!(r.is_none());
     }
 }

@@ -124,6 +124,21 @@ def screen(z, w, c, line, mode):
     stats["slope_max"] = float(slope[~wet].max())
     stats["relief"] = float(np.percentile(z, 99) - np.percentile(z, 1))
     stats["wet_pct"] = float(100.0 * wet.mean())
+    # standing bodies (8-connected wet components off the creek line) in ha, and the
+    # share of dry shore cells that lie BELOW the water beside them (a perched shore)
+    body = wet.copy()
+    if line is not None and len(line) > 1:
+        on = np.zeros(z.shape, bool)
+        ii = np.clip((line[:, 1] / c).astype(int), 0, n - 1); jj = np.clip((line[:, 0] / c).astype(int), 0, n - 1)
+        on[ii, jj] = True
+        body &= ~ndi.binary_dilation(on, iterations=4)
+    lab, nb = ndi.label(body, structure=np.ones((3, 3)))
+    sizes = ndi.sum(body, lab, range(1, nb + 1)) * c * c / 1e4 if nb else np.array([])
+    stats["bodies"] = [float(v) for v in sizes if v >= 0.05]
+    lvl = np.where(wet, w, -np.inf)
+    nb_lvl = ndi.maximum_filter(lvl, 3, mode="nearest")
+    shore = (~wet) & np.isfinite(nb_lvl) & (nb_lvl > -np.inf)
+    stats["shore_below"] = float(((z < nb_lvl - 0.02) & shore).sum() / max(shore.sum(), 1))
     # score: hectares per class, weighted; steps / walls / reversals count hardest
     stats["score"] = float(sum(WEIGHT[k] * stats["ha"][k] for k in CLASSES))
     stats["notable"] = [k for k in CLASSES if stats["ha"][k] > NOTABLE[k]]
@@ -260,6 +275,11 @@ def main():
         for k in CLASSES:
             r[k] = f'{sum(rows[s]["cells"][k] > 0 for s in ss)} / {sum(k in rows[s]["notable"] for s in ss)}'
         r["slope_p99"] = float(np.median([rows[s]["slope_p99"] for s in ss]))
+        nbod = [len(rows[s].get("bodies", [])) for s in ss]
+        r["bodies"] = f'{sum(1 for v in nbod if v)} / {float(np.median(nbod)):.0f} / {max(nbod) if nbod else 0}'
+        allb = [b for s in ss for b in rows[s].get("bodies", [])]
+        r["body_ha"] = f'{np.percentile(allb, 50):.2f} / {max(allb):.2f}' if allb else "-"
+        r["shore_below"] = float(np.max([rows[s].get("shore_below", 0.0) for s in ss]))
         r["cut_max"] = float(np.median([rows[s]["creek"].get("cut_max", np.nan) for s in ss if rows[s]["creek"]])) if any(rows[s]["creek"] for s in ss) else float("nan")
         return r
     A = {m: agg(m) for m in ("all", "aeolian", "fluvial")}
@@ -269,6 +289,8 @@ def main():
     table = (f'<table><thead><tr><th></th>{head}</tr></thead><tbody>' + tr("tiles", "n") + tr("tiles flagged (a class above its notable size)", "flagged")
              + "".join(tr(f'tiles with <i class="k {k}">{k}</i>, any / notable', k) for k in CLASSES)
              + tr("ground slope p99, median %", "slope_p99", "{:.0f}") + tr("creek cut depth max, median m", "cut_max", "{:.1f}")
+             + tr("standing bodies: tiles with any / per tile median / max", "bodies") + tr("body area, ha: median / max", "body_ha")
+             + tr("shore cells below their water, worst tile share", "shore_below", "{:.3f}")
              + "</tbody></table>")
     legend = " ".join(f'<span class="lg"><i style="background:rgb{COLOUR[k]}"></i>{k}</span>' for k in CLASSES)
     n_a = A["aeolian"]["n"] if A["aeolian"] else 0; n_f = A["fluvial"]["n"] if A["fluvial"] else 0

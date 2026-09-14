@@ -68,6 +68,10 @@ pub struct Descriptors {
     pub divide_wander: f64,
     pub n_bays: u32,
     pub p_valley_creek: f64,
+    /// Basin lakes on a creekless trunk (fluvial): count weights and the
+    /// area draw's range. Copied from the record, not drawn here.
+    pub lake_weights: [f64; 3],
+    pub lake_ha: Range,
     pub allogenic_river: bool,
     /// Nominal channel geometry width, metres. Two classes: a creek, which
     /// may run in a deep gorge, and a river, which gets a correspondingly
@@ -188,6 +192,8 @@ pub fn site(id: &RunIdentity, forced_mode: Option<Mode>, forced_form: Option<For
         upland_relief_m: draw(&mut p, rec.upland_relief_m),
         divide_wander: draw(&mut p, rec.divide_wander),
         p_valley_creek: rec.p_valley_creek,
+        lake_weights: rec.lake_weights,
+        lake_ha: rec.lake_ha,
         n_bays: {
             let w = rec.bay_weights;
             let u = p.next_f64() * (w[0] + w[1] + w[2] + w[3]);

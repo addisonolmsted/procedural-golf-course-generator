@@ -1030,3 +1030,51 @@ Left as is: `lib.rs` `u2/w2/d2` (gates, bilinear, not height); the
 real 1.02–1.06. 79 tests green; screen on the 48 rebuilt tiles: aeolian
 0 flagged, fluvial 1 (a creekless-valley pool, item 1). Viewer
 https://claude.ai/code/artifact/91a69192-4804-445b-baf7-c6cef97c963d. Still an 8 m facet on steep slip faces (900099): the macro's own resolution, not the quilt.
+
+## 2026-09-14 — final pass, item 1: basin lakes on the creekless valleys
+
+Owner wants lakes for golf (Pinehurst has them) but never perched above
+a low point, and natural. Diagnosis of the old pools (`water.rs`,
+`!meander` branch): a 68 m disc per station flooded to the downstream
+bed + 0.42 with no spill test and no backwater (that pass needs a creek
+line): 84/118 creekless tiles carried them, 9 perched. And no basin can
+exist on a trunk: `carve.rs:197` forces every bed to rise strictly
+upstream.
+
+**Shipped: `water::basin_lake`** (record in the function doc). A smooth
+scoop is sunk into the finished 2 m ground along a reach of the trunk —
+subtraction only, texture intact — deepest just above the untouched
+downstream sill and shoaling upstream, its footprint following the
+valley's own coordinate `u` (so it takes side draws with it, which is
+where the arms come from); the reach's along-arc weight is read at each
+cell's NEAREST station so nothing downstream of the sill is lowered (a
+disc per station reached past it and cut the sill: first bug). Then the
+water is found: an 8-connected priority flood gives every cell its spill,
+`settle8` lowers the level to the lowest spill the body reaches and wets
+every connected cell below it. The LEVEL sizes the lake, bisected between
+the basin's floor + 0.4 m and its spill for the largest that holds the
+target area (where the sill stands well above the reach's floor — the
+trunk's own fall, a natural hollow — even a 0.4 m scoop floods hectares
+at the spill: second finding); a lake below its spill is not perched,
+it is a lake not full to the brim. The written level is the SETTLED one
+(the body's own spill can lie below the seeds': third bug, 1.2 m of
+perched water on 900054 until fixed). Passed over, draws consumed: a
+reach within 400 m of the last lake, one that runs off the trunk, under
+0.2 ha, or no basin. Dials `record.rs`: `lake_weights` [0.30, 0.45, 0.25]
+(0/1/2 per tile; corpus: 93 % of NC courses carry a body, typically two),
+`lake_ha` 0.3–3.0 log-uniform. Draws at the WATER tail, always two slots;
+the pool draws stay consumed; transcript pins `GOLDEN` (creek seed,
+unchanged) and new `GOLDEN_DRY` 3992857827 (seed 600035). Tests:
+`basin_lakes` (one body in band, never perched, one level, open outlet,
+nothing raised, texture kept, deterministic, taken reach passed over).
+83 tests green.
+
+134 fluvial seeds of the final look, `out/lakes_fix`: 87 lakes on 75 of
+118 creekless tiles (0 / 1 / 2 lakes on 59 / 65 / 10 tiles); passed over
+15 too near, 8 under 0.2 ha, 2 off the trunk, 2 no basin; area p10/50/90
+0.38 / 0.77 / 1.65 ha, max 2.57, 79 of 87 within 70–105 % of target.
+Screen: flagged 0/134, perched 0, `shore_below` 0 on every creekless tile
+(the 0.06 worst is a creek ribbon's bank, unchanged); creek tiles
+byte-identical to the texture-fix render. New screen rows: standing
+bodies per tile, body area, shore-below share. Viewer
+https://claude.ai/code/artifact/62d5ec46-35c7-4125-b7e5-264714c0b167.

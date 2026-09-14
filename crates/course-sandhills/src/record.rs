@@ -298,6 +298,16 @@ pub struct Record {
     /// P(the trunk valley carries a MEANDERING creek instead of ponds).
     /// `review 2026-08-25`: about one tile in ten.
     pub p_valley_creek: f64,
+    /// Basin lakes on a creekless trunk valley: P(0, 1, 2 per tile).
+    /// `corpus 2026-08-29`: 93 % of real Sandhills-NC courses carry a
+    /// standing body, typically two of 0.2-4 ha; the retired trunk pools
+    /// ran median 1, p90 4 per tile. Ponds are a construction feature
+    /// (S7), so the terrain carries fewer than the finished course will.
+    pub lake_weights: [f64; 3],
+    /// A basin lake's target area, hectares, drawn log-uniform. `corpus`:
+    /// 0.2-4 ha typical body; the floor keeps a lake off the 40-60 m
+    /// ribbon a 5 % valley floor gives below ~0.3 ha.
+    pub lake_ha: Range,
     /// P(the tile is drawn as the STEEPER Carolina — the Pinehurst end of
     /// the range). `measured 2026-08-27`: against Pinehurst No. 2's own
     /// terrain, four of our six signature features already sit within 0.6
@@ -503,6 +513,8 @@ pub const SANDHILLS: Record = Record {
     divide_wander: Range::new(28.0, 52.0),   // measured (ridge_diag2)
     bay_weights: [0.42, 0.30, 0.19, 0.09], // literature: many tiles carry none
     p_valley_creek: 0.10,                    // review: ~1 tile in 10
+    lake_weights: [0.30, 0.45, 0.25],        // corpus: 93 % carry a body, typically two
+    lake_ha: Range::new(0.3, 3.0),           // corpus: 0.2-4 ha
     p_upland: 0.30,                          // review: 30% Pinehurst-like
     p_regular: 0.10,                         // review: ~1 mound in 10
     p_allogenic_river: 0.30,                 // literature
