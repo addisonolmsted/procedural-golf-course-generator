@@ -126,9 +126,23 @@ def turns(pts_m: np.ndarray):
 
 
 # --------------------------------------------------------------------------
-# main pass: the holes.run() join, verbatim
+# the join: cached hole ways -> keeper course -> tile -> oriented profile
 # --------------------------------------------------------------------------
-def run() -> list[dict]:
+def joined(stats: dict | None = None):
+    """Yield one dict per golf=hole way that joins a keeper course's tile.
+
+    Keys: way_id, course_id, region, par, pts_loc, z2, cell2, ss, zs,
+    length_m.  `pts_loc` is the raw polyline in tile-local metres, oriented
+    tee -> green; `z2`/`cell2` are that course's raw DEM grid (shared between
+    ways on the same course, do not mutate); `(ss, zs)` is the 5 m / 15 m
+    boxcar profile from `smoothed_profile`.
+
+    `stats`, if given, is filled with the counters n_join, n_nocourse,
+    n_noprof, n_flip, n_tiles.  The caller may also write stats["n_rows"] as
+    it consumes, which is what the progress line reports.
+    """
+    if stats is None:
+        stats = {}
     t0 = time.time()
     holes.net.overpass = _overpass_cached
     ways = holes.fetch_hole_ways()
@@ -145,9 +159,8 @@ def run() -> list[dict]:
             ring_m=geo.ll_to_m(ring[:, 0], ring[:, 1], r["utm"]["zone"]),
             area=r["osm"]["area_m2"]))
     tiles: dict[str, tuple] = {}
-    rows = []
-    n_join = n_nocourse = n_noprof = n_flip = 0
-    joined_ids = set()
+    stats.update(n_join=0, n_nocourse=0, n_noprof=0, n_flip=0, n_tiles=0)
+    stats.setdefault("n_rows", 0)
     for wid, el in sorted(ways.items()):
         gpts = np.array([[g["lat"], g["lon"]] for g in el["geometry"]], float)
         mid = gpts[len(gpts) // 2]
@@ -163,7 +176,7 @@ def run() -> list[dict]:
                 if best is None or c["area"] < best[0]["area"]:
                     best = (c, pm)
         if best is None:
-            n_nocourse += 1
+            stats["n_nocourse"] += 1
             continue
         c, pm = best
         rec = c["rec"]
@@ -176,8 +189,9 @@ def run() -> list[dict]:
             gl = np.array([[g["yx_utm"][0] - t["n0"], g["yx_utm"][1] - t["e0"]]
                            for g in rec["greens"]], float)
             tiles[cid] = (z2, cell2, gl)
+            stats["n_tiles"] = len(tiles)
             if len(tiles) % 50 == 0:
-                print(f"    {len(tiles)} tiles, {len(rows)} rows, "
+                print(f"    {len(tiles)} tiles, {stats['n_rows']} rows, "
                       f"{time.time() - t0:.0f} s", flush=True)
         z2, cell2, gl = tiles[cid]
         if len(gl):
@@ -187,26 +201,44 @@ def run() -> list[dict]:
                           gl[:, 1] - pts_loc[-1, 1]).min()
             if d0 < d1 - 15.0:
                 pts_loc = pts_loc[::-1]
-                n_flip += 1
+                stats["n_flip"] += 1
         prof = smoothed_profile(z2, cell2, pts_loc)
         if prof is None:
-            n_noprof += 1
+            stats["n_noprof"] += 1
             continue
-        n_join += 1
-        joined_ids.add(wid)
+        stats["n_join"] += 1
         par = el.get("tags", {}).get("par")
         par = int(par) if par and par.isdigit() else None
         ss, zs = prof
-        L = float(ss[-1])
+        yield dict(
+            way_id=wid, course_id=cid, region=rec["region_tag"], par=par,
+            pts_loc=pts_loc, z2=z2, cell2=cell2, ss=ss, zs=zs,
+            length_m=float(ss[-1]),
+        )
+
+
+# --------------------------------------------------------------------------
+# main pass
+# --------------------------------------------------------------------------
+def run() -> list[dict]:
+    t0 = time.time()
+    rows: list[dict] = []
+    joined_ids = set()
+    stats: dict = {}
+    for j in joined(stats):
+        joined_ids.add(j["way_id"])
+        par, L = j["par"], j["length_m"]
+        stats["n_rows"] = len(rows)
         if par not in (4, 5) or L < MIN_LEN_M:
             continue
+        ss, zs = j["ss"], j["zs"]
         s1 = min(DRIVE_M, DRIVE_FRAC * L)
         drive = leg_stats(ss, zs, 0.0, s1)
         second = None
         if par == 5:
             s2 = min(s1 + DRIVE_M, L - APPROACH_RESERVE_M)
             second = leg_stats(ss, zs, s1, s2)
-        tl = turns(pts_loc)
+        tl = turns(j["pts_loc"])
         if tl:
             k = int(np.argmax([abs(a) for a, _ in tl]))
             dmax, dt = abs(tl[k][0]), tl[k][1]
@@ -218,15 +250,17 @@ def run() -> list[dict]:
             big = [a for a in signed if abs(a) > S_SHAPE_DEG]
             s_shape = bool(big and min(big) < 0 < max(big))
         rows.append(dict(
-            way_id=wid, course_id=cid, region=rec["region_tag"], par=par,
-            length_m=L, drive=drive, second=second,
+            way_id=j["way_id"], course_id=j["course_id"], region=j["region"],
+            par=par, length_m=L, drive=drive, second=second,
             dogleg_max_deg=dmax, dogleg_t=dt, turns=signed, s_shape=s_shape,
         ))
+        stats["n_rows"] = len(rows)
     out = config.OUT / "shot_profiles.json"
     out.write_text(json.dumps(rows))
-    print(f"  joined {n_join} ways on {len(tiles)} tiles ({n_flip} flipped); "
-          f"skipped {n_nocourse} outside every keeper polygon, "
-          f"{n_noprof} off-tile or < 60 m  [{time.time() - t0:.0f} s]")
+    print(f"  joined {stats['n_join']} ways on {stats['n_tiles']} tiles "
+          f"({stats['n_flip']} flipped); "
+          f"skipped {stats['n_nocourse']} outside every keeper polygon, "
+          f"{stats['n_noprof']} off-tile or < 60 m  [{time.time() - t0:.0f} s]")
     ref = config.OUT / "hole_profiles.json"
     if ref.exists():
         ref_ids = {r["way_id"] for r in json.loads(ref.read_text())}
@@ -236,6 +270,7 @@ def run() -> list[dict]:
               f"{len(joined_ids - ref_ids)} new-only")
     print(f"  wrote {out} ({len(rows)} par-4/5 ways >= {MIN_LEN_M:.0f} m)")
     return rows
+
 
 
 # --------------------------------------------------------------------------

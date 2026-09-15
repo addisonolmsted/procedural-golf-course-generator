@@ -55,6 +55,18 @@ DOGLEG_MIN_LEG_M = 20.0      # a spine vertex counts as a dogleg only with both 
 DOGLEG_BEND_DEG = 15.0       # "the hole bends": max turn > 15 deg (real 57-60 % of par 4/5s)
 DIP_CARRY_M = 1.5            # a drive whose ground dips >= 1.5 m below its own chord carries a low point (round 2, item 2)
 LEG_M = 220.0                # the drive / second-shot leg length the corpus tool uses (LZ_APPROX_M)
+# BLINDNESS, measured the same way on both sides (corpus/blindness.py): an eye
+# EYE_M above the ground at the observing station, the target the GROUND at a
+# centreline point, the sight line straight in plan, blocked when intermediate
+# ground breaks it by more than BLIND_TOL_M. Stations follow the corpus
+# convention, since a real hole's landing zone is unknown: drive at
+# min(220, 0.63 L), the par-5 second at +220 capped 60 m short of the green.
+EYE_M = 1.7
+BLIND_TOL_M = 0.3
+BLIND_STEP_M = 5.0           # centreline targets
+LOS_STEP_M = 2.0             # samples along a sight line
+APPROACH_RESERVE_M = 60.0
+DRIVE_FRAC = 0.63
 LZ_FEAT_MIN = 0.5            # a v2 record's terms.lz_interest40 (the router's interest raster maxed over 40 m) at or above this = "a feature in reach"
 UPLAND_RP = 0.7              # upland: relief position > 0.7
 WATER_NEAR_M = 40.0          # a hole is "near water" when its spine passes within 40 m
@@ -81,6 +93,15 @@ try:
     REAL["hole1_par3"] = f"{100 * REAL_PAR_POS[0][0]:.0f} %"; REAL["hole2_par3"] = f"{100 * REAL_PAR_POS[1][0]:.0f} %"
     REAL["hole9_par3"] = f"{100 * REAL_PAR_POS[8][0]:.0f} %"; REAL["hole9_par5"] = f"{100 * REAL_PAR_POS[8][2]:.0f} %"
     REAL["b2b3"] = f"{100 * _pp['all']['b2b3']:.0f} %"; REAL["b2b"] = f"{100 * (_pp['all']['b2b3'] + _pp['all']['b2b5']):.0f} %"
+except Exception:
+    pass
+try:
+    _bl = json.load(open(CORPUS_OUT / "blindness.json"))
+    REAL["blind_tee"] = f"{100 * np.median([r['blind_tee'] for r in _bl]):.0f} %"
+    REAL["blind_appr"] = f"{100 * np.median([r['blind_appr'] for r in _bl]):.0f} %"
+    _lz = [r["lz_seen"] for r in _bl if r.get("lz_seen") is not None]
+    REAL["lz_blind"] = f"{100 * np.mean([not v for v in _lz]):.0f} %"
+    REAL["green_blind"] = f"{100 * np.mean([not r['green_seen'] for r in _bl]):.0f} %"
 except Exception:
     pass
 try:
@@ -130,6 +151,56 @@ class Terrain:
     def z2(self, y, x):
         i = int(np.clip(y / self.c, 0, self.z.shape[0] - 1)); j = int(np.clip(x / self.c, 0, self.z.shape[1] - 1))
         return float(self.z[i, j])
+
+
+# --------------------------------------------------------------- blindness --
+
+def line_pts(poly, step):
+    """(points, cumulative arc) along a polyline."""
+    q = resample(np.asarray(poly, float), step)
+    d = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(q, axis=0).T))])
+    return q, d
+
+
+def at_arc(q, d, s):
+    return np.array([np.interp(s, d, q[:, 0]), np.interp(s, d, q[:, 1])])
+
+
+def blocked(t, a, b):
+    """Is the ground at `b` hidden from an eye EYE_M above the ground at `a`?"""
+    dist = float(np.hypot(*(np.asarray(b, float) - np.asarray(a, float))))
+    if dist < LOS_STEP_M:
+        return False
+    n = max(2, int(dist / LOS_STEP_M))
+    u = np.linspace(0.0, 1.0, n + 1)
+    ys = a[0] + (b[0] - a[0]) * u; xs = a[1] + (b[1] - a[1]) * u
+    yi = np.clip((ys / t.c).astype(int), 0, t.z.shape[0] - 1)
+    xi = np.clip((xs / t.c).astype(int), 0, t.z.shape[1] - 1)
+    z = t.z[yi, xi].astype(float)
+    los = (z[0] + EYE_M) + (z[-1] - z[0] - EYE_M) * u
+    return bool((z[1:-1] > los[1:-1] + BLIND_TOL_M).any())
+
+
+def blind_metrics(t, spine, par):
+    """`blind_tee`, `blind_appr`, `lz_seen`, `green_seen` on the corpus convention."""
+    q, d = line_pts(spine, BLIND_STEP_M)
+    L = float(d[-1])
+    if L < 100.0:
+        return dict(blind_tee=None, blind_appr=None, lz_seen=None, green_seen=None)
+    s_drive = min(LEG_M, DRIVE_FRAC * L)
+    s_second = min(s_drive + LEG_M, L - APPROACH_RESERVE_M)
+    s_last = 0.0 if par == 3 else (s_drive if par == 4 else (s_second if s_second > s_drive else s_drive))
+    tee = at_arc(q, d, 0.0); last = at_arc(q, d, s_last); green = at_arc(q, d, L)
+    ss = np.arange(BLIND_STEP_M, L + 1e-9, BLIND_STEP_M)
+    tg = [at_arc(q, d, s) for s in ss]
+    bt = [blocked(t, tee, p) for p in tg]
+    ap = [p for s, p in zip(ss, tg) if s > s_last]
+    ba = [blocked(t, last, p) for p in ap]
+    return dict(
+        blind_tee=float(np.mean(bt)) if bt else None,
+        blind_appr=float(np.mean(ba)) if ba else (float(np.mean(bt)) if bt else None),
+        lz_seen=(None if par == 3 else (not blocked(t, tee, at_arc(q, d, s_drive)))),
+        green_seen=bool(not blocked(t, last, green)))
 
 
 # ---------------------------------------------------------------- geometry --
@@ -245,7 +316,7 @@ def hole_metrics(t, rec, k):
         water_lz=[bool(v[3] <= HAZARD_M) for v in lz], water_green=bool(g_dw <= HAZARD_M),
         gip=[], gip35=0, gip50=0, terms=h.get("terms"), walk_m=float(h.get("walk_m", 0.0)),
         dogleg=dogleg, turns=turns, s_shape=s_shape, drive_dip=drive_dip, drive_rise=drive_rise,
-        second_dip=second_dip, line_above=line_above)
+        second_dip=second_dip, line_above=line_above, **blind_metrics(t, h["spine"], h["par"]))
 
 
 def green_in_play(rec, holes):
@@ -380,6 +451,10 @@ def aggregate(recs, holes, courses, mode="all"):
     dog = [h["dogleg"] for h in holes if h["par"] >= 4]
     dips = [h["drive_dip"] for h in holes if h["drive_dip"] is not None]
     dips2 = [h["second_dip"] for h in holes if h["second_dip"] is not None]
+    bt = [h["blind_tee"] for h in holes if h["blind_tee"] is not None]
+    ba = [h["blind_appr"] for h in holes if h["blind_appr"] is not None]
+    lzs_ = [h["lz_seen"] for h in holes if h["lz_seen"] is not None]
+    gs_ = [h["green_seen"] for h in holes if h["green_seen"] is not None]
     A.update(
         edge60=pct(h["g_edge"] < EDGE_NEAR_M for h in holes), outside=pct(h["g_edge"] < 0 for h in holes),
         cov100=med((c["cov100"] for c in courses), 100.0), cov120=med((c["cov120"] for c in courses), 100.0),
@@ -402,6 +477,9 @@ def aggregate(recs, holes, courses, mode="all"):
         dog15=pct(v > DOGLEG_BEND_DEG for v in dog), s_share=pct(h["s_shape"] for h in holes if h["par"] == 5),
         dip_share=pct(v >= DIP_CARRY_M for v in dips), dip_med=float(np.percentile([v for v in dips if v >= DIP_CARRY_M], 50)) if any(v >= DIP_CARRY_M for v in dips) else float("nan"),
         dip2_share=pct(v >= DIP_CARRY_M for v in dips2),
+        blind_tee=100.0 * float(np.median(bt)) if bt else float("nan"),
+        blind_appr=100.0 * float(np.median(ba)) if ba else float("nan"),
+        lz_blind=pct(not v for v in lzs_), green_blind=pct(not v for v in gs_),
         bend_fix=pct(h["above"] < PROF_FREE_M for h in holes if h["par"] >= 4 and h["line_above"] >= PROF_FREE_M),
         line_rise=pct(h["line_above"] >= PROF_FREE_M for h in holes if h["par"] >= 4),
         gip35=sum(c["n_gip35"] for c in courses), gip50=sum(c["n_gip50"] for c in courses),
@@ -451,6 +529,10 @@ ROWS = [
     ("par 5s with an S-shape, %", "s_share", "{:.0f}", REAL.get("s_share", "")),
     ("straight line crosses a >= 1.7 m rise, % of par 4/5", "line_rise", "{:.0f}", ""),
     ("... of those, the placed spine stays < 1.7 m, %", "bend_fix", "{:.0f}", ""),
+    ("ground blind from the tee, p50 % of the line", "blind_tee", "{:.0f}", REAL.get("blind_tee", "")),
+    ("ground blind from the approach station, p50 %", "blind_appr", "{:.0f}", REAL.get("blind_appr", "")),
+    ("landing zone blind from the tee, %", "lz_blind", "{:.0f}", REAL.get("lz_blind", "")),
+    ("green blind from the approach station, %", "green_blind", "{:.0f}", REAL.get("green_blind", "")),
     ("drives carrying a >= 1.5 m dip, %", "dip_share", "{:.0f}", REAL.get("dip_share", "")),
     ("depth of those dips p50, m", "dip_med", "{:.1f}", REAL.get("dip_med", "")),
     ("par-5 second shots carrying a >= 1.5 m dip, %", "dip2_share", "{:.0f}", ""),
