@@ -249,6 +249,7 @@ def course_metrics(t, rec, holes):
         n_gip35=sum(h["gip35"] for h in holes), n_gip50=sum(h["gip50"] for h in holes), gip_rec=rec.get("green_in_play"),
         tee15=sum(v > TEE_STEEP for v in tee), tee30=sum(v > TEE_CLIFF for v in tee), n_tee=len(tee),
         edge60=sum(h["g_edge"] < EDGE_NEAR_M for h in holes), outside=sum(h["g_edge"] < 0 for h in holes),
+        g_sur=float(np.median([h["g_sur"] for h in holes])) if holes else 0.0,
         n_lz=len(lz_rp), lz_flat=sum(v < LZ_FLAT for h in holes for v in h["lz_slope"]), lz_upland=sum(v > UPLAND_RP for v in lz_rp),
         lz_rp_std=float(np.std(lz_rp)) if len(lz_rp) >= 2 else None,
         g_sur_med=float(np.median([h["g_sur"] for h in holes])), above_max=max(h["above"] for h in holes),

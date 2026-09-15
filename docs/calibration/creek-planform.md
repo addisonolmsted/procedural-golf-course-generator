@@ -1417,3 +1417,30 @@ boxes on > 30 %: 5, all one hole (900114's closing par 3, forced 334 m
 from the previous green onto ground with no capped node within 40 m —
 the beam's loop lookahead, revisit under item 9). Viewer: artifact
 2e7aac2a (`--pick coverage`).
+
+## 2026-09-15 — routing round 1, item 5: green setting
+
+`route::pool_setting`: `sett_raw = trapezoid(surround, 3.5, 14, 0.25,
+0.4) + 0.5·clip((relief_pos − 0.35)/0.30, 0, 1)` per pool candidate
+(real greens: surround p25/50/75 2.9/4.9/7.9 m, relief_pos p25→p75
+0.31→0.67), ranked within the pool like the fit score (`rank01`, factored
+out of `pool_pct`); beam cheap score and detail `terms["setting"]` at
+`SETT_W`.
+
+Ladder (green surround p50 all / aeolian / fluvial; green upland;
+coverage100; edge < 60 m): s4 4.7 / 5.2 / 4.4; 12 %; 66 %; 23 % — 0.3:
+4.9 / 5.5 / 4.6; 13 %; 64 %; 24 % — **0.6 (shipped): 4.9 / 5.8 / 4.5;
+15 %; 60 %; 25 %** — 1.2: 5.0 / 6.1 / 4.6; 18 %; 57 %; 28 %.
+
+Aeolian meets the 5.5 m target at ×1; fluvial does not at any rung, and
+the ladder shows why: the fluvial windows have the ground (surround
+p50/p75 of the window 4.9/6.8 m, of green-grade cells 4.3/5.9) but the
+pool offers little of it — the rank term can only choose among
+`greens::generate`'s candidates, whose fit favours calm ground there. The
+lever is the pool (its typed detectors / hot seeds on fluvial), not this
+weight; parked for the owner. Coverage gives back 66 → 60 % (the target's
+floor) and the edge share 23 → 25 %: better greens sit where they sit.
+
+Shipped (`rs_s5.jsonl`, `audit_s5.txt`): 250/250, 0 crossings, mix 89 %,
+green-in-play ≤ 35 m 0, tee boxes on > 30 % 0 (900114's ninth moved),
+seconds max 0.48. Viewer: artifact bccba2cc (`--pick setting`).

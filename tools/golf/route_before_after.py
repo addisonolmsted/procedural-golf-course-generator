@@ -29,6 +29,7 @@ forced carries (v2 records), blue rings on landing zones and greens within
   sequence       hole 2 a par 3 + hole 9 a par 5 (0, 1, 2)
   total          total length, m
   tee            tee boxes on > 15 % ground (count)
+  setting        median green surround relief, m
 """
 import sys, io, json, base64, pathlib
 import numpy as np
@@ -50,7 +51,7 @@ PICKS = {
     "score": lambda c: c["score"], "coverage": lambda c: c["cov100"], "edge": lambda c: c["edge60"],
     "above": lambda c: c["above_max"], "water": lambda c: c["near_water"], "green_in_play": lambda c: c["n_gip50"],
     "length": lambda c: c["len_fit"], "sequence": lambda c: c["sequence"], "total": lambda c: c["total"],
-    "tee": lambda c: c["tee15"],
+    "tee": lambda c: c["tee15"], "setting": lambda c: c["g_sur"],
 }
 
 

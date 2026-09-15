@@ -207,6 +207,42 @@ pub const EDGE_W: f64 = 0.6;
 /// COV_W_BEAM recorded in docs/calibration/routing-site-use.md. 120 m = a
 /// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
 pub const COV_CELL_M: f64 = 40.0;
+
+/// GREEN SETTING (owner, 2026-09-14; round 1, item 5): the beam picked
+/// greens in calm ground (surround relief p50 4.6 m vs the corpus's
+/// 6.1-6.8 m; 12 % upland vs 25 %). `sett_raw = trapezoid(surround,
+/// 3.5, 14, 0.25, 0.4) + 0.5 * clip((relief_pos - 0.35) / 0.30, 0, 1)`
+/// (real greens: surround p25/p50/p75 2.9/4.9/7.9 m; relief_pos p25->p75
+/// 0.31->0.67, the upland bonus spans that band) ranked within the pool
+/// like the fit score (logits are uncalibrated, ranks are comparable);
+/// beam cheap score and detail `terms["setting"]` at SETT_W. Ladder
+/// 0.3 / 0.6 / 1.2 in docs/calibration/routing-site-use.md.
+pub const SETT_W: f64 = 0.6;
+
+/// Percentile rank of each value within the slice, stable-argsort based
+/// (`pool_pct`'s body): 0 for the smallest, 1 for the largest.
+fn rank01(vals: &[f64]) -> Vec<f64> {
+    let n = vals.len();
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&i, &j| asc_nan_last(vals[i], vals[j]));
+    let mut pct = vec![0.0; n];
+    let den = (n.max(2) - 1) as f64;
+    for (rank, &i) in order.iter().enumerate() {
+        pct[i] = rank as f64 / den;
+    }
+    pct
+}
+
+/// Item 5: the setting rank of every pool candidate.
+pub fn pool_setting(f: &Fields, pool: &[Candidate]) -> Vec<f64> {
+    let raw: Vec<f64> = pool.iter().map(|c| {
+        let k = cell_of(f, c.yx.0, c.yx.1);
+        let (y, x) = (k / f.nx, k % f.nx);
+        let sur = crate::greens::surround_relief(&f.z8, f.nx, f.ny, f.cell, y, x);
+        trapezoid(sur, 3.5, 14.0, 0.25, 0.4) + 0.5 * clip((f.relief_pos[k] - 0.35) / 0.30, 0.0, 1.0)
+    }).collect();
+    rank01(&raw)
+}
 pub const COV_R_M: f64 = 120.0;
 pub const COV_W_BEAM: f64 = 3.0;
 pub const COV_W_ROUTE: f64 = 2.0;
@@ -1169,15 +1205,8 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
 /// `routing._pool_arrays`: percentile rank of each candidate's score within
 /// THIS seed's pool (fit logits are uncalibrated), stable-argsort based.
 pub fn pool_pct(pool: &[Candidate]) -> Vec<f64> {
-    let n = pool.len();
-    let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&i, &j| asc_nan_last(pool[i].score, pool[j].score));
-    let mut pct = vec![0.0; n];
-    let den = (n.max(2) - 1) as f64;
-    for (rank, &i) in order.iter().enumerate() {
-        pct[i] = rank as f64 / den;
-    }
-    pct
+    let scores: Vec<f64> = pool.iter().map(|c| c.score).collect();
+    rank01(&scores)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1230,7 +1259,7 @@ pub fn state_order(a: &BeamState, b: &BeamState) -> Ordering {
 /// and concatenate in state order.
 #[allow(clippy::too_many_arguments)]
 fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct: &[f64],
-                site: &SiteCtx, st: &BeamState, h: usize) -> Vec<BeamState> {
+                sett: &[f64], site: &SiteCtx, st: &BeamState, h: usize) -> Vec<BeamState> {
     let home = site.home;
     let n = pool.len();
     let mut nxt = Vec::new();
@@ -1286,6 +1315,7 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let hl = hyp(yx[gi], tee);
             let pace = ((st.cum + hl) - (st.cum_mid + mid_par)).abs();
             let mut c = 1.5 * pct[gi]
+                + SETT_W * sett[gi]
                 + edge_term(site.win, yx[gi], pool[gi].reserved)
                 + 0.9 * trapezoid(hl, lo_i, hi_i, TRAP_RAMP, 0.1)
                 - 1.0 * clip(pace / 450.0, 0.0, 1.0)
@@ -1469,6 +1499,7 @@ pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx, poo
     let home = site.home;
     let yx: Vec<Yx> = pool.iter().map(|c| c.yx).collect();
     let pct = pool_pct(pool);
+    let sett = pool_setting(f, pool);
     let n = pool.len();
     let mut states = vec![BeamState {
         score: 0.0,
@@ -1489,7 +1520,7 @@ pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx, poo
         // identical to the serial loop
         let per_state: Vec<Vec<BeamState>> = states
             .par_iter()
-            .map(|st| expand_state(f, rf, pool, &yx, &pct, site, st, h))
+            .map(|st| expand_state(f, rf, pool, &yx, &pct, &sett, site, st, h))
             .collect();
         let mut nxt: Vec<BeamState> = Vec::new();
         for v in per_state {
@@ -1664,6 +1695,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
     let home = site.home;
     let nh = seq.len();
     let pct = pool_pct(pool);
+    let sett = pool_setting(f, pool);
     let mut holes: Vec<Hole> = Vec::with_capacity(nh);
     let mut spines: Vec<Vec<Yx>> = Vec::with_capacity(nh);
     let mut walks: Vec<[Yx; 2]> = Vec::with_capacity(nh);
@@ -1790,6 +1822,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         let mut terms: BTreeMap<String, f64> = BTreeMap::new();
         terms.insert("green".into(), 1.5 * pct[gi]);
         terms.insert("edge".into(), edge_term(site.win, g, pool[gi].reserved));
+        terms.insert("setting".into(), SETT_W * sett[gi]);
         terms.insert("approach".into(), 1.0 * appr);
         terms.insert("lz".into(), if par >= 4 { 0.8 * clip(lz_score, -1.0, 1.0) } else { 0.0 });
         terms.insert("tee".into(), 0.4 * clip(tee.score, -1.0, 1.0));
