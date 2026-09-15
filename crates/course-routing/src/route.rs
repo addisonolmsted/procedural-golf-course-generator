@@ -899,9 +899,43 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
     None
 }
 
+/// Item 2 (2026-09-15): no tee box on a cliff. TEE_BOX_SLOPE_MAX (owner,
+/// provisional): a 7 m pad on 15 % ground benches without a wall. The 250
+/// baseline had 39 boxes on > 30 % ground: the unchecked `(base, true)`
+/// fallback when no cell of the +-10 m lateral scan passed the pad masks
+/// (tee_ok <= 8 %, tee_relaxed <= 10 %), plus boxes whose floor cell was
+/// gentle while the next 8 m node under the pad was a wall (z8 is a
+/// stride sample, so a point's ground is the 2 x 2 nodes around it, not
+/// one cell). Now: `box_slope` is the max over those four nodes, the scan
+/// accepts a point only under the cap, runs at the stagger, then at 0.75x
+/// and 0.5x of it, on the mask tier and then on a graded tier (any dry
+/// point under the cap); failing all, a graded scan 3 m ahead of the
+/// previous box; failing that, the previous box's own point (a coincident
+/// pad; `length_m` stays non-increasing throughout).
+pub const TEE_BOX_SLOPE_MAX: f64 = 0.15;
+pub const TEE_STAGGER_RETRY: [f64; 3] = [1.0, 0.75, 0.5];
+pub const TEE_FALLBACK_STEP_M: f64 = 3.0;
+
+/// The steepest of the four 8 m nodes around `p` -- the ground a 7 m pad
+/// at `p` actually sits on (`Fields::slope` is the strided node value).
+fn box_slope(f: &Fields, p: Yx) -> f64 {
+    let yi = (clip(p.0 / f.cell, 0.0, (f.ny - 1) as f64)) as usize;
+    let xi = (clip(p.1 / f.cell, 0.0, (f.nx - 1) as f64)) as usize;
+    let mut m = 0.0_f64;
+    for dy in 0..2 {
+        for dx in 0..2 {
+            let y = (yi + dy).min(f.ny - 1);
+            let x = (xi + dx).min(f.nx - 1);
+            m = m.max(f.slope[y * f.nx + x]);
+        }
+    }
+    m
+}
+
 /// Five boxes staggered along the play axis; forward boxes shorten the
 /// hole. Lateral slide +-10 m by deterministic min-slope scan; the forward
-/// three may sit on relaxed (graded) ground.
+/// three may sit on relaxed (graded) ground; see TEE_BOX_SLOPE_MAX for the
+/// cap and the retries when the scan finds nothing.
 pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green_yx: Yx)
     -> Vec<TeeBox> {
     let a = back_yx;
@@ -910,38 +944,61 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
     let u = (tv.0 / tl, tv.1 / tl);
     let n = (-u.1, u.0);
     let g = green_yx;
-    let mut out = Vec::with_capacity(TEE_STAGGER_M.len());
-    for (bi, &off) in TEE_STAGGER_M.iter().enumerate() {
-        let base = (a.0 + u.0 * off, a.1 + u.1 * off);
-        // (key = (slope, |lat|, lat), point, graded, cell); lat is unique
-        // per step so the key order is total without a float-equality test
-        let mut best: Option<((f64, f64, f64), Yx, bool, usize)> = None;
+    let mut out: Vec<TeeBox> = Vec::with_capacity(TEE_STAGGER_M.len());
+    // one lateral scan around `base` on `tier` (0 = pad masks, 1 = graded);
+    // (key = (slope, |lat|, lat), point, graded): lat is unique per step so
+    // the key order is total without a float-equality test
+    let scan = |base: Yx, tier: usize, bi: usize| -> Option<((f64, f64, f64), Yx, bool)> {
+        let mut best: Option<((f64, f64, f64), Yx, bool)> = None;
         let mut li = 0;
         while li < 11 {
             let lat = -10.0 + 2.0 * li as f64;
             li += 1;
             let p = (base.0 + n.0 * lat, base.1 + n.1 * lat);
-            let yi = (clip(p.0 / f.cell, 0.0, (f.ny - 1) as f64)) as usize;
-            let xi = (clip(p.1 / f.cell, 0.0, (f.nx - 1) as f64)) as usize;
-            let idx = yi * f.nx + xi;
-            let okm = if bi < 2 { rf.tee_ok[idx] } else { rf.tee_relaxed[idx] };
-            if !okm {
+            let idx = cell_of(f, p.0, p.1);
+            let sl = box_slope(f, p);
+            let okm = if tier == 0 {
+                if bi < 2 { rf.tee_ok[idx] } else { rf.tee_relaxed[idx] }
+            } else {
+                !f.wet8[idx]
+            };
+            if !okm || sl > TEE_BOX_SLOPE_MAX {
                 continue;
             }
-            let key = (f.slope[idx], lat.abs(), lat);
+            let key = (sl, lat.abs(), lat);
             let better = match &best {
                 None => true,
-                Some((bk, _, _, _)) => asc_nan_last(key.0, bk.0)
+                Some((bk, _, _)) => asc_nan_last(key.0, bk.0)
                     .then_with(|| asc_nan_last(key.1, bk.1))
                     .then_with(|| asc_nan_last(key.2, bk.2)) == Ordering::Less,
             };
             if better {
-                best = Some((key, p, !rf.tee_ok[idx], idx));
+                best = Some((key, p, !rf.tee_ok[idx]));
             }
         }
-        let (p, graded, idx) = match best {
-            Some((_, p, gr, idx)) => (p, gr, idx),
-            None => (base, true, cell_of(f, base.0, base.1)),
+        best
+    };
+    for (bi, &off) in TEE_STAGGER_M.iter().enumerate() {
+        let mut best: Option<((f64, f64, f64), Yx, bool)> = None;
+        'search: for tier in 0..2 {
+            for &scale in TEE_STAGGER_RETRY.iter() {
+                let base = (a.0 + u.0 * off * scale, a.1 + u.1 * off * scale);
+                best = scan(base, tier, bi);
+                if best.is_some() {
+                    break 'search;
+                }
+            }
+        }
+        if best.is_none() && bi > 0 {
+            let prev = out[bi - 1].yx;
+            let base = (prev.0 + u.0 * TEE_FALLBACK_STEP_M, prev.1 + u.1 * TEE_FALLBACK_STEP_M);
+            best = scan(base, 1, bi);
+        }
+        let (p, graded) = match best {
+            Some((_, p, gr)) => (p, gr),
+            // the back tee itself for box 0 (place_tee vetted it), else a
+            // pad coincident with the previous box
+            None => (if bi == 0 { a } else { out[bi - 1].yx }, true),
         };
         out.push(TeeBox {
             yx: p,
@@ -949,7 +1006,7 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
             axis: u.0.atan2(u.1),
             length_m: (g.0 - p.0).hypot(g.1 - p.1),
             graded,
-            slope: f.slope[idx],
+            slope: box_slope(f, p),
         });
     }
     out

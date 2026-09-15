@@ -1325,3 +1325,24 @@ Shipped (`out/route_rs/rs_s1.jsonl`, audit with the loop exemption,
 Viewer: artifact 14a67972 (24 courses ordered by the change in green-in-play
 cases, hold `b` for before). Rung-by-rung numbers live on `GIP_W` in
 `route.rs` and in `docs/calibration/routing-site-use.md`.
+
+## 2026-09-15 — routing round 1, item 2: no tee box on a cliff
+
+Cause (two): `tee_boxes` fell back to the unchecked stagger point when no
+cell of the ±10 m lateral scan passed the pad masks, and the masks read one
+8 m node (the floor cell) while `z8` is a stride sample — a box whose floor
+node was gentle could have a 40 % node under its far edge. Now
+`box_slope(p)` = the max over the 2 × 2 nodes around the point, the cap
+`TEE_BOX_SLOPE_MAX = 0.15` (owner, provisional: a 7 m pad benches on 15 %
+without a wall) gates every accepted point, the scan retries at 0.75× and
+0.5× of the stagger on the mask tier then a graded tier (any dry point
+under the cap), then a graded scan 3 m ahead of the previous box, and
+finally a pad coincident with the previous box (`length_m` non-increasing
+throughout). `TeeBox.slope` records the 2 × 2 max.
+
+250 seeds (`out/route_rs/rs_s2.jsonl`, `audit_s2.txt`, vs s1): boxes on
+> 30 % ground 52 → 0; > 15 % 345 → 1 (900181 hole 9's back tee, which
+`place_tee` vetted on the floor node alone — item 3+ territory, one box);
+graded boxes 3,297 → 2,987 of 11,250; coincident pads 135 (1.2 %);
+spines, pars, totals, score and mix unchanged (tee boxes do not feed the
+score); seconds max 0.38 → 0.42. Viewer: artifact b5c053b2 (`--pick tee`).
