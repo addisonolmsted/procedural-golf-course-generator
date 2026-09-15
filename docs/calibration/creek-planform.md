@@ -1503,3 +1503,40 @@ fluvial 0.48, aeolian 0.75); 250/250, 0 crossings, green-in-play ≤ 35 m
 0 (≤ 50 m 56 → 76: holes bend around rises), tee boxes > 30 % 0,
 coverage 61 %, seconds max 0.52. Viewer: artifact 4b4738c1 (`--pick
 above`).
+
+## 2026-09-15 — routing round 1, item 8: water as a hazard
+
+Owner: lateral hazards AND short forced carries. `route.rs`: `hazard_at`
+= trapezoid(d_water, 15, 60, ramp 0.25, tail 0) — water in reach of a
+miss, far water earning nothing; detail `terms["hazard"] =
+HAZARD_W_DETAIL · max over the LZs and the green`, beam
+`HAZARD_W_BEAM · hazard_at(green)`. `carry_term`: a SPINE bridge of
+15–70 m (`CARRY_BAND_M`, owner-provisional) is a forced carry and earns
+`CARRY_W` once per hole; a span over 70 m costs `(−0.3 − 0.005·(span −
+70)) · WATER_SCALE` and forfeits every water credit (a hole crossing a
+lake is not using it as a hazard); under 15 m is a ditch, free. Walk
+bridges keep the old charge (floor −1.5). The beam estimates the carry
+on its straight line over `wet8` at `CARRY_W_BEAM`. All four weights
+share `WATER_SCALE` (0.5 / 0.3 / 0.4 / 0.3 at ×1).
+
+The ceiling: 14 of the 70 water courses have no wet cell inside the play
+window (9 none within the 120 m halo) — the router cannot reach those
+without re-siting, so the reachable target is ~56 of 71, not the plan's
+"> 50 of 71" as written.
+
+Ladder on WATER_SCALE (water courses with a hole within 40 m / with a
+carry / spine spans > 70 m / mix): s7 24 / 10 % / 0 / 89 % — ×0.5 32 /
+15 % / 1 / 88 % — ×1 35 / 21 % / 1 / 87 % — ×2 44 / 31 % / 3 / 87 % — ×3
+48 / 42 % / 7 / 88 % — ×4 52 / 46 % / 13 / 84 %. The long spans were
+72–88 m crossings the beam accepted for a −0.35 charge the other terms
+outbid; withholding the credits on a long span barely moved them (×3: 7
+→ 6), scaling the charge with the credits did (×3: 6 → 4). **Shipped
+×3 with the scaled charge**: 48 / 41 % / 4 / 87 %.
+
+Shipped (`rs_s8.jsonl`, `audit_s8.txt`, vs s7): water courses with a
+hole near water 24 → 48 of 71; with a carry 10 → 41 % (target ≥ 40);
+carries per water course 0.11 → 0.83; spans over 70 m 0 → 4 (guard
+deviation, reported: 900068 h2 82 m, 900179 h2 142 m, 900206 h2 80 m,
+900246 h4 80 m); 250/250, 0 crossings, green-in-play ≤ 35 m 0, tee
+boxes > 30 % 0, above-chord p90 2.4, coverage 63 %, seconds max 0.62.
+Viewer: artifact de250471 (`--pick water`).

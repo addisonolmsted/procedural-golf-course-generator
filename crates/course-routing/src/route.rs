@@ -208,6 +208,87 @@ pub const EDGE_W: f64 = 0.6;
 /// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
 pub const COV_CELL_M: f64 = 40.0;
 
+/// WATER AS A HAZARD (owner, 2026-09-14; round 1, item 8): lateral
+/// hazards AND short forced carries. The router only avoided water
+/// (bridges -0.3 - 0.005 * span, one 0.1 LZ trapezoid); 44 of the 71
+/// water courses had no hole within 40 m of it.
+/// * Lateral: `hazard = HAZARD_W_DETAIL * max over the LZs and the green
+///   of trapezoid(d_water, 15, 60, 0.25, 0.0)` (in reach of a miss, not
+///   under the pad; tail 0 -- far water earns nothing); the beam pays
+///   HAZARD_W_BEAM on the green's d_water.
+/// * Carries: a SPINE bridge of CARRY_BAND_M (15-70 m; owner-provisional)
+///   is a forced carry and earns CARRY_W once per hole; a span over 70 m
+///   costs (-0.3 - 0.005 * (span - 70)) * WATER_SCALE and forfeits every
+///   water credit; under 15 m is a ditch, free. Walk
+///   bridges keep the old charge, floor -1.5. The beam estimates the
+///   carry on its straight line over `wet8` every 8 m at CARRY_W_BEAM.
+/// Ladder x0.5 / x1 / x2 on WATER_SCALE (all four weights together) in
+/// docs/calibration/routing-site-use.md.
+pub const WATER_SCALE: f64 = 3.0;
+pub const HAZARD_BAND_M: (f64, f64) = (15.0, 60.0);
+pub const HAZARD_W_DETAIL: f64 = 0.5 * WATER_SCALE;
+pub const HAZARD_W_BEAM: f64 = 0.3 * WATER_SCALE;
+pub const CARRY_BAND_M: (f64, f64) = (15.0, 70.0);
+pub const CARRY_W: f64 = 0.4 * WATER_SCALE;
+pub const CARRY_W_BEAM: f64 = 0.3 * WATER_SCALE;
+
+/// The lateral-hazard value of a point: 1 with water 15-60 m away.
+fn hazard_at(f: &Fields, p: Yx) -> f64 {
+    let d = f.d_water[cell_of(f, p.0, p.1)];
+    if d.is_finite() { trapezoid(d, HAZARD_BAND_M.0, HAZARD_BAND_M.1, TRAP_RAMP, 0.0) } else { 0.0 }
+}
+
+/// The carry term of a set of spine spans, `(term, long)`: +CARRY_W once
+/// if any span is in CARRY_BAND_M, minus the long-span charge for each
+/// over it. A hole with a long span is NOT using water as a hazard, it is
+/// crossing it: `long` is set and the caller withholds every water credit
+/// (added at the x3 rung, where the credits had bought seven lake
+/// crossings: 0 -> 7 spans over 70 m).
+fn carry_term(spans: &[f64]) -> (f64, bool) {
+    let mut t = 0.0;
+    let mut long = false;
+    let mut credit = 0.0;
+    for &sp in spans {
+        if sp > CARRY_BAND_M.1 {
+            // scaled with the credits so the ratio holds at every rung:
+            // unscaled, the x3 credits outbid a -0.35 charge for an 80 m
+            // crossing (0 -> 6 long spans)
+            t += (-0.3 - 0.005 * (sp - CARRY_BAND_M.1)) * WATER_SCALE;
+            long = true;
+        } else if sp >= CARRY_BAND_M.0 {
+            credit = CARRY_W;
+        }
+    }
+    (if long { t } else { t + credit }, long)
+}
+
+/// Beam-time carry estimate `(term, long)`: wet runs along `a`-`b` on
+/// the 8 m `wet8`, the term at the beam's weight.
+fn carry_estimate(f: &Fields, a: Yx, b: Yx) -> (f64, bool) {
+    let l = hyp(a, b);
+    let n = (l / f.cell) as usize + 1;
+    if n < 2 {
+        return (0.0, false);
+    }
+    let mut spans = Vec::new();
+    let mut run = 0usize;
+    for i in 0..n {
+        let s = i as f64 / (n - 1) as f64;
+        let p = (a.0 + (b.0 - a.0) * s, a.1 + (b.1 - a.1) * s);
+        if f.wet8[cell_of(f, p.0, p.1)] {
+            run += 1;
+        } else if run > 0 {
+            spans.push(run as f64 * f.cell);
+            run = 0;
+        }
+    }
+    if run > 0 {
+        spans.push(run as f64 * f.cell);
+    }
+    let (t, long) = carry_term(&spans);
+    (t * (CARRY_W_BEAM / CARRY_W), long)
+}
+
 /// LINE OF PLAY (owner, 2026-09-14; round 1, item 7): the beam scored a
 /// straight tee->green line with no profile term, so holes played over
 /// rises (above-chord p90 4.4 m vs the corpus's 1.7). `line_terms`
@@ -1444,7 +1525,11 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let (flow, pen_chord) = line_terms(f, site.m, &[tee, gp], LINE_SAMPLES);
             let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
                 + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64
-                + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord;
+                + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord
+                + {
+                    let (carry, long) = carry_estimate(f, tee, gp);
+                    carry + if long { 0.0 } else { HAZARD_W_BEAM * hazard_at(f, gp) }
+                };
             // crossings vs accumulated straight segments
             let mut pen = 0.0_f64;
             let ns_arr: [Yx; 2] = [tee, gp];
@@ -1896,10 +1981,18 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         }
         let wk = walk(t, f, pos, tee_yx, h);
 
+        // item 8: walk bridges keep the old charge; spine spans are carries
         let mut bridge_sum = 0.0;
-        for b in bridges.iter().chain(wk.bridges.iter()) {
+        for b in wk.bridges.iter() {
             bridge_sum += -0.3 - 0.005 * b.span_m;
         }
+        let spine_spans: Vec<f64> = bridges.iter().map(|b| b.span_m).collect();
+        let (carry, long) = carry_term(&spine_spans);
+        let hazard = if long { 0.0 } else {
+            HAZARD_W_DETAIL * lzs.iter().map(|&(ly, lx, _)| hazard_at(f, (ly, lx)))
+                .chain(std::iter::once(hazard_at(f, g)))
+                .fold(0.0_f64, f64::max)
+        };
         let b2b = if h > 0 && (par == 3 || par == 5) && seq[h - 1].1 == par { -0.6 } else { 0.0 };
         let (blo, bhi) = par_band(par);
         let mut terms: BTreeMap<String, f64> = BTreeMap::new();
@@ -1918,6 +2011,8 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
                                  / (BACKTRACK_SAT_M - BACKTRACK_FREE_M), 0.0, 1.0));
         terms.insert("walk_grade".into(), -0.15 * clip(wk.grade_mean / 0.15, 0.0, 1.0));
         terms.insert("bridges".into(), (-1.5_f64).max(bridge_sum));
+        terms.insert("carry".into(), carry);
+        terms.insert("hazard".into(), hazard);
         terms.insert("b2b".into(), b2b);
         terms.insert("ch_keepout".into(), -6.0 * ch_intrusion(&pts, home, CH_TRIM_M));
         let pt = profile_terms(f, &pts);
