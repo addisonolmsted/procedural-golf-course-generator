@@ -1444,3 +1444,34 @@ floor) and the edge share 23 → 25 %: better greens sit where they sit.
 Shipped (`rs_s5.jsonl`, `audit_s5.txt`): 250/250, 0 crossings, mix 89 %,
 green-in-play ≤ 35 m 0, tee boxes on > 30 % 0 (900114's ninth moved),
 seconds max 0.48. Viewer: artifact bccba2cc (`--pick setting`).
+
+## 2026-09-15 — routing round 1, item 6: landing-zone setting
+
+`place_lz`'s score was room 0.5, flatness 0.3 linear from 0 %, water 0.1,
+remainder 0.4, dogleg −0.6 — the flattest legal cell on the annulus won.
+Now flatness is free to `LZ_SLOPE_FREE` 3 % and zero at the 8 % fairway
+gate, the water trapezoid pays 0.3 over 15–60 m (`LZ_WATER_BAND_M`, item
+8's lateral-hazard band), and `interest40` (the step-0 raster: surround
+relief, |tpi200|, saddle/peak/pit, maxed over 40 m) earns
+`LZ_INTEREST_W`. Gates and tiers untouched; `terms["lz_interest40"]`
+(diagnostic, not scored) records the best feature near the hole's LZs.
+
+Ladder on LZ_INTEREST_W (LZ dead flat / setting std / walk p50 / mix):
+s5 46 % / 0.16 / 828 / 89 % — 0.2: 27 % / 0.16 / 836 / 90 % — **0.35
+(shipped): 26 % / 0.16 / 827 / 88 %** — 0.5: 26 % / 0.16 / 828 / 89 %.
+Flat: the dead-flat drop comes from the flatness ramp, which every rung
+shares; the interest weight orders among already-good cells.
+
+Two acceptance lines stay unmet and are not this item's to meet: the
+within-course LZ setting std (0.16, target > 0.25) and LZ upland (12 %,
+target > 20 %) are `relief_pos` classes of points 200–250 m along each
+hole's line — they follow where the beam puts the holes, not which cell
+of a ±45° annulus `place_lz` picks. The "feature within 40 m" line
+saturates (100 %; `lz_interest40` p10/50/90 0.74/0.82/0.98): a 40 m
+max-filter over a raster that scores surround relief from 3.5 m finds
+something nearly everywhere on these tiles, so the metric does not
+discriminate and is reported, not claimed.
+
+Shipped (`rs_s6.jsonl`, `audit_s6.txt`): 250/250, 0 crossings, mix 88 %,
+green-in-play ≤ 35 m 0, tee boxes > 30 % 0, coverage 61 %, seconds max
+0.51. Viewer: artifact fb39fcc7 (`--pick lz`).

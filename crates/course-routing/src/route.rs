@@ -339,7 +339,7 @@ pub const CROSS_TRIM_M: f64 = 8.0;
 /// -- totals are bounded by construction.
 pub const BUDGET_M: f64 = 3100.0;
 
-// --- interest raster (plan item 6; computed here, not yet scored) -----------
+// --- interest raster (plan item 6) -------------------------------------------
 /// `surround` is computed on the play window plus this slab, 0 elsewhere.
 pub const SURROUND_SLAB_M: f64 = 200.0;
 /// `interest`'s surround trapezoid: free from 3.5 m, full to 14 m.
@@ -362,7 +362,7 @@ pub struct RouteFields {
     /// [0, 1] "something to play against here": surround relief, |tpi200|,
     /// saddle / peak / pit; 0 on wet cells. NOT yet read by any score.
     pub interest: Vec<f64>,
-    /// `interest` maxed over a 40 m disc. NOT yet read by any score.
+    /// `interest` maxed over a 40 m disc; `place_lz` pays LZ_INTEREST_W for it.
     pub interest40: Vec<f64>,
 }
 
@@ -729,10 +729,24 @@ pub fn score_approach(tab: &[[f64; 4]; N_BEARINGS], k: usize) -> f64 {
 // --- landing zones ---------------------------------------------------------
 
 /// `routing._gather` at one point: `(lz_room, slope, d_water)`.
-fn gather(rf: &RouteFields, f: &Fields, y: f64, x: f64) -> (f64, f64, f64) {
+fn gather(rf: &RouteFields, f: &Fields, y: f64, x: f64) -> (f64, f64, f64, f64) {
     let i = cell_of(f, y, x);
-    (rf.lz_room[i], f.slope[i], f.d_water[i])
+    (rf.lz_room[i], f.slope[i], f.d_water[i], rf.interest40[i])
 }
+
+/// LANDING-ZONE SETTING (owner, 2026-09-14; round 1, item 6): `place_lz`
+/// scored room 0.5, flatness 0.3 (linear from 0 % -- dead flat won), water
+/// distance 0.1, remainder 0.4, dogleg -0.6: the flattest legal cell on
+/// the annulus, every time (48 % of LZs under 2 %, setting std 0.18 within
+/// a course). Now flatness is free to LZ_SLOPE_FREE (3 %) and 0 at the 8 %
+/// fairway gate, the water trapezoid pays 0.3 for 15-60 m (a lateral
+/// hazard in reach, item 8's band), and `interest40` -- a feature within
+/// 40 m: surround relief, |tpi200|, a saddle / peak / pit -- earns
+/// LZ_INTEREST_W. Gates and tiers untouched. Ladder 0.2 / 0.35 / 0.5 in
+/// docs/calibration/routing-site-use.md.
+pub const LZ_SLOPE_FREE: f64 = 0.03;
+pub const LZ_WATER_BAND_M: (f64, f64) = (15.0, 60.0);
+pub const LZ_INTEREST_W: f64 = 0.35;
 
 /// Beam-time LZ existence probe: best room quality over a coarse grid of
 /// plausible first-landing points. Cheap (9 gathers).
@@ -752,7 +766,7 @@ pub fn lz_probe(rf: &RouteFields, f: &Fields, tee_yx: Yx, green_yx: Yx, par: u8)
         for off in [-30.0, 0.0, 30.0] {
             let d = r.min(0.75 * l);
             let p = (tee_yx.0 + u.0 * d + n.0 * off, tee_yx.1 + u.1 * d + n.1 * off);
-            let (room, _, _) = gather(rf, f, p.0, p.1);
+            let (room, _, _, _) = gather(rf, f, p.0, p.1);
             best = best.max(clip(room / LZ_R_M, 0.0, 1.0));
         }
     }
@@ -796,7 +810,7 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
         for &r in &radii {
             let y = a.0 + r * th.sin();
             let x = a.1 + r * th.cos();
-            let (rm, slope, dwat) = gather(rf, f, y, x);
+            let (rm, slope, dwat, int40) = gather(rf, f, y, x);
             let room_q = clip(rm / LZ_R_M, 0.0, 1.0);
             let ok = rm >= LZ_ROOM_MIN_M;
             let rem = (g.0 - y).hypot(g.1 - x);
@@ -808,9 +822,11 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
             // so the ramp starts at the real "most holes bend this little" point
             // and the weight doubles.
             let dog_pen = clip((dog * 180.0 / PI - 15.0) / 30.0, 0.0, 1.0);
-            let mut sc = 0.5 * room_q + 0.3 * (1.0 - clip(slope / 0.08, 0.0, 1.0))
-                + 0.1 * trapezoid(dwat, 20.0, 80.0, TRAP_RAMP, TRAP_TAIL)
-                + 0.4 * rem_t - 0.6 * dog_pen;
+            let mut sc = 0.5 * room_q
+                + 0.3 * (1.0 - clip((slope - LZ_SLOPE_FREE) / (0.08 - LZ_SLOPE_FREE), 0.0, 1.0))
+                + 0.3 * trapezoid(dwat, LZ_WATER_BAND_M.0, LZ_WATER_BAND_M.1, TRAP_RAMP, TRAP_TAIL)
+                + 0.4 * rem_t - 0.6 * dog_pen
+                + LZ_INTEREST_W * int40;
             if !ok {
                 sc -= 1.0;     // tight LZ: penalized, never vetoed
             }
@@ -1847,6 +1863,11 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         }
         terms.insert("net_dz_m".into(), round_to(pt.net_dz, 1));
         terms.insert("above_chord_m".into(), round_to(pt.above, 1));
+        // item 6 diagnostic: the best feature within 40 m of this hole's LZs
+        let lz_int = lzs.iter()
+            .map(|&(ly, lx, _)| rf.interest40[cell_of(f, ly, lx)])
+            .fold(0.0_f64, f64::max);
+        terms.insert("lz_interest40".into(), round_to(lz_int, 2));
 
         let boxes = tee_boxes(rf, f, tee_yx, pts[1], g);
         holes.push(Hole {

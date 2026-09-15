@@ -50,6 +50,7 @@ GIP_NEAR_M, GIP_FAR_M = 35.0, 50.0
 CARRY_MIN_M, CARRY_MAX_M = 15.0, 70.0   # a spine bridge of this span is a forced carry (plan item 8)
 EDGE_NEAR_M = 60.0           # green "near the edge" band
 LZ_FLAT = 0.02               # dead-flat landing zone: slope < 2 %
+LZ_FEAT_MIN = 0.5            # a v2 record's terms.lz_interest40 (the router's interest raster maxed over 40 m) at or above this = "a feature in reach"
 UPLAND_RP = 0.7              # upland: relief position > 0.7
 WATER_NEAR_M = 40.0          # a hole is "near water" when its spine passes within 40 m
 HAZARD_M = 60.0              # an LZ / green within 60 m of water (the viewer's blue rings)
@@ -250,6 +251,8 @@ def course_metrics(t, rec, holes):
         tee15=sum(v > TEE_STEEP for v in tee), tee30=sum(v > TEE_CLIFF for v in tee), n_tee=len(tee),
         edge60=sum(h["g_edge"] < EDGE_NEAR_M for h in holes), outside=sum(h["g_edge"] < 0 for h in holes),
         g_sur=float(np.median([h["g_sur"] for h in holes])) if holes else 0.0,
+        lz_feat=sum(1 for h in holes if h["par"] >= 4 and ((h.get("terms") or {}).get("lz_interest40") or 0.0) >= LZ_FEAT_MIN),
+        n_lz_holes=sum(1 for h in holes if h["par"] >= 4),
         n_lz=len(lz_rp), lz_flat=sum(v < LZ_FLAT for h in holes for v in h["lz_slope"]), lz_upland=sum(v > UPLAND_RP for v in lz_rp),
         lz_rp_std=float(np.std(lz_rp)) if len(lz_rp) >= 2 else None,
         g_sur_med=float(np.median([h["g_sur"] for h in holes])), above_max=max(h["above"] for h in holes),
@@ -308,6 +311,7 @@ def aggregate(recs, holes, courses, mode="all"):
         cov100=med((c["cov100"] for c in courses), 100.0), cov120=med((c["cov120"] for c in courses), 100.0),
         lz_flat=pct(v < LZ_FLAT for v in lz_slope), lz_upland=pct(v > UPLAND_RP for v in lz_rp),
         lz_std=med(c["lz_rp_std"] for c in courses),
+        lz_feat=(100.0 * sum(c["lz_feat"] for c in courses) / max(1, sum(c["n_lz_holes"] for c in courses))),
         g_sur=med(h["g_sur"] for h in holes), g_upland=pct(h["g_rp"] > UPLAND_RP for h in holes),
         above50=float(np.percentile(above, 50)), above90=float(np.percentile(above, 90)), above99=float(np.percentile(above, 99)),
         water_near=f"{sum(c['near_water'] > 0 for c in wc)} / {len(wc)}",
@@ -335,6 +339,7 @@ ROWS = [
     ("window within 120 m of play, p50 %", "cov120", "{:.0f}", ""),
     ("LZ dead flat (< 2 %), %", "lz_flat", "{:.0f}", ""),
     ("LZ upland (relief pos > 0.7), %", "lz_upland", "{:.0f}", ""),
+    ("par 4/5 holes with a feature within 40 m of an LZ, %", "lz_feat", "{:.0f}", ""),
     ("within-course LZ setting std, p50", "lz_std", "{:.2f}", ""),
     ("green surround relief p50, m", "g_sur", "{:.1f}", REAL["g_sur"]),
     ("green upland (relief pos > 0.7), %", "g_upland", "{:.0f}", REAL["g_upland"]),
