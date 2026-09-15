@@ -463,6 +463,8 @@ pub struct LineTerms {
     pub above: f64,
     /// max dip of the ground below the polyline's chord, m (round 2, item 2)
     pub below: f64,
+    /// climb (sum of positive dz) per 100 m of the polyline
+    pub climb100: f64,
 }
 
 fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> LineTerms {
@@ -494,13 +496,45 @@ fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> LineTerms {
     let flow = along / n as f64 - 0.5;
     let mut above = 0.0_f64;
     let mut below = 0.0_f64;
+    let mut climb = 0.0_f64;
     for (i, &zi) in z.iter().enumerate() {
         let chord = z[0] + (z[n - 1] - z[0]) * i as f64 / (n - 1) as f64;
         above = above.max(zi - chord);
         below = below.max(chord - zi);
+        if i > 0 {
+            climb += (zi - z[i - 1]).max(0.0);
+        }
     }
     let pen_chord = clip((above - PROF_CHORD_FREE_M) / (PROF_CHORD_SAT_M - PROF_CHORD_FREE_M), 0.0, 1.0);
-    LineTerms { flow, pen_chord, above, below }
+    LineTerms { flow, pen_chord, above, below, climb100: climb / l * 100.0 }
+}
+
+/// CARRY OVER A LOW POINT (owner, 2026-09-15; round 2, item 2). Real
+/// drives cross ground >= 1.5 m below their own chord on 46.7 % of holes
+/// (3,662 corpus par 4/5s, `shot_profiles.py`; p50 of those dips 2.95 m,
+/// p90 6.3; par-5 second legs 21.8 %); the router had nothing for it (a
+/// dip was free but unrewarded, the climb out charged, a valley crossing
+/// discouraged by the flow term): 34-36 % of our drives dipped, by
+/// accident. `carry_dip` = trapezoid(dip, DIP_BAND_M, 0.25, 0.4): 0 under
+/// ~0.9 m, full from 2 m (between the 1.5 m "carry" threshold and the
+/// real p50) to the real p90, the 0.4 tail keeping a deep swale a carry;
+/// a leg whose climb-out exceeds PROF_CLIMB_100_SAT earns nothing (a
+/// canyon is not a carry). Paid on the tee -> LZ1 and LZ1 -> LZ2 legs
+/// only (the approach stays with the green terms): `place_lz` candidate
+/// score, detail `terms["carry_dip"]` (max over the legs, once per
+/// hole), the beam on its straight line's first LZ_APPROX_M at half
+/// weight. DIP_W ladder 0.3 / 0.6 / 1.2 (2026-09-15): drives carrying a
+/// >= 1.5 m dip 35 -> 51 / 62 / 75 % against the real 47 -- 0.3 shipped.
+pub const DIP_BAND_M: (f64, f64) = (2.0, 6.3);
+pub const DIP_W: f64 = 0.3;
+
+/// The carry value of a leg: its dip below the chord, unless the climb
+/// out is a canyon's.
+fn carry_dip(lt: &LineTerms) -> f64 {
+    if lt.climb100 > PROF_CLIMB_100_SAT {
+        return 0.0;
+    }
+    trapezoid(lt.below, DIP_BAND_M.0, DIP_BAND_M.1, TRAP_RAMP, TRAP_TAIL)
 }
 
 /// The signed turn at `b` between legs `a -> b` and `b -> c`, radians
@@ -1163,12 +1197,14 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
             };
             let lt = line_terms(f, m, &[a, (y, x), g], LINE_SAMPLES);
             rise_ok.push(lt.above < RISE_TIER_M);
+            let leg1 = line_terms(f, m, &[a, (y, x)], LINE_SAMPLES);
             let mut sc = 0.5 * room_q
                 + 0.3 * (1.0 - clip((slope - LZ_SLOPE_FREE) / (0.08 - LZ_SLOPE_FREE), 0.0, 1.0))
                 + 0.3 * trapezoid(dwat, LZ_WATER_BAND_M.0, LZ_WATER_BAND_M.1, TRAP_RAMP, TRAP_TAIL)
                 + 0.4 * rem_t - DOGLEG_W * dog_pen - s_pen
                 + LZ_INTEREST_W * int40
-                - LINE_CHORD_W_LZ * lt.pen_chord;
+                - LINE_CHORD_W_LZ * lt.pen_chord
+                + DIP_W * carry_dip(&leg1);
             if !ok {
                 sc -= 1.0;     // tight LZ: penalized, never vetoed
             }
@@ -1762,13 +1798,26 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                 }
                 (best.flow, best.pen_chord)
             };
+            // round 2, item 2: the drive's carry on the straight line
+            let drive_dip = {
+                let dv = (gp.0 - tee.0, gp.1 - tee.1);
+                let dl = dv.0.hypot(dv.1);
+                if par >= 4 && dl > 1e-9 {
+                    let r = LZ_APPROX_M.min(0.6 * dl);
+                    let q = (tee.0 + dv.0 / dl * r, tee.1 + dv.1 / dl * r);
+                    carry_dip(&line_terms(f, site.m, &[tee, q], LINE_SAMPLES))
+                } else {
+                    0.0
+                }
+            };
             let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
                 + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64
                 + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord
                 + {
                     let (carry, long) = carry_estimate(f, tee, gp);
                     carry + if long { 0.0 } else { HAZARD_W_BEAM * hazard_at(f, gp) }
-                };
+                }
+                + 0.5 * DIP_W * drive_dip;
             // crossings vs accumulated straight segments
             let mut pen = 0.0_f64;
             let ns_arr: [Yx; 2] = [tee, gp];
@@ -2284,6 +2333,13 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("bridges".into(), (-1.5_f64).max(bridge_sum));
         terms.insert("carry".into(), carry);
         terms.insert("hazard".into(), hazard);
+        // round 2, item 2: the best carry over a low point on the full shots
+        let mut dip_best = 0.0_f64;
+        for i in 1..pts.len().saturating_sub(1) {
+            let n_leg = ((hyp(pts[i], pts[i - 1]) / 8.0) as usize).max(4) + 1;
+            dip_best = dip_best.max(carry_dip(&line_terms(f, site.m, &pts[i - 1..=i], n_leg)));
+        }
+        terms.insert("carry_dip".into(), DIP_W * dip_best);
         terms.insert("b2b".into(), b2b);
         terms.insert("ch_keepout".into(), -6.0 * ch_intrusion(&pts, home, CH_TRIM_M));
         let pt = profile_terms(f, &pts);

@@ -1728,3 +1728,60 @@ above-chord p90 2.7 → 2.5 (aeolian 3.1 → 2.8), p99 7.8 → 4.7, total p50
 target), 250/250, 0 crossings, mix 92 % (aeolian 88), green-in-play ≤
 35 m 1 → 0, tee boxes > 30 % 0, seconds max 0.51. Viewer: artifact
 1a61df82 (`--pick dogleg`).
+
+## 2026-09-15 — routing round 2, item 2: carries over low points; the round closed
+
+`line_terms` now also returns `below` (max dip under the chord) and
+`climb100`; `carry_dip` = trapezoid(dip, 2.0–6.3 m, 0.25, 0.4) — full
+from 2 m (between the 1.5 m carry threshold and the real p50 2.95) to the
+real p90 of dipping drives, the 0.4 tail keeping a deep swale a carry, and
+nothing when the climb-out exceeds `PROF_CLIMB_100_SAT` (a canyon is not a
+carry). Paid at `DIP_W` on the tee→LZ1 and LZ1→LZ2 legs only (owner: the
+approach stays with the green terms): `place_lz`'s candidate score on
+its first leg, detail `terms["carry_dip"]` (max over the full-shot legs),
+the beam on its straight line's first 220 m at half weight.
+
+Ladder (DIP_W; drives carrying ≥ 1.5 m / par-5 second shots / depth p50
+/ dogleg p90 / S-share / mix): r2-s1 35 % / 25 % / 2.5 / 48 / 15 % /
+92 — **0.3 (shipped): 51 % / 34 % / 2.4 / 51 / 19 % / 90** — 0.6: 62 /
+43 / 2.4 / 62 / 21 / 91 — 1.2: 75 / 54 / 2.4 / 72 / 29 / 81. The real
+shares are 46.7 % and 21.8 %; the ×0.5 rung lands on the drive share and
+the higher rungs buy carries with big bends and a broken mix. The depth
+of the dips (2.4 m vs real 2.95) does not move: the band is full from
+2 m, so nothing asks for deeper — left as is (the owner's ask was that
+carries happen, not how deep).
+
+Shipped (`r2_s2.jsonl` = `rs.jsonl`, `audit_r2_s2.txt`, vs r2-s1): drives
+carrying ≥ 1.5 m 35 → 51 %, second shots 25 → 34 %, above-chord p90
+2.5 → 2.3 (aeolian 2.8 → 2.7), p99 4.7 → 4.6, dead-flat LZs 24 → 23 %,
+250/250, 0 crossings, mix 92 → 90 % (aeolian 84), seconds max 0.56.
+Viewer: artifact 3cbbff28 (`--pick dip`).
+
+**The round, round-1 final (`rs_s10`) → round-2 final (`r2_s2`)**,
+`audit_round2.txt`; viewer artifact f0b9a727 (30 courses):
+
+| metric | real | before | after |
+|---|---|---|---|
+| hole 1 par 3 / hole 9 par 3 / hole 9 par 5 | 3 / 8 / 27 % | 22 / 19 / 22 % | 0 / 12 / 30 % |
+| hole 2 par 3 | 24 % | 14 % | 34 % |
+| back-to-back 3s | 0 % | 3 % | 0 % |
+| par-by-hole table distance (27 slots) | — | 0.060 | 0.043 |
+| dogleg p50 / p90 | 16.5 / 43° | 28 / 53° | 15 / 51° |
+| holes bending > 15° | 54 % | 77 % | 52 % |
+| par-5 S-shapes | 7 % | 50 % | 19 % |
+| straight-line rise resolved by the spine | — | 28 % | 35 % |
+| above-chord p90 / p99 | 1.7 / 5.6 | 2.7 / 7.6 | 2.3 / 4.6 |
+| drives carrying a ≥ 1.5 m dip | 47 % | 34 % | 51 % |
+| par-5 second shots carrying a dip | 22 % | 24 % | 34 % |
+| total length p50 | 3,029 | 3,126 | 3,096 |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | — | 250 / 0 / 0 / 0 | 250 / 0 / 0 / 0 |
+| mix (2,5,2) | 94 % | 93 % | 90 % |
+| seconds p50 / max | — | 0.44 / 0.51 | 0.46 / 0.56 |
+
+Open after round 2: the resolved-rise share (35 %; the bends needed
+exceed the real band, forced only over 3.5 m rises); hole-2 par 3 at
+34 % (the opener's par 3 lands there; the prior is neutral at hole 2);
+aeolian dogleg p90 57° and mix 84 % (dune ground asks for bends; the
+sequence rule removed (3,3,3) sequences with adjacent 3s); dip depth
+2.4 vs 2.95 m; and the round-1 leftovers (fluvial green pool, LZ upland,
+the 35–50 m green band, the water ceiling).

@@ -172,23 +172,23 @@ p50 16.5° / p90 43.2°, 53.8 % > 15°; S-shapes 6.8 %) and
 
 ## Acceptance
 
-| metric | s10 | target | r2-s3 | r2-s1 |
-|---|---|---|---|---|
-| par-by-hole table, mean abs diff over 27 slots | 0.060 | ≤ 0.06 | **0.044** | 0.045 |
-| hole 1 par 3 (real 3 %) | 22 % | ≤ 5 % | 2 % | 2 % |
-| hole 9 par 5 (real 27 %) | 22 % | 20–33 % | 33 % | 33 % |
-| hole 9 par 3 (real 8 %) | 19 % | ≤ 12 % | 10 % | 10 % |
-| back-to-back 3s (real 0 %) | 3 % | 0 | 0 | 0 |
-| mix (2,5,2) | 93 % | 90–95 % | 95 % | 92 % |
-| dogleg p50 / p90 (real 16.5 / 43) | 28 / 53 | 17–22 / ≤ 46 | 29 / 53 | **15 / 48** |
-| holes bending > 15° (real 54 %) | 77 % | 55–65 % | 77 % | **48 %** |
-| straight-line rise resolved by the spine (aeolian) | 28 % | ≥ 50 % | 28 % | 30 % |
-| par-5 S-shapes (real 7 %) | 50 % | ≤ 20 % | 53 % | **15 %** |
-| above-chord p90, aeolian | 3.0 m | ≤ 2.2 | 3.0 | 2.8 m |
-| drives carrying a ≥ 1.5 m dip (real 47 %) | 34 % | 42–52 % | 36 % | 35 % |
-| depth of those dips p50 (real 2.95) | 2.6 m | 2.7–3.2 | 2.6 | 2.5 m |
-| routed / crossings / gip ≤ 35 m / tee > 30 % | 250 / 0 / 0 / 0 | guards | 250 / 0 / 1 / 0 | 250 / 0 / 0 / 0 |
-| seconds max | 0.51 | < 1.3 | 0.55 | 0.51 |
+| metric | s10 | target | r2-s3 | r2-s1 | r2-s2 |
+|---|---|---|---|---|---|
+| par-by-hole table, mean abs diff over 27 slots | 0.060 | ≤ 0.06 | **0.044** | 0.045 | 0.043 |
+| hole 1 par 3 (real 3 %) | 22 % | ≤ 5 % | 2 % | 2 % | 0 % |
+| hole 9 par 5 (real 27 %) | 22 % | 20–33 % | 33 % | 33 % | 30 % |
+| hole 9 par 3 (real 8 %) | 19 % | ≤ 12 % | 10 % | 10 % | 12 % |
+| back-to-back 3s (real 0 %) | 3 % | 0 | 0 | 0 | 0 |
+| mix (2,5,2) | 93 % | 90–95 % | 95 % | 92 % | 90 % |
+| dogleg p50 / p90 (real 16.5 / 43) | 28 / 53 | 17–22 / ≤ 46 | 29 / 53 | **15 / 48** | 15 / 51 |
+| holes bending > 15° (real 54 %) | 77 % | 55–65 % | 77 % | **48 %** | 52 % |
+| straight-line rise resolved by the spine (aeolian) | 28 % | ≥ 50 % | 28 % | 30 % | 36 % |
+| par-5 S-shapes (real 7 %) | 50 % | ≤ 20 % | 53 % | **15 %** | 19 % |
+| above-chord p90, aeolian | 3.0 m | ≤ 2.2 | 3.0 | 2.8 m | 2.7 m |
+| drives carrying a ≥ 1.5 m dip (real 47 %) | 34 % | 42–52 % | 36 % | 35 % | **51 %** |
+| depth of those dips p50 (real 2.95) | 2.6 m | 2.7–3.2 | 2.6 | 2.5 m | 2.4 m |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | 250 / 0 / 0 / 0 | guards | 250 / 0 / 1 / 0 | 250 / 0 / 0 / 0 | 250 / 0 / 0 / 0 |
+| seconds max | 0.51 | < 1.3 | 0.55 | 0.51 | 0.56 |
 
 ## Item 3 — par sequence
 
@@ -211,3 +211,12 @@ p50 16.5° / p90 43.2°, 53.8 % > 15°; S-shapes 6.8 %) and
 
 "Rise resolved" is capped by geometry: the bend needed is p50 33° of
 bearing (diagnostic in creek-planform.md).
+
+## Item 2 — carries over low points
+
+| rung (DIP_W) | drives dip ≥ 1.5 m | second shots | depth p50 | dogleg p90 | S-shape | mix |
+|---|---|---|---|---|---|---|
+| r2-s1 (before) | 35 % | 25 % | 2.5 | 48 | 15 % | 92 % |
+| 0.3 — shipped | 51 % | 34 % | 2.4 | 51 | 19 % | 90 % |
+| 0.6 | 62 % | 43 % | 2.4 | 62 | 21 % | 91 % |
+| 1.2 | 75 % | 54 % | 2.4 | 72 | 29 % | 81 % |
