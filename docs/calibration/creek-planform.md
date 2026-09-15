@@ -1389,3 +1389,31 @@ Ladder (35 m / 50 m green-in-play cases, all with the edge term): GIP_W 8
 35 m → 0 / 60 (shipped). The mix sits at the band floor and the sequence
 signatures rose (compact loops close with a long ninth): items 9–10.
 Viewer: artifact 6f90f00d (`--pick coverage`).
+
+## 2026-09-15 — routing round 1, item 4: coverage
+
+Beam: `BeamState.cov`, a bitset over a 40 m lattice on the window
+(aeolian 37 × 24, fluvial 25 × 18); each new straight hole stamps the
+cells within 120 m of its line and earns `COV_W_BEAM · new / n_cells`
+(a fresh 400 m hole in open ground ≈ +0.33 at 3.0; a hole beside an
+earlier one or out in the halo nothing). Route: `coverage` = the share of
+the window's 8 m cells within 120 m of any placed spine, `rterms
+["coverage"] = 2.0 · coverage`, the 100 m share as a diagnostic;
+`Route.coverage` fills the record's slot. The saturating tee fallback in
+`detail_route` now takes the nearest dry node under the 15 % cap within
+40 m (item 2 follow-up).
+
+Ladder on COV_W_BEAM (window within 100 m of play, p50 / hole-9 par 5 /
+mix / 50 m green-in-play cases): s3 62 % / 58 % / 85 % / 60; ×⅔ (2.0)
+65 / 52 / 86 / 52; **×1 (3.0) 66 / 43 / 87 / 57 — shipped**; ×4/3 (4.0)
+66 / 44 / 86 / 44. Flat: item 3's edge term already did most of the
+interior work; 3.0 kept the ninth-hole signature lowest.
+
+Shipped (`rs_s4.jsonl`, `audit_s4.txt`, vs s3): coverage100 62 → 66 %,
+coverage120 69 → 72 %; walk p50 808 → 861 m (holes spread into the
+interior: reported, not guarded); hole-9 par 5 58 → 43 %; mix 85 → 87 %;
+250/250, 0 crossings, green-in-play ≤ 35 m 0; seconds max 0.47. Tee
+boxes on > 30 %: 5, all one hole (900114's closing par 3, forced 334 m
+from the previous green onto ground with no capped node within 40 m —
+the beam's loop lookahead, revisit under item 9). Viewer: artifact
+2e7aac2a (`--pick coverage`).

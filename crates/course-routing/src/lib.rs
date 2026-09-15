@@ -226,6 +226,9 @@ pub struct Route {
     /// arc exempt, hole 1's likewise against the last green (the clubhouse
     /// loop junction) (plan item 1); ascending `(green_hole, spine_hole)`.
     pub green_in_play: Vec<(usize, usize, f64)>,
+    /// share of the window's 8 m cells within `route::COV_R_M` of a spine
+    /// (plan item 4)
+    pub coverage: f64,
 }
 
 /// The whole chain on one tile: siting, the green pool, routing. Returns

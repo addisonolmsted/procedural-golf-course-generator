@@ -195,6 +195,72 @@ pub const GIP_W: f64 = 16.0;
 /// the corpus mid-hole clearance p10 (CLEAR_MID_M), so a green on the
 /// line has no legal neighbour inside.
 pub const EDGE_W: f64 = 0.6;
+
+/// COVERAGE (owner, 2026-09-14; round 1, item 4): the window's ground
+/// within COV_R_M of play. Beam: a bitset over a COV_CELL_M lattice on the
+/// window, stamped by each new straight hole; `s_hole += COV_W_BEAM * new /
+/// n_cells` -- a fresh 400 m hole in open ground earns ~+0.33 at 3.0, a
+/// hole laid beside an earlier one or out in the halo nothing. Route:
+/// `coverage` = the share of the window's 8 m cells within COV_R_M of any
+/// placed spine, `rterms["coverage"] = COV_W_ROUTE * coverage`; the share
+/// within 100 m is the audit's diagnostic. Ladder 2 / 3 / 4 on
+/// COV_W_BEAM recorded in docs/calibration/routing-site-use.md. 120 m = a
+/// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
+pub const COV_CELL_M: f64 = 40.0;
+pub const COV_R_M: f64 = 120.0;
+pub const COV_W_BEAM: f64 = 3.0;
+pub const COV_W_ROUTE: f64 = 2.0;
+
+/// Lattice dims `(rows, cols)` of the coverage bitset on `win`.
+fn cov_dims(win: (f64, f64, f64, f64)) -> (usize, usize) {
+    ((win.2 / COV_CELL_M).ceil() as usize, (win.3 / COV_CELL_M).ceil() as usize)
+}
+
+/// Stamp the lattice cells whose centre lies within COV_R_M of segment
+/// `a`-`b` into `cov`; returns how many were newly set.
+fn cov_stamp(cov: &mut [u64], win: (f64, f64, f64, f64), a: Yx, b: Yx) -> usize {
+    let (nr, nc) = cov_dims(win);
+    let mut new = 0;
+    for r in 0..nr {
+        let y = win.0 + (r as f64 + 0.5) * COV_CELL_M;
+        for c in 0..nc {
+            let x = win.1 + (c as f64 + 0.5) * COV_CELL_M;
+            let (d, _) = point_to_polyline_m(&[a, b], (y, x));
+            if d <= COV_R_M {
+                let k = r * nc + c;
+                let (w, bit) = (k / 64, 1u64 << (k % 64));
+                if cov[w] & bit == 0 {
+                    cov[w] |= bit;
+                    new += 1;
+                }
+            }
+        }
+    }
+    new
+}
+
+/// Share of the window's 8 m cells within `r_m` of any of `spines`.
+fn coverage_share(f: &Fields, win: (f64, f64, f64, f64), spines: &[Vec<Yx>], r_m: f64) -> f64 {
+    let i0 = (win.0 / f.cell).floor().max(0.0) as usize;
+    let i1 = (((win.0 + win.2) / f.cell).ceil() as usize).min(f.ny);
+    let j0 = (win.1 / f.cell).floor().max(0.0) as usize;
+    let j1 = (((win.1 + win.3) / f.cell).ceil() as usize).min(f.nx);
+    if i1 <= i0 || j1 <= j0 {
+        return 0.0;
+    }
+    let hit: usize = (i0..i1).into_par_iter().map(|i| {
+        let y = i as f64 * f.cell;
+        let mut n = 0;
+        for j in j0..j1 {
+            let x = j as f64 * f.cell;
+            if spines.iter().any(|sp| point_to_polyline_m(sp, (y, x)).0 <= r_m) {
+                n += 1;
+            }
+        }
+        n
+    }).sum();
+    hit as f64 / ((i1 - i0) * (j1 - j0)) as f64
+}
 pub const EDGE_FREE_M: f64 = 60.0;
 pub const EDGE_RAMP_M: f64 = 120.0;
 
@@ -966,6 +1032,39 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
 pub const TEE_BOX_SLOPE_MAX: f64 = 0.15;
 pub const TEE_STAGGER_RETRY: [f64; 3] = [1.0, 0.75, 0.5];
 pub const TEE_FALLBACK_STEP_M: f64 = 3.0;
+/// Radius of the capped-node search around detail_route's saturating tee
+/// fallback point: 40 m keeps a par 3 inside its band either way.
+pub const TEE_FALLBACK_SEARCH_M: f64 = 40.0;
+
+/// The nearest dry 8 m node to `p` within `r_m` whose slope is under
+/// TEE_BOX_SLOPE_MAX (ties: row-major), `None` when there is none.
+fn nearest_capped_node(f: &Fields, p: Yx, r_m: f64) -> Option<Yx> {
+    let r = (r_m / f.cell).ceil() as i64;
+    let ci = (p.0 / f.cell).round() as i64;
+    let cj = (p.1 / f.cell).round() as i64;
+    let mut best: Option<(f64, Yx)> = None;
+    for i in (ci - r).max(0)..=(ci + r).min(f.ny as i64 - 1) {
+        for j in (cj - r).max(0)..=(cj + r).min(f.nx as i64 - 1) {
+            let idx = i as usize * f.nx + j as usize;
+            if f.wet8[idx] || f.slope[idx] > TEE_BOX_SLOPE_MAX {
+                continue;
+            }
+            let q = (i as f64 * f.cell, j as f64 * f.cell);
+            let d = hyp(q, p);
+            if d > r_m {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((bd, _)) => asc_nan_last(d, bd) == Ordering::Less,
+            };
+            if better {
+                best = Some((d, q));
+            }
+        }
+    }
+    best.map(|(_, q)| q)
+}
 
 /// The steepest of the four 8 m nodes around `p` -- the ground a 7 m pad
 /// at `p` actually sits on (`Fields::slope` is the strided node value).
@@ -1109,6 +1208,8 @@ pub struct BeamState {
     cum_mid: f64,
     pdir: Option<Yx>,
     lzs_ap: Vec<Yx>,
+    /// item 4: the COV_CELL_M lattice cells within COV_R_M of a spine so far
+    cov: Vec<u64>,
 }
 
 /// DEVIATION (the one deliberate one in the beam): the prototype sorted
@@ -1226,7 +1327,11 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let ab = if nv > 1e-9 { approach_bin((vin.0 / nv, vin.1 / nv)) } else { 0 };
             let appr = score_approach(&pool[gi].approach, ab);
             let lzq = lz_probe(rf, f, tee, gp, par);
-            let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq;
+            let mut cov = st.cov.clone();
+            let (nr, nc) = cov_dims(site.win);
+            let new_cov = cov_stamp(&mut cov, site.win, tee, gp);
+            let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
+                + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64;
             // crossings vs accumulated straight segments
             let mut pen = 0.0_f64;
             let ns_arr: [Yx; 2] = [tee, gp];
@@ -1347,6 +1452,7 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                 cum_mid: st.cum_mid + mid_par,
                 pdir: Some((dv.0 / dn, dv.1 / dn)),
                 lzs_ap,
+                cov,
             });
         }
     }
@@ -1375,6 +1481,7 @@ pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx, poo
         cum_mid: 0.0,
         pdir: None,
         lzs_ap: Vec::new(),
+        cov: { let (nr, nc) = cov_dims(site.win); vec![0u64; (nr * nc + 63) / 64] },
     }];
     for h in 0..9 {
         // each state's expansion is independent; rayon computes them and
@@ -1599,8 +1706,13 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
                 let vn = (v.0 / d.max(1e-9), v.1 / d.max(1e-9));
                 let (lo, hi) = par_band(par);
                 let back_d = 0.0_f64.max(d - (lo + hi) / 2.0);
+                let raw = (pos.0 + vn.0 * back_d, pos.1 + vn.1 * back_d);
+                // item 2 (2026-09-15): the raw point obeys no slope cap (two
+                // hole-9 par 3s in 250 sat on 35-62 % nodes); take the
+                // nearest dry node under TEE_BOX_SLOPE_MAX within
+                // TEE_FALLBACK_SEARCH_M instead, the point itself failing that
                 vec![TeeOption {
-                    yx: (pos.0 + vn.0 * back_d, pos.1 + vn.1 * back_d),
+                    yx: nearest_capped_node(f, raw, TEE_FALLBACK_SEARCH_M).unwrap_or(raw),
                     score: -0.5,
                     graded: true,
                 }]
@@ -1888,7 +2000,10 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             spread += 0.3;
         }
     }
+    let coverage = coverage_share(f, site.win, &spines, COV_R_M);
+    let coverage100 = coverage_share(f, site.win, &spines, 100.0);
     let mut rterms: BTreeMap<String, f64> = BTreeMap::new();
+    rterms.insert("coverage".into(), COV_W_ROUTE * coverage);
     rterms.insert("entropy".into(), 0.6 * entropy);
     rterms.insert("spread".into(), spread);
     rterms.insert("total".into(), 2.5 * tot_t);
@@ -1907,6 +2022,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         score += v;
     }
     rterms.insert("worst_clear".into(), round_to(worst_clear, 2));
+    rterms.insert("coverage100".into(), round_to(coverage100, 3));
     rterms.insert("min_green_lz_m".into(),
                   if worst_glz < 999.0 { round_to(worst_glz, 0) } else { -1.0 });
     let par_sequence: Vec<u8> = holes.iter().map(|hh| hh.par).collect();
@@ -1920,6 +2036,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms: rterms,
         crossings,
         green_in_play,
+        coverage,
     })
 }
 
@@ -2087,6 +2204,7 @@ mod tests {
             cum_mid: 0.0,
             pdir: None,
             lzs_ap: Vec::new(),
+            cov: Vec::new(),
         }
     }
 

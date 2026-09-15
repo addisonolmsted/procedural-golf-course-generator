@@ -11,7 +11,7 @@
 //! `[{a, b, span_m, kind}]` with the v1 count kept as `n_bridges`, and
 //! `walk: {path, grade_mean, bridges}`; per route `crossings: [[i, j, y,
 //! x]]` beside `n_crossings`, `green_in_play: [[green_hole, spine_hole,
-//! d_m]]` and `coverage` (null until plan item 4 fills it). The one v1 key
+//! d_m]]` and `coverage` (the window share within 120 m of play). The one v1 key
 //! whose TYPE changed is the hole's `bridges` (count -> list); no reader in
 //! `tools/golf` consumed it.
 
@@ -87,7 +87,7 @@ pub fn record(seed: u64, mode: &str, seconds: f64, pool: usize, sit: &Siting,
     let gip: Vec<Value> = r.green_in_play.iter()
         .map(|&(g, h, d)| json!([g, h, rnd(d, 1)])).collect();
     obj.insert("green_in_play".into(), Value::Array(gip));
-    obj.insert("coverage".into(), Value::Null);
+    obj.insert("coverage".into(), json!(rnd(r.coverage, 3)));
     obj.insert("clubhouse".into(), json!([r.clubhouse_yx.0, r.clubhouse_yx.1]));
     obj.insert("score".into(), json!(rnd(r.score, 3)));
     let mut terms = serde_json::Map::new();
@@ -194,6 +194,7 @@ mod tests {
             total_walk_m: 2.9155, clubhouse_yx: (100.0, 200.0), score: 12.34567,
             terms: rterms, crossings: vec![(0, 1, (5.0, 6.0))],
             green_in_play: vec![(2, 4, 31.26)],
+            coverage: 0.5,
         }
     }
 
@@ -226,7 +227,7 @@ mod tests {
         assert_eq!(v["pars"], json!([4]));
         assert_eq!(v["crossings"], json!([[0, 1, 5.0, 6.0]]));
         assert_eq!(v["green_in_play"], json!([[2, 4, 31.3]]));
-        assert!(v["coverage"].is_null());
+        assert!(v["coverage"].is_number());
         assert_eq!(v["total_length_m"], 400.0);
         assert_eq!(v["total_walk_m"], 2.9);
         assert_eq!(v["n_crossings"], 1);
