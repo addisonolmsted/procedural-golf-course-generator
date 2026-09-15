@@ -1579,3 +1579,47 @@ mix 87 → 94 %; 250/250, 0 crossings, green-in-play ≤ 35 m 0 (≤ 50 m 76
 Side effect reported: water courses with a carry 41 → 32 % (shorter
 holes cross less water; near-water 48 holds). Viewer: artifact 7ae0e537
 (`--pick length`).
+
+## 2026-09-15 — routing round 1, item 10: the sequence prior, and the round closed
+
+Route `rterms["sequence"]`: −`SEQ_W_ROUTE` 0.4 for a par 3 at hole 2, the
+same for a par 5 at hole 9; the beam mirrors it at 0.3 when it places
+those holes. No ladder needed: ×1 met both targets. Shipped
+(`rs_s10.jsonl` = `rs.jsonl`, `audit_s10.txt`, vs s9): hole-2 par 3 36 →
+14 % (≤ 20), hole-9 par 5 28 → 22 % (≤ 25), mix 94 → 93 %, b2b 5 %;
+250/250, 0 crossings, seconds max 0.51. Viewer: artifact 636b3cac.
+
+**The round, baseline (`rs_v1`, the Python-parity port) → final
+(`rs_s10`)**, `audit_round1.txt`; viewer artifact 186e6318 (30 courses):
+
+| metric | baseline | target | final |
+|---|---|---|---|
+| greens within 60 m of the window edge | 57 % | < 25 % | 25 % |
+| greens outside the window | 45 % | ≤ 10 % | 9 % |
+| window within 100 m of play, p50 | 48 % | > 60 % | 64 % |
+| LZ dead flat / upland | 48 / 12 % | < 30 / > 20 % | 27 / 8 % |
+| within-course LZ setting std | 0.18 | > 0.25 | 0.15 |
+| green surround relief p50 (real 6.1–6.8) | 4.6 m | > 5.5 | 4.9 (ae 5.3, fl 4.7) |
+| above-chord p50 / p90 / p99 (real 0.08 / 1.7 / 5.6) | 0.82 / 4.4 / 14.1 | ≤ 0.5 / < 2.5 / < 8 | 0.59 / 2.7 / 7.6 |
+| water courses with a hole within 40 m (of 71; ~56 reachable) | 27 | > 50 | 47 |
+| water courses with a carry | 0 % | ≥ 40 % | 35 % |
+| spine spans over 70 m | 0 | not up | 5 |
+| par 3 median / both within 20 m | 180 / 37 % | 160–170 / < 15 % | 167 / 10 % |
+| par 5 median | 528 | < 500 | 492 |
+| par 4 median / total p50 | 353 / 3,157 | — / 3,000–3,100 | 358 / 3,126 |
+| hole 2 par 3 / hole 9 par 5 | 40 / 39 % | ≤ 20 / ≤ 25 % | 14 / 22 % |
+| green within 35 m of another hole's line (audit def.) | 40 | 0 | 0 |
+| green within 50 m | 64 | — | 110 |
+| tee boxes on > 30 % / > 15 % ground | 39 / 329 | 0 / ≤ 5 | 0 / 0 |
+| routed / play crossings / (2,5,2) | 250 / 0 / 92 % | 250 / 0 / 85–95 % | 250 / 0 / 93 % |
+| walk p50 (not optimised) | 993 m | — | 911 m |
+| seconds p50 / max | 0.33 / 0.45 | < 1.3 max | 0.44 / 0.51 |
+
+Open after the round (each explained in its item's section): LZ upland
+and within-course LZ setting std are hole-level properties the LZ term
+cannot move; fluvial green surround is pool-limited (`greens::generate`);
+the water ceiling is siting (14 windows hold no water); five spine spans
+of 72–142 m; and the 50 m green-in-play count rose 64 → 110 while the
+35 m count fell to 0 — compaction puts greens 35–50 m off other lines,
+which the 50 m term charges but does not forbid; whether that band needs
+a tier is the owner's call.

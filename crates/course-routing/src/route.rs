@@ -279,6 +279,16 @@ pub const EDGE_W: f64 = 0.6;
 /// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
 pub const COV_CELL_M: f64 = 40.0;
 
+/// SEQUENCE (owner, 2026-09-14: flatten BOTH signatures; round 1, item
+/// 10): 40 % of routes opened with a par 3 at hole 2 and 39 % closed with
+/// a par 5 at hole 9 -- the beam's cheap walk / pace terms near the
+/// clubhouse and the reserved loop anchor, not design. Route
+/// `rterms["sequence"]` charges SEQ_W_ROUTE for each; the beam mirrors it
+/// at SEQ_W_BEAM when it places hole 2 or hole 9. The mix prior separates
+/// (2,5,2) by >= 2.0, so no mix flips.
+pub const SEQ_W_ROUTE: f64 = 0.4;
+pub const SEQ_W_BEAM: f64 = 0.3;
+
 /// WATER AS A HAZARD (owner, 2026-09-14; round 1, item 8): lateral
 /// hazards AND short forced carries. The router only avoided water
 /// (bridges -0.3 - 0.005 * span, one 0.1 LZ trapezoid); 44 of the 71
@@ -1568,6 +1578,10 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             if same_par.iter().any(|&l| (l - hl).abs() < twin_sep) {
                 c -= TWIN_W;
             }
+            // item 10: a par 3 at hole 2, a par 5 at hole 9
+            if (h == 1 && par == 3) || (h == 8 && par == 5) {
+                c -= SEQ_W_BEAM;
+            }
             // back-to-back 3s/5s
             if let Some(last) = st.seq.last() {
                 if (par == 3 || par == 5) && last.1 == par {
@@ -2332,6 +2346,14 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
     rterms.insert("spread".into(), spread);
     rterms.insert("total".into(), 2.5 * tot_t);
     rterms.insert("mix_prior".into(), mix_prior);
+    let mut sequence = 0.0;
+    if nh > 1 && holes[1].par == 3 {
+        sequence -= SEQ_W_ROUTE;
+    }
+    if nh >= 9 && holes[8].par == 5 {
+        sequence -= SEQ_W_ROUTE;
+    }
+    rterms.insert("sequence".into(), sequence);
     rterms.insert("crossings".into(), cross_pen);
     rterms.insert("clearance".into(), clear_pen);
     rterms.insert("lz_sep".into(), lz_pen);
