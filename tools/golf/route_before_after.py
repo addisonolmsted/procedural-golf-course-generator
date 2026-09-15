@@ -31,6 +31,8 @@ forced carries (v2 records), blue rings on landing zones and greens within
   tee            tee boxes on > 15 % ground (count)
   setting        median green surround relief, m
   lz             dead-flat landing zones (count)
+  dogleg         median dogleg of the par 4/5s, deg
+  dip            drives carrying a >= 1.5 m dip (count)
 """
 import sys, io, json, base64, pathlib
 import numpy as np
@@ -51,9 +53,9 @@ WET_RGB = np.array([38, 86, 140])
 PICKS = {
     "score": lambda c: c["score"], "coverage": lambda c: c["cov100"], "edge": lambda c: c["edge60"],
     "above": lambda c: c["above_max"], "water": lambda c: c["near_water"], "green_in_play": lambda c: c["n_gip50"],
-    "length": lambda c: c["len_fit"], "sequence": lambda c: c["sequence"], "total": lambda c: c["total"],
+    "length": lambda c: c["len_fit"], "sequence": lambda c: c["sequence"] + 2 * c["hole1_par3"] + c["b2b3"], "total": lambda c: c["total"],
     "tee": lambda c: c["tee15"], "setting": lambda c: c["g_sur"],
-    "lz": lambda c: c["lz_flat"],
+    "lz": lambda c: c["lz_flat"], "dogleg": lambda c: c["dogleg_med"], "dip": lambda c: c["n_dip"],
 }
 
 

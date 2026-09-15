@@ -162,3 +162,39 @@ hole-2 par 3 36 → 14 %, hole-9 par 5 28 → 22 %, mix 94 → 93 %.
 
 The baseline → final table for the whole round is in
 `creek-planform.md` (2026-09-15, item 10) and `out/route_rs/audit_round1.txt`.
+
+# Round 2 (2026-09-15) — bend, carry, the real par sequence
+
+Baseline s10. Real references: `tools/golf/corpus/out/shot_profiles.json`
+(3,662 par 4/5 drives: dip ≥ 1.5 m 46.7 %, p50 of those 2.95 m; dogleg
+p50 16.5° / p90 43.2°, 53.8 % > 15°; S-shapes 6.8 %) and
+`out/par_positions.json` (412 par-36 nines).
+
+## Acceptance
+
+| metric | s10 | target | r2-s3 |
+|---|---|---|---|
+| par-by-hole table, mean abs diff over 27 slots | 0.060 | ≤ 0.06 | **0.044** |
+| hole 1 par 3 (real 3 %) | 22 % | ≤ 5 % | 2 % |
+| hole 9 par 5 (real 27 %) | 22 % | 20–33 % | 33 % |
+| hole 9 par 3 (real 8 %) | 19 % | ≤ 12 % | 10 % |
+| back-to-back 3s (real 0 %) | 3 % | 0 | 0 |
+| mix (2,5,2) | 93 % | 90–95 % | 95 % |
+| dogleg p50 / p90 (real 16.5 / 43) | 28 / 53 | 17–22 / ≤ 46 | 29 / 53 |
+| holes bending > 15° (real 54 %) | 77 % | 55–65 % | 77 % |
+| straight-line rise resolved by the spine (aeolian) | 28 % | ≥ 50 % | 28 % |
+| par-5 S-shapes (real 7 %) | 50 % | ≤ 20 % | 53 % |
+| above-chord p90, aeolian | 3.0 m | ≤ 2.2 | 3.0 |
+| drives carrying a ≥ 1.5 m dip (real 47 %) | 34 % | 42–52 % | 36 % |
+| depth of those dips p50 (real 2.95) | 2.6 m | 2.7–3.2 | 2.6 |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | 250 / 0 / 0 / 0 | guards | 250 / 0 / 1 / 0 |
+| seconds max | 0.51 | < 1.3 | 0.55 |
+
+## Item 3 — par sequence
+
+| rung (route / beam) | table dist | h1 p3 | h2 p3 | h9 p3 | h9 p5 | mix |
+|---|---|---|---|---|---|---|
+| s10 | 0.060 | 22 | 14 | 19 | 22 | 93 |
+| 0.2 / 0.15 | 0.049 | 6 | 37 | 13 | 30 | 94 |
+| 0.4 / 0.3 — shipped | 0.044 | 2 | 37 | 10 | 33 | 95 |
+| 0.8 / 0.6 | 0.069 | 0 | 32 | 4 | 36 | 94 |

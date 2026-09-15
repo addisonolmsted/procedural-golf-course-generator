@@ -279,15 +279,39 @@ pub const EDGE_W: f64 = 0.6;
 /// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
 pub const COV_CELL_M: f64 = 40.0;
 
-/// SEQUENCE (owner, 2026-09-14: flatten BOTH signatures; round 1, item
-/// 10): 40 % of routes opened with a par 3 at hole 2 and 39 % closed with
-/// a par 5 at hole 9 -- the beam's cheap walk / pace terms near the
-/// clubhouse and the reserved loop anchor, not design. Route
-/// `rterms["sequence"]` charges SEQ_W_ROUTE for each; the beam mirrors it
-/// at SEQ_W_BEAM when it places hole 2 or hole 9. The mix prior separates
-/// (2,5,2) by >= 2.0, so no mix flips.
+/// SEQUENCE (round 2, item 3, 2026-09-15; supersedes round 1's two flat
+/// penalties, which moved the par 3 from hole 2 to hole 1: 4 -> 22 %).
+/// PAR_POS = the real par-by-hole shares of 412 par-36 nines (OSM
+/// `golf=hole` ways with `ref` + `par`, clustered per course, front and
+/// back; `tools/golf/corpus/par_positions.py` -> `out/par_positions.json`,
+/// `all.share`). The slot value is the log-ratio to the marginal share
+/// (2/9, 5/9, 2/9), clipped to [-2, +1]: a par 3 at hole 1 (3 %) is -2.0,
+/// a par 5 at hole 9 (27 %) +0.2, a par 3 at hole 2 (24 %) +0.08. Route
+/// `rterms["sequence"] = SEQ_W_ROUTE * sum`, beam SEQ_W_BEAM per placed
+/// hole. Back-to-back par 3s (0 of 412) are removed from `legal_pars`
+/// instead of weighted; back-to-back 5s (4 %) keep the -0.6. Ladder
+/// 0.2 / 0.4 / 0.8 in docs/calibration/routing-site-use.md.
+pub const PAR_POS: [[f64; 3]; 9] = [
+    [0.027, 0.752, 0.221],  // hole 1
+    [0.243, 0.536, 0.221],  // hole 2
+    [0.328, 0.451, 0.221],  // hole 3
+    [0.277, 0.527, 0.197],  // hole 4
+    [0.199, 0.568, 0.233],  // hole 5
+    [0.221, 0.553, 0.226],  // hole 6
+    [0.303, 0.468, 0.228],  // hole 7
+    [0.330, 0.478, 0.192],  // hole 8
+    [0.080, 0.650, 0.269],  // hole 9
+];
+pub const PAR_MARGINAL: [f64; 3] = [2.0 / 9.0, 5.0 / 9.0, 2.0 / 9.0];
+pub const SEQ_CLIP: (f64, f64) = (-2.0, 1.0);
 pub const SEQ_W_ROUTE: f64 = 0.4;
 pub const SEQ_W_BEAM: f64 = 0.3;
+
+/// The slot value of `par` at hole index `h` (0-based).
+pub fn slot_value(h: usize, par: u8) -> f64 {
+    let j = match par { 3 => 0, 4 => 1, _ => 2 };
+    clip((PAR_POS[h.min(8)][j] / PAR_MARGINAL[j]).ln(), SEQ_CLIP.0, SEQ_CLIP.1)
+}
 
 /// WATER AS A HAZARD (owner, 2026-09-14; round 1, item 8): lateral
 /// hazards AND short forced carries. The router only avoided water
@@ -906,13 +930,35 @@ pub fn mix_feasible(counts: (u8, u8, u8), holes_done: usize) -> bool {
     false
 }
 
+/// `mix_feasible` plus the round-2 adjacency rule: the par 3s still needed
+/// must fit the remaining slots without two in a row (the slot right after
+/// a par 3 is closed). With `r` slots left, at most `ceil(r / 2)` par 3s
+/// fit, `floor(r / 2)` when the first slot is closed.
+pub fn mix_feasible_seq(counts: (u8, u8, u8), holes_done: usize, last_is_3: bool) -> bool {
+    let left = 9 - holes_done as i32;
+    let cap3 = if last_is_3 { left / 2 } else { (left + 1) / 2 };
+    for m in ALLOWED_MIXES {
+        let need = (m.0 as i32 - counts.0 as i32, m.1 as i32 - counts.1 as i32,
+                    m.2 as i32 - counts.2 as i32);
+        if need.0 >= 0 && need.1 >= 0 && need.2 >= 0 && need.0 + need.1 + need.2 == left
+            && need.0 <= cap3 {
+            return true;
+        }
+    }
+    false
+}
+
 /// The pars (3/4/5, ascending) that keep a legal mix reachable.
-pub fn legal_pars(counts: (u8, u8, u8), holes_done: usize) -> Vec<u8> {
+pub fn legal_pars(counts: (u8, u8, u8), holes_done: usize, prev: Option<u8>) -> Vec<u8> {
     let mut out = Vec::with_capacity(3);
     for (p, k) in [(3u8, 0usize), (4, 1), (5, 2)] {
+        // round 2, item 3: no back-to-back par 3s (0 of 412 real par-36 nines)
+        if p == 3 && prev == Some(3) {
+            continue;
+        }
         let mut c = [counts.0, counts.1, counts.2];
         c[k] += 1;
-        if mix_feasible((c[0], c[1], c[2]), holes_done + 1) {
+        if mix_feasible_seq((c[0], c[1], c[2]), holes_done + 1, p == 3) {
             out.push(p);
         }
     }
@@ -1511,8 +1557,9 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                 sett: &[f64], site: &SiteCtx, st: &BeamState, h: usize) -> Vec<BeamState> {
     let home = site.home;
     let n = pool.len();
+    let reserved_idx = pool.iter().position(|c| c.reserved);
     let mut nxt = Vec::new();
-    let pars = legal_pars(st.counts, h);
+    let pars = legal_pars(st.counts, h, st.seq.last().map(|e| e.1));
     let mut dist = Vec::with_capacity(n);
     let mut d_home = Vec::with_capacity(n);
     for i in 0..n {
@@ -1578,10 +1625,8 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             if same_par.iter().any(|&l| (l - hl).abs() < twin_sep) {
                 c -= TWIN_W;
             }
-            // item 10: a par 3 at hole 2, a par 5 at hole 9
-            if (h == 1 && par == 3) || (h == 8 && par == 5) {
-                c -= SEQ_W_BEAM;
-            }
+            // round 2, item 3: the real par-by-hole prior
+            c += SEQ_W_BEAM * slot_value(h, par);
             // back-to-back 3s/5s
             if let Some(last) = st.seq.last() {
                 if (par == 3 || par == 5) && last.1 == par {
@@ -1673,6 +1718,22 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                     pen -= GIP_W * v * v;
                     if d < GREEN_VETO_M {
                         pen -= GIP_VETO_BEAM;
+                    }
+                }
+            }
+            // the reserved loop anchor (the ninth green) is known from the
+            // start: every earlier hole's line is checked against it too,
+            // hole 1's first GREEN_JUNCTION_M exempt (round 2, 2026-09-15:
+            // a 28 m case survived because the beam only saw placed greens)
+            if h < 8 {
+                if let Some(ri) = reserved_idx {
+                    if ri != gi && !st.used[ri] {
+                        if let Some((d, v)) = green_play(&ns_arr, yx[ri], h == 0) {
+                            pen -= GIP_W * v * v;
+                            if d < GREEN_VETO_M {
+                                pen -= GIP_VETO_BEAM;
+                            }
+                        }
                     }
                 }
             }
@@ -2346,13 +2407,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
     rterms.insert("spread".into(), spread);
     rterms.insert("total".into(), 2.5 * tot_t);
     rterms.insert("mix_prior".into(), mix_prior);
-    let mut sequence = 0.0;
-    if nh > 1 && holes[1].par == 3 {
-        sequence -= SEQ_W_ROUTE;
-    }
-    if nh >= 9 && holes[8].par == 5 {
-        sequence -= SEQ_W_ROUTE;
-    }
+    let sequence: f64 = holes.iter().map(|hh| SEQ_W_ROUTE * slot_value(hh.index, hh.par)).sum();
     rterms.insert("sequence".into(), sequence);
     rterms.insert("crossings".into(), cross_pen);
     rterms.insert("clearance".into(), clear_pen);
@@ -2461,14 +2516,18 @@ mod tests {
             let n3 = seq.iter().filter(|&&p| p == 3).count() as u8;
             let n4 = seq.iter().filter(|&&p| p == 4).count() as u8;
             let n5 = seq.iter().filter(|&&p| p == 5).count() as u8;
-            if ALLOWED_MIXES.contains(&(n3, n4, n5)) {
+            let b2b3 = seq.windows(2).any(|w| w[0] == 3 && w[1] == 3);
+            if ALLOWED_MIXES.contains(&(n3, n4, n5)) && !b2b3 {
                 n_legal += 1;
                 for l in 1..=9 {
                     legal_prefixes.insert(seq[..l].to_vec());
                 }
             }
         }
-        assert_eq!(n_legal, 756 + 1680 + 72);
+        // 756 + 1680 + 72 sequences over the allowed mixes, less those with
+        // consecutive 3s (round 2, item 3): (2,5,2) 756 - 168 = 588, (3,3,3)
+        // C(7,3) * 20 = 700, (1,7,1) 72
+        assert_eq!(n_legal, 588 + 700 + 72);
         for code in 0..3usize.pow(9) {
             let mut c = code;
             let mut seq = Vec::with_capacity(9);
@@ -2479,7 +2538,8 @@ mod tests {
             let mut counts = (0u8, 0u8, 0u8);
             for h in 0..9 {
                 let p = seq[h];
-                let chain_ok = legal_pars(counts, h).contains(&p);
+                let prev = if h > 0 { Some(seq[h - 1]) } else { None };
+                let chain_ok = legal_pars(counts, h, prev).contains(&p);
                 let brute = legal_prefixes.contains(&seq[..=h]);
                 assert_eq!(chain_ok, brute, "prefix {:?}", &seq[..=h]);
                 if !chain_ok {
@@ -2502,10 +2562,24 @@ mod tests {
         assert!(!mix_feasible((0, 8, 0), 8));
         assert!(!mix_feasible((2, 5, 2), 8));
         assert!(!mix_feasible((3, 3, 2), 9));
-        assert_eq!(legal_pars((0, 0, 0), 0), vec![3, 4, 5]);
-        assert_eq!(legal_pars((2, 5, 1), 8), vec![5]);
-        assert_eq!(legal_pars((3, 0, 0), 3), vec![4, 5]);
-        assert_eq!(legal_pars((2, 0, 0), 2), vec![3, 4, 5]);
+        assert_eq!(legal_pars((0, 0, 0), 0, None), vec![3, 4, 5]);
+        assert_eq!(legal_pars((2, 5, 1), 8, Some(4)), vec![5]);
+        assert_eq!(legal_pars((3, 0, 0), 3, Some(4)), vec![4, 5]);
+        assert_eq!(legal_pars((2, 0, 0), 2, Some(4)), vec![3, 4, 5]);
+        assert_eq!(legal_pars((1, 0, 0), 1, Some(3)), vec![4, 5]);   // no back-to-back 3s
+    }
+
+    #[test]
+    fn slot_values_follow_the_real_table() {
+        assert!((slot_value(0, 3) - SEQ_CLIP.0).abs() < 1e-9);      // 3 % at hole 1 -> clipped -2
+        assert!(slot_value(8, 5) > 0.15 && slot_value(8, 5) < 0.25); // 27 % at hole 9
+        assert!(slot_value(1, 3).abs() < 0.15);                     // 24 % at hole 2 ~ marginal
+        for h in 0..9 {
+            for p in [3u8, 4, 5] {
+                let v = slot_value(h, p);
+                assert!(v >= SEQ_CLIP.0 && v <= SEQ_CLIP.1);
+            }
+        }
     }
 
     #[test]

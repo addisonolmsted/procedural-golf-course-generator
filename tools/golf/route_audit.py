@@ -50,6 +50,11 @@ GIP_NEAR_M, GIP_FAR_M = 35.0, 50.0
 CARRY_MIN_M, CARRY_MAX_M = 15.0, 70.0   # a spine bridge of this span is a forced carry (plan item 8)
 EDGE_NEAR_M = 60.0           # green "near the edge" band
 LZ_FLAT = 0.02               # dead-flat landing zone: slope < 2 %
+PROF_FREE_M = 1.7            # a rise above the chord under this is free (corpus p90; route.rs PROF_CHORD_FREE_M)
+DOGLEG_MIN_LEG_M = 20.0      # a spine vertex counts as a dogleg only with both legs > 20 m (the corpus measurement's filter)
+DOGLEG_BEND_DEG = 15.0       # "the hole bends": max turn > 15 deg (real 57-60 % of par 4/5s)
+DIP_CARRY_M = 1.5            # a drive whose ground dips >= 1.5 m below its own chord carries a low point (round 2, item 2)
+LEG_M = 220.0                # the drive / second-shot leg length the corpus tool uses (LZ_APPROX_M)
 LZ_FEAT_MIN = 0.5            # a v2 record's terms.lz_interest40 (the router's interest raster maxed over 40 m) at or above this = "a feature in reach"
 UPLAND_RP = 0.7              # upland: relief position > 0.7
 WATER_NEAR_M = 40.0          # a hole is "near water" when its spine passes within 40 m
@@ -64,6 +69,36 @@ MIX_252 = (2, 5, 2)
 REAL = {"par3_med": 163.0, "par4_med": 351.0, "par5_med": 474.0,
         "above50": 0.08, "above90": 1.67, "above99": 5.6,
         "g_sur": "6.1-6.8", "g_upland": "25 %"}   # real relief_pos p75 = 0.67 -> ~25 % above 0.7
+
+
+# Round 2 real references, read from the corpus tools' outputs when present
+# (tools/golf/corpus/{shot_profiles,par_positions}.py); blank otherwise.
+CORPUS_OUT = HERE / "corpus" / "out"
+REAL_PAR_POS = None          # [9][3] shares, par 3/4/5 per slot, from par_positions.json (all par-36 nines)
+try:
+    _pp = json.load(open(CORPUS_OUT / "par_positions.json"))
+    REAL_PAR_POS = _pp["all"]["share"]
+    REAL["hole1_par3"] = f"{100 * REAL_PAR_POS[0][0]:.0f} %"; REAL["hole2_par3"] = f"{100 * REAL_PAR_POS[1][0]:.0f} %"
+    REAL["hole9_par3"] = f"{100 * REAL_PAR_POS[8][0]:.0f} %"; REAL["hole9_par5"] = f"{100 * REAL_PAR_POS[8][2]:.0f} %"
+    REAL["b2b3"] = f"{100 * _pp['all']['b2b3']:.0f} %"; REAL["b2b"] = f"{100 * (_pp['all']['b2b3'] + _pp['all']['b2b5']):.0f} %"
+except Exception:
+    pass
+try:
+    _sp = [r for r in json.load(open(CORPUS_OUT / "shot_profiles.json")) if r.get("par") in (4, 5)]
+    _dog = [r["dogleg_max_deg"] for r in _sp if r.get("dogleg_max_deg") is not None]
+    _dip = [r["drive"]["dip"] for r in _sp if r.get("drive")]
+    if _dog:
+        REAL["dogleg50"] = f"{np.percentile(_dog, 50):.0f}"; REAL["dogleg90"] = f"{np.percentile(_dog, 90):.0f}"
+        REAL["dog15"] = f"{100 * np.mean(np.asarray(_dog) > DOGLEG_BEND_DEG):.0f} %"
+    if _dip:
+        REAL["dip_share"] = f"{100 * np.mean(np.asarray(_dip) >= DIP_CARRY_M):.0f} %"
+        _d = [v for v in _dip if v >= DIP_CARRY_M]
+        REAL["dip_med"] = f"{np.percentile(_d, 50):.1f}" if _d else ""
+    _s5 = [r["s_shape"] for r in _sp if r.get("par") == 5 and "s_shape" in r]
+    if _s5:
+        REAL["s_share"] = f"{100 * np.mean(_s5):.0f} %"
+except Exception:
+    pass
 
 
 # ---------------------------------------------------------------- terrain --
@@ -171,6 +206,27 @@ def hole_metrics(t, rec, k):
     sur = float(np.percentile(patch[annp], 90) - np.percentile(patch[annp], 10)) if annp.any() else 0.0
     spine_spans, walk_spans = bridge_spans(h)
     carries = [s for s in spine_spans if CARRY_MIN_M <= s <= CARRY_MAX_M]
+    # round 2: dogleg turns at the spine's interior vertices (both legs > 20 m), signed
+    turns = []
+    for i in range(1, len(sp) - 1):
+        u, v = sp[i] - sp[i - 1], sp[i + 1] - sp[i]
+        nu, nv = np.hypot(*u), np.hypot(*v)
+        if nu > DOGLEG_MIN_LEG_M and nv > DOGLEG_MIN_LEG_M:
+            ang = float(np.degrees(np.arccos(np.clip(u @ v / (nu * nv), -1, 1))))
+            turns.append(ang if (u[1] * v[0] - u[0] * v[1]) >= 0 else -ang)
+    dogleg = max((abs(a) for a in turns), default=0.0)
+    s_shape = bool(h["par"] == 5 and any(a > 10 for a in turns) and any(a < -10 for a in turns))
+    # the profile of one leg against ITS OWN chord: (dip below, rise above)
+    def leg(a, b):
+        q = resample([a, b], PROFILE_STEP_M)
+        if len(q) < 4:
+            return (0.0, 0.0)
+        z = ndi.uniform_filter1d(np.array([t.z2(*p) for p in q]), PROFILE_SMOOTH_N, mode="nearest")
+        ch = np.linspace(z[0], z[-1], len(z))
+        return (float((ch - z).max()), float((z - ch).max()))
+    drive_dip, drive_rise = leg(sp[0], sp[1]) if (h["par"] >= 4 and len(sp) >= 2) else (None, None)
+    second_dip = leg(sp[1], sp[2])[0] if (h["par"] == 5 and len(sp) >= 3) else None
+    line_above = leg(sp[0], sp[-1])[1]      # the straight tee->green line's rise (what the beam sees)
     # tee slopes are measured here on the 8 m grid for every build (the audit's 329 / 39 baseline);
     # a v2 record's own `tee_slope` (the router's cell slope) is kept beside it
     tee_slope = [t.s8(t.slope, ty, tx) for (ty, tx) in h["tees"]]
@@ -187,7 +243,9 @@ def hole_metrics(t, rec, k):
         carries=carries, n_carries=len(carries), spine_spans=spine_spans, walk_spans=walk_spans,
         long_carries=sum(1 for s in spine_spans if s > CARRY_MAX_M),
         water_lz=[bool(v[3] <= HAZARD_M) for v in lz], water_green=bool(g_dw <= HAZARD_M),
-        gip=[], gip35=0, gip50=0, terms=h.get("terms"), walk_m=float(h.get("walk_m", 0.0)))
+        gip=[], gip35=0, gip50=0, terms=h.get("terms"), walk_m=float(h.get("walk_m", 0.0)),
+        dogleg=dogleg, turns=turns, s_shape=s_shape, drive_dip=drive_dip, drive_rise=drive_rise,
+        second_dip=second_dip, line_above=line_above)
 
 
 def green_in_play(rec, holes):
@@ -253,6 +311,9 @@ def course_metrics(t, rec, holes):
         g_sur=float(np.median([h["g_sur"] for h in holes])) if holes else 0.0,
         lz_feat=sum(1 for h in holes if h["par"] >= 4 and ((h.get("terms") or {}).get("lz_interest40") or 0.0) >= LZ_FEAT_MIN),
         n_lz_holes=sum(1 for h in holes if h["par"] >= 4),
+        hole1_par3=pars[0] == 3, hole9_par3=pars[-1] == 3 if len(pars) >= 9 else False,
+        dogleg_med=float(np.median([h["dogleg"] for h in holes if h["par"] >= 4])) if any(h["par"] >= 4 for h in holes) else 0.0,
+        n_dip=sum(1 for h in holes if h["drive_dip"] is not None and h["drive_dip"] >= DIP_CARRY_M),
         n_lz=len(lz_rp), lz_flat=sum(v < LZ_FLAT for h in holes for v in h["lz_slope"]), lz_upland=sum(v > UPLAND_RP for v in lz_rp),
         lz_rp_std=float(np.std(lz_rp)) if len(lz_rp) >= 2 else None,
         g_sur_med=float(np.median([h["g_sur"] for h in holes])), above_max=max(h["above"] for h in holes),
@@ -295,6 +356,16 @@ def med(xs, scale=1.0):
     return float(np.median(xs)) * scale if xs else float("nan")
 
 
+def par_pos_l1(courses):
+    """Mean |our slot share - real| over the 9 x 3 par-by-hole table (par_positions.json)."""
+    if REAL_PAR_POS is None or not courses:
+        return float("nan")
+    n = len(courses)
+    d = [abs(sum(c["pars"][i] == par for c in courses) / n - REAL_PAR_POS[i][j])
+         for i in range(9) for j, par in enumerate((3, 4, 5)) if all(len(c["pars"]) >= 9 for c in courses)]
+    return float(np.mean(d)) if d else float("nan")
+
+
 def aggregate(recs, holes, courses, mode="all"):
     """One column of the table: medians and shares over the routed courses of `mode`."""
     if mode != "all":
@@ -306,6 +377,9 @@ def aggregate(recs, holes, courses, mode="all"):
     wc = [c for c in courses if c["water_tile"]]
     lz_slope = [v for h in holes for v in h["lz_slope"]]; lz_rp = [v for h in holes for v in h["lz_rp"]]
     above = [h["above"] for h in holes]; tee = [v for h in holes for v in h["tee_slope"]]
+    dog = [h["dogleg"] for h in holes if h["par"] >= 4]
+    dips = [h["drive_dip"] for h in holes if h["drive_dip"] is not None]
+    dips2 = [h["second_dip"] for h in holes if h["second_dip"] is not None]
     A.update(
         edge60=pct(h["g_edge"] < EDGE_NEAR_M for h in holes), outside=pct(h["g_edge"] < 0 for h in holes),
         cov100=med((c["cov100"] for c in courses), 100.0), cov120=med((c["cov120"] for c in courses), 100.0),
@@ -321,7 +395,15 @@ def aggregate(recs, holes, courses, mode="all"):
         par5_med=med(h["length"] for h in holes if h["par"] == 5),
         par3_pair20=pct(c["par3_pair20"] for c in courses), par3_short=pct(c["par3_short"] for c in courses),
         hole2_par3=pct(c["hole2_par3"] for c in courses), hole9_par5=pct(c["hole9_par5"] for c in courses),
-        b2b=pct(c["b2b3"] or c["b2b5"] for c in courses),
+        b2b=pct(c["b2b3"] or c["b2b5"] for c in courses), b2b3=pct(c["b2b3"] for c in courses),
+        hole1_par3=pct(c["hole1_par3"] for c in courses), hole9_par3=pct(c["hole9_par3"] for c in courses),
+        par_pos_l1=par_pos_l1(courses),
+        dogleg50=float(np.percentile(dog, 50)) if dog else float("nan"), dogleg90=float(np.percentile(dog, 90)) if dog else float("nan"),
+        dog15=pct(v > DOGLEG_BEND_DEG for v in dog), s_share=pct(h["s_shape"] for h in holes if h["par"] == 5),
+        dip_share=pct(v >= DIP_CARRY_M for v in dips), dip_med=float(np.percentile([v for v in dips if v >= DIP_CARRY_M], 50)) if any(v >= DIP_CARRY_M for v in dips) else float("nan"),
+        dip2_share=pct(v >= DIP_CARRY_M for v in dips2),
+        bend_fix=pct(h["above"] < PROF_FREE_M for h in holes if h["par"] >= 4 and h["line_above"] >= PROF_FREE_M),
+        line_rise=pct(h["line_above"] >= PROF_FREE_M for h in holes if h["par"] >= 4),
         gip35=sum(c["n_gip35"] for c in courses), gip50=sum(c["n_gip50"] for c in courses),
         tee15=f"{sum(v > TEE_STEEP for v in tee)} / {len(tee)}", tee30=f"{sum(v > TEE_CLIFF for v in tee)} / {len(tee)}",
         crossings=sum(c["crossings"] for c in courses), mix252=pct(c["mix252"] for c in courses),
@@ -356,9 +438,22 @@ ROWS = [
     ("par 4 median, m", "par4_med", "{:.0f}", "{:.0f}".format(REAL["par4_med"])),
     ("par 5 median, m", "par5_med", "{:.0f}", "{:.0f}".format(REAL["par5_med"])),
     ("total length p50, m", "total", "{:.0f}", ""),
-    ("hole 2 a par 3, %", "hole2_par3", "{:.0f}", ""),
-    ("hole 9 a par 5, %", "hole9_par5", "{:.0f}", ""),
-    ("back-to-back 3s or 5s, %", "b2b", "{:.0f}", ""),
+    ("hole 1 a par 3, %", "hole1_par3", "{:.0f}", REAL.get("hole1_par3", "")),
+    ("hole 2 a par 3, %", "hole2_par3", "{:.0f}", REAL.get("hole2_par3", "")),
+    ("hole 9 a par 3, %", "hole9_par3", "{:.0f}", REAL.get("hole9_par3", "")),
+    ("hole 9 a par 5, %", "hole9_par5", "{:.0f}", REAL.get("hole9_par5", "")),
+    ("back-to-back 3s, %", "b2b3", "{:.0f}", REAL.get("b2b3", "")),
+    ("back-to-back 3s or 5s, %", "b2b", "{:.0f}", REAL.get("b2b", "")),
+    ("par-by-hole table, mean abs(ours - real) over 27 slots", "par_pos_l1", "{:.3f}", ""),
+    ("dogleg p50, deg (par 4/5)", "dogleg50", "{:.0f}", REAL.get("dogleg50", "18-20")),
+    ("dogleg p90, deg", "dogleg90", "{:.0f}", REAL.get("dogleg90", "44-46")),
+    ("holes bending > 15 deg, %", "dog15", "{:.0f}", REAL.get("dog15", "57-60 %")),
+    ("par 5s with an S-shape, %", "s_share", "{:.0f}", REAL.get("s_share", "")),
+    ("straight line crosses a >= 1.7 m rise, % of par 4/5", "line_rise", "{:.0f}", ""),
+    ("... of those, the placed spine stays < 1.7 m, %", "bend_fix", "{:.0f}", ""),
+    ("drives carrying a >= 1.5 m dip, %", "dip_share", "{:.0f}", REAL.get("dip_share", "")),
+    ("depth of those dips p50, m", "dip_med", "{:.1f}", REAL.get("dip_med", "")),
+    ("par-5 second shots carrying a >= 1.5 m dip, %", "dip2_share", "{:.0f}", ""),
     ("green in play within 35 m, cases", "gip35", "{}", ""),
     ("green in play within 50 m, cases", "gip50", "{}", ""),
     ("tee boxes on > 15 % ground", "tee15", "{}", ""),

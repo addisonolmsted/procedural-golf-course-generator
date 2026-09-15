@@ -1623,3 +1623,63 @@ of 72–142 m; and the 50 m green-in-play count rose 64 → 110 while the
 35 m count fell to 0 — compaction puts greens 35–50 m off other lines,
 which the 50 m term charges but does not forbid; whether that band needs
 a tier is the owner's call.
+
+## 2026-09-15 — routing round 2, items 0 + 3: real shot profiles, real par positions
+
+Round 2 plan (owner-approved 2026-09-15): bend around dunes / weave, reward
+carries over low points, match the real par-by-hole distribution.
+Baseline `out/route_rs/rs_s10.jsonl`.
+
+**Item 0a — `tools/golf/corpus/shot_profiles.py`** (the `holes.py` chain on
+the same 5,201 ways; 3,662 par 4/5 ≥ 250 m): the DRIVE leg (arc 0 → min
+(220 m, 0.63·L)) against its own chord dips ≥ 1.5 m on **46.7 %** of real
+drives (≥ 3 m on 22.6 %), p50 among those 2.95 m, p90 6.3; drive rise
+p90 1.24 m; drives net downhill (p50 −1.3 m). Par-5 second legs dip
+≥ 1.5 m on 21.8 %. Doglegs (max vertex turn, legs > 20 m): p50 16.5°,
+p90 43.2°, 53.8 % bend > 15°, the bend at t = 0.64, 4.4 % node-straight;
+par-5 S-shapes **6.8 %**. Region-invariant doglegs (p90 ≈ 43° everywhere);
+piedmont has the deepest drive dips.
+
+**Item 0b — `tools/golf/corpus/par_positions.py`** → `out/par_positions.json`
+(412 par-36 nines: 220 front, 192 back): par 3 by hole 3/24/33/28/20/22/
+30/33/8 %, par 5 22/22/22/20/23/23/23/19/27 %; mix (2,5,2) 94 %; b2b 3s
+0 %, b2b 5s 4 %; hole-1 openers 75 % par 4, 22 % par 5.
+
+**Item 0c — audit rows** (`route_audit.py`): hole-1 / hole-9 par 3, b2b
+3s, the par-by-hole table distance (mean |ours − real| over 27 slots),
+dogleg p50/p90 and share > 15°, S-share, "straight line crosses a rise →
+spine stays under 1.7 m", drive / second-leg dips; real references read
+from the two JSONs. Viewer picks `dogleg`, `dip`; `sequence` now counts
+the opener and b2b 3s.
+
+What the rows say about s10 (the round-1 final), by the corpus's own
+definitions: doglegs p50 28° / p90 53°, 77 % bend > 15° (real 16.5 / 43 /
+54 %) — our holes bend MORE than real, not less; only 28 % of the bends
+resolve a rise the straight line would cross; par-5 S-shapes 50 % (real
+7 %); drive dips ≥ 1.5 m on 34 % (real 47 %), p50 2.6 m (real 2.95).
+Item 1's target is therefore purposeful bends (fewer, where a rise asks),
+not more bending; the weave credit is dropped (S-shapes are rare), and
+S-shapes should fall.
+
+**Item 3 — the real par sequence.** `PAR_POS` (the 412-nine table) →
+slot value `clip(ln(share / marginal), −2, +1)`; route `SEQ_W_ROUTE · Σ`,
+beam `SEQ_W_BEAM` per placed hole; back-to-back par 3s removed from
+`legal_pars` with an adjacency-aware look-ahead (`mix_feasible_seq`; the
+brute-force test now counts 588 + 700 + 72 legal sequences). Also: the
+beam checks every earlier hole's line against the reserved loop anchor
+(the ninth green is known from the start), hole 1's first 60 m exempt.
+
+Ladder (SEQ_W route / beam; table distance, hole-1 par 3, hole-2 par 3,
+hole-9 par 3, hole-9 par 5, mix): s10 0.060, 22, 14, 19, 22, 93 % —
+0.2 / 0.15: 0.049, 6, 37, 13, 30, 94 — **0.4 / 0.3 (shipped): 0.044, 2,
+37, 10, 33, 95** — 0.8 / 0.6: 0.069, 0, 32, 4, 36, 94 (over-steers).
+
+Shipped (`r2_s3.jsonl`, `audit_r2_s3.txt`): b2b 3s 3 → 0 %, hole-1 par 3
+22 → 2 %, hole-9 par 3 19 → 10 %, hole-9 par 5 22 → 33 % (real 27; back
+nines 33), hole-2 par 3 14 → 37 % (real 24: the par 3 pushed off hole 1
+lands on hole 2, where the prior is neutral — the largest residual slot),
+table distance 0.060 → 0.044; 250/250, 0 crossings, mix 95 % (target
+90–95), seconds max 0.55. Green-in-play ≤ 35 m: 1 case (900171, hole 1's
+line 28 m past the ninth green at arc 100 m — both pinned by the
+clubhouse disc; the beam paid −11 for it and had nothing better).
+Viewer: artifact da3c4101 (`--pick sequence`).
