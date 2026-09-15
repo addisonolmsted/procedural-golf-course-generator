@@ -25,7 +25,15 @@ Per hole:
     carries marked;
   * cross sections at each landing zone and at the green, +-SECTION_M, with
     the cross slope, which says whether a landing zone is a shelf or a kick;
-  * the hole's own scored terms.
+  * the hole's own scored terms;
+  * the NEAREST REAL HOLES by elevation profile. Every real hole in
+    `corpus/out/hole_profiles.json` carries `z_rel`, 21 points of smoothed
+    height relative to the tee at normalised arc; the same recipe is run on
+    our spine here (`profile_21`, `holes.py::profile_stats` verbatim: 5 m
+    resample, 15 m boxcar, 21-point interpolation) and the real holes of the
+    SAME PAR within MATCH_LEN_TOL of the length are ranked by the RMS
+    difference in metres. The three closest are named, with their profiles
+    drawn over ours, so the hole's character has a real-world referent.
 
 Per course, one overview card first: the nine lines on the tile with the
 play window and clubhouse, and the nine profiles at a shared scale so the
@@ -55,6 +63,66 @@ WATER_RGB = "#0d4f86"
 PROFILE_STEP_M = 4.0
 N_RAYS = 1440                # ray sweep: 1.3 m spacing at 300 m, finer than the 2 m grid
 DOGLEG_MIN_LEG_M = 20.0      # the corpus dogleg filter (shot_profiles.py)
+MATCH_LEN_TOL = 0.12         # a real hole is comparable within 12 % of our length
+MATCH_LEN_TOL_WIDE = 0.30    # widened when the tight gate finds nothing
+N_MATCH = 3
+CORPUS = HERE / "corpus" / "out"
+
+
+# ------------------------------------------------- the real-hole reference --
+
+_REAL = {}
+
+
+def real_holes():
+    """{par: (records, z_rel array, length array)} from the corpus, with course names."""
+    global _REAL
+    if _REAL:
+        return _REAL
+    names = {}
+    cf = CORPUS / "courses.jsonl"
+    if cf.exists():
+        for line in open(cf):
+            c = json.loads(line)
+            names[c["course_id"]] = c.get("name") or c["course_id"]
+    rows = json.load(open(CORPUS / "hole_profiles.json"))
+    for r in rows:
+        r["name"] = names.get(r["course_id"], r["course_id"])
+    for par in (3, 4, 5):
+        sel = [r for r in rows if r["par"] == par]
+        _REAL[par] = (sel, np.array([r["z_rel"] for r in sel]),
+                      np.array([r["length_m"] for r in sel]))
+    return _REAL
+
+
+def profile_21(t, poly, step=5.0):
+    """`holes.py::profile_stats` on our own spine: 5 m resample, 15 m boxcar, 21 points."""
+    p = np.asarray(poly, float)
+    seg = np.hypot(*np.diff(p, axis=0).T)
+    L = float(seg.sum())
+    n = max(int(L / step), 4)
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    ss = np.linspace(0.0, L, n + 1)
+    ys = np.interp(ss, cum, p[:, 0]); xs = np.interp(ss, cum, p[:, 1])
+    yi = np.clip((ys / t.c).astype(int), 0, t.z.shape[0] - 1)
+    xi = np.clip((xs / t.c).astype(int), 0, t.z.shape[1] - 1)
+    zs = ndi.uniform_filter1d(t.z[yi, xi].astype(float), max(int(15.0 / step), 1), mode="nearest")
+    z_rel = np.interp(np.linspace(0, 1, 21), np.linspace(0, 1, len(zs)), zs - zs[0])
+    return L, z_rel
+
+
+def nearest_real(par, length, z_rel, n=N_MATCH):
+    """The `n` real holes of this par whose profile is closest, by RMS metres."""
+    recs, Z, L = real_holes()[par]
+    for tol in (MATCH_LEN_TOL, MATCH_LEN_TOL_WIDE, None):
+        idx = np.arange(len(recs)) if tol is None else np.where(np.abs(L - length) <= tol * length)[0]
+        if len(idx) >= n:
+            break
+    if len(idx) == 0:
+        return [], None
+    d = np.sqrt(((Z[idx] - z_rel) ** 2).mean(axis=1))
+    order = idx[np.argsort(d)][:n]
+    return [(float(dd), recs[j]) for dd, j in zip(np.sort(d)[:n], order)], tol
 
 
 # ------------------------------------------------------------------ terrain --
@@ -295,6 +363,24 @@ def section(ax, t, h, centre, axis, label, span=None):
     ax.set_xlabel("offset, m", fontsize=6.5, labelpad=1)
 
 
+def match_panel(ax, z_rel, matches):
+    """Our profile against the nearest real ones, normalised arc, metres from the tee."""
+    x = np.linspace(0, 1, 21)
+    cols = ["#b5651d", "#7a8b99", "#9c7fb8"]
+    for i, (d, r) in enumerate(matches):
+        ax.plot(x, r["z_rel"], color=cols[i % 3], lw=1.1, alpha=0.9,
+                label=f'{d:.2f} m  {r["name"][:22]}')
+    ax.plot(x, z_rel, color="#1a1a1a", lw=2.0, label="this hole", zorder=5)
+    ax.axhline(0, color="#999", lw=0.5)
+    ax.set_box_aspect(0.78)
+    ax.tick_params(labelsize=6.5); ax.grid(alpha=0.2, lw=0.4)
+    ax.set_xlabel("arc, normalised", fontsize=6.5, labelpad=1)
+    ax.set_ylabel("z from tee, m", fontsize=6.5, labelpad=1)
+    ax.set_title("nearest real profiles", fontsize=7.5, pad=2)
+    ax.legend(fontsize=5.6, loc="best", frameon=True, framealpha=0.8, borderpad=0.3,
+              handlelength=1.2, labelspacing=0.25)
+
+
 def fig_to_uri(fig, quality=80):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100, bbox_inches="tight", facecolor="white")
@@ -317,9 +403,9 @@ def hole_card(t, rec, k):
     corr = corridor(z, y0, x0, t.c, h["spine"])
     vmax = float(max(1.5, min(6.0, np.percentile(np.abs(res[corr]), 97))))
 
-    fig = plt.figure(figsize=(13.2, 9.0))
-    gs = GridSpec(3, 4, figure=fig, height_ratios=[1.15, 0.95, 0.72],
-                  hspace=0.26, wspace=0.16)
+    fig = plt.figure(figsize=(15.6, 9.0))
+    gs = GridSpec(3, 5, figure=fig, height_ratios=[1.15, 0.95, 0.72],
+                  hspace=0.28, wspace=0.22)
     ax_plan = fig.add_subplot(gs[0:2, 0:2])
     plan(ax_plan, t, h, z, wet, y0, x0,
          f"detrended: height minus the tee-to-green chord, ±{vmax:.1f} m  ·  contours 1 m, index 5 m",
@@ -337,7 +423,7 @@ def hole_card(t, rec, k):
     hid_l = vis_panel(ax_v2, t, h, z, wet, y0, x0, last,
                       "hidden from the last full-shot station" if len(st) > 1 else "hidden from the tee (par 3)")
 
-    ax_p = fig.add_subplot(gs[1, 2:4])
+    ax_p = fig.add_subplot(gs[1, 2:5])
     above, below = profile(ax_p, t, h)
 
     axes = [fig.add_subplot(gs[2, i]) for i in range(3)]
@@ -364,6 +450,11 @@ def hole_card(t, rec, k):
     for ax in axes[len(secs[:3]):]:
         ax.axis("off")
 
+    L21, z21 = profile_21(t, h["spine"])
+    matches, tol = nearest_real(h["par"], L21, z21)
+    ax_m = fig.add_subplot(gs[0, 4])
+    match_panel(ax_m, z21, matches)
+
     ax_t = fig.add_subplot(gs[2, 3]); ax_t.axis("off")
     tm = h.get("terms") or {}
     keys = ["green", "setting", "approach", "lz", "length", "line_flow", "prof_chord",
@@ -377,6 +468,15 @@ def hole_card(t, rec, k):
            f"green visible from the last station: {'yes' if green_seen else 'NO'}\n\n"
            + "\n".join(rows))
     ax_t.text(0.0, 1.0, txt, va="top", ha="left", fontsize=7.4, family="monospace")
+    ax_r = fig.add_subplot(gs[2, 4]); ax_r.axis("off")
+    gate = "all lengths" if tol is None else f"within {100 * tol:.0f} % of the length"
+    lines = [f"nearest real par {h['par']}s, {gate}:", ""]
+    for d, r in matches:
+        lines.append(f"{d:.2f} m  {r['name'][:30]}")
+        lines.append(f"        {r['region']}, {r['length_m']:.0f} m, "
+                     f"net {r['net_dz']:+.1f}, above {r['max_above_chord']:.1f}, "
+                     f"below {-r['min_below_chord']:.1f}")
+    ax_r.text(0.0, 1.0, "\n".join(lines), va="top", ha="left", fontsize=6.9, family="monospace")
 
     d, z_, _ = arc_profile(t, h["spine"])
     net = float(z_[-1] - z_[0])
@@ -438,9 +538,19 @@ def course_card(t, rec):
     fig.suptitle(f"{rec['seed']}  {rec['mode']}  ·  pars {''.join(str(p) for p in rec['pars'])}"
                  f"  ·  {rec['total_length_m']:.0f} m  ·  score {rec['score']:.1f}"
                  f"  ·  profiles share a {span:.0f} m vertical window", fontsize=11, y=0.99)
+    tally, best = {}, []
+    for h in rec["holes"]:
+        L21, z21 = profile_21(t, h["spine"])
+        m, _ = nearest_real(h["par"], L21, z21, n=1)
+        if m:
+            best.append(m[0][0])
+            tally[m[0][1]["region"]] = tally.get(m[0][1]["region"], 0) + 1
+    top = ", ".join(f"{k} {v}" for k, v in sorted(tally.items(), key=lambda kv: -kv[1])[:4])
     cap = (f'<b>{rec["seed"]}</b> {rec["mode"]} · pars {"".join(str(p) for p in rec["pars"])} '
            f'({sum(rec["pars"])}) · {rec["total_length_m"]:.0f} m · score {rec["score"]:.1f} · '
-           f'coverage {100 * (rec.get("coverage") or 0):.0f} %')
+           f'coverage {100 * (rec.get("coverage") or 0):.0f} % · '
+           f'nearest real profile per hole: median RMS {np.median(best):.2f} m · '
+           f'regions {top}')
     return fig_to_uri(fig), cap
 
 
@@ -489,6 +599,9 @@ The two small panels grey out ground the golfer cannot see, from the back tee an
 The profile is the centreline against its own chord at the stated vertical exaggeration: warm fill is ground the shot plays over, cool fill is a carry.
 Cross sections are &plusmn;45&nbsp;m with the cross slope over the middle 60&nbsp;m. Tee boxes are squares, amber where the ground needs grading;
 landing zones are circles at their radius; red bars are water carries.</p>
+<p>The last panel names the <b>nearest real holes</b>: every hole in the 5,201-hole corpus carries 21 smoothed heights relative to its tee along
+normalised arc, the same recipe is run on our line of play, and real holes of the same par within 12&nbsp;% of the length are ranked by the
+RMS difference in metres. A match under about 0.5&nbsp;m is a hole that rises and falls the same way ours does.</p>
 {''.join(parts)}"""
     open(out, "w").write(html)
     print(f"wrote {out}: {len(parts)} cards, {pathlib.Path(out).stat().st_size / 1e6:.1f} MB")
