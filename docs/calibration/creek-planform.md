@@ -1475,3 +1475,31 @@ discriminate and is reported, not claimed.
 Shipped (`rs_s6.jsonl`, `audit_s6.txt`): 250/250, 0 crossings, mix 88 %,
 green-in-play ≤ 35 m 0, tee boxes > 30 % 0, coverage 61 %, seconds max
 0.51. Viewer: artifact fb39fcc7 (`--pick lz`).
+
+## 2026-09-15 — routing round 1, item 7: line of play
+
+`route::line_terms(f, m, spine, n)`: `pen_chord` = the PROF_CHORD ramp
+(free to the corpus p90 1.7 m, saturating at the p99 5.6) on the max rise
+of the sampled line above its chord; `flow` = mean over samples of
+`|sin(theta − rise_axis)|` on slope / hollow / footslope / valley ground
+(geomorphon classes 6–9; 1 along the contour or down the valley, 0
+straight up the face), 0.5 elsewhere, centred. Beam (9 samples on the
+straight tee→green line): `+LINE_FLOW_W·flow − LINE_CHORD_W_BEAM·pen_chord`.
+Detail: `terms["line_flow"]` exact on the placed spine (8 m samples);
+`prof_chord` −0.8 unchanged. New here: `place_lz` charges each candidate's
+legs the same chord penalty (`LINE_CHORD_W_LZ` 0.8).
+
+Ladder (above-chord p50 / p90 / p99; walk p50; mix): s6 0.81 / 4.9 /
+16.8; 827; 88 % — beam 0.8: 0.66 / 3.4 / 9.1; 832; 88 % — beam 1.2: 0.67
+/ 3.0 / 7.6; 806; 86 % — beam 1.6: 0.65 / 3.0 / 7.3; 787; 86 % — **beam
+1.2 + place_lz 0.8 (shipped): 0.63 / 2.4 / 7.5; 794; 89 %**. The beam
+saturated at 1.2 (its straight line stopped being what the audit
+measures; the placed dogleg was), so the plan's own fallback applied:
+the lever moved to detail placement.
+
+Shipped (`rs_s7.jsonl`, `audit_s7.txt`, vs s6): p90 4.9 → 2.4 m (target
+≤ 2.5), p99 16.8 → 7.5 (target < 8), p50 0.81 → 0.63 (target 0.5:
+fluvial 0.48, aeolian 0.75); 250/250, 0 crossings, green-in-play ≤ 35 m
+0 (≤ 50 m 56 → 76: holes bend around rises), tee boxes > 30 % 0,
+coverage 61 %, seconds max 0.52. Viewer: artifact 4b4738c1 (`--pick
+above`).

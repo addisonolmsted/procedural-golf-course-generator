@@ -10,22 +10,22 @@ Baseline `out/route_rs/rs_v1.jsonl`; each item's shipped batch
 
 ## Acceptance (250 seeds)
 
-| metric | baseline | target | s1 | s2 | s3 | s4 | s5 | s6 |
-|---|---|---|---|---|---|---|---|---|
-| greens within 60 m of the window edge | 57 % | < 25 % | 57 % | 57 % | **23 %** | 23 % | 25 % | 25 % |
-| window within 100 m of play, p50 | 48 % | > 60 % | 49 % | 49 % | **62 %** | **66 %** | 60 % | 61 % |
-| LZ dead flat (< 2 %) / upland (relief_pos > 0.7) | 48 / 12 % | < 30 / > 20 % | 47 / 12 % | 47 / 12 % | 46 / 9 % | 46 / 9 % | 45 / 10 % | **26** / 11 % |
-| within-course LZ setting std | 0.18 | > 0.25 | 0.18 | 0.18 | 0.15 | 0.15 | 0.15 | 0.16 |
-| green surround relief p50 (real 6.1–6.8 m) | 4.6 m | > 5.5 m | 4.6 m | 4.6 m | 4.6 m | 4.6 m | 4.9 m (ae 5.8, fl 4.5) | 4.9 m |
-| above-chord p90 / p99 (real 1.7 / 5.6) | 4.4 / 14.1 | < 2.5 / < 8 | 4.4 / 15.0 | 4.4 / 15.0 | 4.4 / 14.4 | 4.5 / 14.4 | 4.7 / 14 | 4.9 / 15 |
-| water courses with a hole within 40 m of water (of 71) | 27 | > 50 | 33 | 33 | 30 | 31 | 29 | 26 |
-| par 3 median / pair within 20 m (real 163) | 180 / 37 % | 160–170 / < 15 % | 180 / 39 % | 180 / 39 % | 182 / 39 % | 181 / 39 % | 181 / 35 % | 181 / 40 % |
-| par 5 median (real 474) | 528 | < 500 | 526 | 525 | 518 | 520 | 525 | 525 |
-| hole 2 par 3 / hole 9 par 5 | 40 / 39 % | ≤ 20 / ≤ 25 % | 33 / 41 % | 33 / 41 % | 42 / 58 % | 40 / 43 % | 40 / 47 % | 38 / 47 % |
-| green within 35 m of another hole's spine, cases | 48 | ≤ 3 | **1** | 1 | **0** | 0 | 0 | 0 |
-| tee boxes on > 30 % ground | 39 | 0 | 52 | **0** | 4 | 5 (1 hole) | **0** | 0 |
-| routed / play crossings / (2,5,2) | 250 / 0 / 92 % | 250 / 0 / 85–95 % | 250 / 0 / 91 % | 250 / 0 / 91 % | 250 / 0 / 85 % | 250 / 0 / 87 % | 250 / 0 / 89 % | 250 / 0 / 88 % |
-| seconds per seed, max | 0.45 | < 1.3 | 0.38 | 0.42 | 0.48 | 0.47 | 0.48 | 0.51 |
+| metric | baseline | target | s1 | s2 | s3 | s4 | s5 | s6 | s7 |
+|---|---|---|---|---|---|---|---|---|---|
+| greens within 60 m of the window edge | 57 % | < 25 % | 57 % | 57 % | **23 %** | 23 % | 25 % | 25 % | 24 % |
+| window within 100 m of play, p50 | 48 % | > 60 % | 49 % | 49 % | **62 %** | **66 %** | 60 % | 61 % | 61 % |
+| LZ dead flat (< 2 %) / upland (relief_pos > 0.7) | 48 / 12 % | < 30 / > 20 % | 47 / 12 % | 47 / 12 % | 46 / 9 % | 46 / 9 % | 45 / 10 % | **26** / 11 % | 28 / 9 % |
+| within-course LZ setting std | 0.18 | > 0.25 | 0.18 | 0.18 | 0.15 | 0.15 | 0.15 | 0.16 | 0.16 |
+| green surround relief p50 (real 6.1–6.8 m) | 4.6 m | > 5.5 m | 4.6 m | 4.6 m | 4.6 m | 4.6 m | 4.9 m (ae 5.8, fl 4.5) | 4.9 m | 4.8 m |
+| above-chord p90 / p99 (real 1.7 / 5.6) | 4.4 / 14.1 | < 2.5 / < 8 | 4.4 / 15.0 | 4.4 / 15.0 | 4.4 / 14.4 | 4.5 / 14.4 | 4.7 / 14 | 4.9 / 15 | **2.4 / 7.5** |
+| water courses with a hole within 40 m of water (of 71) | 27 | > 50 | 33 | 33 | 30 | 31 | 29 | 26 | 24 |
+| par 3 median / pair within 20 m (real 163) | 180 / 37 % | 160–170 / < 15 % | 180 / 39 % | 180 / 39 % | 182 / 39 % | 181 / 39 % | 181 / 35 % | 181 / 40 % | 180 / 40 % |
+| par 5 median (real 474) | 528 | < 500 | 526 | 525 | 518 | 520 | 525 | 525 | 520 |
+| hole 2 par 3 / hole 9 par 5 | 40 / 39 % | ≤ 20 / ≤ 25 % | 33 / 41 % | 33 / 41 % | 42 / 58 % | 40 / 43 % | 40 / 47 % | 38 / 47 % | 38 / 53 % |
+| green within 35 m of another hole's spine, cases | 48 | ≤ 3 | **1** | 1 | **0** | 0 | 0 | 0 | 0 |
+| tee boxes on > 30 % ground | 39 | 0 | 52 | **0** | 4 | 5 (1 hole) | **0** | 0 | 0 |
+| routed / play crossings / (2,5,2) | 250 / 0 / 92 % | 250 / 0 / 85–95 % | 250 / 0 / 91 % | 250 / 0 / 91 % | 250 / 0 / 85 % | 250 / 0 / 87 % | 250 / 0 / 89 % | 250 / 0 / 88 % | 250 / 0 / 89 % |
+| seconds per seed, max | 0.45 | < 1.3 | 0.38 | 0.42 | 0.48 | 0.47 | 0.48 | 0.51 | 0.52 |
 
 ## Item 1 — green in play (2026-09-15)
 
@@ -113,3 +113,16 @@ centred at 4.5): the lever is `greens::generate`, parked.
 
 Setting std and upland are hole-level (beam) properties; the feature
 metric saturates (100 %).
+
+## Item 7 — line of play (2026-09-15)
+
+`LINE_FLOW_W` 0.4 (beam and detail), `LINE_CHORD_W_BEAM`, and the new
+`LINE_CHORD_W_LZ` on place_lz's legs.
+
+| rung | above p50 | p90 | p99 | walk p50 | mix |
+|---|---|---|---|---|---|
+| s6 (before) | 0.81 | 4.9 | 16.8 | 827 | 88 % |
+| beam 0.8 | 0.66 | 3.4 | 9.1 | 832 | 88 % |
+| beam 1.2 | 0.67 | 3.0 | 7.6 | 806 | 86 % |
+| beam 1.6 | 0.65 | 3.0 | 7.3 | 787 | 86 % |
+| beam 1.2 + LZ 0.8 — shipped | 0.63 | 2.4 | 7.5 | 794 | 89 % |

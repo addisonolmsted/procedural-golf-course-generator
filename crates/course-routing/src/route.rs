@@ -208,6 +208,65 @@ pub const EDGE_W: f64 = 0.6;
 /// hole's own corridor (CLEAR_MID_M) plus a par-4's lateral room.
 pub const COV_CELL_M: f64 = 40.0;
 
+/// LINE OF PLAY (owner, 2026-09-14; round 1, item 7): the beam scored a
+/// straight tee->green line with no profile term, so holes played over
+/// rises (above-chord p90 4.4 m vs the corpus's 1.7). `line_terms`
+/// samples the line at LINE_SAMPLES points: `pen_chord` is the existing
+/// PROF_CHORD ramp (free to the corpus p90 1.7 m, saturating at the p99
+/// 5.6) on the straight line's max rise above its chord; `flow` is how
+/// much the line runs WITH the landform -- on slope / hollow / footslope /
+/// valley ground (geomorphon classes 6-9) `|sin(theta - rise_axis)|`,
+/// 1 along the contour or down the valley, 0 straight up the face, 0.5
+/// elsewhere -- averaged and centred. Beam `s_hole += LINE_FLOW_W * flow
+/// - LINE_CHORD_W_BEAM * pen_chord`; detail `terms["line_flow"]` exact on
+/// the placed spine (its chord penalty is `prof_chord`, unchanged). If
+/// the acceptance misses, LINE_CHORD_W_BEAM 1.2 is the first lever.
+pub const LINE_SAMPLES: usize = 9;
+pub const LINE_FLOW_W: f64 = 0.4;
+pub const LINE_CHORD_W_BEAM: f64 = 1.2;
+/// The same chord penalty on each `place_lz` candidate's legs (tee -> LZ ->
+/// green, LINE_SAMPLES samples): the beam's line stopped being the limiter
+/// at 1.2 (above-chord p90 3.0 m at 1.2 and 1.6 alike) -- the placed
+/// dogleg was, and `place_lz` had no profile term.
+pub const LINE_CHORD_W_LZ: f64 = 0.8;
+
+/// `(flow, pen_chord)` of the polyline `spine` sampled at `n` points.
+fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> (f64, f64) {
+    let mut cum = Vec::with_capacity(spine.len());
+    cum.push(0.0);
+    let mut l = 0.0;
+    for i in 1..spine.len() {
+        l += hyp(spine[i], spine[i - 1]);
+        cum.push(l);
+    }
+    if l < 1e-6 || n < 2 {
+        return (0.0, 0.0);
+    }
+    let sy: Vec<f64> = spine.iter().map(|p| p.0).collect();
+    let sx: Vec<f64> = spine.iter().map(|p| p.1).collect();
+    let ss = linspace(0.0, l, n);
+    let mut z = Vec::with_capacity(n);
+    let mut along = 0.0;
+    for &s in &ss {
+        let y = interp(s, &cum, &sy);
+        let x = interp(s, &cum, &sx);
+        let k = cell_of(f, y, x);
+        z.push(f.z8[k]);
+        // the local direction: the segment this sample lies on
+        let seg = cum.iter().position(|&c| c >= s).unwrap_or(cum.len() - 1).max(1);
+        let th = (spine[seg].0 - spine[seg - 1].0).atan2(spine[seg].1 - spine[seg - 1].1);
+        along += if (6..=9).contains(&m.cls240[k]) { (th - m.rise_axis[k]).sin().abs() } else { 0.5 };
+    }
+    let flow = along / n as f64 - 0.5;
+    let mut above = 0.0_f64;
+    for (i, &zi) in z.iter().enumerate() {
+        let chord = z[0] + (z[n - 1] - z[0]) * i as f64 / (n - 1) as f64;
+        above = above.max(zi - chord);
+    }
+    let pen_chord = clip((above - PROF_CHORD_FREE_M) / (PROF_CHORD_SAT_M - PROF_CHORD_FREE_M), 0.0, 1.0);
+    (flow, pen_chord)
+}
+
 /// GREEN SETTING (owner, 2026-09-14; round 1, item 5): the beam picked
 /// greens in calm ground (surround relief p50 4.6 m vs the corpus's
 /// 6.1-6.8 m; 12 % upland vs 25 %). `sett_raw = trapezoid(surround,
@@ -471,6 +530,10 @@ pub struct LzPick {
 }
 
 // --- small helpers ---------------------------------------------------------
+
+fn pt_len(pts: &[Yx]) -> f64 {
+    (1..pts.len()).map(|i| hyp(pts[i], pts[i - 1])).sum()
+}
 
 fn hyp(a: Yx, b: Yx) -> f64 {
     (a.0 - b.0).hypot(a.1 - b.1)
@@ -781,7 +844,7 @@ pub fn lz_probe(rf: &RouteFields, f: &Fields, tee_yx: Yx, green_yx: Yx, par: u8)
 /// from the green veto within `GREEN_JUNCTION_M` of `from_yx`, the tee);
 /// `None` when `from_yx` is not this hole's tee.
 #[allow(clippy::too_many_arguments)]
-pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
+pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green_yx: Yx,
                 r_band: (f64, f64), remainder_band: (f64, f64),
                 avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
                 avoid_lzs: &[Yx], avoid_greens: &[Yx], junction_idx: Option<usize>,
@@ -822,11 +885,13 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
             // so the ramp starts at the real "most holes bend this little" point
             // and the weight doubles.
             let dog_pen = clip((dog * 180.0 / PI - 15.0) / 30.0, 0.0, 1.0);
+            let (_, pen_chord) = line_terms(f, m, &[a, (y, x), g], LINE_SAMPLES);
             let mut sc = 0.5 * room_q
                 + 0.3 * (1.0 - clip((slope - LZ_SLOPE_FREE) / (0.08 - LZ_SLOPE_FREE), 0.0, 1.0))
                 + 0.3 * trapezoid(dwat, LZ_WATER_BAND_M.0, LZ_WATER_BAND_M.1, TRAP_RAMP, TRAP_TAIL)
                 + 0.4 * rem_t - 0.6 * dog_pen
-                + LZ_INTEREST_W * int40;
+                + LZ_INTEREST_W * int40
+                - LINE_CHORD_W_LZ * pen_chord;
             if !ok {
                 sc -= 1.0;     // tight LZ: penalized, never vetoed
             }
@@ -1376,8 +1441,10 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let mut cov = st.cov.clone();
             let (nr, nc) = cov_dims(site.win);
             let new_cov = cov_stamp(&mut cov, site.win, tee, gp);
+            let (flow, pen_chord) = line_terms(f, site.m, &[tee, gp], LINE_SAMPLES);
             let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
-                + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64;
+                + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64
+                + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord;
             // crossings vs accumulated straight segments
             let mut pen = 0.0_f64;
             let ns_arr: [Yx; 2] = [tee, gp];
@@ -1777,7 +1844,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             let mut all_clean = true;
             if par >= 4 {
                 let rem = if par == 4 { (90.0, 200.0) } else { (300.0, 999.0) };
-                if let Some(r1) = place_lz(rf, f, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
+                if let Some(r1) = place_lz(rf, f, site.m, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
                                            &lz_seen, &other_greens, junction_idx, Some(home)) {
                     lzs.push(r1.lz);
                     lz_score = r1.score;
@@ -1786,7 +1853,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             }
             if par == 5 && !lzs.is_empty() {
                 let from = (lzs[0].0, lzs[0].1);
-                if let Some(r2) = place_lz(rf, f, from, g, SECOND_R_M, (120.0, 200.0), &spines,
+                if let Some(r2) = place_lz(rf, f, site.m, from, g, SECOND_R_M, (120.0, 200.0), &spines,
                                            &walks, &lz_seen, &other_greens, None, Some(home)) {
                     lzs.push(r2.lz);
                     lz_score = 0.5 * (lz_score + r2.score);
@@ -1854,6 +1921,8 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("b2b".into(), b2b);
         terms.insert("ch_keepout".into(), -6.0 * ch_intrusion(&pts, home, CH_TRIM_M));
         let pt = profile_terms(f, &pts);
+        let n_line = ((pt_len(&pts) / 8.0) as usize).max(4) + 1;
+        terms.insert("line_flow".into(), LINE_FLOW_W * line_terms(f, site.m, &pts, n_line).0);
         terms.insert("prof_net".into(), pt.prof_net);
         terms.insert("prof_chord".into(), pt.prof_chord);
         terms.insert("prof_climb".into(), pt.prof_climb);
