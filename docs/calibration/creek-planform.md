@@ -1683,3 +1683,48 @@ table distance 0.060 → 0.044; 250/250, 0 crossings, mix 95 % (target
 line 28 m past the ninth green at arc 100 m — both pinned by the
 clubhouse disc; the beam paid −11 for it and had nothing better).
 Viewer: artifact da3c4101 (`--pick sequence`).
+
+## 2026-09-15 — routing round 2, item 1: purposeful bends
+
+Reframed by item 0's numbers: our holes bent MORE than real (vertex turn
+p50 29° / p90 53°, 77 % > 15°, S-shapes 53 % of par 5s; real 16.5 / 43 /
+54 % / 7 %) and only 28 % of the bends resolved a rise the straight line
+crossed — `place_lz`'s room / interest rewards bought bends the terrain
+did not ask for, while its old dogleg ramp (free to 15° of BEARING
+deviation ≈ 37° of turn) never bit. Changes (`route.rs`): the dogleg
+penalty is now in TURN terms on the real band (`turn_at`, free to the
+p50 16.5°, saturating at the p90 43°, `DOGLEG_W` 0.6); a par-5 second
+leg turning against the first pays `S_PEN_W` 0.4 (weaving legal, rare);
+a RISE TIER in `place_lz`'s ranking — legs over a rise ≥ `RISE_TIER_M`
+rank below every candidate that goes around (like the green veto); the
+beam scores the best of the straight line and two lines bent ±12° of
+bearing at the approximate LZ (`BEAM_BEND_DEG`, ≈ 30° of turn), so green
+pairs reachable by bending survive to detail; `LINE_CHORD_W_LZ` 0.8 →
+2.4; `line_terms` returns a struct (flow, chord penalty, above, below).
+The weave credit was dropped (real S-shapes 6.8 %).
+
+Ladder (chord weight; rise tier; dogleg p50 / p90 / > 15° ; S-share;
+straight-line rise resolved by the spine; above-chord p90 / p99; mix):
+r2-s3 — / — ; 29 / 53 / 77 %; 53 %; 29 %; 2.7 / 7.8; 95 % — 1.2, tier at
+the p99 5.6 m: 14 / 38 / 46 %; 15 %; 24 %; 2.8 / 5.4; 92 — 1.6: 15 / 43 /
+47 %; 15 %; 27 %; 2.6 / 5.3; 91 — 2.4: 15 / 49 / 48 %; 15 %; 31 %; 2.5 /
+5.3; 91 — **2.4, tier at the corpus p95 3.5 m (shipped)**: 15 / 48 /
+48 %; 15 %; 31 %; 2.5 / 4.7; 92.
+
+Why the "resolved" share stalls at ~31 % (target ≥ 50): a diagnostic on
+the 209 aeolian par 4s whose straight line rises ≥ 1.7 m — 75 % have a
+candidate on the LZ scan under 1.7 m, but the bend it needs is p50 33° /
+p90 45° of BEARING (turns well beyond the real p90). Resolving them at
+real-band doglegs is geometrically impossible for most; the tier now
+forces the bend only where the rise is ≥ 3.5 m (real p95), the rest
+trade off. Aeolian pays in dogleg p90 (57° vs real 43°): dunes are
+where going around costs a big bend. The owner's "not every hole" is
+respected by construction.
+
+Shipped (`r2_s1.jsonl`, `audit_r2_s1.txt`, vs r2-s3): dogleg p50 29 →
+15°, p90 53 → 48°, holes bending > 15° 77 → 48 %, S-shapes 53 → 15 %,
+above-chord p90 2.7 → 2.5 (aeolian 3.1 → 2.8), p99 7.8 → 4.7, total p50
+3126 → 3089 (straighter holes are shorter; inside the 3,000–3,100
+target), 250/250, 0 crossings, mix 92 % (aeolian 88), green-in-play ≤
+35 m 1 → 0, tee boxes > 30 % 0, seconds max 0.51. Viewer: artifact
+1a61df82 (`--pick dogleg`).

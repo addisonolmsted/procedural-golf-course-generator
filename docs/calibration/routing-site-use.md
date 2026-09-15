@@ -172,23 +172,23 @@ p50 16.5° / p90 43.2°, 53.8 % > 15°; S-shapes 6.8 %) and
 
 ## Acceptance
 
-| metric | s10 | target | r2-s3 |
-|---|---|---|---|
-| par-by-hole table, mean abs diff over 27 slots | 0.060 | ≤ 0.06 | **0.044** |
-| hole 1 par 3 (real 3 %) | 22 % | ≤ 5 % | 2 % |
-| hole 9 par 5 (real 27 %) | 22 % | 20–33 % | 33 % |
-| hole 9 par 3 (real 8 %) | 19 % | ≤ 12 % | 10 % |
-| back-to-back 3s (real 0 %) | 3 % | 0 | 0 |
-| mix (2,5,2) | 93 % | 90–95 % | 95 % |
-| dogleg p50 / p90 (real 16.5 / 43) | 28 / 53 | 17–22 / ≤ 46 | 29 / 53 |
-| holes bending > 15° (real 54 %) | 77 % | 55–65 % | 77 % |
-| straight-line rise resolved by the spine (aeolian) | 28 % | ≥ 50 % | 28 % |
-| par-5 S-shapes (real 7 %) | 50 % | ≤ 20 % | 53 % |
-| above-chord p90, aeolian | 3.0 m | ≤ 2.2 | 3.0 |
-| drives carrying a ≥ 1.5 m dip (real 47 %) | 34 % | 42–52 % | 36 % |
-| depth of those dips p50 (real 2.95) | 2.6 m | 2.7–3.2 | 2.6 |
-| routed / crossings / gip ≤ 35 m / tee > 30 % | 250 / 0 / 0 / 0 | guards | 250 / 0 / 1 / 0 |
-| seconds max | 0.51 | < 1.3 | 0.55 |
+| metric | s10 | target | r2-s3 | r2-s1 |
+|---|---|---|---|---|
+| par-by-hole table, mean abs diff over 27 slots | 0.060 | ≤ 0.06 | **0.044** | 0.045 |
+| hole 1 par 3 (real 3 %) | 22 % | ≤ 5 % | 2 % | 2 % |
+| hole 9 par 5 (real 27 %) | 22 % | 20–33 % | 33 % | 33 % |
+| hole 9 par 3 (real 8 %) | 19 % | ≤ 12 % | 10 % | 10 % |
+| back-to-back 3s (real 0 %) | 3 % | 0 | 0 | 0 |
+| mix (2,5,2) | 93 % | 90–95 % | 95 % | 92 % |
+| dogleg p50 / p90 (real 16.5 / 43) | 28 / 53 | 17–22 / ≤ 46 | 29 / 53 | **15 / 48** |
+| holes bending > 15° (real 54 %) | 77 % | 55–65 % | 77 % | **48 %** |
+| straight-line rise resolved by the spine (aeolian) | 28 % | ≥ 50 % | 28 % | 30 % |
+| par-5 S-shapes (real 7 %) | 50 % | ≤ 20 % | 53 % | **15 %** |
+| above-chord p90, aeolian | 3.0 m | ≤ 2.2 | 3.0 | 2.8 m |
+| drives carrying a ≥ 1.5 m dip (real 47 %) | 34 % | 42–52 % | 36 % | 35 % |
+| depth of those dips p50 (real 2.95) | 2.6 m | 2.7–3.2 | 2.6 | 2.5 m |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | 250 / 0 / 0 / 0 | guards | 250 / 0 / 1 / 0 | 250 / 0 / 0 / 0 |
+| seconds max | 0.51 | < 1.3 | 0.55 | 0.51 |
 
 ## Item 3 — par sequence
 
@@ -198,3 +198,16 @@ p50 16.5° / p90 43.2°, 53.8 % > 15°; S-shapes 6.8 %) and
 | 0.2 / 0.15 | 0.049 | 6 | 37 | 13 | 30 | 94 |
 | 0.4 / 0.3 — shipped | 0.044 | 2 | 37 | 10 | 33 | 95 |
 | 0.8 / 0.6 | 0.069 | 0 | 32 | 4 | 36 | 94 |
+
+## Item 1 — purposeful bends
+
+| rung | dogleg p50 / p90 | > 15° | S-shape | rise resolved | above p90 / p99 | mix |
+|---|---|---|---|---|---|---|
+| r2-s3 (before) | 29 / 53 | 77 % | 53 % | 29 % | 2.7 / 7.8 | 95 % |
+| chord 1.2, tier 5.6 m | 14 / 38 | 46 % | 15 % | 24 % | 2.8 / 5.4 | 92 % |
+| chord 1.6, tier 5.6 m | 15 / 43 | 47 % | 15 % | 27 % | 2.6 / 5.3 | 91 % |
+| chord 2.4, tier 5.6 m | 15 / 49 | 48 % | 15 % | 31 % | 2.5 / 5.3 | 91 % |
+| chord 2.4, tier 3.5 m — shipped | 15 / 48 | 48 % | 15 % | 31 % | 2.5 / 4.7 | 92 % |
+
+"Rise resolved" is capped by geometry: the bend needed is p50 33° of
+bearing (diagnostic in creek-planform.md).

@@ -414,10 +414,58 @@ pub const LINE_CHORD_W_BEAM: f64 = 1.2;
 /// green, LINE_SAMPLES samples): the beam's line stopped being the limiter
 /// at 1.2 (above-chord p90 3.0 m at 1.2 and 1.6 alike) -- the placed
 /// dogleg was, and `place_lz` had no profile term.
-pub const LINE_CHORD_W_LZ: f64 = 0.8;
+pub const LINE_CHORD_W_LZ: f64 = 2.4;
+
+/// PURPOSEFUL BENDS (owner, 2026-09-15; round 2, item 1). By the corpus's
+/// own definition (max vertex turn, legs > 20 m; `shot_profiles.py`,
+/// 3,662 real par 4/5: p50 16.5 deg, p90 43.2, 53.8 % > 15 deg, S-shapes
+/// 6.8 % of par 5s) the round-1 routes bent MORE than real (p50 28 / p90
+/// 53, 77 % > 15 deg, S-shapes 50 %) and only 28 % of the bends resolved a
+/// rise the straight line crossed: `place_lz`'s room / interest rewards
+/// bought bends the terrain did not ask for, while its old dogleg ramp
+/// (free to 15 deg of BEARING deviation, ~37 deg of turn) never bit.
+/// Now: the dogleg penalty is in TURN terms on the real band (free to the
+/// p50, saturating at the p90) at DOGLEG_W; a second par-5 leg turning
+/// the other way pays S_PEN_W (weaving stays legal, it is just rare);
+/// candidates whose legs cross a rise >= RISE_TIER_M rank below any
+/// that do not (a tier, like the green veto); and the beam scores the best
+/// of the straight line and two lines bent +-BEAM_BEND_DEG of bearing at
+/// LZ_APPROX_M (~30 deg of turn), so green pairs reachable by bending
+/// survive to detail. LINE_CHORD_W_LZ 0.8 -> 1.2 (ladder 1.2 / 1.6 / 2.4).
+pub const DOGLEG_FREE_DEG: f64 = 16.5;
+pub const DOGLEG_SAT_DEG: f64 = 43.0;
+pub const DOGLEG_W: f64 = 0.6;
+pub const S_TURN_MIN_DEG: f64 = 10.0;
+pub const S_PEN_W: f64 = 0.4;
+pub const BEAM_BEND_DEG: f64 = 12.0;
+/// The rise tier's cut. At the p99 (5.6 m) the tier caught the worst
+/// lines (above-chord p99 7.8 -> 5.3 m) but left the 1.7-5 m rises to the
+/// weights, where a real-band dogleg penalty outbids them (a diagnostic
+/// on the aeolian par 4s: 75 % of straight-line rises are resolvable in
+/// the scan, but the bend needed is p50 33 deg of bearing). The cut now
+/// sits at the corpus p95 of the max rise above the chord.
+pub const RISE_TIER_M: f64 = 3.5;
+
+/// The dogleg penalty of a turn (radians): 0 to the real p50, 1 at the p90.
+fn dogleg_pen(turn: f64) -> f64 {
+    clip((turn.abs().to_degrees() - DOGLEG_FREE_DEG) / (DOGLEG_SAT_DEG - DOGLEG_FREE_DEG), 0.0, 1.0)
+}
 
 /// `(flow, pen_chord)` of the polyline `spine` sampled at `n` points.
-fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> (f64, f64) {
+/// What `line_terms` measures on a sampled polyline.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LineTerms {
+    /// mean `|sin(theta - rise_axis)|` on slope/hollow/footslope/valley ground, centred
+    pub flow: f64,
+    /// the PROF_CHORD ramp on `above`
+    pub pen_chord: f64,
+    /// max rise of the ground above the polyline's chord, m
+    pub above: f64,
+    /// max dip of the ground below the polyline's chord, m (round 2, item 2)
+    pub below: f64,
+}
+
+fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> LineTerms {
     let mut cum = Vec::with_capacity(spine.len());
     cum.push(0.0);
     let mut l = 0.0;
@@ -426,7 +474,7 @@ fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> (f64, f64) 
         cum.push(l);
     }
     if l < 1e-6 || n < 2 {
-        return (0.0, 0.0);
+        return LineTerms::default();
     }
     let sy: Vec<f64> = spine.iter().map(|p| p.0).collect();
     let sx: Vec<f64> = spine.iter().map(|p| p.1).collect();
@@ -445,12 +493,29 @@ fn line_terms(f: &Fields, m: &Morphology, spine: &[Yx], n: usize) -> (f64, f64) 
     }
     let flow = along / n as f64 - 0.5;
     let mut above = 0.0_f64;
+    let mut below = 0.0_f64;
     for (i, &zi) in z.iter().enumerate() {
         let chord = z[0] + (z[n - 1] - z[0]) * i as f64 / (n - 1) as f64;
         above = above.max(zi - chord);
+        below = below.max(chord - zi);
     }
     let pen_chord = clip((above - PROF_CHORD_FREE_M) / (PROF_CHORD_SAT_M - PROF_CHORD_FREE_M), 0.0, 1.0);
-    (flow, pen_chord)
+    LineTerms { flow, pen_chord, above, below }
+}
+
+/// The signed turn at `b` between legs `a -> b` and `b -> c`, radians
+/// (0 = straight; the sign is the 2-D cross product's).
+fn turn_at(a: Yx, b: Yx, c: Yx) -> f64 {
+    let u = (b.0 - a.0, b.1 - a.1);
+    let v = (c.0 - b.0, c.1 - b.1);
+    let nu = u.0.hypot(u.1);
+    let nv = v.0.hypot(v.1);
+    if nu < 1e-9 || nv < 1e-9 {
+        return 0.0;
+    }
+    let cosang = clip((u.0 * v.0 + u.1 * v.1) / (nu * nv), -1.0, 1.0);
+    let ang = cosang.acos();
+    if u.1 * v.0 - u.0 * v.1 >= 0.0 { ang } else { -ang }
 }
 
 /// GREEN SETTING (owner, 2026-09-14; round 1, item 5): the beam picked
@@ -1056,7 +1121,7 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
                 r_band: (f64, f64), remainder_band: (f64, f64),
                 avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
                 avoid_lzs: &[Yx], avoid_greens: &[Yx], junction_idx: Option<usize>,
-                ch_keepout_yx: Option<Yx>) -> Option<LzPick> {
+                ch_keepout_yx: Option<Yx>, prev_turn: Option<f64>) -> Option<LzPick> {
     let a = from_yx;
     let g = green_yx;
     let v = (g.0 - a.0, g.1 - a.1);
@@ -1077,6 +1142,7 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
     let mut xs = Vec::with_capacity(n);
     let mut room = Vec::with_capacity(n);
     let mut score = Vec::with_capacity(n);
+    let mut rise_ok = Vec::with_capacity(n);
     for &th in &bears {
         for &r in &radii {
             let y = a.0 + r * th.sin();
@@ -1086,20 +1152,23 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
             let ok = rm >= LZ_ROOM_MIN_M;
             let rem = (g.0 - y).hypot(g.1 - x);
             let rem_t = trapezoid(rem, remainder_band.0, remainder_band.1, TRAP_RAMP, TRAP_TAIL);
-            let dog = (th - th0).abs();
-            // free to 15 deg, saturating at the real p90 of 45. First cut freed to
-            // 20 deg at weight 0.3 and our routed median came out 32 deg vs the real
-            // p50 of 18-20 -- the LZ room/flat rewards outbid a penalty that mild,
-            // so the ramp starts at the real "most holes bend this little" point
-            // and the weight doubles.
-            let dog_pen = clip((dog * 180.0 / PI - 15.0) / 30.0, 0.0, 1.0);
-            let (_, pen_chord) = line_terms(f, m, &[a, (y, x), g], LINE_SAMPLES);
+            // the turn at this landing zone, in the corpus's terms (round 2)
+            let turn = turn_at(a, (y, x), g);
+            let dog_pen = dogleg_pen(turn);
+            let s_pen = match prev_turn {
+                Some(t1) if t1.abs().to_degrees() > S_TURN_MIN_DEG
+                    && turn.abs().to_degrees() > S_TURN_MIN_DEG
+                    && (t1 > 0.0) != (turn > 0.0) => S_PEN_W,
+                _ => 0.0,
+            };
+            let lt = line_terms(f, m, &[a, (y, x), g], LINE_SAMPLES);
+            rise_ok.push(lt.above < RISE_TIER_M);
             let mut sc = 0.5 * room_q
                 + 0.3 * (1.0 - clip((slope - LZ_SLOPE_FREE) / (0.08 - LZ_SLOPE_FREE), 0.0, 1.0))
                 + 0.3 * trapezoid(dwat, LZ_WATER_BAND_M.0, LZ_WATER_BAND_M.1, TRAP_RAMP, TRAP_TAIL)
-                + 0.4 * rem_t - 0.6 * dog_pen
+                + 0.4 * rem_t - DOGLEG_W * dog_pen - s_pen
                 + LZ_INTEREST_W * int40
-                - LINE_CHORD_W_LZ * pen_chord;
+                - LINE_CHORD_W_LZ * lt.pen_chord;
             if !ok {
                 sc -= 1.0;     // tight LZ: penalized, never vetoed
             }
@@ -1140,6 +1209,11 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
         let (_, veto_in) = greens_along(&legs[..2], avoid_greens, junction_idx);
         let (_, veto_out) = greens_along(&legs[1..], avoid_greens, None);
         if veto_in || veto_out {
+            continue;
+        }
+        // RISE TIER (round 2, item 1): legs over a rise >= RISE_TIER_M rank
+        // below every candidate that goes around
+        if !rise_ok[k] {
             continue;
         }
         if pick_play_clean.is_none() {
@@ -1666,7 +1740,28 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let mut cov = st.cov.clone();
             let (nr, nc) = cov_dims(site.win);
             let new_cov = cov_stamp(&mut cov, site.win, tee, gp);
-            let (flow, pen_chord) = line_terms(f, site.m, &[tee, gp], LINE_SAMPLES);
+            // round 2, item 1: the straight line and two bent ones
+            let (flow, pen_chord) = {
+                let mut best = line_terms(f, site.m, &[tee, gp], LINE_SAMPLES);
+                let mut best_v = LINE_FLOW_W * best.flow - LINE_CHORD_W_BEAM * best.pen_chord;
+                let dv = (gp.0 - tee.0, gp.1 - tee.1);
+                let dl = dv.0.hypot(dv.1);
+                if dl > 1e-9 {
+                    let r = LZ_APPROX_M.min(0.6 * dl);
+                    let th0 = dv.0.atan2(dv.1);
+                    for sgn in [-1.0, 1.0] {
+                        let th = th0 + sgn * BEAM_BEND_DEG.to_radians();
+                        let q = (tee.0 + r * th.sin(), tee.1 + r * th.cos());
+                        let lt = line_terms(f, site.m, &[tee, q, gp], LINE_SAMPLES);
+                        let v = LINE_FLOW_W * lt.flow - LINE_CHORD_W_BEAM * lt.pen_chord;
+                        if v > best_v {
+                            best_v = v;
+                            best = lt;
+                        }
+                    }
+                }
+                (best.flow, best.pen_chord)
+            };
             let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
                 + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64
                 + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord
@@ -2106,7 +2201,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             if par >= 4 {
                 let rem = if par == 4 { (90.0, 200.0) } else { (300.0, 999.0) };
                 if let Some(r1) = place_lz(rf, f, site.m, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
-                                           &lz_seen, &other_greens, junction_idx, Some(home)) {
+                                           &lz_seen, &other_greens, junction_idx, Some(home), None) {
                     lzs.push(r1.lz);
                     lz_score = r1.score;
                     all_clean = all_clean && r1.clean;
@@ -2114,8 +2209,9 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             }
             if par == 5 && !lzs.is_empty() {
                 let from = (lzs[0].0, lzs[0].1);
+                let turn1 = turn_at(opt.yx, from, g);
                 if let Some(r2) = place_lz(rf, f, site.m, from, g, SECOND_R_M, (120.0, 200.0), &spines,
-                                           &walks, &lz_seen, &other_greens, None, Some(home)) {
+                                           &walks, &lz_seen, &other_greens, None, Some(home), Some(turn1)) {
                     lzs.push(r2.lz);
                     lz_score = 0.5 * (lz_score + r2.score);
                     all_clean = all_clean && r2.clean;
@@ -2192,7 +2288,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("ch_keepout".into(), -6.0 * ch_intrusion(&pts, home, CH_TRIM_M));
         let pt = profile_terms(f, &pts);
         let n_line = ((pt_len(&pts) / 8.0) as usize).max(4) + 1;
-        terms.insert("line_flow".into(), LINE_FLOW_W * line_terms(f, site.m, &pts, n_line).0);
+        terms.insert("line_flow".into(), LINE_FLOW_W * line_terms(f, site.m, &pts, n_line).flow);
         terms.insert("prof_net".into(), pt.prof_net);
         terms.insert("prof_chord".into(), pt.prof_chord);
         terms.insert("prof_climb".into(), pt.prof_climb);
