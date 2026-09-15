@@ -161,6 +161,17 @@ pub const FEATURE_NAMES: [&str; N_FEATURES] = [
 ];
 
 /// Linear coefficients, `FEATURE_NAMES` order.
+///
+/// DEVIATION (routing round 1, item 3, 2026-09-15): `d_boundary_norm`'s
+/// pair (-2.3707 linear, +7.0526 quadratic) is set to zero. The feature was
+/// a MATCHED design variable in the corpus fit (`corpus/controls.py`: real
+/// greens 0.115 vs controls 0.116), so its fitted parabola is not a
+/// setting signal; on our windows its floor sat ~197 m inside the edge and
+/// the 120 m halo OUTSIDE the window scored +0.3 logit above the
+/// mid-band, so `hot_seeds` filled from the rim (57 % of greens within
+/// 60 m of the edge, 45 % outside). The feature is still computed for
+/// the dumps; the window is enforced by the router's edge term instead
+/// (`route::EDGE_W`).
 pub const FIT_COEF: [f64; N_FEATURES] = [
     0.9862,   // relief_pos
     1.2256,   // tpi60
@@ -170,7 +181,7 @@ pub const FIT_COEF: [f64; N_FEATURES] = [
     0.0922,   // surround
     -0.1759,  // room
     -0.0031,  // d_water_band
-    -2.3707,  // d_boundary_norm
+    0.0,      // d_boundary_norm -- fitted -2.3707; zeroed 2026-09-15 (see below)
     -1.2377,  // pit
     0.7923,   // peak
     0.0,      // saddle
@@ -206,7 +217,7 @@ pub const FIT_COEF_SQ: [(usize, f64); 16] = [
     (F_PIT, 0.739331),
     (F_PEAK, -0.376947),
     (F_D_WATER_BAND, 6e-06),
-    (F_D_BOUNDARY_NORM, 7.052632),
+    (F_D_BOUNDARY_NORM, 0.0),   // fitted 7.052632; zeroed 2026-09-15 (see below)
     (F_ROOM, 0.002634),
 ];
 
@@ -1078,8 +1089,10 @@ mod tests {
         // rounding (4 / 6 decimals); the prototype is the reference
         assert!((got - PYTHON_EXPECTED_JSON).abs() < 2e-3);
     }
-    const PYTHON_EXPECTED: f64 = 4.133595839999993;
-    const PYTHON_EXPECTED_JSON: f64 = 4.13342945899071;
+    // the prototype's values less d_boundary_norm's zeroed pair on the
+    // vector's feats[8] = 0.9: -2.3707 * 0.9 + 7.052632 * 0.81 = 3.57900192
+    const PYTHON_EXPECTED: f64 = 4.133595839999993 - 3.57900192;
+    const PYTHON_EXPECTED_JSON: f64 = 4.13342945899071 - 3.57900192;
 
     #[test]
     fn feature_tables_are_consistent() {

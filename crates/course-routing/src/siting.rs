@@ -452,6 +452,18 @@ pub fn build_clubhouse_fields(f: &Fields) -> ClubhouseFields {
 /// returning-nine anchor. Everything else is soft: prospect, edge affinity
 /// (the CENTRE is penalised — a 3.1 km route in this window cannot spare
 /// its middle), departure spread.
+/// SOFT WINDOW (owner, 2026-09-14; routing round 1, item 3): the 250-seed
+/// audit found holes hugging the window edge with an empty middle, and
+/// the clubhouse's explicit edge affinity (`e_term`, weight 1.0, peaking
+/// 0.5-0.9 x half-min from the centre), its 30 %-box central exclusion
+/// and its 100 m outside halo all pushed the origin -- and the loop that
+/// returns to it -- to the rim. Prototype values 1.0 / (0.35, 0.65) /
+/// 100 m; now 0.3 / (0.42, 0.58) / 40 m: the loop still needs an origin
+/// off dead centre, but not on the boundary.
+pub const CH_EDGE_W: f64 = 0.3;
+pub const CH_CENTRAL_BOX: (f64, f64) = (0.42, 0.58);
+pub const CH_HALO_M: f64 = 40.0;
+
 pub fn site_clubhouse(f: &Fields, win_ij: (usize, usize), scan: &WindowScan,
                       cf: &ClubhouseFields, pad_min_m: Option<f64>) -> Option<Clubhouse> {
     let cell = f.cell;
@@ -459,8 +471,8 @@ pub fn site_clubhouse(f: &Fields, win_ij: (usize, usize), scan: &WindowScan,
     let i0 = scan.ij0.0 + win_ij.0;
     let j0 = scan.ij0.1 + win_ij.1;
     let (h, w) = (scan.h, scan.w);
-    // clubhouse may sit in the window or within 100 m outside it
-    let halo = py_round(100.0 / cell) as usize;
+    // clubhouse may sit in the window or within CH_HALO_M outside it
+    let halo = py_round(CH_HALO_M / cell) as usize;
     let a0 = i0.saturating_sub(halo);
     let a1 = (i0 + h + halo).min(ny);
     let b0 = j0.saturating_sub(halo);
@@ -474,10 +486,10 @@ pub fn site_clubhouse(f: &Fields, win_ij: (usize, usize), scan: &WindowScan,
     // 30%-box of the window is now excluded outright, with a soft fallback
     // if that empties the candidate set (never a hard failure on a cramped
     // window).
-    let ci_lo = i0 + (0.35 * h as f64) as usize;
-    let ci_hi = i0 + (0.65 * h as f64) as usize;
-    let cj_lo = j0 + (0.35 * w as f64) as usize;
-    let cj_hi = j0 + (0.65 * w as f64) as usize;
+    let ci_lo = i0 + (CH_CENTRAL_BOX.0 * h as f64) as usize;
+    let ci_hi = i0 + (CH_CENTRAL_BOX.1 * h as f64) as usize;
+    let cj_lo = j0 + (CH_CENTRAL_BOX.0 * w as f64) as usize;
+    let cj_hi = j0 + (CH_CENTRAL_BOX.1 * w as f64) as usize;
     let central = |y: usize, x: usize| y >= ci_lo && y < ci_hi && x >= cj_lo && x < cj_hi;
 
     // np.where(cand): row-major over the box
@@ -546,7 +558,7 @@ pub fn site_clubhouse(f: &Fields, win_ij: (usize, usize), scan: &WindowScan,
         let padq = clip01((cf.pad_room[i] - CH_PAD_MIN_M) / (CH_PAD_GOOD_M - CH_PAD_MIN_M));
         let d_rich = (y as f64 - (i0 + pk_y) as f64).hypot(x as f64 - (j0 + pk_x) as f64) * cell;
         let climax = clip01(d_rich / half_max);
-        total.push(p_term * 0.8 + e_term * 1.0 + s_term * 1.0 + drain * 0.4
+        total.push(p_term * 0.8 + e_term * CH_EDGE_W + s_term * 1.0 + drain * 0.4
                    + padq * 0.8 + climax * 0.6);
     }
 

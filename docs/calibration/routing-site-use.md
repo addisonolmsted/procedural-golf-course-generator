@@ -10,22 +10,22 @@ Baseline `out/route_rs/rs_v1.jsonl`; each item's shipped batch
 
 ## Acceptance (250 seeds)
 
-| metric | baseline | target | s1 | s2 |
-|---|---|---|---|---|
-| greens within 60 m of the window edge | 57 % | < 25 % | 57 % | 57 % |
-| window within 100 m of play, p50 | 48 % | > 60 % | 49 % | 49 % |
-| LZ dead flat (< 2 %) / upland (relief_pos > 0.7) | 48 / 12 % | < 30 / > 20 % | 47 / 12 % | 47 / 12 % |
-| within-course LZ setting std | 0.18 | > 0.25 | 0.18 | 0.18 |
-| green surround relief p50 (real 6.1–6.8 m) | 4.6 m | > 5.5 m | 4.6 m | 4.6 m |
-| above-chord p90 / p99 (real 1.7 / 5.6) | 4.4 / 14.1 | < 2.5 / < 8 | 4.4 / 15.0 | 4.4 / 15.0 |
-| water courses with a hole within 40 m of water (of 71) | 27 | > 50 | 33 | 33 |
-| par 3 median / pair within 20 m (real 163) | 180 / 37 % | 160–170 / < 15 % | 180 / 39 % | 180 / 39 % |
-| par 5 median (real 474) | 528 | < 500 | 526 | 525 |
-| hole 2 par 3 / hole 9 par 5 | 40 / 39 % | ≤ 20 / ≤ 25 % | 33 / 41 % | 33 / 41 % |
-| green within 35 m of another hole's spine, cases | 48 | ≤ 3 | **1** | 1 |
-| tee boxes on > 30 % ground | 39 | 0 | 52 | **0** |
-| routed / play crossings / (2,5,2) | 250 / 0 / 92 % | 250 / 0 / 85–95 % | 250 / 0 / 91 % | 250 / 0 / 91 % |
-| seconds per seed, max | 0.45 | < 1.3 | 0.38 | 0.42 |
+| metric | baseline | target | s1 | s2 | s3 |
+|---|---|---|---|---|---|
+| greens within 60 m of the window edge | 57 % | < 25 % | 57 % | 57 % | **23 %** |
+| window within 100 m of play, p50 | 48 % | > 60 % | 49 % | 49 % | **62 %** |
+| LZ dead flat (< 2 %) / upland (relief_pos > 0.7) | 48 / 12 % | < 30 / > 20 % | 47 / 12 % | 47 / 12 % | 46 / 9 % |
+| within-course LZ setting std | 0.18 | > 0.25 | 0.18 | 0.18 | 0.15 |
+| green surround relief p50 (real 6.1–6.8 m) | 4.6 m | > 5.5 m | 4.6 m | 4.6 m | 4.6 m |
+| above-chord p90 / p99 (real 1.7 / 5.6) | 4.4 / 14.1 | < 2.5 / < 8 | 4.4 / 15.0 | 4.4 / 15.0 | 4.4 / 14.4 |
+| water courses with a hole within 40 m of water (of 71) | 27 | > 50 | 33 | 33 | 30 |
+| par 3 median / pair within 20 m (real 163) | 180 / 37 % | 160–170 / < 15 % | 180 / 39 % | 180 / 39 % | 182 / 39 % |
+| par 5 median (real 474) | 528 | < 500 | 526 | 525 | 518 |
+| hole 2 par 3 / hole 9 par 5 | 40 / 39 % | ≤ 20 / ≤ 25 % | 33 / 41 % | 33 / 41 % | 42 / 58 % |
+| green within 35 m of another hole's spine, cases | 48 | ≤ 3 | **1** | 1 | **0** |
+| tee boxes on > 30 % ground | 39 | 0 | 52 | **0** | 4 |
+| routed / play crossings / (2,5,2) | 250 / 0 / 92 % | 250 / 0 / 85–95 % | 250 / 0 / 91 % | 250 / 0 / 91 % | 250 / 0 / 85 % |
+| seconds per seed, max | 0.45 | < 1.3 | 0.38 | 0.42 | 0.48 |
 
 ## Item 1 — green in play (2026-09-15)
 
@@ -57,3 +57,18 @@ graded scan 3 m ahead of the previous box, then a coincident pad.
 | boxes on > 15 % | 345 | 1 |
 | graded boxes | 3,297 | 2,987 |
 | coincident pads | 0 | 135 |
+
+## Item 3 — soft window (2026-09-15)
+
+`EDGE_W = 0.6` on `clip((60 − d)/120, 0, 1)` (no ladder: the target was
+met at ×1 and the term is bounded); `CH_EDGE_W` 0.3, `CH_CENTRAL_BOX`
+(0.42, 0.58), `CH_HALO_M` 40; pool `d_boundary_norm` pair zeroed.
+Item 1 re-baselined under the compaction (35 m / 50 m cases):
+
+| rung | 35 m | 50 m | edge < 60 m | cov100 |
+|---|---|---|---|---|
+| s2 (before) | 1 | 22 | 57 % | 49 % |
+| edge term, GIP_W 8 | 18 | 99 | 24 % | 61 % |
+| + abeam-of-tee exemption | 13 | 90 | 24 % | 62 % |
+| GIP_W 16 | 8 | 64 | 24 % | 62 % |
+| + veto tier 35 m — shipped | 0 | 60 | 23 % | 62 % |

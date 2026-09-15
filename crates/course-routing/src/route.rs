@@ -160,7 +160,11 @@ pub const LZ_APPROX_M: f64 = 220.0;      // where a drive finishes, for beam-tim
 // successor's first 60 m of arc is the tee beside this green (walks p50
 // 67 m), the shared corridor mouth -- the only exemption.
 pub const GREEN_CLEAR_M: f64 = CLEAR_MID_M;
-pub const GREEN_VETO_M: f64 = 30.0;
+// GREEN_VETO_M 30 -> 35 (2026-09-15, after item 3's compaction): at 30 the
+// placement tiers left every residual case at 30-35 m -- a successor's
+// tee 70 m from the green playing past it 27 degrees off the line -- so
+// the tier now sits at the acceptance's 35 m (half a 70 m corridor).
+pub const GREEN_VETO_M: f64 = 35.0;
 pub const GREEN_JUNCTION_M: f64 = 60.0;
 /// Route / beam weights on `v = clip((GREEN_CLEAR_M - d) / GREEN_CLEAR_M, 0, 1)`:
 /// `-GIP_W * v^2` and a flat veto charge under GREEN_VETO_M -- twice a
@@ -178,7 +182,35 @@ pub const GREEN_JUNCTION_M: f64 = 60.0;
 /// the loop-closure twin of the consecutive junction, which the exemption
 /// does not cover; one is a successor at arc 65 m; one a tee 32 m from
 /// the previous-but-one green. Every guard held on every rung.
-pub const GIP_W: f64 = 8.0;
+pub const GIP_W: f64 = 16.0;
+
+/// SOFT WINDOW, the router's side (owner, 2026-09-14; round 1, item 3):
+/// holes may use the ground outside the window where it is good, but a
+/// green is charged by how far it sits from the interior. `d` = the
+/// green's signed distance to the window edge (positive inside);
+/// `edge = -EDGE_W * clip((EDGE_FREE_M - d) / EDGE_RAMP_M, 0, 1)`: 0 at
+/// >= 60 m inside, -0.3 on the line, -0.6 at >= 60 m outside. Beam cheap
+/// score and detail `terms["edge"]`; the reserved loop anchor is exempt
+/// (it sits where the clubhouse put it). 60 m = a green's own room plus
+/// the corpus mid-hole clearance p10 (CLEAR_MID_M), so a green on the
+/// line has no legal neighbour inside.
+pub const EDGE_W: f64 = 0.6;
+pub const EDGE_FREE_M: f64 = 60.0;
+pub const EDGE_RAMP_M: f64 = 120.0;
+
+/// Signed distance from `p` to the window's edge, positive inside.
+fn edge_distance(win: (f64, f64, f64, f64), p: Yx) -> f64 {
+    let (wy, wx, h, w) = win;
+    (p.0 - wy).min(wy + h - p.0).min(p.1 - wx).min(wx + w - p.1)
+}
+
+/// The edge term for a green at `p` (`reserved` greens exempt).
+fn edge_term(win: (f64, f64, f64, f64), p: Yx, reserved: bool) -> f64 {
+    if reserved {
+        return 0.0;
+    }
+    -EDGE_W * clip((EDGE_FREE_M - edge_distance(win, p)) / EDGE_RAMP_M, 0.0, 1.0)
+}
 pub const GIP_VETO_ROUTE: f64 = 12.0;
 pub const GIP_VETO_BEAM: f64 = 8.0;
 
@@ -448,11 +480,19 @@ fn any_walk_crossing(a: &[Yx], walks: &[[Yx; 2]]) -> bool {
 
 /// Plan item 1: how far `green` sits inside the spine `poly`'s line of
 /// play, `(d, v)` with `v = clip((GREEN_CLEAR_M - d) / GREEN_CLEAR_M, 0, 1)`;
-/// `None` when `junction` is set and the closest point on the spine lies
-/// within `GREEN_JUNCTION_M` of the spine's start (the successor's tee
-/// beside this green: the corridor mouth, not play over the green).
+/// `None` when the closest point is the spine's start (the green is abeam
+/// of or behind the tee), or when `junction` is set and it lies within
+/// `GREEN_JUNCTION_M` of the start (the successor's tee beside this
+/// green: the corridor mouth, not play over the green).
 fn green_play(poly: &[Yx], green: Yx, junction: bool) -> Option<(f64, f64)> {
     let (d, s) = point_to_polyline_m(poly, green);
+    // abeam of or behind the tee (the closest point is the spine's start)
+    // is not in the line of play: nobody plays backwards. Added 2026-09-15
+    // after item 3's compaction: 7 of 18 residual cases were greens
+    // 33-34 m beside a non-adjacent hole's tee.
+    if s <= 0.0 {
+        return None;
+    }
     if junction && s < GREEN_JUNCTION_M {
         return None;
     }
@@ -788,15 +828,26 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
         return None;
     }
     let span = hi - lo;
-    for (use_relaxed, graded) in [(false, false), (true, true)] {
+    // tiers: the tee pad mask, the relaxed (graded) mask, then -- item 2,
+    // 2026-09-15 -- any dry node under the slope cap, so the saturating
+    // geometric fallback in detail_route (which cannot obey the cap; one
+    // hole in 250 sat on a 62 % node) is reached only on a wet or wall-bound
+    // disc
+    for (tier, graded) in [(0, false), (1, true), (2, true)] {
         // candidates in row-major order, the lexsort's (ys, xs) tie-break
         let mut cand: Vec<(usize, usize)> = Vec::new();
         let mut sc: Vec<f64> = Vec::new();
         for i in i0..i1 {
             for j in j0..j1 {
                 let idx = i * f.nx + j;
-                let m = if use_relaxed { rf.tee_relaxed[idx] } else { rf.tee_ok[idx] };
-                if !m {
+                let m = match tier {
+                    0 => rf.tee_ok[idx],
+                    1 => rf.tee_relaxed[idx],
+                    _ => !f.wet8[idx],
+                };
+                // item 2: the pad masks read the 2 m ground; the back box
+                // also obeys the node cap tee_boxes enforces
+                if !m || f.slope[idx] > TEE_BOX_SLOPE_MAX {
                     continue;
                 }
                 let ym = i as f64 * f.cell;
@@ -919,13 +970,15 @@ pub const TEE_FALLBACK_STEP_M: f64 = 3.0;
 /// The steepest of the four 8 m nodes around `p` -- the ground a 7 m pad
 /// at `p` actually sits on (`Fields::slope` is the strided node value).
 fn box_slope(f: &Fields, p: Yx) -> f64 {
-    let yi = (clip(p.0 / f.cell, 0.0, (f.ny - 1) as f64)) as usize;
-    let xi = (clip(p.1 / f.cell, 0.0, (f.nx - 1) as f64)) as usize;
+    // the nodes bracketing the point on each axis (one node when the
+    // point sits on it: a pad centred on a node touches no other)
+    let fy = clip(p.0 / f.cell, 0.0, (f.ny - 1) as f64);
+    let fx = clip(p.1 / f.cell, 0.0, (f.nx - 1) as f64);
+    let ys = [fy.floor() as usize, fy.ceil() as usize];
+    let xs = [fx.floor() as usize, fx.ceil() as usize];
     let mut m = 0.0_f64;
-    for dy in 0..2 {
-        for dx in 0..2 {
-            let y = (yi + dy).min(f.ny - 1);
-            let x = (xi + dx).min(f.nx - 1);
+    for &y in &ys {
+        for &x in &xs {
             m = m.max(f.slope[y * f.nx + x]);
         }
     }
@@ -1132,6 +1185,7 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let hl = hyp(yx[gi], tee);
             let pace = ((st.cum + hl) - (st.cum_mid + mid_par)).abs();
             let mut c = 1.5 * pct[gi]
+                + edge_term(site.win, yx[gi], pool[gi].reserved)
                 + 0.9 * trapezoid(hl, lo_i, hi_i, TRAP_RAMP, 0.1)
                 - 1.0 * clip(pace / 450.0, 0.0, 1.0)
                 - 1.0 * clip((we - WALK_FREE_M) / (WALK_SAT_M - WALK_FREE_M), 0.0, 1.0)
@@ -1623,6 +1677,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         let (blo, bhi) = par_band(par);
         let mut terms: BTreeMap<String, f64> = BTreeMap::new();
         terms.insert("green".into(), 1.5 * pct[gi]);
+        terms.insert("edge".into(), edge_term(site.win, g, pool[gi].reserved));
         terms.insert("approach".into(), 1.0 * appr);
         terms.insert("lz".into(), if par >= 4 { 0.8 * clip(lz_score, -1.0, 1.0) } else { 0.0 });
         terms.insert("tee".into(), 0.4 * clip(tee.score, -1.0, 1.0));

@@ -1346,3 +1346,46 @@ throughout). `TeeBox.slope` records the 2 × 2 max.
 graded boxes 3,297 → 2,987 of 11,250; coincident pads 135 (1.2 %);
 spines, pars, totals, score and mix unchanged (tee boxes do not feed the
 score); seconds max 0.38 → 0.42. Viewer: artifact b5c053b2 (`--pick tee`).
+
+## 2026-09-15 — routing round 1, item 3: the soft window
+
+Owner (2026-09-14): a soft window with a compactness reward — holes may use
+the halo where the ground is good. Three levers, all in one commit:
+`greens.rs` zeroes the pool's `d_boundary_norm` pair (−2.37 linear /
++7.05 quadratic; a matched design feature in the corpus fit, whose
+parabola scored the halo OUTSIDE the window +0.3 logit above the
+mid-band, so `hot_seeds` filled from the rim; DEVIATION on the fit
+reference test); `siting.rs` softens the clubhouse (`CH_EDGE_W` 1.0 →
+0.3, `CH_CENTRAL_BOX` (0.35, 0.65) → (0.42, 0.58), `CH_HALO_M` 100 → 40);
+`route.rs` charges every green by its signed distance to the window edge
+(`EDGE_W 0.6`, free at ≥ 60 m inside, −0.3 on the line, −0.6 at ≥ 60 m
+outside; beam cheap score and detail `terms["edge"]`; the reserved loop
+anchor exempt).
+
+The compaction crowded greens back into lines of play (35 m cases 1 →
+18), so item 1 was re-baselined in the same commit: `GIP_W` 8 → 16 (the
+ladder's ×4 rung, guards held), `GREEN_VETO_M` 30 → 35 (every residual
+sat at 30–35 m: a successor's tee 70 m from the green playing past it 27°
+off the line), and a green abeam of or behind a tee (closest point = the
+spine's start) is not in play (7 of the 18 were greens 33 m beside a
+non-adjacent tee). `place_tee` also gains a cap-only third tier (item 2).
+
+| metric | s2 | s3 (shipped) |
+|---|---|---|
+| greens < 60 m from the edge | 57 % | 23 % |
+| greens outside the window | 46 % | 7 % |
+| window within 100 m of play, p50 | 49 % | 62 % |
+| walk p50 | 992 | 808 m |
+| green in play ≤ 35 m / ≤ 50 m | 1 / 22 | 0 / 60 |
+| (2,5,2) mix | 91 % | 85 % |
+| hole 9 par 5 / hole 2 par 3 / b2b | 41 / 33 / 4 % | 58 / 42 / 8 % |
+| within-course LZ setting std | 0.18 | 0.15 |
+| routed / crossings | 250 / 0 | 250 / 0 |
+| seconds p50 / max | 0.34 / 0.42 | 0.35 / 0.48 |
+| tee boxes on > 30 % | 0 | 4 (one hole: the budget-pinched saturating fallback, item 9) |
+
+Ladder (35 m / 50 m green-in-play cases, all with the edge term): GIP_W 8
+→ 18 / 99; + abeam exemption → 13 / 90; GIP_W 16 → 8 / 64; + veto tier
+35 m → 0 / 60 (shipped). The mix sits at the band floor and the sequence
+signatures rose (compact loops close with a long ninth): items 9–10.
+Viewer: artifact 6f90f00d (`--pick coverage`).

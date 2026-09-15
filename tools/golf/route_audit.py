@@ -198,6 +198,8 @@ def green_in_play(rec, holes):
             if b == a:
                 continue
             d, s = point_to_polyline(hs[b]["spine"], g)
+            if s <= 0.0:          # abeam of or behind B's tee: not in B's line of play
+                continue
             # the next hole's first 60 m of arc is the junction; hole 1's first
             # 60 m against the last green is the clubhouse loop junction (both
             # pinned to the clubhouse disc), exempt the same way
