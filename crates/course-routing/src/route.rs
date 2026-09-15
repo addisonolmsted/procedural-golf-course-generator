@@ -59,7 +59,78 @@ pub const ALLOWED_MIXES: [(u8, u8, u8); 3] = [(2, 5, 2), (3, 3, 3), (1, 7, 1)];
 pub const PAR_BAND_3: (f64, f64) = (110.0, 210.0);
 pub const PAR_BAND_4: (f64, f64) = (280.0, 430.0);
 pub const PAR_BAND_5: (f64, f64) = (440.0, 560.0);
-pub const TOTAL_BAND_M: (f64, f64) = (2600.0, 3200.0);
+// TOTAL_BAND_M (2600, 3200) -> (2800, 3250) and BUDGET_M 3100 -> 3250
+// (round 1, item 9, 2026-09-15): the budget was the band ceiling's
+// enforcer and truncated late holes to `lo + 20`; the real par-36 nine
+// built from median hole lengths is 3,029 m, so the band brackets it and
+// the budget sits at the ceiling.
+pub const TOTAL_BAND_M: (f64, f64) = (2800.0, 3250.0);
+/// The total reward is a TENT, not the band trapezoid: 1 at TOTAL_PEAK_M
+/// (the real par-36 nine from median hole lengths, 2 x 163 + 5 x 351 +
+/// 2 x 474 = 3,029 m), 0 at +-TOTAL_TENT_M (the band edges). A flat
+/// reward to 3,250 let the clearance / coverage terms buy length: the
+/// first pass of item 9 ran par 4s 346 -> 374 m and totals 3,147 -> 3,177.
+pub const TOTAL_PEAK_M: f64 = 3029.0;
+pub const TOTAL_TENT_M: f64 = 250.0;
+
+/// HOLE LENGTHS (owner, 2026-09-14; round 1, item 9): PAR_BAND_* stays the
+/// legal gate; the SCORES reward the corpus interquartile range
+/// (`hole_profiles.json`, 5,201 holes: par 3 p25/50/75 143/163/183, par 4
+/// 317/351/383, par 5 446/474/500) with a 20 m ramp, so the band's
+/// interior is no longer flat and its top no longer free. PAR_MID_* are
+/// the pace midpoints. Our par 3s ran a 180 m median and par 5s 528 with
+/// the band-interior reward.
+pub const PAR_TARGET_3: (f64, f64) = (143.0, 183.0);
+pub const PAR_TARGET_4: (f64, f64) = (317.0, 383.0);
+pub const PAR_TARGET_5: (f64, f64) = (446.0, 500.0);
+pub const TARGET_RAMP_M: f64 = 20.0;
+pub const PAR_MID_3: f64 = 163.0;
+pub const PAR_MID_4: f64 = 350.0;
+pub const PAR_MID_5: f64 = 473.0;
+/// Beam twin penalty: a new par 3 / 5 within this of an earlier one's
+/// estimated length (37 % of courses had both par 3s within 20 m).
+pub const TWIN_W: f64 = 0.8;   // 0.4 in the first pass: twins 50 -> 34 %
+pub const TWIN_SEP_3: f64 = 30.0;
+pub const TWIN_SEP_5: f64 = 40.0;
+
+pub fn par_target(par: u8) -> (f64, f64) {
+    match par {
+        3 => PAR_TARGET_3,
+        4 => PAR_TARGET_4,
+        _ => PAR_TARGET_5,
+    }
+}
+
+pub fn par_mid(par: u8) -> f64 {
+    match par {
+        3 => PAR_MID_3,
+        4 => PAR_MID_4,
+        _ => PAR_MID_5,
+    }
+}
+
+/// The length reward on an explicit `band` (the spread-by-construction
+/// halves): 1 across it, a TARGET_RAMP_M ramp below, the same ramp down
+/// to `tail` above.
+fn target_t(len: f64, band: (f64, f64), tail: f64) -> f64 {
+    trapezoid(len, band.0, band.1, TARGET_RAMP_M / (band.1 - band.0), tail)
+}
+
+/// The par's length reward. Par 4: a TENT, 1 at the median, 0.5 at the
+/// quartiles, 0 two interquartile widths out (284-416) -- a flat reward
+/// across the IQR (the first pass) let the spacing / coverage terms pin
+/// the five par 4s to its top (median 371 vs 351), and they carry the
+/// total. Par 3 and 5: the flat IQR reward with a 20 m ramp -- a tent
+/// there pulled both par 3s onto 163 m (twins 14 -> 52 %) against the
+/// spread-by-construction override.
+fn tent_t(len: f64, par: u8) -> f64 {
+    let (lo, hi) = par_target(par);
+    if par == 4 {
+        clip(1.0 - (len - par_mid(par)).abs() / (hi - lo), 0.0, 1.0)
+    } else {
+        target_t(len, (lo, hi), 0.1)
+    }
+}
 
 /// `PAR_BANDS[par]`.
 pub fn par_band(par: u8) -> (f64, f64) {
@@ -477,7 +548,7 @@ pub const CROSS_TRIM_M: f64 = 8.0;
 /// on every seed (totals 3.5-3.6 km). Each hole's band cap now shrinks to
 /// what the 3,100 m budget minus the remaining holes' band minimums allows
 /// -- totals are bounded by construction.
-pub const BUDGET_M: f64 = 3100.0;
+pub const BUDGET_M: f64 = TOTAL_BAND_M.1;
 
 // --- interest raster (plan item 6) -------------------------------------------
 /// `surround` is computed on the play window plus this slab, 0 elsewhere.
@@ -1071,9 +1142,13 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
 pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u8,
                  clubhouse_yx: Option<Yx>, avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
                  avoid_greens: &[Yx], junction_idx: Option<usize>,
-                 n_options: usize, hi_cap: Option<f64>, ch_keepout_yx: Option<Yx>)
+                 n_options: usize, hi_cap: Option<f64>, ch_keepout_yx: Option<Yx>,
+                 band_override: Option<(f64, f64)>)
     -> Option<Vec<TeeOption>> {
     let (lo, mut hi) = par_band(par);
+    // item 9: the reward band is the corpus p25-p75 (or the half of it the
+    // caller names -- spread by construction); the gate stays PAR_BAND
+    let reward = band_override;
     if let Some(cap) = hi_cap {
         hi = (lo + 20.0).max(hi.min(cap));
     }
@@ -1091,7 +1166,6 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
     if i1 <= i0 || j1 <= j0 {
         return None;
     }
-    let span = hi - lo;
     // tiers: the tee pad mask, the relaxed (graded) mask, then -- item 2,
     // 2026-09-15 -- any dry node under the slope cap, so the saturating
     // geometric fallback in detail_route (which cannot obey the cap; one
@@ -1122,7 +1196,10 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
                     continue;
                 }
                 let walk_t = 1.0 - clip((d_prev - WALK_FREE_M) / (WALK_SAT_M - WALK_FREE_M), 0.0, 1.0);
-                let band_t = trapezoid(d_green, lo + 0.15 * span, hi - 0.15 * span, TRAP_RAMP, 0.05);
+                let band_t = match reward {
+                    Some(b) => target_t(d_green, b, 0.05),
+                    None => tent_t(d_green, par),
+                };
                 let padq = 1.0 - clip(f.slope[idx] / 0.065, 0.0, 1.0);
                 cand.push((i, j));
                 sc.push(0.9 * walk_t + 1.1 * band_t + 0.5 * padq);
@@ -1461,9 +1538,14 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
         let mut tee_est: Vec<Yx> = Vec::with_capacity(m);
         let mut hole_len: Vec<f64> = Vec::with_capacity(m);
         let mut cheap: Vec<f64> = Vec::with_capacity(m);
-        let lo_i = lo + 0.15 * (hi - lo);
-        let hi_i = hi - 0.15 * (hi - lo);
-        let mid_par = (lo + hi) / 2.0;
+        let mid_par = par_mid(par);
+        // earlier holes of this par, estimated lengths (the twin penalty)
+        let twin_sep = match par { 3 => TWIN_SEP_3, 5 => TWIN_SEP_5, _ => 0.0 };
+        let same_par: Vec<f64> = if twin_sep > 0.0 {
+            st.seq.iter().filter(|e| e.1 == par).map(|e| hyp(yx[e.0], e.2)).collect()
+        } else {
+            Vec::new()
+        };
         for &gi in &idxs {
             let v = (yx[gi].0 - st.pos.0, yx[gi].1 - st.pos.1);
             let dd = v.0.hypot(v.1).max(1e-9);
@@ -1479,10 +1561,13 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let mut c = 1.5 * pct[gi]
                 + SETT_W * sett[gi]
                 + edge_term(site.win, yx[gi], pool[gi].reserved)
-                + 0.9 * trapezoid(hl, lo_i, hi_i, TRAP_RAMP, 0.1)
+                + 0.9 * tent_t(hl, par)
                 - 1.0 * clip(pace / 450.0, 0.0, 1.0)
                 - 1.0 * clip((we - WALK_FREE_M) / (WALK_SAT_M - WALK_FREE_M), 0.0, 1.0)
                 - 0.3 * clip(we / WALK_MAX_M, 0.0, 1.0);
+            if same_par.iter().any(|&l| (l - hl).abs() < twin_sep) {
+                c -= TWIN_W;
+            }
             // back-to-back 3s/5s
             if let Some(last) = st.seq.last() {
                 if (par == 3 || par == 5) && last.1 == par {
@@ -1894,9 +1979,25 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             rest_min += par_band(q.1).0;
         }
         let hi_cap = BUDGET_M - total_len - rest_min;
+        // spread by construction (item 9): the second par 3 / 5 targets the
+        // OUTER quarter of the band on the side the first did not take
+        // (the other half, in the first pass, still left 34 % of par-3
+        // pairs within 20 m: both settled near the middle)
+        let band_override = if par == 3 || par == 5 {
+            let earlier: Vec<f64> = holes.iter().filter(|hh| hh.par == par).map(|hh| hh.length_m).collect();
+            if earlier.len() == 1 {
+                let (tlo, thi) = par_target(par);
+                let mid = par_mid(par);
+                Some(if earlier[0] <= mid { (0.5 * (mid + thi), thi) } else { (tlo, 0.5 * (tlo + mid)) })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let opts = place_tee(rf, f, pos, g, par, if h == 0 { Some(home) } else { None },
                              &spines, &walks, &other_greens, junction_idx, N_TEE_OPTIONS,
-                             Some(hi_cap), Some(home));
+                             Some(hi_cap), Some(home), band_override);
         let opts = match opts {
             Some(o) => o,
             None => {
@@ -1994,7 +2095,6 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
                 .fold(0.0_f64, f64::max)
         };
         let b2b = if h > 0 && (par == 3 || par == 5) && seq[h - 1].1 == par { -0.6 } else { 0.0 };
-        let (blo, bhi) = par_band(par);
         let mut terms: BTreeMap<String, f64> = BTreeMap::new();
         terms.insert("green".into(), 1.5 * pct[gi]);
         terms.insert("edge".into(), edge_term(site.win, g, pool[gi].reserved));
@@ -2002,7 +2102,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("approach".into(), 1.0 * appr);
         terms.insert("lz".into(), if par >= 4 { 0.8 * clip(lz_score, -1.0, 1.0) } else { 0.0 });
         terms.insert("tee".into(), 0.4 * clip(tee.score, -1.0, 1.0));
-        terms.insert("length".into(), 0.5 * trapezoid(length, blo, bhi, TRAP_RAMP, TRAP_TAIL));
+        terms.insert("length".into(), 0.5 * tent_t(length, par));
         terms.insert("walk".into(),
                      -1.0 * clip((wk.length_m - WALK_FREE_M) / (WALK_SAT_M - WALK_FREE_M), 0.0, 1.0)
                      - 0.3 * clip(wk.length_m / WALK_MAX_M, 0.0, 1.0));
@@ -2168,8 +2268,11 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         entropy -= p * p.ln();
     }
     entropy /= 9.0_f64.ln();
+    // item 9: par 3 +0.5 if the range is >= 30 m AND one is <= 150 m (a
+    // short one: real nines have one), -0.3 if < 15 m (twins); par 5 +0.5 at
+    // >= 40 m; par 4 +0.5 at >= 80 m (was +0.3 each at 40 / 80 / 50)
     let mut spread = 0.0;
-    for (par, need) in [(3u8, 40.0), (4, 80.0), (5, 50.0)] {
+    for par in [3u8, 4, 5] {
         let ls: Vec<f64> = holes.iter().filter(|hh| hh.par == par).map(|hh| hh.length_m).collect();
         if ls.len() >= 2 {
             let mut mx = f64::NEG_INFINITY;
@@ -2178,15 +2281,18 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
                 mx = mx.max(l);
                 mn = mn.min(l);
             }
-            if mx - mn >= need {
-                spread += 0.3;
-            }
+            let range = mx - mn;
+            spread += match par {
+                3 => if range >= 30.0 && mn <= 150.0 { 0.5 } else if range < 15.0 { -0.3 } else { 0.0 },
+                4 => if range >= 80.0 { 0.5 } else { 0.0 },
+                _ => if range >= 40.0 { 0.5 } else { 0.0 },
+            };
         }
     }
     // weight 1.0 -> 2.5, tail 0.4 -> 0.05 (2026-08-30): adding the beam
     // clearance term taught the router to BUY spacing with length (3,603 m
     // totals); the band must push back as hard as the spacing pulls
-    let tot_t = trapezoid(total_len, TOTAL_BAND_M.0, TOTAL_BAND_M.1, TRAP_RAMP, 0.05);
+    let tot_t = clip(1.0 - (total_len - TOTAL_PEAK_M).abs() / TOTAL_TENT_M, 0.0, 1.0);
 
     // PAR-5 POSITIONAL SPREAD (owner, 2026-08-30): the length budget was
     // banking yardage for the end and the fives all landed on holes 7-9.

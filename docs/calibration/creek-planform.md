@@ -1540,3 +1540,42 @@ deviation, reported: 900068 h2 82 m, 900179 h2 142 m, 900206 h2 80 m,
 900246 h4 80 m); 250/250, 0 crossings, green-in-play ≤ 35 m 0, tee
 boxes > 30 % 0, above-chord p90 2.4, coverage 63 %, seconds max 0.62.
 Viewer: artifact de250471 (`--pick water`).
+
+## 2026-09-15 — routing round 1, item 9: hole lengths
+
+`PAR_BAND_*` stays the legal gate; the scores reward the corpus
+interquartile ranges (`PAR_TARGET_3/4/5` = 143–183 / 317–383 / 446–500,
+5,201 holes) — par 4 as a TENT (1 at the 350 m median, 0.5 at the
+quartiles, 0 at 284/416), par 3 and 5 as the flat IQR with a 20 m ramp
+— in the beam (0.9), `place_tee`'s `band_t` (1.1) and detail
+`terms["length"]` (0.5); pace midpoints 163 / 350 / 473. Spread by
+construction: the second par 3 / 5 targets the OUTER quarter of its band
+on the side the first did not take (`band_override` on `place_tee`);
+the beam charges `TWIN_W` 0.8 when a new par 3 / 5 lands within 30 / 40
+m of an earlier one's estimate; route `spread`: par 3 +0.5 if range ≥
+30 m AND one ≤ 150 m, −0.3 if < 15 m; par 4 +0.5 at ≥ 80; par 5 +0.5 at
+≥ 40. `TOTAL_BAND_M` (2800, 3250), `BUDGET_M` = its ceiling (the budget
+had been truncating late holes to `lo + 20`), and the total reward is a
+tent at the real par-36 nine (2·163 + 5·351 + 2·474 = 3,029 m), 0 at
+±250.
+
+Passes (par 3 median / par-3 pairs within 20 m / par 4 / par 5 / total
+p50 / mix): s8 185 / 50 % / 346 / 518 / 3,147 / 87 % — (a) flat IQR
+rewards, other-half override, twin 0.4, flat total to 3,250: 165 / 34 %
+/ 374 / 490 / 3,177 / 91 % (par 4s pinned to the top of a flat reward;
+the total rose) — (b) + tent total, outer-quarter override, twin 0.8:
+165 / 14 % / 371 / 489 / 3,154 / 91 % — (c) tents for every par: 163 /
+52 % / 359 / 488 / 3,139 / 82 % (both par 3s pulled onto 163; the mix
+fell) — **(d) tent for par 4 only (shipped): 165 / 11 % / 358 / 487 /
+3,123 / 94 %**.
+
+Shipped (`rs_s9.jsonl`, `audit_s9.txt`, vs s8): par 3 median 185 → 165
+(target 160–170), pairs within 20 m 50 → 11 % (≤ 15), a par 3 ≤ 150 m
+on 38 → 57 % of courses, par 5 518 → 487 (< 500), par 4 346 → 358, total
+p50 3,147 → 3,123 (target 3,000–3,100: the sum of the shipped medians
+is 3,094), hole-9 par 5 51 → 28 % (a side benefit ahead of item 10),
+mix 87 → 94 %; 250/250, 0 crossings, green-in-play ≤ 35 m 0 (≤ 50 m 76
+→ 110), tee boxes > 30 % 0, above-chord p90 2.6, seconds max 0.56.
+Side effect reported: water courses with a carry 41 → 32 % (shorter
+holes cross less water; near-water 48 holds). Viewer: artifact 7ae0e537
+(`--pick length`).
