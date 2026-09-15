@@ -43,11 +43,12 @@ use std::f64::consts::PI;
 
 use rayon::prelude::*;
 
-use crate::geom::{ch_intrusion, clearance_violation, polyline_crossings, trapezoid};
+use crate::geom::{ch_intrusion, clearance_violation, point_to_polyline_m, polyline_crossings,
+                  trapezoid};
 use crate::img;
 use crate::terrain::Terrain;
-use crate::{Bridge, BridgeKind, Candidate, Clubhouse, Fields, Hole, Route, Siting, TeeBox, Walk,
-            Yx, N_BEARINGS};
+use crate::{Bridge, BridgeKind, Candidate, Clubhouse, Fields, Hole, Morphology, Persistence,
+            Route, Siting, TeeBox, Walk, Yx, N_BEARINGS};
 
 // --- pars, mixes, bands ----------------------------------------------------
 // Allowed par-36 mixes as (n_par3, n_par4, n_par5), owner-specified.
@@ -146,6 +147,40 @@ pub const LZ_SEP_M: f64 = 50.0;          // landing zones of different holes sta
 // and 0.95% under 80 m. Real courses simply do not do this.
 pub const GREEN_LZ_SEP_M: f64 = 80.0;
 pub const LZ_APPROX_M: f64 = 220.0;      // where a drive finishes, for beam-time LZ estimates
+// A GREEN MUST NOT SIT IN ANOTHER HOLE'S LINE OF PLAY (plan item 1,
+// 2026-09-14). The 250-seed audit found 36 greens within 35 m of another
+// hole's mid-line: `clearance_violation`'s consecutive exemption dropped
+// the previous green's samples outright, and nothing else looked at a
+// green against a spine. GREEN_CLEAR_M = CLEAR_MID_M, the measured
+// mid-hole p10 clearance between neighbouring lines of play (5,187
+// corpus holes): a green is a line-of-play object like any other and
+// gets the same room. GREEN_VETO_M (owner): a green inside another
+// hole's fairway width is a defect, not a penalty -- a hard tier in
+// placement and a heavy flat charge in the scores. GREEN_JUNCTION_M: the
+// successor's first 60 m of arc is the tee beside this green (walks p50
+// 67 m), the shared corridor mouth -- the only exemption.
+pub const GREEN_CLEAR_M: f64 = CLEAR_MID_M;
+pub const GREEN_VETO_M: f64 = 30.0;
+pub const GREEN_JUNCTION_M: f64 = 60.0;
+/// Route / beam weights on `v = clip((GREEN_CLEAR_M - d) / GREEN_CLEAR_M, 0, 1)`:
+/// `-GIP_W * v^2` and a flat veto charge under GREEN_VETO_M -- twice a
+/// play crossing (6.0) at route level, 8 in the beam where the straight
+/// tee->green line is an estimate. Calibration ladder (250 seeds,
+/// 2026-09-15; cases = greens within 35 / 50 m of another hole's spine
+/// outside the successor's first 60 m; "mid" = the audit's t 0.15-0.85
+/// count, baseline 78 / 122, mid 36):
+///   x1  (4.0)  ->  13 / 64, mid 6
+///   x2  (8.0)  ->   7 / 57, mid 3   (shipped: the ladder's top rung,
+///                                    acceptance mid <= 3 met)
+///   x4 (16.0)  ->   4 / 42, mid 3   (off the ladder; same guards)
+/// The residual at x2 is structural: five are hole 9's green beside hole
+/// 1's tee (both pinned to the clubhouse disc, 30-34 m, arc 0-40 m) --
+/// the loop-closure twin of the consecutive junction, which the exemption
+/// does not cover; one is a successor at arc 65 m; one a tee 32 m from
+/// the previous-but-one green. Every guard held on every rung.
+pub const GIP_W: f64 = 8.0;
+pub const GIP_VETO_ROUTE: f64 = 12.0;
+pub const GIP_VETO_BEAM: f64 = 8.0;
 
 // --- clubhouse keep-out ------------------------------------------------------
 // Owner (2026-08-30): "the clubhouse sits right in front of the green
@@ -170,6 +205,14 @@ pub const CROSS_TRIM_M: f64 = 8.0;
 /// -- totals are bounded by construction.
 pub const BUDGET_M: f64 = 3100.0;
 
+// --- interest raster (plan item 6; computed here, not yet scored) -----------
+/// `surround` is computed on the play window plus this slab, 0 elsewhere.
+pub const SURROUND_SLAB_M: f64 = 200.0;
+/// `interest`'s surround trapezoid: free from 3.5 m, full to 14 m.
+pub const INTEREST_SURROUND_BAND: (f64, f64) = (3.5, 14.0);
+/// `interest40 = max_filter_disc(interest, 5)`: a feature within 40 m.
+pub const INTEREST40_R_CELLS: usize = 5;
+
 // --- data model ------------------------------------------------------------
 
 /// `routing.RouteFields`.
@@ -179,16 +222,102 @@ pub struct RouteFields {
     pub lz_room: Vec<f64>,
     pub tee_ok: Vec<bool>,
     pub tee_relaxed: Vec<bool>,
+    /// p90 - p10 of `z8` over the 25-90 m annulus (`greens::field_score`'s
+    /// ring), on the window + `SURROUND_SLAB_M` slab; 0 outside it
+    pub surround: Vec<f64>,
+    /// [0, 1] "something to play against here": surround relief, |tpi200|,
+    /// saddle / peak / pit; 0 on wet cells. NOT yet read by any score.
+    pub interest: Vec<f64>,
+    /// `interest` maxed over a 40 m disc. NOT yet read by any score.
+    pub interest40: Vec<f64>,
 }
 
-/// `routing.build_route_fields(f)`.
-pub fn build_route_fields(f: &Fields) -> RouteFields {
+/// The per-site context the router threads through the beam and detail
+/// placement: the clubhouse being auditioned (`home`), the play window
+/// `(min_y, min_x, h, w)` in metres, and the morphology.
+#[derive(Clone, Copy, Debug)]
+pub struct SiteCtx<'a> {
+    pub home: Yx,
+    pub win: (f64, f64, f64, f64),
+    pub m: &'a Morphology,
+}
+
+/// `routing.build_route_fields(f)` plus the interest rasters: `surround`
+/// on the window + 200 m slab, `interest` / `interest40` over the grid.
+/// `win` is `Siting::window_m`.
+pub fn build_route_fields(f: &Fields, m: &Morphology, p: &Persistence,
+                          win: (f64, f64, f64, f64)) -> RouteFields {
     let lz_room = img::edt(&f.pad_fair, f.nx, f.ny, f.cell);
     let mut tee_relaxed = Vec::with_capacity(f.z8.len());
     for i in 0..f.z8.len() {
         tee_relaxed.push(f.slope[i] <= 0.10 && !f.wet8[i]);
     }
-    RouteFields { lz_room, tee_ok: f.pad_tee.clone(), tee_relaxed }
+    let surround = surround_raster(f, win);
+    let n = f.z8.len();
+    let mut interest = vec![0.0; n];
+    for i in 0..n {
+        if f.wet8[i] {
+            continue;
+        }
+        let saddle: f64 = if m.saddle[i] { 1.0 } else { 0.0 };
+        let feat = saddle
+            .max(clip(p.peak[i] / 4.0, 0.0, 1.0))
+            .max(clip(p.pit[i] / 3.0, 0.0, 1.0));
+        let v = 0.5 * trapezoid(surround[i], INTEREST_SURROUND_BAND.0, INTEREST_SURROUND_BAND.1,
+                                TRAP_RAMP, TRAP_TAIL)
+            + 0.3 * clip(f.tpi200[i].abs() / 1.5, 0.0, 1.0)
+            + 0.2 * feat;
+        interest[i] = clip(v, 0.0, 1.0);
+    }
+    let interest40 = img::max_filter_disc(&interest, f.nx, f.ny, INTEREST40_R_CELLS);
+    RouteFields { lz_room, tee_ok: f.pad_tee.clone(), tee_relaxed, surround, interest, interest40 }
+}
+
+/// p90 - p10 of `z8` over the 25-90 m annulus, exactly `field_score`'s
+/// ring (`rr0 = 3`, `rr1 = 11` cells at 8 m; `r_in` strictly between
+/// `rr0^2 - 1` and `rr0^2`), evaluated on the window + `SURROUND_SLAB_M`
+/// slab with an `rr1` margin so the slab's edge cells see real
+/// neighbours. Full-grid array, 0 outside the slab.
+fn surround_raster(f: &Fields, win: (f64, f64, f64, f64)) -> Vec<f64> {
+    let (nx, ny) = (f.nx, f.ny);
+    let mut out = vec![0.0; nx * ny];
+    // window cells the way `greens::generate` derives them from the siting
+    let i0 = (win.0 / f.cell).round_ties_even().max(0.0) as usize;
+    let j0 = (win.1 / f.cell).round_ties_even().max(0.0) as usize;
+    let h = (win.2 / f.cell).round_ties_even().max(0.0) as usize;
+    let w = (win.3 / f.cell).round_ties_even().max(0.0) as usize;
+    let slab = (SURROUND_SLAB_M / f.cell).round_ties_even() as usize;
+    let a0 = i0.saturating_sub(slab).min(ny);
+    let a1 = (i0 + h + slab).min(ny);
+    let b0 = j0.saturating_sub(slab).min(nx);
+    let b1 = (j0 + w + slab).min(nx);
+    if a1 <= a0 || b1 <= b0 {
+        return out;
+    }
+    let rr0 = (crate::greens::SURROUND_R0_M / f.cell).round_ties_even() as usize; // 3
+    let rr1 = (crate::greens::SURROUND_R1_M / f.cell).round_ties_even() as usize; // 11
+    let za0 = a0.saturating_sub(rr1);
+    let za1 = (a1 + rr1).min(ny);
+    let zb0 = b0.saturating_sub(rr1);
+    let zb1 = (b1 + rr1).min(nx);
+    let (zh, zw) = (za1 - za0, zb1 - zb0);
+    let mut zs = Vec::with_capacity(zh * zw);
+    for y in za0..za1 {
+        zs.extend_from_slice(&f.z8[y * nx + zb0..y * nx + zb1]);
+    }
+    let r_in = ((rr0 * rr0) as f64 - 0.5).sqrt();
+    let r_out = rr1 as f64;
+    let p90 = img::percentile_filter_ring(&zs, zw, zh, r_in, r_out, 90.0);
+    let p10 = img::percentile_filter_ring(&zs, zw, zh, r_in, r_out, 10.0);
+    let oy = a0 - za0;
+    let ox = b0 - zb0;
+    for y in a0..a1 {
+        for x in b0..b1 {
+            let kz = (oy + y - a0) * zw + (ox + x - b0);
+            out[y * nx + x] = p90[kz] - p10[kz];
+        }
+    }
+    out
 }
 
 /// One back-tee option from `place_tee`: `(yx, score, graded)`.
@@ -315,6 +444,35 @@ fn any_walk_crossing(a: &[Yx], walks: &[[Yx; 2]]) -> bool {
         }
     }
     false
+}
+
+/// Plan item 1: how far `green` sits inside the spine `poly`'s line of
+/// play, `(d, v)` with `v = clip((GREEN_CLEAR_M - d) / GREEN_CLEAR_M, 0, 1)`;
+/// `None` when `junction` is set and the closest point on the spine lies
+/// within `GREEN_JUNCTION_M` of the spine's start (the successor's tee
+/// beside this green: the corridor mouth, not play over the green).
+fn green_play(poly: &[Yx], green: Yx, junction: bool) -> Option<(f64, f64)> {
+    let (d, s) = point_to_polyline_m(poly, green);
+    if junction && s < GREEN_JUNCTION_M {
+        return None;
+    }
+    Some((d, clip((GREEN_CLEAR_M - d) / GREEN_CLEAR_M, 0.0, 1.0)))
+}
+
+/// The worst green-in-play `v` of the legs `poly` against `avoid_greens`,
+/// with `junction_idx` (an index into `avoid_greens`, the predecessor's
+/// green) exempt within `GREEN_JUNCTION_M` of `poly`'s start; and whether
+/// any green lies under `GREEN_VETO_M`.
+fn greens_along(poly: &[Yx], avoid_greens: &[Yx], junction_idx: Option<usize>) -> (f64, bool) {
+    let mut worst = 0.0_f64;
+    let mut veto = false;
+    for (k, &g2) in avoid_greens.iter().enumerate() {
+        if let Some((d, v)) = green_play(poly, g2, junction_idx == Some(k)) {
+            worst = worst.max(v);
+            veto = veto || d < GREEN_VETO_M;
+        }
+    }
+    (worst, veto)
 }
 
 // --- geometry kernels ------------------------------------------------------
@@ -463,11 +621,14 @@ pub fn lz_probe(rf: &RouteFields, f: &Fields, tee_yx: Yx, green_yx: Yx, par: u8)
 /// DOGLEG_MAX of the direct line to the green. 5 radii x 23 bearings
 /// (`np.arange(-45, 46, 4)` degrees: -45, -41, ..., 43), flat index
 /// `bearing * 5 + radius` as `np.meshgrid(radii, bears).ravel()` orders it.
+/// `junction_idx` names the predecessor's green in `avoid_greens` (exempt
+/// from the green veto within `GREEN_JUNCTION_M` of `from_yx`, the tee);
+/// `None` when `from_yx` is not this hole's tee.
 #[allow(clippy::too_many_arguments)]
 pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
                 r_band: (f64, f64), remainder_band: (f64, f64),
                 avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
-                avoid_lzs: &[Yx], avoid_greens: &[Yx],
+                avoid_lzs: &[Yx], avoid_greens: &[Yx], junction_idx: Option<usize>,
                 ch_keepout_yx: Option<Yx>) -> Option<LzPick> {
     let a = from_yx;
     let g = green_yx;
@@ -540,6 +701,16 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
                 continue;
             }
         }
+        // GREEN VETO (plan item 1): neither leg passes within GREEN_VETO_M
+        // of another hole's green -- part of the play-clean tier, so a
+        // candidate that plays over a green ranks with one that crosses
+        // a line of play; the predecessor's green is exempt over the
+        // tee's first GREEN_JUNCTION_M (the walk junction)
+        let (_, veto_in) = greens_along(&legs[..2], avoid_greens, junction_idx);
+        let (_, veto_out) = greens_along(&legs[1..], avoid_greens, None);
+        if veto_in || veto_out {
+            continue;
+        }
         if pick_play_clean.is_none() {
             pick_play_clean = Some(k);
         }
@@ -590,9 +761,12 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, from_yx: Yx, green_yx: Yx,
 /// disc for hole 1), hole length in band, tee-grade ground preferred.
 /// Returns up to `n_options` clean candidates (tiered), or the single
 /// best-scored fallback; `None` when neither tee mask has a candidate.
+/// `avoid_greens` are the other holes' greens, `junction_idx` the
+/// predecessor's index in it (exempt within `GREEN_JUNCTION_M` of the tee).
 #[allow(clippy::too_many_arguments)]
 pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u8,
                  clubhouse_yx: Option<Yx>, avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
+                 avoid_greens: &[Yx], junction_idx: Option<usize>,
                  n_options: usize, hi_cap: Option<f64>, ch_keepout_yx: Option<Yx>)
     -> Option<Vec<TeeOption>> {
     let (lo, mut hi) = par_band(par);
@@ -695,6 +869,10 @@ pub fn place_tee(rf: &RouteFields, f: &Fields, prev_yx: Yx, green_yx: Yx, par: u
             if let Some(ch) = ch_keepout_yx {
                 viol = viol.max(ch_intrusion(&spine_seg, ch, CH_TRIM_M));
             }
+            // GREEN IN PLAY (plan item 1): the straight tee->green line
+            // vs the other greens folds into the same threshold
+            let (gv, _) = greens_along(&spine_seg, avoid_greens, junction_idx);
+            viol = viol.max(gv);
             if viol <= 0.55 {
                 tier0.push(entry);
                 if tier0.len() >= n_options {
@@ -735,9 +913,9 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
     let mut out = Vec::with_capacity(TEE_STAGGER_M.len());
     for (bi, &off) in TEE_STAGGER_M.iter().enumerate() {
         let base = (a.0 + u.0 * off, a.1 + u.1 * off);
-        // (key = (slope, |lat|, lat), point, graded); lat is unique per
-        // step so the key order is total without a float-equality test
-        let mut best: Option<((f64, f64, f64), Yx, bool)> = None;
+        // (key = (slope, |lat|, lat), point, graded, cell); lat is unique
+        // per step so the key order is total without a float-equality test
+        let mut best: Option<((f64, f64, f64), Yx, bool, usize)> = None;
         let mut li = 0;
         while li < 11 {
             let lat = -10.0 + 2.0 * li as f64;
@@ -753,17 +931,17 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
             let key = (f.slope[idx], lat.abs(), lat);
             let better = match &best {
                 None => true,
-                Some((bk, _, _)) => asc_nan_last(key.0, bk.0)
+                Some((bk, _, _, _)) => asc_nan_last(key.0, bk.0)
                     .then_with(|| asc_nan_last(key.1, bk.1))
                     .then_with(|| asc_nan_last(key.2, bk.2)) == Ordering::Less,
             };
             if better {
-                best = Some((key, p, !rf.tee_ok[idx]));
+                best = Some((key, p, !rf.tee_ok[idx], idx));
             }
         }
-        let (p, graded) = match best {
-            Some((_, p, gr)) => (p, gr),
-            None => (base, true),
+        let (p, graded, idx) = match best {
+            Some((_, p, gr, idx)) => (p, gr, idx),
+            None => (base, true, cell_of(f, base.0, base.1)),
         };
         out.push(TeeBox {
             yx: p,
@@ -771,6 +949,7 @@ pub fn tee_boxes(rf: &RouteFields, f: &Fields, back_yx: Yx, target_yx: Yx, green
             axis: u.0.atan2(u.1),
             length_m: (g.0 - p.0).hypot(g.1 - p.1),
             graded,
+            slope: f.slope[idx],
         });
     }
     out
@@ -840,7 +1019,8 @@ pub fn state_order(a: &BeamState, b: &BeamState) -> Ordering {
 /// and concatenate in state order.
 #[allow(clippy::too_many_arguments)]
 fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct: &[f64],
-                home: Yx, st: &BeamState, h: usize) -> Vec<BeamState> {
+                site: &SiteCtx, st: &BeamState, h: usize) -> Vec<BeamState> {
+    let home = site.home;
     let n = pool.len();
     let mut nxt = Vec::new();
     let pars = legal_pars(st.counts, h);
@@ -969,6 +1149,38 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             }
             let chi = ch_intrusion(&ns_arr, home, CH_TRIM_M);
             pen -= 2.0 * chi * chi;
+            // GREEN IN PLAY, beam side (plan item 1): this hole's straight
+            // line vs every earlier green (the predecessor exempt within
+            // GREEN_JUNCTION_M of this tee), and this green vs every
+            // earlier straight spine (no exemption: those END at their
+            // greens). The exact term charges the route again.
+            let n_seq = st.seq.len();
+            for (k, e) in st.seq.iter().enumerate() {
+                if let Some((d, v)) = green_play(&ns_arr, yx[e.0], k + 1 == n_seq) {
+                    pen -= GIP_W * v * v;
+                    if d < GREEN_VETO_M {
+                        pen -= GIP_VETO_BEAM;
+                    }
+                }
+            }
+            // The loop junction (2026-09-15): the ninth green and the first
+            // tee are both pinned to the clubhouse disc, so hole 9's green
+            // beside hole 1's first GREEN_JUNCTION_M is the same corridor
+            // mouth as the consecutive junction, and exempt the same way.
+            let mut sp_k = 0usize;
+            for &(a2, b2, kind2) in &st.segs {
+                if kind2 != SegKind::Spine {
+                    continue;
+                }
+                sp_k += 1;
+                let loop_junction = h == 8 && sp_k == 1;
+                if let Some((d, v)) = green_play(&[a2, b2], gp, loop_junction) {
+                    pen -= GIP_W * v * v;
+                    if d < GREEN_VETO_M {
+                        pen -= GIP_VETO_BEAM;
+                    }
+                }
+            }
             // this green vs earlier holes' approximate LZs
             for &(ly, lx) in &st.lzs_ap {
                 let d_gl = (gp.0 - ly).hypot(gp.1 - lx);
@@ -1031,12 +1243,13 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
 }
 
 /// The router. Beam over green sequences with router-chosen par
-/// (`routing.beam_route`); `home` is the clubhouse being auditioned.
-pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &[Candidate])
+/// (`routing.beam_route`); `site.home` is the clubhouse being auditioned.
+pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx, pool: &[Candidate])
     -> Option<Route> {
     if pool.is_empty() {
         return None;
     }
+    let home = site.home;
     let yx: Vec<Yx> = pool.iter().map(|c| c.yx).collect();
     let pct = pool_pct(pool);
     let n = pool.len();
@@ -1058,7 +1271,7 @@ pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &[C
         // identical to the serial loop
         let per_state: Vec<Vec<BeamState>> = states
             .par_iter()
-            .map(|st| expand_state(f, rf, pool, &yx, &pct, home, st, h))
+            .map(|st| expand_state(f, rf, pool, &yx, &pct, site, st, h))
             .collect();
         let mut nxt: Vec<BeamState> = Vec::new();
         for v in per_state {
@@ -1089,7 +1302,7 @@ pub fn beam_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &[C
     }
     let mut best: Option<Route> = None;
     for st in finals {
-        if let Some(r) = detail_route(t, f, rf, home, pool, &st.seq) {
+        if let Some(r) = detail_route(t, f, rf, site, pool, &st.seq) {
             let better = match &best {
                 None => true,
                 Some(b) => r.score > b.score,
@@ -1225,11 +1438,12 @@ fn round_to(x: f64, d: i32) -> f64 {
 /// `routing.detail_route`: exact placement of tees, LZs, boxes, walks and
 /// bridges along a beam state's sequence `(green_idx, par, est_tee)`, then
 /// the exact rescore.
-pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &[Candidate],
-                    seq: &[(usize, u8, Yx)]) -> Option<Route> {
+pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
+                    pool: &[Candidate], seq: &[(usize, u8, Yx)]) -> Option<Route> {
     if seq.is_empty() {
         return None;
     }
+    let home = site.home;
     let nh = seq.len();
     let pct = pool_pct(pool);
     let mut holes: Vec<Hole> = Vec::with_capacity(nh);
@@ -1245,14 +1459,26 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
     for (h, &(gi, par, _est)) in seq.iter().enumerate() {
         let g = pool[gi].yx;
         // every OTHER hole's green is a fixed obstacle for this hole's LZs
-        let other_greens: Vec<Yx> = seq.iter().filter(|q| q.0 != gi).map(|q| pool[q.0].yx).collect();
+        // and its line; `junction_idx` is the predecessor's slot in it
+        let mut other_greens: Vec<Yx> = Vec::with_capacity(nh);
+        let mut junction_idx: Option<usize> = None;
+        for (h2, q) in seq.iter().enumerate() {
+            if q.0 == gi {
+                continue;
+            }
+            if h > 0 && h2 + 1 == h {
+                junction_idx = Some(other_greens.len());
+            }
+            other_greens.push(pool[q.0].yx);
+        }
         let mut rest_min = 0.0;
         for q in &seq[h + 1..] {
             rest_min += par_band(q.1).0;
         }
         let hi_cap = BUDGET_M - total_len - rest_min;
         let opts = place_tee(rf, f, pos, g, par, if h == 0 { Some(home) } else { None },
-                             &spines, &walks, N_TEE_OPTIONS, Some(hi_cap), Some(home));
+                             &spines, &walks, &other_greens, junction_idx, N_TEE_OPTIONS,
+                             Some(hi_cap), Some(home));
         let opts = match opts {
             Some(o) => o,
             None => {
@@ -1281,7 +1507,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
             if par >= 4 {
                 let rem = if par == 4 { (90.0, 200.0) } else { (300.0, 999.0) };
                 if let Some(r1) = place_lz(rf, f, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
-                                           &lz_seen, &other_greens, Some(home)) {
+                                           &lz_seen, &other_greens, junction_idx, Some(home)) {
                     lzs.push(r1.lz);
                     lz_score = r1.score;
                     all_clean = all_clean && r1.clean;
@@ -1290,7 +1516,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
             if par == 5 && !lzs.is_empty() {
                 let from = (lzs[0].0, lzs[0].1);
                 if let Some(r2) = place_lz(rf, f, from, g, SECOND_R_M, (120.0, 200.0), &spines,
-                                           &walks, &lz_seen, &other_greens, Some(home)) {
+                                           &walks, &lz_seen, &other_greens, None, Some(home)) {
                     lzs.push(r2.lz);
                     lz_score = 0.5 * (lz_score + r2.score);
                     all_clean = all_clean && r2.clean;
@@ -1370,6 +1596,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
             index: h,
             par,
             green_idx: gi,
+            kind: pool[gi].kind.clone(),
             green_yx: g,
             tee_boxes: boxes,
             lzs: lzs.clone(),
@@ -1399,6 +1626,30 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
             worst_clear = worst_clear.max(v);
             clear_pen -= 3.0 * v * v;        // quadratic: brushing is cheap,
                                              // sharing a corridor is not
+        }
+    }
+    // GREEN IN PLAY, exact (plan item 1): every (A's green, B's spine),
+    // A != B, on the placed polylines; B = A + 1 exempt over its first
+    // GREEN_JUNCTION_M of arc, and so is B = hole 1 against the last green
+    // (the clubhouse loop junction). Offenders under GREEN_CLEAR_M recorded.
+    let mut gip_pen = 0.0;
+    let mut green_in_play: Vec<(usize, usize, f64)> = Vec::new();
+    for a in 0..nh {
+        for b in 0..nh {
+            if a == b {
+                continue;
+            }
+            // B = A + 1, or the loop junction (A the last hole, B the first)
+            let junction = b == a + 1 || (a + 1 == nh && b == 0);
+            if let Some((d, v)) = green_play(&spines[b], holes[a].green_yx, junction) {
+                gip_pen -= GIP_W * v * v;
+                if d < GREEN_VETO_M {
+                    gip_pen -= GIP_VETO_ROUTE;
+                }
+                if d < GREEN_CLEAR_M {
+                    green_in_play.push((a, b, d));
+                }
+            }
         }
     }
     let mut green_lz_pen = 0.0;
@@ -1534,6 +1785,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
     rterms.insert("clearance".into(), clear_pen);
     rterms.insert("lz_sep".into(), lz_pen);
     rterms.insert("green_in_lz".into(), green_lz_pen);
+    rterms.insert("green_in_play".into(), gip_pen);
     // DEVIATION: the prototype assigned `worst_clear = 0.0` twice and
     // excluded a not-yet-present `min_green_lz_m` from the sum. Here the
     // score is summed over the score terms only; the two diagnostics are
@@ -1555,6 +1807,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
         score,
         terms: rterms,
         crossings,
+        green_in_play,
     })
 }
 
@@ -1570,9 +1823,16 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, home: Yx, pool: &
 /// depends on the clubhouse); when absent the given pool is reused.
 /// `sit.clubhouse.alternates` is the audition list as `siting.py` builds it
 /// (the primary is its first entry); when empty the primary alone runs.
-pub fn run_routing(t: &Terrain, sit: &Siting, f: &Fields, pool: &[Candidate],
-                   pool_fn: Option<&dyn Fn(&Clubhouse) -> Vec<Candidate>>) -> Option<Route> {
-    let rf = build_route_fields(f);
+pub fn run_routing(t: &Terrain, sit: &Siting, f: &Fields, m: &Morphology, p: &Persistence,
+                   pool: &[Candidate], pool_fn: Option<&dyn Fn(&Clubhouse) -> Vec<Candidate>>)
+    -> Option<Route> {
+    // stage timing, `SAND_TIME=1` (the sandhills crate's switch; `route_batch
+    // --time` sets it): the once-per-tile raster build
+    let t0 = std::time::Instant::now();
+    let rf = build_route_fields(f, m, p, sit.window_m);
+    if std::env::var("SAND_TIME").is_ok() {
+        eprintln!("  time {:14} {:7.1} ms", "route_fields", t0.elapsed().as_secs_f64() * 1e3);
+    }
     let primary = std::slice::from_ref(&sit.clubhouse);
     let alts: &[Clubhouse] = if sit.clubhouse.alternates.is_empty() {
         primary
@@ -1589,7 +1849,8 @@ pub fn run_routing(t: &Terrain, sit: &Siting, f: &Fields, pool: &[Candidate],
             }
             None => pool,
         };
-        if let Some(r) = beam_route(t, f, &rf, ch.yx, p_ch) {
+        let site = SiteCtx { home: ch.yx, win: sit.window_m, m };
+        if let Some(r) = beam_route(t, f, &rf, &site, p_ch) {
             let better = match &best {
                 None => true,
                 Some(b) => r.score > b.score,

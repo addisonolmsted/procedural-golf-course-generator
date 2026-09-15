@@ -188,30 +188,28 @@ pub fn clear_radius(t: f64) -> f64 {
 /// (30 m at the ends, 50 m mid-hole), both resampled every 15 m
 /// (`_resample_t`; 0 if either is shorter than 30 m), over all sample
 /// pairs, the radius at a pair being the larger of the two holes' radii at
-/// their own `t`. `consecutive` exempts the junction exactly as the
-/// prototype does: keep only A's samples with `t <= 0.82` and B's with
-/// `t >= 0.18` (0 if either set empties). Returns `max(clip((r - d) / r, 0, 1))`.
+/// their own `t`. Returns `max(clip((r - d) / r, 0, 1))`.
+///
+/// DEVIATION (plan item 1, 2026-09-14): the prototype's `consecutive`
+/// exemption DROPPED every sample of A with `t > 0.82` (its green
+/// included) and every sample of B with `t < 0.18`, so hole B could play
+/// straight over hole A's green unpenalised (36 mid-hole cases in the
+/// 250-seed audit). Every sample is kept here; `consecutive` exempts only
+/// the junction PAIRS -- A's end (`t > 0.82`) against B's start
+/// (`t < 0.18`), the shared corridor mouth where the walk is -- so A's
+/// green still counts against B's middle and end.
 pub fn clearance_violation(a: &[Yx], b: &[Yx], consecutive: bool) -> f64 {
     let (Some((pa, ta)), Some((pb, tb))) = (resample_t(a, CLEAR_STEP_M), resample_t(b, CLEAR_STEP_M)) else {
         return 0.0;
     };
-    let (mut pa, mut ta, mut pb, mut tb) = (pa, ta, pb, tb);
-    if consecutive {
-        let keep_a: Vec<usize> = (0..ta.len()).filter(|&i| ta[i] <= 0.82).collect();
-        let keep_b: Vec<usize> = (0..tb.len()).filter(|&i| tb[i] >= 0.18).collect();
-        pa = keep_a.iter().map(|&i| pa[i]).collect();
-        ta = keep_a.iter().map(|&i| ta[i]).collect();
-        pb = keep_b.iter().map(|&i| pb[i]).collect();
-        tb = keep_b.iter().map(|&i| tb[i]).collect();
-        if pa.is_empty() || pb.is_empty() {
-            return 0.0;
-        }
-    }
     let ra: Vec<f64> = ta.iter().map(|&t| clear_radius(t)).collect();
     let rb: Vec<f64> = tb.iter().map(|&t| clear_radius(t)).collect();
     let mut worst = 0.0f64;
     for (i, &p) in pa.iter().enumerate() {
         for (j, &q) in pb.iter().enumerate() {
+            if consecutive && ta[i] > 0.82 && tb[j] < 0.18 {
+                continue;
+            }
             let (dy, dx) = (p.0 - q.0, p.1 - q.1);
             let d = (dy * dy + dx * dx).sqrt();
             let r = ra[i].max(rb[j]);
@@ -224,6 +222,33 @@ pub fn clearance_violation(a: &[Yx], b: &[Yx], consecutive: bool) -> f64 {
     worst
 }
 
+/// The least point-to-segment distance from `p` to the polyline, and the
+/// arc position (metres from the polyline's first point) of the closest
+/// point. Segments are tested in order and only a strictly smaller
+/// distance replaces the best, so ties resolve to the earliest arc. A
+/// polyline with no segment: `(INFINITY, 0.0)`; a zero-length segment is
+/// its own point.
+pub fn point_to_polyline_m(poly: &[Yx], p: Yx) -> (f64, f64) {
+    let mut best = f64::INFINITY;
+    let mut best_s = 0.0;
+    let mut cum = 0.0;
+    for w in poly.windows(2) {
+        let (a2, b2) = (w[0], w[1]);
+        let ab = (b2.0 - a2.0, b2.1 - a2.1);
+        let ac = (p.0 - a2.0, p.1 - a2.1);
+        let len2 = ab.0 * ab.0 + ab.1 * ab.1;
+        let t = ((ac.0 * ab.0 + ac.1 * ab.1) / len2.max(1e-9)).clamp(0.0, 1.0);
+        let d = (a2.0 + t * ab.0 - p.0).hypot(a2.1 + t * ab.1 - p.1);
+        let len = len2.sqrt();
+        if d < best {
+            best = d;
+            best_s = cum + t * len;
+        }
+        cum += len;
+    }
+    (best, best_s)
+}
+
 /// `routing.ch_intrusion(spine, ch_yx, trim_m)` (default `trim_m = 20`):
 /// fractional intrusion of the clubhouse point into the trimmed spine's
 /// keep-out corridor, `clip((CH_KEEPOUT_M - d) / CH_KEEPOUT_M, 0, 1)` with
@@ -231,17 +256,7 @@ pub fn clearance_violation(a: &[Yx], b: &[Yx], consecutive: bool) -> f64 {
 /// `>= CH_KEEPOUT_M` away, 1 = dead over. A spine with no segment: 0.
 pub fn ch_intrusion(spine: &[Yx], ch_yx: Yx, trim_m: f64) -> f64 {
     let sp = trim_polyline(spine, trim_m);
-    let mut best = f64::INFINITY;
-    for w in sp.windows(2) {
-        let (a2, b2) = (w[0], w[1]);
-        let ab = (b2.0 - a2.0, b2.1 - a2.1);
-        let ac = (ch_yx.0 - a2.0, ch_yx.1 - a2.1);
-        let t = ((ac.0 * ab.0 + ac.1 * ab.1) / (ab.0 * ab.0 + ab.1 * ab.1).max(1e-9)).clamp(0.0, 1.0);
-        let d = (a2.0 + t * ab.0 - ch_yx.0).hypot(a2.1 + t * ab.1 - ch_yx.1);
-        if d < best {
-            best = d;
-        }
-    }
+    let (best, _) = point_to_polyline_m(&sp, ch_yx);
     ((CH_KEEPOUT_M - best) / CH_KEEPOUT_M).clamp(0.0, 1.0)
 }
 
@@ -374,11 +389,51 @@ mod tests {
         // the previous green) -- without it the junction reads 1.0
         let b = [(0.0, 300.0), (0.0, 600.0)];
         assert_eq!(clearance_violation(&a, &b, false), 1.0);
-        // with it, A keeps t <= 0.82 (x <= 246) and B keeps t >= 0.18
-        // (x >= 354): nearest pair 108 m apart, no violation
+        // with it, the pairs (A t > 0.82, B t < 0.18) are skipped; the
+        // nearest surviving pairs are A's x = 246 (t 0.82, r 42) vs B's
+        // x = 300 (54 m) and A's x = 300 vs B's x = 360 (t 0.20, r 43.3,
+        // 60 m): no violation (same value as the prototype's sample drop)
         assert_eq!(clearance_violation(&a, &b, true), 0.0);
         // asymmetric: the gates are on A's END and B's START only
         assert_eq!(clearance_violation(&b, &a, true), 1.0);
+    }
+
+    /// Plan item 1 regression: B crosses A's GREEN at B's midpoint. The
+    /// prototype dropped A's t > 0.82 samples for a consecutive pair and
+    /// returned 0.0; the green is in play, so it must read 1.0.
+    #[test]
+    fn clearance_keeps_the_green_of_a_consecutive_pair() {
+        let a = [(0.0, 0.0), (0.0, 300.0)];
+        let b = [(-150.0, 300.0), (150.0, 300.0)];
+        assert_eq!(clearance_violation(&a, &b, true), 1.0);
+        assert_eq!(clearance_violation(&a, &b, false), 1.0);
+        // B playing straight back over A: A's green (t = 1) sits on B's
+        // t = 0.5 sample -- not a junction pair, dead over
+        let b = [(0.0, 450.0), (0.0, 150.0)];
+        assert_eq!(clearance_violation(&a, &b, true), 1.0);
+    }
+
+    #[test]
+    fn point_to_polyline_hand() {
+        let s = [(0.0, 0.0), (0.0, 100.0), (50.0, 100.0)];
+        let (d, arc) = point_to_polyline_m(&s, (10.0, 40.0));
+        assert!((d - 10.0).abs() < 1e-12 && (arc - 40.0).abs() < 1e-12);
+        // closest on the second segment: arc counts the first one
+        let (d, arc) = point_to_polyline_m(&s, (30.0, 120.0));
+        assert!((d - 20.0).abs() < 1e-12 && (arc - 130.0).abs() < 1e-12);
+        // beyond the end: the last point, arc = L
+        let (d, arc) = point_to_polyline_m(&s, (60.0, 100.0));
+        assert!((d - 10.0).abs() < 1e-12 && (arc - 150.0).abs() < 1e-12);
+        // before the start
+        let (d, arc) = point_to_polyline_m(&s, (0.0, -5.0));
+        assert!((d - 5.0).abs() < 1e-12 && arc == 0.0);
+        // a tie between two segments resolves to the earliest arc
+        let (d, arc) = point_to_polyline_m(&s, (25.0, 75.0));
+        assert!((d - 25.0).abs() < 1e-12 && (arc - 75.0).abs() < 1e-12);
+        let (d, arc) = point_to_polyline_m(&[(1.0, 1.0)], (4.0, 5.0));
+        assert!(d.is_infinite() && arc == 0.0);
+        let (d, _) = point_to_polyline_m(&[(1.0, 1.0), (1.0, 1.0)], (4.0, 5.0));
+        assert!((d - 5.0).abs() < 1e-12);
     }
 
     #[test]

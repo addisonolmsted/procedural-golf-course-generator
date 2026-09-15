@@ -1262,3 +1262,66 @@ not linear interpolation, and is ported as such; Python's banker's
 rounding is reproduced where `int(round())` set a cell. No annealing pass
 (the prototype has none). 61 tests. Sheet:
 `tools/golf/route_sheet_json.py` renders routes from the batch records.
+
+## 2026-09-15 — routing round 1, items 0 + 1: instruments, and no green in another hole's line of play
+
+Plan: `~/.claude/plans/lets-start-addressing-some-eager-teacup.md` (routing
+refinement round 1, ten items, owner-approved 2026-09-14). Baseline for the
+whole round is the Rust port on the 250 frozen seeds,
+`out/route_rs/rs_v1.jsonl` (identical to the Python prototype). Walks are
+explicitly NOT optimised this round (owner).
+
+**Item 0, instruments (no behaviour change).** `dump.rs` record v2 (per
+hole: index, kind, green_idx, approach_bin, terms, tee_graded, tee_slope,
+bridges with kind, walk path; per route: crossings, green_in_play,
+coverage). `tools/golf/route_audit.py <dump> <a.jsonl> [<b.jsonl>]` — the
+37-row before/after table (edge, coverage, LZ / green setting, above
+chord, water, lengths, sequence, green in play, tee slopes, guards).
+`tools/golf/route_before_after.py` — stacked before/after cards, hold `b`,
+`--pick` orders by the change in one metric. `route.rs` plumbing:
+`build_route_fields(f, m, p, win)` (surround / interest rasters for items
+5–6), `SiteCtx`, `run_routing(t, sit, f, m, p, pool, pool_fn)`. Spines
+byte-identical to the baseline.
+
+**Item 1, green in play.** Cause: `geom::clearance_violation` dropped ALL of
+hole A's samples past t 0.82 (its green included) for a consecutive pair,
+so hole B could play straight over A's green, and nothing else looked at a
+green against a spine. Fix: keep every sample; skip only the pair
+`consecutive && ta > 0.82 && tb < 0.18` (regression test: A (0,0)→(0,300),
+B (−150,300)→(150,300) → 1.0, was 0.0). Term: for every (A's green, B's
+spine), `v = clip((50 − d)/50, 0, 1)` with GREEN_CLEAR_M = CLEAR_MID_M
+(the corpus mid-hole p10 clearance); route `−GIP_W·v²` and −12 under
+GREEN_VETO_M 30; beam `−GIP_W·v²` and −8 under 30 (new line vs earlier
+greens, new green vs earlier spines); `place_lz` gains a veto tier (both
+legs ≥ 30 m from every earlier green), `place_tee` folds `v` into `viol`.
+Exemptions: the successor's first 60 m of arc (the tee beside this green,
+walks p50 67 m), and — added after the ladder — hole 1's first 60 m
+against the ninth green: both are pinned to the clubhouse disc, so the
+loop junction is the same corridor mouth as the consecutive one (five of
+the seven residual cases were this pair at 30–34 m).
+
+Ladder (250 seeds; cases = greens within 35 / 50 m of another hole's
+spine outside the exemptions, audit definition before the loop exemption,
+baseline 78 / 122): ×1 (GIP_W 4) → 13 / 64; ×2 (8) → 7 / 57, shipped;
+×4 (16, diagnostic) → 4 / 42. No hard tier beyond the plan's: the
+residuals sit at 30–35 m where a 30 m tier cannot act.
+
+Shipped (`out/route_rs/rs_s1.jsonl`, audit with the loop exemption,
+`out/route_rs/audit_s1.txt`):
+
+| metric | baseline | shipped |
+|---|---|---|
+| green within 35 m of another hole's spine, cases | 48 | 1 |
+| within 50 m | 74 | 23 |
+| routed / play crossings | 250 / 0 | 250 / 0 |
+| (2,5,2) mix | 92 % | 91 % |
+| total length p50 | 3157 | 3157 |
+| walk p50 | 993 | 992 |
+| seconds p50 / max | 0.33 / 0.45 | 0.33 / 0.38 |
+| tee boxes on > 30 % ground | 39 | 52 (item 2) |
+| hole 2 a par 3 | 40 % | 33 % (incidental) |
+| water courses with a carry | 0 % | 15 % (incidental: moved greens) |
+
+Viewer: artifact 14a67972 (24 courses ordered by the change in green-in-play
+cases, hold `b` for before). Rung-by-rung numbers live on `GIP_W` in
+`route.rs` and in `docs/calibration/routing-site-use.md`.

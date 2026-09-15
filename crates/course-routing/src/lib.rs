@@ -161,6 +161,8 @@ pub struct TeeBox {
     pub length_m: f64,
     /// placed on `tee_relaxed` ground: needs earthwork
     pub graded: bool,
+    /// the 8 m `Fields::slope` at the box cell, rise/run
+    pub slope: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +194,8 @@ pub struct Hole {
     pub index: usize,
     pub par: u8,
     pub green_idx: usize,
+    /// the green candidate's typed-detector `kind` (`Candidate::kind`)
+    pub kind: String,
     pub green_yx: Yx,
     /// five, back tee first, `length_m` non-increasing
     pub tee_boxes: Vec<TeeBox>,
@@ -217,6 +221,11 @@ pub struct Route {
     pub terms: BTreeMap<String, f64>,
     /// `(hole_i, hole_j, (y, x))` play crossings
     pub crossings: Vec<(usize, usize, Yx)>,
+    /// `(green_hole, spine_hole, d_m)`: greens within `route::GREEN_CLEAR_M`
+    /// of another hole's spine, the successor's first `GREEN_JUNCTION_M` of
+    /// arc exempt, hole 1's likewise against the last green (the clubhouse
+    /// loop junction) (plan item 1); ascending `(green_hole, spine_hole)`.
+    pub green_in_play: Vec<(usize, usize, f64)>,
 }
 
 /// The whole chain on one tile: siting, the green pool, routing. Returns
@@ -229,6 +238,6 @@ pub fn route_tile(t: &terrain::Terrain) -> Option<(Siting, Route)> {
         s2.clubhouse = ch.clone();
         greens::generate(t, &s2, &f, &m, &p, greens::N_TARGET, None)
     };
-    let r = route::run_routing(t, &sit, &f, &pool, Some(&pool_fn))?;
+    let r = route::run_routing(t, &sit, &f, &m, &p, &pool, Some(&pool_fn))?;
     Some((sit, r))
 }

@@ -11,7 +11,9 @@
 //! is the chain only, as the Python's `t0` sits after the tile is read.
 //! The chain is unrolled here rather than calling `route_tile` because the
 //! record needs the pool size and the Siting even when no route survives,
-//! and `route_tile` returns neither. `--time` prints per-stage seconds.
+//! and `route_tile` returns neither. `--time` prints per-stage seconds and
+//! sets `SAND_TIME` so the library's inner stage laps (the route-field
+//! raster build) print too.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -40,7 +42,7 @@ fn route_one(t: &Terrain) -> Timed {
         s2.clubhouse = ch.clone();
         greens::generate(t, &s2, &f, &m, &p, greens::N_TARGET, None)
     };
-    let r = route::run_routing(t, &sit, &f, &pool, Some(&pool_fn));
+    let r = route::run_routing(t, &sit, &f, &m, &p, &pool, Some(&pool_fn));
     let t3 = Instant::now();
     Timed {
         pool: pool.len(),
@@ -82,6 +84,11 @@ fn main() {
     } else {
         false
     };
+    if timing && std::env::var("SAND_TIME").is_err() {
+        // SAFETY: single-threaded here -- no rayon pool or other thread
+        // exists yet, so nothing can read the environment concurrently.
+        unsafe { std::env::set_var("SAND_TIME", "1") };
+    }
     if a.len() < 2 {
         eprintln!("usage: route_batch <dump_dir> <out.jsonl> [--prefix m_] [--seeds a,b,c] \
                    [--stride k --offset j] [--time]");
