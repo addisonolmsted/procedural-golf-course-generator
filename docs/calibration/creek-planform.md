@@ -2055,11 +2055,12 @@ the smallest median patch at 3 cells and the most patches per km2 at 5: the
 savanna signature as a number, and it validates the owner's anchor choice.
 Nebraska sandhills is effectively treeless, 67 % of its tiles under 2 % cover.
 
-**The cleared corridor, 1,500 holes on wooded courses.** Tree cover on the
-centre line 3.8 % against 36 % in untouched woods beyond 120 m; cover reaches
-half its far-field value at 30 m either side, so **the corridor is about 60 m
-across**. It is NOT constant: half-width 20 m at the tee, 30 m through the
-landing zone, **35 m at the green**. Clearing a fixed rectangle would be wrong
+**The cleared corridor, all wooded courses.** Tree cover on the
+centre line 5.3 % against 39 % in untouched woods beyond 120 m; cover
+reaches half its far-field value at 30 m either side, so **the corridor is about
+60 m across**. It is NOT constant: half-width 18 m at the tee, 30 m through
+the landing zone, **35 m at the green** (4,813 holes, all 651 course tiles
+fetched, 0 failures). Clearing a fixed rectangle would be wrong
 by nearly a factor of two end to end. The profile is symmetric, which is the
 check that the hole geometry and the raster are aligned.
 
