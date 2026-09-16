@@ -2017,3 +2017,76 @@ short target and only when the other came out long; par 3s over a rise reach
 the line; greens over a 3 % cross slope reach 29 % of a real 39, and over 6 %
 do not move; the dogleg tail reaches 2.4 % of a real 0.6. Every one of these
 is a terrain or budget limit that was measured, not a weight left untuned.
+
+## 2026-09-16 — canopy round 1: where trees are, and how wide courses clear them
+
+Owner's design call, agreed first: canopy is TWO objects. Where trees could
+grow is a property of the land and belongs to terrain generation; where trees
+are on a course is a construction decision and belongs after routing. This
+round measures both so the generator matches rather than guesses. Report
+artifact 7a4779a9.
+
+**Two tile sets, because the golf tiles are contaminated for the first
+question.** `tools/macro_campaign/out/tiles`, 572 archetype tiles of 3 km at
+2 m sited on national forest, refuge and wilderness land, answer where trees
+grow. The 651 course tiles answer how wide a course clears. New tools:
+`corpus/fetch_canopy.py`, `canopy_metrics.py`, `corridor_width.py`.
+
+**Two rasters, kept apart on purpose.** ESA WorldCover 10 m says whether a
+cell is treed LAND; NLCD TCC 30 m says what fraction is under CANOPY. Their
+ratio separates a savanna from a closed wood, which coverage alone cannot.
+WorldCover is fetched by reprojecting the COG straight into each tile's own
+projected grid, so canopy cells line up with elevation cells rather than
+merely covering the same ground; 10 m divides every tile side (3000, 3500,
+4000, 4500) where 30 m does not divide 3500.
+
+| archetype | treed land | canopy | density | patches/km2 | lone/km2 |
+|---|---|---|---|---|---|
+| hill_country | 88 % | 69 % | 0.78 | 1 | 1 |
+| piedmont | 84 % | 68 % | 0.81 | 2 | 1 |
+| heathland | 85 % | 59 % | 0.69 | 1 | 0 |
+| **sandhills_nc (fluvial anchor)** | **76 %** | **50 %** | **0.66** | **5** | **2** |
+| river_valley | 69 % | 53 % | 0.76 | 3 | 1 |
+| **sandhills (aeolian anchor)** | **7 %** | **2 %** | **0.33** | **2** | **1** |
+| great_plains | 4 % | 0.4 % | 0.12 | 0 | 0 |
+
+Carolina sandhills has the LOWEST density of any wooded archetype at 0.66,
+the smallest median patch at 3 cells and the most patches per km2 at 5: the
+savanna signature as a number, and it validates the owner's anchor choice.
+Nebraska sandhills is effectively treeless, 67 % of its tiles under 2 % cover.
+
+**The cleared corridor, 1,500 holes on wooded courses.** Tree cover on the
+centre line 3.8 % against 36 % in untouched woods beyond 120 m; cover reaches
+half its far-field value at 30 m either side, so **the corridor is about 60 m
+across**. It is NOT constant: half-width 20 m at the tee, 30 m through the
+landing zone, **35 m at the green**. Clearing a fixed rectangle would be wrong
+by nearly a factor of two end to end. The profile is symmetric, which is the
+check that the hole geometry and the raster are aligned.
+
+**The placement model.** A logistic fit per archetype on the router's own
+`Fields` predictors, so it can be evaluated on our tiles with no new terrain
+machinery. Fluvial anchor: relative elevation −0.51, roughness +0.36,
+tpi200 −0.22, so trees sit LOW and rough and the open ground is the high
+smooth sand. Aeolian anchor: distance to water +1.12, northness +0.35,
+elevation −0.31 against a 9 % base rate, which is the moisture story of a
+dune field, grass in the interdunal meadows and what woody cover exists on
+the shaded north flanks. **Brier skill runs 0.04 to 0.21.** Terrain explains a
+real but modest part of where trees are; fire history, ownership and land use
+explain the rest and none are available to a generator, so the model must
+place trees with the right bias and patch structure rather than pretend to
+predict stands.
+
+**The lone sandhills tree, measured before being designed.** Isolated tree
+patches in real Nebraska sandhills run 0.6 per km2 at the median tile,
+quartiles 0.2 to 1.1, with only 11 % of tiles having none. Over a 1.3 km2 play
+window that is 0.8 trees. So the owner's aesthetic is close to honest: zero to
+two specimens a seed, about one on a typical seed, sits inside the measured
+spread, and making them RARER than that would be the deliberate departure.
+Placement follows the fitted coefficients: north-facing, rougher ground away
+from water.
+
+**Guards held.** Canopy is derived from the frozen height and water fields and
+written as a sidecar, never baked into the tiles, so the 250-seed baseline and
+every metric from four routing rounds stay comparable. Visibility stays bare
+earth: our blindness numbers and the corpus's both exclude vegetation, so
+trees must not enter that metric until the real reference includes them.
