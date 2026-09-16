@@ -220,3 +220,34 @@ bearing (diagnostic in creek-planform.md).
 | 0.3 — shipped | 51 % | 34 % | 2.4 | 51 | 19 % | 90 % |
 | 0.6 | 62 % | 43 % | 2.4 | 62 | 21 % | 91 % |
 | 1.2 | 75 % | 54 % | 2.4 | 72 | 29 % | 81 % |
+
+# Round 3 (2026-09-15) — the visibility tier
+
+Real references: `tools/golf/corpus/out/blindness.json` (4,874 holes; blind
+drives 20.1 %, obstruction p50 0.72 m, 3.6 per 100 need > 1.5 m, 2.2 per 100
+need > 2 m, position 0.77).
+
+## Acceptance
+
+| metric | real | baseline | target | shipped |
+|---|---|---|---|---|
+| blind drives needing > 2 m of cut, per 100 par 4/5 | 2.2 | 10.9 | ≤ 4 | **3.7** |
+| needing > 1.5 m | 3.6 | 17.2 | ≤ 8 | 10.7 |
+| landing zone blind from the tee | 20 % | 49 % | ≤ 40 % | 47 % |
+| obstruction position, p50 | 0.77 | 0.65 | ≥ 0.70 | 0.66 |
+| green blind from the approach | 6 % | 16 % | unchanged (S7) | 15 % |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | — | 250/0/0/0 | guards | 250/0/0/0 |
+| seconds max | — | 0.56 | < 1.3 | 0.53 |
+
+## Item 1 — VIS_TIER_M
+
+| rung | > 1.5 m per 100 | > 2 m per 100 | LZ blind | depth p50 / p90 | mix | sec max |
+|---|---|---|---|---|---|---|
+| baseline | 17.2 | 10.9 | 49 % | 1.12 / 2.93 | 90 % | 0.56 |
+| 1.0 m | 7.3 | 2.9 | 46 % | 0.87 / 1.76 | 92 % | 0.84 |
+| 1.5 m — shipped | 10.7 | 3.7 | 47 % | 0.96 / 1.86 | 92 % | 0.53 |
+| 2.0 m | 13.7 | 5.7 | 49 % | 1.03 / 2.09 | 92 % | 0.58 |
+
+Built, measured and removed: the tier promoted to the play-clean band
+(11.0 vs 10.7, no gain) and a beam-side 8 m mirror (3.7 → 5.7 at weight 0.3,
+5.0 at 0.6 — worse). The residual is a green no tee can see.

@@ -446,6 +446,64 @@ pub const BEAM_BEND_DEG: f64 = 12.0;
 /// sits at the corpus p95 of the max rise above the chord.
 pub const RISE_TIER_M: f64 = 3.5;
 
+/// SEE WHERE YOUR DRIVE LANDS (owner, 2026-09-15; round 3). Measured on
+/// 4,874 real holes against their own 2 m tiles and on our 250 courses with
+/// one definition (`tools/golf/corpus/blindness.py`,
+/// `tools/golf/route_audit.py`): an eye EYE_M above the ground at the tee,
+/// the target the GROUND at the drive station, the sight line straight in
+/// plan, sampled every LOS_STEP_M, blind when intermediate ground breaks it
+/// by more than BLIND_TOL_M. Real courses blind one drive in five (20.1 %)
+/// but almost always with a gentle roll: the cut that would open the shot is
+/// p50 0.72 m, and only 3.6 drives per 100 holes need more than 1.5 m. Ours
+/// blinded half (49 %) and needed more than 1.5 m on 17.2 per 100 -- five
+/// times as many, over a median 56 m of the line and up to 19 m deep. The
+/// shallow ones are ordinary fairway grading and are left to S7; the deep
+/// ones cannot be earthmoved without excavating a dune crest, so the router
+/// refuses them: a candidate whose drive is blocked by more than VIS_TIER_M
+/// ranks below every candidate that is not. Ladder 1.5 / 2.0 in
+/// docs/calibration/routing-site-use.md; 1.0 would be stricter than real
+/// courses, which carry 7.0 such drives per 100 holes. A beam-side mirror on
+/// the 8 m stride grid was built and MEASURED WORSE (deep drives per 100:
+/// tier alone 3.7, + beam at 0.3 5.7, at 0.6 5.0) -- the estimate is too
+/// coarse to rank greens by visibility and only perturbs the selection the
+/// detail tier then has to work with -- so it was removed, as round 2 found
+/// for the chord term: detail placement is the lever.
+pub const EYE_M: f64 = 1.7;
+pub const LOS_STEP_M: f64 = 2.0;
+pub const BLIND_TOL_M: f64 = 0.3;
+pub const VIS_TIER_M: f64 = 1.5;
+
+/// The worst excess of ground over the sight line from an eye EYE_M above
+/// the ground at `a` to the ground at `b`, in metres; 0 when `b` is visible.
+/// The first reader of the 2 m heights in the router: `line_terms` samples
+/// the 8 m STRIDE grid nine times over a 250 m leg, 28 m apart, which cannot
+/// see a crest narrow enough to hide a drive. Sampling mirrors `wet_spans`
+/// (same `trunc_clip` indexing) and `route_audit.py::obstruction` (same step
+/// count, same interior-only comparison), so the audit measures exactly what
+/// this enforces.
+pub fn sight_block_m(t: &Terrain, a: Yx, b: Yx) -> f64 {
+    let cell2 = t.z2.spec.cell_size;
+    let nx2 = t.z2.spec.nx as usize;
+    let ny2 = t.z2.spec.ny as usize;
+    let l = hyp(a, b);
+    if l < LOS_STEP_M {
+        return 0.0;
+    }
+    let ground = |p: Yx| -> f64 {
+        t.z2.data[trunc_clip(p.0 / cell2, ny2) * nx2 + trunc_clip(p.1 / cell2, nx2)]
+    };
+    let n = ((l / LOS_STEP_M) as usize).max(2);
+    let z0 = ground(a) + EYE_M;
+    let z1 = ground(b);
+    let mut worst = 0.0_f64;
+    for i in 1..n {
+        let s = i as f64 / n as f64;
+        let p = (a.0 + (b.0 - a.0) * s, a.1 + (b.1 - a.1) * s);
+        worst = worst.max(ground(p) - (z0 + (z1 - z0) * s));
+    }
+    worst
+}
+
 /// The dogleg penalty of a turn (radians): 0 to the real p50, 1 at the p90.
 fn dogleg_pen(turn: f64) -> f64 {
     clip((turn.abs().to_degrees() - DOGLEG_FREE_DEG) / (DOGLEG_SAT_DEG - DOGLEG_FREE_DEG), 0.0, 1.0)
@@ -718,6 +776,8 @@ pub struct SiteCtx<'a> {
     pub home: Yx,
     pub win: (f64, f64, f64, f64),
     pub m: &'a Morphology,
+    /// the 2 m ground, for `sight_block_m` (round 3)
+    pub t: &'a Terrain,
 }
 
 /// `routing.build_route_fields(f)` plus the interest rasters: `surround`
@@ -1151,11 +1211,13 @@ pub fn lz_probe(rf: &RouteFields, f: &Fields, tee_yx: Yx, green_yx: Yx, par: u8)
 /// from the green veto within `GREEN_JUNCTION_M` of `from_yx`, the tee);
 /// `None` when `from_yx` is not this hole's tee.
 #[allow(clippy::too_many_arguments)]
-pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green_yx: Yx,
+pub fn place_lz(rf: &RouteFields, f: &Fields, t: &Terrain, m: &Morphology,
+                from_yx: Yx, green_yx: Yx,
                 r_band: (f64, f64), remainder_band: (f64, f64),
                 avoid_spines: &[Vec<Yx>], avoid_walks: &[[Yx; 2]],
                 avoid_lzs: &[Yx], avoid_greens: &[Yx], junction_idx: Option<usize>,
-                ch_keepout_yx: Option<Yx>, prev_turn: Option<f64>) -> Option<LzPick> {
+                ch_keepout_yx: Option<Yx>, prev_turn: Option<f64>,
+                is_drive: bool) -> Option<LzPick> {
     let a = from_yx;
     let g = green_yx;
     let v = (g.0 - a.0, g.1 - a.1);
@@ -1268,6 +1330,19 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
         if !sep_ok {
             continue;
         }
+        // VISIBILITY TIER (round 3): a drive whose landing area is hidden by
+        // more than VIS_TIER_M of ground ranks below every candidate that can
+        // be seen. In the FULL-clean tier, not the play-clean band: a blind
+        // candidate still qualifies as the `pick_play_clean` fallback, so
+        // when nothing on the annulus is visible the hole degrades to a blind
+        // drive rather than to a walk crossing. Promoting it to the
+        // play-clean band was measured (2026-09-15) and moved nothing --
+        // 11.0 vs 10.7 deep drives per 100 -- because the residual is a green
+        // no tee can see, which is the beam's to fix. Lazy: the loop breaks
+        // at the first fully clean candidate.
+        if is_drive && sight_block_m(t, a, (ys[k], xs[k])) > VIS_TIER_M {
+            continue;
+        }
         // and never inside another hole's green (measured: real pairs are
         // under 80 m only 0.95% of the time)
         let mut green_ok = true;
@@ -1292,7 +1367,12 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, m: &Morphology, from_yx: Yx, green
     }
     let (y, x) = (ys[pick], xs[pick]);
     let legs: [Yx; 3] = [a, (y, x), g];
-    let clean = !any_crossing(&legs, avoid_spines) && !any_walk_crossing(&legs, avoid_walks);
+    // `clean` gates detail_route's JOINT tee x LZ retry, so folding the
+    // drive's visibility in here is what makes the TEE move: a tee in a
+    // hollow whose every landing zone is blind is abandoned for the next of
+    // the six tee options (round 3).
+    let clean = !any_crossing(&legs, avoid_spines) && !any_walk_crossing(&legs, avoid_walks)
+        && (!is_drive || sight_block_m(t, a, (y, x)) <= VIS_TIER_M);
     Some(LzPick { lz: (y, x, room[pick].min(LZ_R_M)), score: score[pick], clean })
 }
 
@@ -2249,8 +2329,8 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             let mut all_clean = true;
             if par >= 4 {
                 let rem = if par == 4 { (90.0, 200.0) } else { (300.0, 999.0) };
-                if let Some(r1) = place_lz(rf, f, site.m, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
-                                           &lz_seen, &other_greens, junction_idx, Some(home), None) {
+                if let Some(r1) = place_lz(rf, f, t, site.m, opt.yx, g, DRIVE_R_M, rem, &spines, &walks,
+                                           &lz_seen, &other_greens, junction_idx, Some(home), None, true) {
                     lzs.push(r1.lz);
                     lz_score = r1.score;
                     all_clean = all_clean && r1.clean;
@@ -2259,8 +2339,8 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             if par == 5 && !lzs.is_empty() {
                 let from = (lzs[0].0, lzs[0].1);
                 let turn1 = turn_at(opt.yx, from, g);
-                if let Some(r2) = place_lz(rf, f, site.m, from, g, SECOND_R_M, (120.0, 200.0), &spines,
-                                           &walks, &lz_seen, &other_greens, None, Some(home), Some(turn1)) {
+                if let Some(r2) = place_lz(rf, f, t, site.m, from, g, SECOND_R_M, (120.0, 200.0), &spines,
+                                           &walks, &lz_seen, &other_greens, None, Some(home), Some(turn1), false) {
                     lzs.push(r2.lz);
                     lz_score = 0.5 * (lz_score + r2.score);
                     all_clean = all_clean && r2.clean;
@@ -2631,7 +2711,7 @@ pub fn run_routing(t: &Terrain, sit: &Siting, f: &Fields, m: &Morphology, p: &Pe
             }
             None => pool,
         };
-        let site = SiteCtx { home: ch.yx, win: sit.window_m, m };
+        let site = SiteCtx { home: ch.yx, win: sit.window_m, m, t };
         if let Some(r) = beam_route(t, f, &rf, &site, p_ch) {
             let better = match &best {
                 None => true,
@@ -2868,6 +2948,39 @@ mod tests {
     }
 
     /// `test_kernels`' wet strip: one bridge, 8..=12 m over a 10-cell strip.
+    #[test]
+    fn sight_block_sees_a_ridge() {
+        use course_world::grid::{Grid, GridSpec};
+        use course_world::math::Vec2;
+        // a 400 m tile, flat but for a ridge across x = 200 m
+        let n = 200u32;
+        let spec = GridSpec::new(Vec2::new(0.0, 0.0), 2.0, n, n);
+        let build = |h: f64| {
+            let mut g = Grid::filled(spec, 0.0);
+            for y in 0..n {
+                for x in 0..n {
+                    let xx = x as f64 * 2.0;
+                    g.set(x, y, if (xx - 200.0).abs() < 8.0 { h } else { 0.0 });
+                }
+            }
+            let water = Grid::filled(spec, f64::NAN);
+            Terrain::from_grids(crate::Mode::Fluvial, &g, &water, Vec::new())
+        };
+        let a = (100.0, 20.0);
+        let b = (100.0, 380.0);
+        // flat ground never blocks
+        assert!(sight_block_m(&build(0.0), a, b) < 1e-9);
+        // a 3 m ridge at mid-leg blocks by about 3 m less the eye's share of
+        // the sight line (the line sits ~EYE_M/2 above ground at half way)
+        let deep = sight_block_m(&build(3.0), a, b);
+        assert!(deep > 1.9 && deep < 3.0, "{deep}");
+        // a 0.2 m ridge is under the tolerance the tier uses
+        let shallow = sight_block_m(&build(0.2), a, b);
+        assert!(shallow < BLIND_TOL_M, "{shallow}");
+        // and the tier's own comparison agrees
+        assert!(deep > VIS_TIER_M && shallow <= VIS_TIER_M);
+    }
+
     #[test]
     fn wet_spans_strip() {
         let t = synth_terrain(40..50);

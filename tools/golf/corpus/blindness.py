@@ -66,9 +66,11 @@ def at_arc(pts: np.ndarray, cum: np.ndarray, s):
 
 
 def z_at(z2: np.ndarray, cell2: float, p: np.ndarray) -> np.ndarray:
-    """Ground z by nearest cell of the RAW grid (clipped to the tile)."""
-    yi = np.clip(np.rint(p[..., 0] / cell2).astype(int), 0, z2.shape[0] - 1)
-    xi = np.clip(np.rint(p[..., 1] / cell2).astype(int), 0, z2.shape[1] - 1)
+    """Ground z on the RAW grid, TRUNCATING the index as `holes.py`,
+    `route_audit.py` and the router's `trunc_clip` all do (a half-cell
+    lattice shift against rounding; the three sides must agree)."""
+    yi = np.clip((p[..., 0] / cell2).astype(int), 0, z2.shape[0] - 1)
+    xi = np.clip((p[..., 1] / cell2).astype(int), 0, z2.shape[1] - 1)
     return z2[yi, xi]
 
 
@@ -93,6 +95,30 @@ def blocked(z2, cell2, p_obs, z_obs, p_tgt, z_tgt) -> np.ndarray:
     sight = eye + (z_tgt[:, None] - eye) * t           # (M, K) sight line
     over = np.where(inside, g - sight, -np.inf)
     return (over > BLIND_TOL_M).any(axis=1)
+
+
+def block_depth(z2, cell2, p_obs, z_obs, p_tgt, z_tgt):
+    """How badly ONE target is hidden: `(depth_m, frac, blocked_len_m)` --
+    the worst excess of ground over the sight line, where it sits as a
+    fraction of the leg, and how much of the line is blocked. depth 0 means
+    visible. This is the quantity the router's VIS_TIER_M is set from: it is
+    the cut an earthmover would have to take to open the shot."""
+    d = float(np.hypot(p_tgt[0] - p_obs[0], p_tgt[1] - p_obs[1]))
+    if d < LOS_STEP_M:
+        return 0.0, 0.0, 0.0
+    n = max(2, int(d / LOS_STEP_M))
+    t = np.linspace(0.0, 1.0, n + 1)
+    ys = p_obs[0] + (p_tgt[0] - p_obs[0]) * t
+    xs = p_obs[1] + (p_tgt[1] - p_obs[1]) * t
+    g = z_at(z2, cell2, np.stack([ys, xs], axis=-1)).astype(float)
+    eye = z_obs + EYE_M
+    sight = eye + (float(z_tgt) - eye) * t
+    over = g - sight
+    over[0] = over[-1] = -np.inf
+    k = int(np.argmax(over))
+    if not np.isfinite(over[k]) or over[k] <= 0.0:
+        return 0.0, 0.0, 0.0
+    return float(over[k]), float(t[k]), float((over > BLIND_TOL_M).sum() * d / n)
 
 
 def sample_arcs(s0: float, L: float) -> np.ndarray:
@@ -144,11 +170,14 @@ def measure(j: dict) -> dict:
             blocked(z2, cell2, p_last, z_last, p_b, z_b).mean())
 
     lz_seen = None
+    drive_block_m = drive_block_frac = drive_block_len_m = None
     if par in (4, 5):
         p_lz = at_arc(pts, cum, s_drive)
         z_lz = z_at(z2, cell2, p_lz).astype(float).reshape(1)
         lz_seen = not bool(
             blocked(z2, cell2, p_tee, z_tee, p_lz, z_lz)[0])
+        drive_block_m, drive_block_frac, drive_block_len_m = block_depth(
+            z2, cell2, p_tee, z_tee, p_lz, z_lz[0])
 
     p_g = at_arc(pts, cum, L)
     z_g = z_at(z2, cell2, p_g).astype(float).reshape(1)
@@ -158,6 +187,8 @@ def measure(j: dict) -> dict:
         way_id=j["way_id"], course_id=j["course_id"], region=j["region"],
         par=par, length_m=L, blind_tee=blind_tee, blind_appr=blind_appr,
         lz_seen=lz_seen, green_seen=green_seen,
+        drive_block_m=drive_block_m, drive_block_frac=drive_block_frac,
+        drive_block_len_m=drive_block_len_m,
     )
 
 
@@ -232,6 +263,26 @@ def summarize(rows: list[dict]) -> None:
         print(f"    par {p}    n={len(v):5d}  {_share_false(v):5.1f} %")
     print(f"    all      n={len(rows):5d}  "
           f"{_share_false([r['green_seen'] for r in rows]):5.1f} %")
+    print("  drive obstruction depth (the cut that would open the shot), par 4/5:")
+    d45 = [r["drive_block_m"] for r in rows if r["par"] in (4, 5)
+           and r["drive_block_m"] is not None]
+    blind = [v for v in d45 if v > BLIND_TOL_M]
+    n45 = max(1, len(d45))
+    print(f"    blind drives n={len(blind):5d} of {len(d45)}  "
+          f"({100.0 * len(blind) / n45:.1f} %)")
+    print(f"    depth of those, m: p50 {_p(blind, 50):.2f}  p75 {_p(blind, 75):.2f}  "
+          f"p90 {_p(blind, 90):.2f}  max {max(blind):.1f}")
+    for thr in (1.0, 1.5, 2.0):
+        k = sum(1 for v in d45 if v > thr)
+        print(f"    needing > {thr:.1f} m of cut: {k:5d}  "
+              f"= {100.0 * k / n45:5.1f} per 100 par-4/5 holes")
+    fr = [r["drive_block_frac"] for r in rows if r["par"] in (4, 5)
+          and r["drive_block_m"] is not None and r["drive_block_m"] > BLIND_TOL_M]
+    ln = [r["drive_block_len_m"] for r in rows if r["par"] in (4, 5)
+          and r["drive_block_m"] is not None and r["drive_block_m"] > BLIND_TOL_M]
+    print(f"    obstruction position, fraction to the landing zone: "
+          f"p25 {_p(fr, 25):.2f}  p50 {_p(fr, 50):.2f}  p75 {_p(fr, 75):.2f}")
+    print(f"    blocked length of the line, m: p50 {_p(ln, 50):.0f}  p90 {_p(ln, 90):.0f}")
     print("  by region:")
     for reg in sorted({r["region"] for r in rows}):
         rr = [r for r in rows if r["region"] == reg]

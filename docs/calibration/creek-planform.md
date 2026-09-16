@@ -1785,3 +1785,87 @@ aeolian dogleg p90 57° and mix 84 % (dune ground asks for bends; the
 sequence rule removed (3,3,3) sequences with adjacent 3s); dip depth
 2.4 vs 2.95 m; and the round-1 leftovers (fluvial green pool, LZ upland,
 the 35–50 m green band, the water ceiling).
+
+## 2026-09-15 — routing round 3: you should be able to see where your drive lands
+
+Plan: `~/.claude/plans/lets-start-addressing-some-eager-teacup.md`, owner
+approved. Baseline `out/route_rs/r2_s2.jsonl` (round 2's final).
+
+**The measurement that set the scope.** `tools/golf/corpus/blindness.py`
+(new, 4,874 real holes on their own 2 m tiles) and `route_audit.py` (ours),
+one definition: an eye 1.7 m above the ground at the station, the target the
+GROUND at a centreline point, the sight line straight in plan, blocked when
+intermediate ground breaks it by more than 0.3 m. Real courses blind one
+drive in five (20.1 %) but with a gentle roll — the cut that would open the
+shot is p50 0.72 m and only 3.6 drives per 100 holes need more than 1.5 m.
+Ours blinded half and needed more than 1.5 m on 17.2 per 100.
+
+Green and approach blindness is NOT routing's: a 1 m tee bench and a 0.5 m
+green pad take par-5 green blindness from 11 % to 6 % against a real 6 %,
+and par 3 from 18 % to 7 %. It is an artefact of measuring ungraded ground
+and S7/S8 removes it. Owner's decision: routing takes the deep tail only,
+threshold 1.5–2 m, drive leg only, the shallow remainder left to earthmoving.
+
+**Item 0, instruments.** `blindness.py` records the drive obstruction depth,
+its position as a fraction of the leg, and the blocked length; its cell
+lookup changed from rounding to TRUNCATION to match `holes.py`,
+`route_audit.py` and the router's `trunc_clip` (the real figures moved
+trivially: LZ blind 20.7 → 20.5 % on par 4). `route_audit.py` factors
+`blocked` into `obstruction` and gains six rows plus a par-5 second-leg
+diagnostic; `route_before_after.py` gains a `blind` pick.
+
+**Item 1, the visibility tier.** `sight_block_m(t, a, b)` — the first reader
+of the 2 m heights in the router; `line_terms` samples the 8 m STRIDE grid
+nine times over a 250 m leg, 28 m apart, which cannot see a crest narrow
+enough to hide a drive. Sampling mirrors `wet_spans` (same `trunc_clip`) and
+`route_audit.py::obstruction` (same step count, same interior-only test), so
+the audit measures exactly what the router enforces. `SiteCtx` carries the
+terrain. In `place_lz`'s FULL-clean tier a drive blocked by more than
+`VIS_TIER_M` ranks below every candidate that can be seen, evaluated lazily;
+a blind candidate still qualifies as the play-clean fallback, so a hole with
+nothing visible on its annulus degrades to a blind drive, not to a walk
+crossing. `clean` folds the visibility in, which is what makes the TEE move:
+it drives the existing joint tee × landing-zone retry through the six tee
+options, so a tee in a hollow is abandoned automatically. Drive leg only
+(owner); the par-5 second leg is measured at 46 % blind and left alone.
+
+Ladder (deep drives per 100 par 4/5 at > 1.5 m and > 2 m; LZ blind;
+obstruction depth p50/p90; seconds max): baseline 17.2 / 10.9; 49 %; 1.12 /
+2.93; 0.56 — 1.0 m: 7.3 / 2.9; 46 %; 0.87 / 1.76; 0.84 — **1.5 m (shipped):
+10.7 / 3.7; 47 %; 0.96 / 1.86; 0.53** — 2.0 m: 13.7 / 5.7; 49 %; 1.03 /
+2.09; 0.58. Two things were built, measured and REMOVED: promoting the tier
+to the play-clean band moved nothing (11.0 vs 10.7), because the residual is
+a green no tee can see; and a beam-side mirror on the 8 m grid made it WORSE
+(deep drives per 100: tier alone 3.7, + beam at 0.3 5.7, at 0.6 5.0) — the
+stride grid is too coarse to rank greens by visibility and only perturbs the
+selection the detail tier then has to work with. As in round 2: detail
+placement is the lever.
+
+Shipped (`r3_s1.jsonl` = `rs.jsonl`, `audit_r3_s1.txt`):
+
+| metric | real | before | after | target |
+|---|---|---|---|---|
+| blind drives needing > 2 m of cut, per 100 | 2.2 | 10.9 | **3.7** | ≤ 4 |
+| needing > 1.5 m | 3.6 | 17.2 | 10.7 | ≤ 8 (missed) |
+| obstruction depth p50 / p90 | 0.72 / 2.08 | 1.12 / 2.93 | 0.96 / 1.86 | — |
+| landing zone blind from the tee | 20 % | 49 % | 47 % | ≤ 40 % (missed) |
+| obstruction position | 0.77 | 0.65 | 0.66 | ≥ 0.70 (missed) |
+| green blind from the approach | 6 % | 16 % | 15 % | S7's |
+| routed / crossings / gip ≤ 35 m / tee > 30 % | — | 250/0/0/0 | 250/0/0/0 | guards |
+| mix (2,5,2) | 94 % | 90 % | 92 % | 85–95 |
+| seconds p50 / max | — | 0.46 / 0.56 | 0.47 / 0.53 | < 1.3 |
+
+The primary target is met: the deep tail is down 66 % and now sits within
+1.7× the real rate. Three secondary targets are missed and the reason is the
+same for all three — the residual blind drives are holes where the GREEN sits
+behind the ridge, so no tee or landing zone on the annulus can see past it,
+and the only fix is a different green, which the beam experiment showed we
+cannot select cheaply. Round-2 metrics held or improved (above-chord p90 2.3
+→ 2.2, dip carries 51 → 53 %, mix 90 → 92 %, par-by-hole distance 0.043 →
+0.041). One drift to report: **dogleg p90 51 → 59°** against a real 43, since
+a landing zone that can be seen is often wider off the line; the p50 is
+unchanged at 15 and the share bending over 15° at 52 %, so the median hole is
+unaffected and the tail is longer.
+
+Viewer: artifact 04282918 (`--pick blind`); hole cards refreshed on the new
+build at artifact d8badecf.

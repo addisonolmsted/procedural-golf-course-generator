@@ -33,6 +33,7 @@ forced carries (v2 records), blue rings on landing zones and greens within
   lz             dead-flat landing zones (count)
   dogleg         median dogleg of the par 4/5s, deg
   dip            drives carrying a >= 1.5 m dip (count)
+  blind          drives whose landing area is hidden from the tee (count)
 """
 import sys, io, json, base64, pathlib
 import numpy as np
@@ -56,6 +57,7 @@ PICKS = {
     "length": lambda c: c["len_fit"], "sequence": lambda c: c["sequence"] + 2 * c["hole1_par3"] + c["b2b3"], "total": lambda c: c["total"],
     "tee": lambda c: c["tee15"], "setting": lambda c: c["g_sur"],
     "lz": lambda c: c["lz_flat"], "dogleg": lambda c: c["dogleg_med"], "dip": lambda c: c["n_dip"],
+    "blind": lambda c: c["n_drive_blind"] + c["n_drive_deep"],
 }
 
 

@@ -102,6 +102,16 @@ try:
     _lz = [r["lz_seen"] for r in _bl if r.get("lz_seen") is not None]
     REAL["lz_blind"] = f"{100 * np.mean([not v for v in _lz]):.0f} %"
     REAL["green_blind"] = f"{100 * np.mean([not r['green_seen'] for r in _bl]):.0f} %"
+    _d45 = [r["drive_block_m"] for r in _bl if r.get("drive_block_m") is not None]
+    if _d45:
+        REAL["deep15"] = f"{100 * np.mean(np.asarray(_d45) > 1.5):.1f}"
+        REAL["deep20"] = f"{100 * np.mean(np.asarray(_d45) > 2.0):.1f}"
+        _db = [v for v in _d45 if v > 0.3]
+        REAL["block50"] = f"{np.percentile(_db, 50):.2f}"
+        REAL["block90"] = f"{np.percentile(_db, 90):.2f}"
+        _fr = [r["drive_block_frac"] for r in _bl
+               if r.get("drive_block_m") is not None and r["drive_block_m"] > 0.3]
+        REAL["block_frac"] = f"{np.percentile(_fr, 50):.2f}"
 except Exception:
     pass
 try:
@@ -166,11 +176,16 @@ def at_arc(q, d, s):
     return np.array([np.interp(s, d, q[:, 0]), np.interp(s, d, q[:, 1])])
 
 
-def blocked(t, a, b):
-    """Is the ground at `b` hidden from an eye EYE_M above the ground at `a`?"""
+def obstruction(t, a, b):
+    """How badly the ground at `b` is hidden from an eye EYE_M above `a`:
+    `(depth_m, frac, blocked_len_m)` -- the worst excess of ground over the
+    sight line, where it sits as a fraction of the leg, and how much of the
+    line is blocked. depth 0 means visible. The depth is the cut an
+    earthmover would have to take to open the shot, which is the quantity
+    `route::VIS_TIER_M` is set from (corpus/blindness.py::block_depth)."""
     dist = float(np.hypot(*(np.asarray(b, float) - np.asarray(a, float))))
     if dist < LOS_STEP_M:
-        return False
+        return 0.0, 0.0, 0.0
     n = max(2, int(dist / LOS_STEP_M))
     u = np.linspace(0.0, 1.0, n + 1)
     ys = a[0] + (b[0] - a[0]) * u; xs = a[1] + (b[1] - a[1]) * u
@@ -178,7 +193,17 @@ def blocked(t, a, b):
     xi = np.clip((xs / t.c).astype(int), 0, t.z.shape[1] - 1)
     z = t.z[yi, xi].astype(float)
     los = (z[0] + EYE_M) + (z[-1] - z[0] - EYE_M) * u
-    return bool((z[1:-1] > los[1:-1] + BLIND_TOL_M).any())
+    over = z - los
+    over[0] = over[-1] = -np.inf
+    k = int(np.argmax(over))
+    if not np.isfinite(over[k]) or over[k] <= 0.0:
+        return 0.0, 0.0, 0.0
+    return float(over[k]), float(u[k]), float((over > BLIND_TOL_M).sum() * dist / n)
+
+
+def blocked(t, a, b):
+    """Is the ground at `b` hidden from an eye EYE_M above the ground at `a`?"""
+    return obstruction(t, a, b)[0] > BLIND_TOL_M
 
 
 def blind_metrics(t, spine, par):
@@ -196,11 +221,18 @@ def blind_metrics(t, spine, par):
     bt = [blocked(t, tee, p) for p in tg]
     ap = [p for s, p in zip(ss, tg) if s > s_last]
     ba = [blocked(t, last, p) for p in ap]
+    drive = obstruction(t, tee, at_arc(q, d, s_drive)) if par >= 4 else None
+    leg2 = (obstruction(t, at_arc(q, d, s_drive), at_arc(q, d, s_second))
+            if par == 5 and s_second > s_drive else None)
     return dict(
         blind_tee=float(np.mean(bt)) if bt else None,
         blind_appr=float(np.mean(ba)) if ba else (float(np.mean(bt)) if bt else None),
-        lz_seen=(None if par == 3 else (not blocked(t, tee, at_arc(q, d, s_drive)))),
-        green_seen=bool(not blocked(t, last, green)))
+        lz_seen=(None if par == 3 else drive[0] <= BLIND_TOL_M),
+        green_seen=bool(not blocked(t, last, green)),
+        drive_block_m=(drive[0] if drive else None),
+        drive_block_frac=(drive[1] if drive else None),
+        drive_block_len_m=(drive[2] if drive else None),
+        leg2_block_m=(leg2[0] if leg2 else None))
 
 
 # ---------------------------------------------------------------- geometry --
@@ -384,6 +416,8 @@ def course_metrics(t, rec, holes):
         n_lz_holes=sum(1 for h in holes if h["par"] >= 4),
         hole1_par3=pars[0] == 3, hole9_par3=pars[-1] == 3 if len(pars) >= 9 else False,
         dogleg_med=float(np.median([h["dogleg"] for h in holes if h["par"] >= 4])) if any(h["par"] >= 4 for h in holes) else 0.0,
+        n_drive_blind=sum(1 for h in holes if (h.get("drive_block_m") or 0.0) > BLIND_TOL_M),
+        n_drive_deep=sum(1 for h in holes if (h.get("drive_block_m") or 0.0) > 2.0),
         n_dip=sum(1 for h in holes if h["drive_dip"] is not None and h["drive_dip"] >= DIP_CARRY_M),
         n_lz=len(lz_rp), lz_flat=sum(v < LZ_FLAT for h in holes for v in h["lz_slope"]), lz_upland=sum(v > UPLAND_RP for v in lz_rp),
         lz_rp_std=float(np.std(lz_rp)) if len(lz_rp) >= 2 else None,
@@ -454,6 +488,11 @@ def aggregate(recs, holes, courses, mode="all"):
     bt = [h["blind_tee"] for h in holes if h["blind_tee"] is not None]
     ba = [h["blind_appr"] for h in holes if h["blind_appr"] is not None]
     lzs_ = [h["lz_seen"] for h in holes if h["lz_seen"] is not None]
+    dbk = [h["drive_block_m"] for h in holes if h["drive_block_m"] is not None]
+    dbb = [v for v in dbk if v > BLIND_TOL_M]
+    dfr = [h["drive_block_frac"] for h in holes
+           if h["drive_block_m"] is not None and h["drive_block_m"] > BLIND_TOL_M]
+    l2 = [h["leg2_block_m"] for h in holes if h["leg2_block_m"] is not None]
     gs_ = [h["green_seen"] for h in holes if h["green_seen"] is not None]
     A.update(
         edge60=pct(h["g_edge"] < EDGE_NEAR_M for h in holes), outside=pct(h["g_edge"] < 0 for h in holes),
@@ -480,6 +519,12 @@ def aggregate(recs, holes, courses, mode="all"):
         blind_tee=100.0 * float(np.median(bt)) if bt else float("nan"),
         blind_appr=100.0 * float(np.median(ba)) if ba else float("nan"),
         lz_blind=pct(not v for v in lzs_), green_blind=pct(not v for v in gs_),
+        deep15=(100.0 * sum(1 for v in dbk if v > 1.5) / len(dbk)) if dbk else float("nan"),
+        deep20=(100.0 * sum(1 for v in dbk if v > 2.0) / len(dbk)) if dbk else float("nan"),
+        block50=float(np.percentile(dbb, 50)) if dbb else float("nan"),
+        block90=float(np.percentile(dbb, 90)) if dbb else float("nan"),
+        block_frac=float(np.percentile(dfr, 50)) if dfr else float("nan"),
+        leg2_blind=pct(v > BLIND_TOL_M for v in l2),
         bend_fix=pct(h["above"] < PROF_FREE_M for h in holes if h["par"] >= 4 and h["line_above"] >= PROF_FREE_M),
         line_rise=pct(h["line_above"] >= PROF_FREE_M for h in holes if h["par"] >= 4),
         gip35=sum(c["n_gip35"] for c in courses), gip50=sum(c["n_gip50"] for c in courses),
@@ -532,6 +577,12 @@ ROWS = [
     ("ground blind from the tee, p50 % of the line", "blind_tee", "{:.0f}", REAL.get("blind_tee", "")),
     ("ground blind from the approach station, p50 %", "blind_appr", "{:.0f}", REAL.get("blind_appr", "")),
     ("landing zone blind from the tee, %", "lz_blind", "{:.0f}", REAL.get("lz_blind", "")),
+    ("blind drives needing > 1.5 m of cut, per 100 par 4/5", "deep15", "{:.1f}", REAL.get("deep15", "")),
+    ("blind drives needing > 2 m of cut, per 100 par 4/5", "deep20", "{:.1f}", REAL.get("deep20", "")),
+    ("drive obstruction depth p50 / p90, m", "block50", "{:.2f}", REAL.get("block50", "")),
+    ("   p90", "block90", "{:.2f}", REAL.get("block90", "")),
+    ("obstruction position, fraction to the landing zone", "block_frac", "{:.2f}", REAL.get("block_frac", "")),
+    ("par-5 second leg blind, %", "leg2_blind", "{:.0f}", ""),
     ("green blind from the approach station, %", "green_blind", "{:.0f}", REAL.get("green_blind", "")),
     ("drives carrying a >= 1.5 m dip, %", "dip_share", "{:.0f}", REAL.get("dip_share", "")),
     ("depth of those dips p50, m", "dip_med", "{:.1f}", REAL.get("dip_med", "")),
