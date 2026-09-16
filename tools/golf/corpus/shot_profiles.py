@@ -131,11 +131,12 @@ def turns(pts_m: np.ndarray):
 def joined(stats: dict | None = None):
     """Yield one dict per golf=hole way that joins a keeper course's tile.
 
-    Keys: way_id, course_id, region, par, pts_loc, z2, cell2, ss, zs,
-    length_m.  `pts_loc` is the raw polyline in tile-local metres, oriented
-    tee -> green; `z2`/`cell2` are that course's raw DEM grid (shared between
-    ways on the same course, do not mutate); `(ss, zs)` is the 5 m / 15 m
-    boxcar profile from `smoothed_profile`.
+    Keys: way_id, course_id, region, par, ref, pts_loc, z2, cell2, ss, zs,
+    length_m.  `ref` is the hole number from the way's `ref` tag when that tag
+    is a plain number, else None.  `pts_loc` is the raw polyline in tile-local
+    metres, oriented tee -> green; `z2`/`cell2` are that course's raw DEM grid
+    (shared between ways on the same course, do not mutate); `(ss, zs)` is the
+    5 m / 15 m boxcar profile from `smoothed_profile`.
 
     `stats`, if given, is filled with the counters n_join, n_nocourse,
     n_noprof, n_flip, n_tiles.  The caller may also write stats["n_rows"] as
@@ -209,10 +210,12 @@ def joined(stats: dict | None = None):
         stats["n_join"] += 1
         par = el.get("tags", {}).get("par")
         par = int(par) if par and par.isdigit() else None
+        ref = el.get("tags", {}).get("ref")
+        ref = int(ref) if ref and ref.isdigit() else None
         ss, zs = prof
         yield dict(
             way_id=wid, course_id=cid, region=rec["region_tag"], par=par,
-            pts_loc=pts_loc, z2=z2, cell2=cell2, ss=ss, zs=zs,
+            ref=ref, pts_loc=pts_loc, z2=z2, cell2=cell2, ss=ss, zs=zs,
             length_m=float(ss[-1]),
         )
 

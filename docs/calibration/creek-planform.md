@@ -1869,3 +1869,77 @@ unaffected and the tail is longer.
 
 Viewer: artifact 04282918 (`--pick blind`); hole cards refreshed on the new
 build at artifact d8badecf.
+
+## 2026-09-16 — the corpus gap report: every hole measured against 4,900 real ones
+
+Owner asked what else could be compared to the corpus besides blindness, and
+flagged that the dogleg measure looked wrong. Both answered.
+
+**The dogleg measure was wrong and is replaced.** The old one was the largest
+turn at an interior vertex with both legs over 20 m. It reads a sharp dogleg
+on a hole straight for 400 m that kinks in the last 40 m, where the shot
+affected is a pitch you aim at; and on our spines the vertices ARE the landing
+zones while on a real way they are wherever the mapper clicked, so it measured
+cartography as much as architecture. Replaced in `tools/golf/hole_metrics.py`
+by the angle that carries the strategic content: the **drive dogleg**, the
+angle AT THE TEE between the line to the drive station and the line to the
+green, plus **lateral offset** over length as the shape companion. Both use
+three points at fixed arc positions and are immune to vertex placement.
+Consequence: round 2's dogleg band was calibrated against the old statistic,
+so its target was wrong even though its outcome was not.
+
+**New tooling.** `tools/golf/hole_metrics.py` holds ONE definition of every
+quantity; `corpus/corpus_metrics.py` and `route_metrics.py` are thin runners
+so the two sides cannot drift. `shot_profiles.joined()` now also yields the
+hole's `ref`, so real nines can be assembled in play order; its own output is
+byte-identical. Covered: length, dogleg, lateral offset, sinuosity, net rise,
+total climb, roughness, above and below chord, approach grade, CROSS SLOPE at
+the drive and the green, section relief, and per nine the length spread by par,
+bearing change, walk, corridor gap, parallel pairs and tilt reversal.
+
+**The five worth fixing, ranked** (report artifact 5c40f200):
+
+1. **Par-4 lengths have collapsed onto one number.** Within a nine, real par 4s
+   span 94 m; ours 32 m, under 14 m on a quarter of courses. Across the set
+   real par 4s run 317-383 m through the middle half, ours 350-359. Gap −1.24
+   interquartile units, the largest on the board. Self-inflicted: round 2 item
+   9 gave par 4 a tent reward peaked at the real median to stop the other terms
+   pinning lengths to the band edge, and it worked too well.
+2. **Greens sit on ground too flat across the line.** Real green sites tilt
+   over 3 % across play on 39 % of holes and over 6 % on 16 %; ours 24 % and
+   4 %, and fluvial greens over 6 % are 0.1 %. Cross slope is a dimension
+   nothing in the router has ever scored.
+3. **Holes still play over rises, par 3s worst.** Real par 3s cross a rise over
+   1.7 m on 0.5 % of holes; ours on 9.4 %. Par 4 and par 5 each about 9 points
+   over. Above-chord sits +0.6 to +0.8 interquartile units on every par.
+4. **Par 5s are never a decision.** 32 % of real par 5s are reachable from the
+   drive station with a 230 m second; ours 7.7 %. With the layup finding
+   (29 % of our par 5s leave a final leg under 80 m) our par 5s are three
+   prescribed shots. The cause is arithmetic: a 190-250 m drive plus a 160-220 m
+   second consumes 350-470 m of a 446-500 m target band.
+5. **A dogleg tail real courses do not build.** Median dogleg now matches
+   almost exactly, 5.0 vs 5.1 deg on par 4s, but real par 4s bend over 25 deg
+   on 0.6 % of holes and ours on 7.1 %.
+
+**Two corrections found along the way.**
+- `route_audit.REAL["g_sur"]` has carried "6.1-6.8 m" as the real green
+  surround relief, and we have reported ours at 4.9 as a shortfall since round
+  1. Measured under the corpus's OWN definition (`features.py` ->
+  `surround_relief`, 8 m grid, 25-90 m annulus) the real median is **4.93 m**
+  and ours is **4.94 m**. We match. Round 1 item 5 spent a ladder closing a gap
+  that was a mis-transcribed number and concluded the fluvial pool was limited
+  when it was not. The real p75 is 7.9 against our 6.4, so the boldest sites
+  are still under-used, but the median was never short. Every other hardcoded
+  reference was re-verified and is exact (lengths 163/351/474, above-chord
+  0.08/1.67/5.58); green upland "25 %" is really 21.6 %.
+- Two proposed metrics measure nothing and are greyed out rather than reported
+  as agreement: the par-5 second-shot dogleg, because the station sits 60 m
+  from the green by construction, and par-3 bend, because most par-3 lines are
+  two points on both sides.
+
+**Where we already match:** hole length medians per par, drive dogleg at the
+median, bend and sinuosity on par 4/5, cross slope at the DRIVE, bearing change
+hole to hole, the share of consecutive holes within 45 degrees, tilt reversal
+rate, approach grade on par 3/4, par-3 and par-5 length spread within a nine,
+and the median gap to the neighbouring hole. Walks are 103 m against a real 69,
+as expected since they are deliberately not optimised.
