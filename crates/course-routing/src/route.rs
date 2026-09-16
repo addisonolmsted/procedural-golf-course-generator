@@ -199,6 +199,37 @@ pub const JOINT_RETRY_CAP: usize = N_TEE_OPTIONS;
 pub const PROF_NET_BAND: (f64, f64) = (-12.7, 10.1);  // p5-p95; trapezoid, ramp per siting rules
 pub const PROF_CHORD_FREE_M: f64 = 1.7;               // p90: no penalty below
 pub const PROF_CHORD_SAT_M: f64 = 5.6;                // p99: penalty saturates here
+/// PAR 3 PLAYS OVER A RISE (round 4, item 2, 2026-09-16). The constants above
+/// are pooled over all 5,201 corpus holes, so a 163 m par 3 and a 474 m par 5
+/// are held to the same absolute budget though the par 5 has three times the
+/// chord to hide a rise under. Measured per par, the real above-chord p90/p99
+/// is 0.42/1.26 on par 3, 1.89/5.72 on par 4, 2.79/6.85 on par 5, against ours
+/// at 1.64 / 2.16 / 2.48. Par 4 is barely over and par 5 is BETTER than real,
+/// so ONLY par 3 tightens: real par 3s cross a 1.7 m rise on one hole in two
+/// hundred and ours did on one in eleven. Par 4 and par 5 keep the pooled band
+/// deliberately, so this item cannot loosen what already works.
+/// Ladder (par-3 above-chord p90 / par 3s over a 1.7 m rise / deep blind
+/// drives per 100, gate 4.5 / mix): before 1.64 / 9.4 % / 4.2 / 92 %;
+/// (0.4, 1.3) the real p90 and p99 0.92 / 4.2 % / 4.7 REJECTED / 86 %;
+/// (0.7, 2.5) 1.10 / 4.4 % / 4.5 on the limit / 89 %; (1.0, 3.5) 1.29 /
+/// 6.5 % / 4.0 / 91 %, SHIPPED -- it is the only rung that improves the
+/// par-3 rise AND the blindness it trades against. Dune ground simply has
+/// few par-3 sites with nothing on the line, so the real p90 is out of
+/// reach here without spending the blindness budget.
+pub const PAR3_CHORD_BAND: (f64, f64) = (1.0, 3.5);
+
+/// The above-chord band for a par: par 3's own p90/p99, the pooled pair
+/// otherwise. `place_lz` is never called for a par 3, so the tiers and the
+/// carry veto inside it stay pooled and untouched.
+pub fn par_chord_band(par: u8) -> (f64, f64) {
+    if par == 3 { PAR3_CHORD_BAND } else { (PROF_CHORD_FREE_M, PROF_CHORD_SAT_M) }
+}
+
+/// The above-chord penalty for a par: 0 below the band's floor, 1 at its top.
+fn chord_pen(above: f64, par: u8) -> f64 {
+    let (free, sat) = par_chord_band(par);
+    clip((above - free) / (sat - free), 0.0, 1.0)
+}
 pub const PROF_CLIMB_100_FREE: f64 = 1.6;             // ~p60 climb per 100 m
 pub const PROF_CLIMB_100_SAT: f64 = 3.4;              // p90
 
@@ -1914,7 +1945,8 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             // round 2, item 1: the straight line and two bent ones
             let (flow, pen_chord) = {
                 let mut best = line_terms(f, site.m, &[tee, gp], LINE_SAMPLES);
-                let mut best_v = LINE_FLOW_W * best.flow - LINE_CHORD_W_BEAM * best.pen_chord;
+                let mut best_v = LINE_FLOW_W * best.flow
+                    - LINE_CHORD_W_BEAM * chord_pen(best.above, par);
                 let dv = (gp.0 - tee.0, gp.1 - tee.1);
                 let dl = dv.0.hypot(dv.1);
                 if dl > 1e-9 {
@@ -1924,14 +1956,15 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                         let th = th0 + sgn * BEAM_BEND_DEG.to_radians();
                         let q = (tee.0 + r * th.sin(), tee.1 + r * th.cos());
                         let lt = line_terms(f, site.m, &[tee, q, gp], LINE_SAMPLES);
-                        let v = LINE_FLOW_W * lt.flow - LINE_CHORD_W_BEAM * lt.pen_chord;
+                        let v = LINE_FLOW_W * lt.flow - LINE_CHORD_W_BEAM * chord_pen(lt.above, par);
                         if v > best_v {
                             best_v = v;
                             best = lt;
                         }
                     }
                 }
-                (best.flow, best.pen_chord)
+                // round 4, item 2: charged on the PAR's band, not the pooled one
+                (best.flow, chord_pen(best.above, par))
             };
             // round 2, item 2: the drive's carry on the straight line
             let drive_dip = {
@@ -2224,11 +2257,10 @@ pub struct ProfileTerms {
 }
 
 /// `routing.profile_terms`.
-pub fn profile_terms(f: &Fields, spine: &[Yx]) -> ProfileTerms {
+pub fn profile_terms(f: &Fields, spine: &[Yx], par: u8) -> ProfileTerms {
     let (net_dz, above, climb100) = spine_profile(f, spine, 8.0);
     let net_t = trapezoid(net_dz, PROF_NET_BAND.0, PROF_NET_BAND.1, TRAP_RAMP, TRAP_TAIL);
-    let above_pen = clip((above - PROF_CHORD_FREE_M) / (PROF_CHORD_SAT_M - PROF_CHORD_FREE_M),
-                         0.0, 1.0);
+    let above_pen = chord_pen(above, par);
     let climb_pen = clip((climb100 - PROF_CLIMB_100_FREE)
                          / (PROF_CLIMB_100_SAT - PROF_CLIMB_100_FREE), 0.0, 1.0);
     ProfileTerms {
@@ -2477,7 +2509,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("carry_dip".into(), DIP_W * dip_best);
         terms.insert("b2b".into(), b2b);
         terms.insert("ch_keepout".into(), -6.0 * ch_intrusion(&pts, home, CH_TRIM_M));
-        let pt = profile_terms(f, &pts);
+        let pt = profile_terms(f, &pts, par);
         let n_line = ((pt_len(&pts) / 8.0) as usize).max(4) + 1;
         terms.insert("line_flow".into(), LINE_FLOW_W * line_terms(f, site.m, &pts, n_line).flow);
         terms.insert("prof_net".into(), pt.prof_net);
