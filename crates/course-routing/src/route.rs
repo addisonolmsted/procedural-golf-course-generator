@@ -225,6 +225,58 @@ pub fn par_chord_band(par: u8) -> (f64, f64) {
     if par == 3 { PAR3_CHORD_BAND } else { (PROF_CHORD_FREE_M, PROF_CHORD_SAT_M) }
 }
 
+/// GREENS ON GROUND THAT TILTS ACROSS THE LINE (round 4, item 3,
+/// 2026-09-16). Nothing in the router has ever scored cross slope: every
+/// terrain term measures the profile ALONG the line. Real green sites tilt
+/// more than 3 % across the line of play on 39 % of holes and more than 6 %
+/// on 16 %; ours managed 24 % and 4 %, and fluvial greens over 6 % were
+/// 0.1 %. The gap is the ground, not the angle of attack -- the ratio of
+/// cross slope to the section's own relief is 0.82 real against 0.78 ours --
+/// and the omnidirectional surround relief already MATCHES (4.94 against
+/// 4.93), so the sites have relief around them and we pick the flat axis.
+/// The term is therefore directional and lives where the approach is known,
+/// not in `pool_setting`, which has no direction. It reads `f.z8`, NOT
+/// `Candidate::grad`: that is the pad plane over the green disc, while the
+/// gap is in the +-30 m complex, and rewarding pad tilt would push pads into
+/// the 8 % build cap. Band from the real distribution, p50 2.19 / p75 4.41 /
+/// p90 7.40 %, with a tail so a very tilted site is not rewarded further but
+/// is not punished either. Ladder on CROSS_W in
+/// docs/calibration/routing-site-use.md.
+pub const CROSS_RUN_M: f64 = 30.0;
+pub const CROSS_BAND_PCT: (f64, f64) = (2.5, 8.0);
+pub const CROSS_W: f64 = 0.6;
+/// The beam's share of it, SHIPPED AT ZERO. The beam picks GREENS, so its
+/// copy of this term moves whole holes onto rolling ground and takes the
+/// blindness budget with it, while detail only re-ranks the eight finished
+/// routes. Ladder (greens over a 3 % cross slope / deep blind drives per 100,
+/// gate 4.5), from 24 % / 4.0: detail 0.6 beam 0 -> 27 % / 4.2 SHIPPED;
+/// 0.15 in both -> 30 % / 4.6; detail 0.6 beam 0.15 -> 31 % / 5.1; 0.6 in
+/// both -> 39 %, exactly the real share, but 5.3 and a play crossing. Every
+/// rung that reaches the 33 % target spends blindness item 4 needs; the beam
+/// copy is where the leverage is and is the first thing to revisit if the
+/// budget frees up.
+pub const CROSS_W_BEAM: f64 = 0.0;
+
+/// Slope across `dir` at `p`, percent, signed. Three samples a side so a
+/// single 8 m stride cell cannot swing it; mirrors
+/// `tools/golf/hole_metrics.py::cross_slope`, which is what the audit reads.
+fn cross_at(f: &Fields, p: Yx, dir: Yx) -> f64 {
+    let n = (-dir.1, dir.0);
+    let mut za = 0.0;
+    let mut zb = 0.0;
+    for d in [CROSS_RUN_M - 6.0, CROSS_RUN_M, CROSS_RUN_M + 6.0] {
+        za += f.z8[cell_of(f, p.0 + n.0 * d, p.1 + n.1 * d)];
+        zb += f.z8[cell_of(f, p.0 - n.0 * d, p.1 - n.1 * d)];
+    }
+    (za - zb) / 3.0 / (2.0 * CROSS_RUN_M) * 100.0
+}
+
+/// The reward for a green whose ground tilts across the played line.
+fn green_cross_term(f: &Fields, green: Yx, dir: Yx) -> f64 {
+    let c = cross_at(f, green, dir).abs();
+    CROSS_W * trapezoid(c, CROSS_BAND_PCT.0, CROSS_BAND_PCT.1, TRAP_RAMP, 0.3)
+}
+
 /// The above-chord penalty for a par: 0 below the band's floor, 1 at its top.
 fn chord_pen(above: f64, par: u8) -> f64 {
     let (free, sat) = par_chord_band(par);
@@ -1938,6 +1990,12 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
             let nv = vin.0.hypot(vin.1);
             let ab = if nv > 1e-9 { approach_bin((vin.0 / nv, vin.1 / nv)) } else { 0 };
             let appr = score_approach(&pool[gi].approach, ab);
+            // round 4, item 3: does the green's ground tilt across the shot?
+            let gcross = if nv > 1e-9 {
+                green_cross_term(f, gp, (vin.0 / nv, vin.1 / nv))
+            } else {
+                0.0
+            };
             let lzq = lz_probe(rf, f, tee, gp, par);
             let mut cov = st.cov.clone();
             let (nr, nc) = cov_dims(site.win);
@@ -1978,7 +2036,7 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
                     0.0
                 }
             };
-            let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq
+            let s_hole = cheap[q] + 1.0 * appr + 0.8 * lzq + CROSS_W_BEAM / CROSS_W * gcross
                 + COV_W_BEAM * new_cov as f64 / (nr * nc).max(1) as f64
                 + LINE_FLOW_W * flow - LINE_CHORD_W_BEAM * pen_chord
                 + {
@@ -2487,6 +2545,7 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
         terms.insert("edge".into(), edge_term(site.win, g, pool[gi].reserved));
         terms.insert("setting".into(), SETT_W * sett[gi]);
         terms.insert("approach".into(), 1.0 * appr);
+        terms.insert("green_cross".into(), green_cross_term(f, g, (vin.0 / nv, vin.1 / nv)));
         terms.insert("lz".into(), if par >= 4 { 0.8 * clip(lz_score, -1.0, 1.0) } else { 0.0 });
         terms.insert("tee".into(), 0.4 * clip(tee.score, -1.0, 1.0));
         terms.insert("length".into(), 0.5 * tent_t(length, par));
@@ -3035,6 +3094,33 @@ mod tests {
     }
 
     /// `test_kernels`' wet strip: one bridge, 8..=12 m over a 10-cell strip.
+    #[test]
+    fn cross_at_reads_a_tilted_plane() {
+        // a plane falling 5 % along +x, sampled by a shot played along +y:
+        // the cross direction is x, so the cross slope is the full 5 %
+        let nx = 120usize;
+        let cell = 8.0;
+        let mut z8 = vec![0.0; nx * nx];
+        for y in 0..nx {
+            for x in 0..nx {
+                z8[y * nx + x] = 0.05 * x as f64 * cell;
+            }
+        }
+        let f = Fields {
+            cell, nx, ny: nx, z8, slope: vec![0.0; nx * nx], relief_pos: vec![0.0; nx * nx],
+            tpi200: vec![0.0; nx * nx], subgrid_rough: vec![0.0; nx * nx],
+            wet8: vec![false; nx * nx], d_water: vec![f64::INFINITY; nx * nx],
+            pad_green: vec![true; nx * nx], pad_tee: vec![true; nx * nx],
+            pad_fair: vec![true; nx * nx], room: vec![0.0; nx * nx],
+        };
+        let p = (400.0, 400.0);
+        let along_y = cross_at(&f, p, (1.0, 0.0)).abs();
+        assert!((along_y - 5.0).abs() < 0.2, "{along_y}");
+        // played along +x instead, the cross direction is y, which is level
+        let along_x = cross_at(&f, p, (0.0, 1.0)).abs();
+        assert!(along_x < 0.2, "{along_x}");
+    }
+
     #[test]
     fn tee_dogleg_is_the_angle_at_the_tee() {
         let tee = (0.0, 0.0);
