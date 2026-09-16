@@ -251,3 +251,63 @@ need > 2 m, position 0.77).
 Built, measured and removed: the tier promoted to the play-clean band
 (11.0 vs 10.7, no gain) and a beam-side 8 m mirror (3.7 → 5.7 at weight 0.3,
 5.0 at 0.6 — worse). The residual is a green no tee can see.
+
+# Round 4 (2026-09-16) — the five corpus gaps
+
+Gate checked after every item: 250/250 routed, 0 play crossings, green in play
+within 35 m ≤ 1, tee boxes over 30 % = 0, deep blind drives ≤ 4.5 per 100, mix
+85–95 %, hole-1 par 3 ≤ 5 %, back-to-back par 3s = 0, seconds p50 ≤ 0.6 /
+max ≤ 1.0. Final build passes all of them.
+
+| metric | real | before | after |
+|---|---|---|---|
+| par-4 spread in a nine | 94 m | 32 | 62 |
+| par-4 IQR | 317–383 | 350–359 | 335–382 |
+| par 5s reachable in two | 32 % | 8 | 21 |
+| par 5s under 450 m | 29 % | 6 | 13 |
+| par 3s over a 1.7 m rise | 0.5 % | 9.4 | 6.2 |
+| greens over 3 % cross slope | 39 % | 24 | 29 |
+| par-4 doglegs over 25° | 0.6 % | 7.1 | 2.4 |
+| deep blind drives per 100 | 2.2 | 3.7 | 3.7 |
+| walk p50 | 69 m | 103 | 85 |
+
+## Item 1 — dogleg tail (tee angle)
+
+| rung | > 25° | p95 | deep blind |
+|---|---|---|---|
+| before | 7.1 % | 31 | 3.7 |
+| hard tier 25° | 1.8 % | 19 | 4.9 rejected |
+| tier 30 + charge 4.0 | 2.3 % | 21 | 4.8 rejected |
+| tier 35 + charge 4.0 | 3.1 % | 22 | 4.5 |
+| charge 2.0 alone | 4.5 % | 24 | 4.3 |
+| charge 4.0 alone — shipped | 3.4 % | 23 | 4.2 |
+
+## Item 2 — par-3 chord band
+
+| rung | par-3 p90 | over 1.7 m | deep blind | mix |
+|---|---|---|---|---|
+| before | 1.64 | 9.4 % | 4.2 | 92 % |
+| (0.4, 1.3) real p90/p99 | 0.92 | 4.2 % | 4.7 rejected | 86 % |
+| (0.7, 2.5) | 1.10 | 4.4 % | 4.5 | 89 % |
+| (1.0, 3.5) — shipped | 1.29 | 6.5 % | 4.0 | 91 % |
+
+## Item 3 — green cross slope
+
+| rung | > 3 % | > 6 % | deep blind | note |
+|---|---|---|---|---|
+| before | 24 % | 4 % | 4.0 | |
+| detail 0.6, beam 0 — shipped first | 27 % | 4 % | 4.2 | |
+| 0.15 both | 30 % | 5 % | 4.6 | |
+| detail 0.6, beam 0.15 — final | 29 % | 5 % | 3.7 | after item 4 freed the budget |
+| detail 0.6, beam 0.3 | 34 % | 5 % | 3.5 | 5 tee boxes over 30 % |
+| 0.6 both | 39 % | 6 % | 5.3 | a play crossing |
+
+## Item 4 — lengths, with the visibility tier tightened to pay for it
+
+| rung | par-4 spread | par 5 reachable | deep blind | mix |
+|---|---|---|---|---|
+| TWIN_SEP_4 20, VIS 1.5 | 60 m | 18 % | 5.9 rejected | 95 % |
+| 25, VIS 1.5 | 61 m | 19 % | 5.5 rejected | 94 % |
+| 30, VIS 1.5 | 61 m | 19 % | 4.6 | 93 % |
+| 30, VIS 1.2 | 62 m | 20 % | 3.5 | 91 % |
+| 30, VIS 1.0 — shipped | 62 m | 21 % | 3.7 | 93 % |

@@ -1943,3 +1943,77 @@ hole to hole, the share of consecutive holes within 45 degrees, tilt reversal
 rate, approach grade on par 3/4, par-3 and par-5 length spread within a nine,
 and the median gap to the neighbouring hole. Walks are 103 m against a real 69,
 as expected since they are deliberately not optimised.
+
+## 2026-09-16 — routing round 4: the five corpus gaps
+
+Plan approved by the owner, who set two scope calls: lower the par-5 legal
+floor to 420 m, and allow small NAMED regressions rather than dropping a fix.
+A regression gate was fixed up front over everything rounds 1-3 won and
+checked after every item. Baseline `r3_s1.jsonl`; final `r4_s4.jsonl` =
+`rs.jsonl`. Viewers: round artifact 5005ee3a, gap report 5c40f200 refreshed.
+
+Two diagnoses changed once measured and the work followed the measurement:
+the green cross-slope gap is the GROUND, not the angle of attack (the ratio of
+cross slope to section relief is 0.82 real against 0.78 ours, and the
+omnidirectional surround already matches), and the over-a-rise problem is par
+3 ONLY (real above-chord p90 by par 0.42 / 1.89 / 2.79 against ours 1.64 /
+2.16 / 2.48 — par 5 is better than real).
+
+| gap | before | after | real |
+|---|---|---|---|
+| par-4 spread within a nine | 32 m | 62 m | 94 m |
+| par-4 interquartile range | 350-359 | 335-382 | 317-383 |
+| par 5s reachable in two | 8 % | 21 % | 32 % |
+| par 3s over a 1.7 m rise | 9.4 % | 6.2 % | 0.5 % |
+| greens over a 3 % cross slope | 24 % | 29 % | 39 % |
+| par-4 doglegs over 25 deg | 7.1 % | 2.4 % | 0.6 % |
+| walk, green to next tee | 103 m | 85 m | 69 m |
+
+Gate held: 250/250 routed, 0 play crossings, 1 green in play within 35 m, 0
+tee boxes over 30 %, deep blind drives 3.7 per 100 (exactly round 3's ship),
+mix 93 %, 0.47 s median, `gentle_tile_routes` passing.
+
+**Item 1, the dogleg tail.** The drive is charged the angle AT THE TEE between
+the line to the landing zone and the line to the green, free to the real p75
+9.4 deg and saturating at the p95 17.4, with a rising charge beyond the p99.
+A HARD TIER was built and REJECTED: going around a rise is a bend, so a tier
+competed with round 3's visibility tier (par-4 doglegs over 25 deg / deep
+blind drives per 100: tier at 25 gives 1.8 / 4.9 rejected; tier 35 + charge
+3.1 / 4.5; charge alone at 4.0 3.4 / 4.2, shipped).
+
+**Item 2, par 3s over a rise.** `par_chord_band` per par; only par 3 tightens,
+par 4/5 keep the pooled band deliberately. `place_lz` is never called for a
+par 3, so the rise tier and the carry veto inside it stay pooled. Ladder
+(par-3 p90 / over 1.7 m / blind / mix): the real p90 and p99 at (0.4, 1.3)
+0.92 / 4.2 % / 4.7 REJECTED / 86 %; (0.7, 2.5) 1.10 / 4.4 % / 4.5 on the
+limit; (1.0, 3.5) 1.29 / 6.5 % / 4.0 / 91 % shipped, the only rung improving
+both the rise and the blindness it trades against.
+
+**Item 3, greens that tilt across the line.** `cross_at` reads `f.z8` either
+side of the played line, NOT `Candidate::grad` (the pad plane, which would
+push pads into the 8 % build cap). Shipped at route level 0.6 with the beam
+copy first at 0 (27 % / blind 4.2), then RESTORED to 0.15 after item 4 freed
+the budget (29 % / 3.7). At 0.6 in both it hits the real 39 % but blind goes
+to 5.3 with a play crossing; at beam 0.3 five tee boxes return to > 30 %
+ground. Greens over 6 % do not move at any rung because the reward saturates
+at 8 %.
+
+**Item 4, lengths.** `tent_t`'s par-4 tent is gone; every par now takes the
+flat interquartile reward and `TWIN_SEP_4` 30 m spreads the five holes (round
+2 had measured the flat reward WITHOUT a twin penalty and it pinned the median
+to 374). `PAR_BAND_5` floors at 420, the spread override's short side reaches
+it, and the par-5 second leg's radius follows what is LEFT to the green
+instead of a fixed annulus that could not satisfy its own remainder band.
+Rather than spend the gate, `VIS_TIER_M` tightened 1.5 -> 1.0, the rung round
+3 measured but did not ship; that bought the blindness back to 3.7 and let
+item 3's beam term return.
+
+**Named shortfalls, all recorded rather than papered over:** par-4 spread
+reaches 62 m of a real 94, because a real nine puts one par 4 near 290 and
+another near 420 and our band plus the total budget cannot hold both; par 5s
+under 450 m reach 13 % of a real 29, because only one par 5 a course gets the
+short target and only when the other came out long; par 3s over a rise reach
+6.2 % of a real 0.5, because dune ground has few par-3 sites with nothing on
+the line; greens over a 3 % cross slope reach 29 % of a real 39, and over 6 %
+do not move; the dogleg tail reaches 2.4 % of a real 0.6. Every one of these
+is a terrain or budget limit that was measured, not a weight left untuned.
