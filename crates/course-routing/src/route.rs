@@ -504,7 +504,50 @@ pub fn sight_block_m(t: &Terrain, a: Yx, b: Yx) -> f64 {
     worst
 }
 
+/// THE DOGLEG TAIL (round 4, item 1, 2026-09-16). Round 2 banded the dogleg
+/// on the VERTEX turn, the measure since retired: it reads a sharp dogleg on
+/// a hole straight for 400 m that kinks in its last 40 m, and on our spines
+/// the vertices ARE the landing zones while on a real way they are wherever
+/// the mapper clicked. The measure that carries the strategic content is the
+/// angle AT THE TEE between the line to the landing zone and the line to the
+/// green: how far off the green you must aim the drive. Under it our median
+/// is already right and only the tail is wrong -- real par 4 p50/p75/p95/p99
+/// 5.1 / 9.4 / 17.4 / 23.0 deg against ours 5.0 / 7.0 / 31 / 41. So the
+/// penalty is free to the real p75 and saturates at the p95, and a tier at
+/// TEE_DOG_TIER_DEG refuses the p99 tail outright. Drive leg only; the par-5
+/// second leg keeps the turn penalty and S_PEN_W, which are about weaving.
+pub const TEE_DOG_FREE_DEG: f64 = 9.4;
+pub const TEE_DOG_SAT_DEG: f64 = 17.4;
+pub const TEE_DOG_TIER_DEG: f64 = 25.0;
+/// Extra charge per unit beyond the p99, on top of the saturated ramp. A HARD
+/// TIER was built here and rejected: going around a rise IS a bend, so a tier
+/// competed with round 3's visibility tier for the same candidates and put
+/// blind drives back. Measured (par-4 doglegs over 25 deg / deep blind drives
+/// per 100, gate 4.5): baseline 7.1 / 3.7; tier at 25 deg 1.8 / 4.9 REJECTED;
+/// tier 30 + this charge 2.3 / 4.8 REJECTED; tier 35 + charge 3.1 / 4.5, on
+/// the limit; charge alone at 2.0 4.5 / 4.3; at 4.0 3.4 / 4.2, shipped for the
+/// headroom it leaves the rest of the round.
+pub const TEE_DOG_TAIL_W: f64 = 4.0;
+
+/// The angle at `a` between the line to `cand` and the line to `g`, degrees.
+fn tee_dogleg_deg(a: Yx, cand: Yx, g: Yx) -> f64 {
+    let u = (cand.0 - a.0, cand.1 - a.1);
+    let v = (g.0 - a.0, g.1 - a.1);
+    let nu = u.0.hypot(u.1);
+    let nv = v.0.hypot(v.1);
+    if nu < 1e-9 || nv < 1e-9 {
+        return 0.0;
+    }
+    clip((u.0 * v.0 + u.1 * v.1) / (nu * nv), -1.0, 1.0).acos().to_degrees()
+}
+
+/// 0 below the real p75, 1 at the real p95.
+fn tee_dog_pen(deg: f64) -> f64 {
+    clip((deg - TEE_DOG_FREE_DEG) / (TEE_DOG_SAT_DEG - TEE_DOG_FREE_DEG), 0.0, 1.0)
+}
+
 /// The dogleg penalty of a turn (radians): 0 to the real p50, 1 at the p90.
+/// Round 4: the par-5 SECOND leg only; the drive uses `tee_dog_pen`.
 fn dogleg_pen(turn: f64) -> f64 {
     clip((turn.abs().to_degrees() - DOGLEG_FREE_DEG) / (DOGLEG_SAT_DEG - DOGLEG_FREE_DEG), 0.0, 1.0)
 }
@@ -1239,6 +1282,7 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, t: &Terrain, m: &Morphology,
     let mut room = Vec::with_capacity(n);
     let mut score = Vec::with_capacity(n);
     let mut rise_ok = Vec::with_capacity(n);
+    let mut tee_dog = Vec::with_capacity(n);
     for &th in &bears {
         for &r in &radii {
             let y = a.0 + r * th.sin();
@@ -1248,9 +1292,20 @@ pub fn place_lz(rf: &RouteFields, f: &Fields, t: &Terrain, m: &Morphology,
             let ok = rm >= LZ_ROOM_MIN_M;
             let rem = (g.0 - y).hypot(g.1 - x);
             let rem_t = trapezoid(rem, remainder_band.0, remainder_band.1, TRAP_RAMP, TRAP_TAIL);
-            // the turn at this landing zone, in the corpus's terms (round 2)
+            // round 4: the drive is charged the TEE angle, the par-5 second
+            // leg the turn at its own landing zone
             let turn = turn_at(a, (y, x), g);
-            let dog_pen = dogleg_pen(turn);
+            let tdog = tee_dogleg_deg(a, (y, x), g);
+            tee_dog.push(tdog);
+            // beyond the real p99 the charge keeps climbing instead of a hard
+            // tier: a tier here competed with round 3's visibility tier for
+            // the same candidates and put blind drives back (3.7 -> 4.9 deep
+            // per 100), since going around a rise IS a bend
+            let dog_pen = if is_drive {
+                tee_dog_pen(tdog) + TEE_DOG_TAIL_W * clip((tdog - TEE_DOG_TIER_DEG) / TEE_DOG_TIER_DEG, 0.0, 1.0)
+            } else {
+                dogleg_pen(turn)
+            };
             let s_pen = match prev_turn {
                 Some(t1) if t1.abs().to_degrees() > S_TURN_MIN_DEG
                     && turn.abs().to_degrees() > S_TURN_MIN_DEG
@@ -2948,6 +3003,24 @@ mod tests {
     }
 
     /// `test_kernels`' wet strip: one bridge, 8..=12 m over a 10-cell strip.
+    #[test]
+    fn tee_dogleg_is_the_angle_at_the_tee() {
+        let tee = (0.0, 0.0);
+        let green = (0.0, 300.0);
+        // straight through
+        assert!(tee_dogleg_deg(tee, (0.0, 200.0), green) < 1e-9);
+        // a landing zone square off the line at the same range
+        let d = tee_dogleg_deg(tee, (200.0, 0.0), green);
+        assert!((d - 90.0).abs() < 1e-6, "{d}");
+        // a bend in the LAST 40 m of a long hole barely registers, which is
+        // the whole point of moving off the vertex turn
+        let late = tee_dogleg_deg(tee, (0.0, 260.0), (40.0, 300.0));
+        assert!(late < 8.0, "{late}");
+        // and the penalty is free below the real p75, saturated at the p95
+        assert!(tee_dog_pen(TEE_DOG_FREE_DEG - 1.0) < 1e-9);
+        assert!((tee_dog_pen(TEE_DOG_SAT_DEG + 5.0) - 1.0).abs() < 1e-9);
+    }
+
     #[test]
     fn sight_block_sees_a_ridge() {
         use course_world::grid::{Grid, GridSpec};
