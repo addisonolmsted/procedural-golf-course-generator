@@ -58,7 +58,12 @@ pub const ALLOWED_MIXES: [(u8, u8, u8); 3] = [(2, 5, 2), (3, 3, 3), (1, 7, 1)];
 // spectrum repair (greens.py) guarantees candidate pairs inside every band.
 pub const PAR_BAND_3: (f64, f64) = (110.0, 210.0);
 pub const PAR_BAND_4: (f64, f64) = (280.0, 430.0);
-pub const PAR_BAND_5: (f64, f64) = (440.0, 560.0);
+// PAR_BAND_5's floor 440 -> 420 (round 4, item 4, owner 2026-09-16).
+// Reachability in two is a step function of length: every real par 5 under
+// 440 m is reachable, 41 % at 440-470, 1 % over 470. Real courses put 29 % of
+// their par 5s under 450 m and we had 6 %, because the legal band floored at
+// 440. 420 is the real tenth percentile.
+pub const PAR_BAND_5: (f64, f64) = (420.0, 560.0);
 // TOTAL_BAND_M (2600, 3200) -> (2800, 3250) and BUDGET_M 3100 -> 3250
 // (round 1, item 9, 2026-09-15): the budget was the band ceiling's
 // enforcer and truncated late holes to `lo + 20`; the real par-36 nine
@@ -92,6 +97,19 @@ pub const PAR_MID_5: f64 = 473.0;
 pub const TWIN_W: f64 = 0.8;   // 0.4 in the first pass: twins 50 -> 34 %
 pub const TWIN_SEP_3: f64 = 30.0;
 pub const TWIN_SEP_5: f64 = 40.0;
+/// PAR-4 LENGTHS COLLAPSED ONTO ONE NUMBER (round 4, item 4, 2026-09-16).
+/// `tent_t`'s par-4 branch was a tent peaked at the median with zero at
+/// +-66 m, so all five par 4s wanted 350 m: a nine spanned 32 m against a
+/// real 94, and a quarter of courses under 14 m. Par 4 now gets the same flat
+/// interquartile reward as par 3 and 5, so anywhere in the real 317-383 is
+/// equally good, and a twin separation makes the five holes differ -- round 2
+/// measured the flat reward WITHOUT a twin penalty and it pinned the median
+/// to 374, so the separation is what breaks the pinning. Laddered in
+/// docs/calibration/routing-site-use.md.
+pub const TWIN_SEP_4: f64 = 30.0;
+/// The par-5 spread override's short side reaches below the target band, to
+/// the legal floor, so one par 5 a course can be a short reachable one.
+pub const PAR5_SHORT_FLOOR: f64 = 420.0;
 
 pub fn par_target(par: u8) -> (f64, f64) {
     match par {
@@ -124,12 +142,11 @@ fn target_t(len: f64, band: (f64, f64), tail: f64) -> f64 {
 /// there pulled both par 3s onto 163 m (twins 14 -> 52 %) against the
 /// spread-by-construction override.
 fn tent_t(len: f64, par: u8) -> f64 {
+    // round 4, item 4: every par is now the flat interquartile reward; the
+    // par-4 tent that peaked at the median is gone, and TWIN_SEP_4 spreads
+    // the five holes instead of a per-hole target doing it
     let (lo, hi) = par_target(par);
-    if par == 4 {
-        clip(1.0 - (len - par_mid(par)).abs() / (hi - lo), 0.0, 1.0)
-    } else {
-        target_t(len, (lo, hi), 0.1)
-    }
+    target_t(len, (lo, hi), 0.1)
 }
 
 /// `PAR_BANDS[par]`.
@@ -251,11 +268,13 @@ pub const CROSS_W: f64 = 0.6;
 /// routes. Ladder (greens over a 3 % cross slope / deep blind drives per 100,
 /// gate 4.5), from 24 % / 4.0: detail 0.6 beam 0 -> 27 % / 4.2 SHIPPED;
 /// 0.15 in both -> 30 % / 4.6; detail 0.6 beam 0.15 -> 31 % / 5.1; 0.6 in
-/// both -> 39 %, exactly the real share, but 5.3 and a play crossing. Every
-/// rung that reaches the 33 % target spends blindness item 4 needs; the beam
-/// copy is where the leverage is and is the first thing to revisit if the
-/// budget frees up.
-pub const CROSS_W_BEAM: f64 = 0.0;
+/// both -> 39 %, exactly the real share, but 5.3 and a play crossing. At the
+/// time every rung reaching the 33 % target spent blindness item 4 needed, so
+/// the beam copy shipped at zero. Item 4 then tightened VIS_TIER_M to 1.0 and
+/// gave the budget back, and the beam copy was restored at 0.15 (greens over
+/// 3 % 29 %, deep blind drives 3.7, the same as round 3 shipped). 0.3 reaches
+/// the 34 % target but puts five tee boxes back on > 30 % ground.
+pub const CROSS_W_BEAM: f64 = 0.15;
 
 /// Slope across `dir` at `p`, percent, signed. Three samples a side so a
 /// single 8 m stride cell cannot swing it; mirrors
@@ -545,7 +564,11 @@ pub const RISE_TIER_M: f64 = 3.5;
 /// refuses them: a candidate whose drive is blocked by more than VIS_TIER_M
 /// ranks below every candidate that is not. Ladder 1.5 / 2.0 in
 /// docs/calibration/routing-site-use.md; 1.0 would be stricter than real
-/// courses, which carry 7.0 such drives per 100 holes. A beam-side mirror on
+/// courses, which carry 7.0 such drives per 100 holes. ROUND 4 tightened this
+/// from 1.5 to 1.0: the round-4 interest terms each cost blindness, and
+/// rather than spend the gate this buys it back at the rung round 3 had
+/// measured but not shipped -- deep blind drives per 100 land at 3.7, the
+/// same as round 3 shipped, with every round-4 gain intact. A beam-side mirror on
 /// the 8 m stride grid was built and MEASURED WORSE (deep drives per 100:
 /// tier alone 3.7, + beam at 0.3 5.7, at 0.6 5.0) -- the estimate is too
 /// coarse to rank greens by visibility and only perturbs the selection the
@@ -554,7 +577,7 @@ pub const RISE_TIER_M: f64 = 3.5;
 pub const EYE_M: f64 = 1.7;
 pub const LOS_STEP_M: f64 = 2.0;
 pub const BLIND_TOL_M: f64 = 0.3;
-pub const VIS_TIER_M: f64 = 1.5;
+pub const VIS_TIER_M: f64 = 1.0;
 
 /// The worst excess of ground over the sight line from an eye EYE_M above
 /// the ground at `a` to the ground at `b`, in metres; 0 when `b` is visible.
@@ -1925,7 +1948,7 @@ fn expand_state(f: &Fields, rf: &RouteFields, pool: &[Candidate], yx: &[Yx], pct
         let mut cheap: Vec<f64> = Vec::with_capacity(m);
         let mid_par = par_mid(par);
         // earlier holes of this par, estimated lengths (the twin penalty)
-        let twin_sep = match par { 3 => TWIN_SEP_3, 5 => TWIN_SEP_5, _ => 0.0 };
+        let twin_sep = match par { 3 => TWIN_SEP_3, 4 => TWIN_SEP_4, _ => TWIN_SEP_5 };
         let same_par: Vec<f64> = if twin_sep > 0.0 {
             st.seq.iter().filter(|e| e.1 == par).map(|e| hyp(yx[e.0], e.2)).collect()
         } else {
@@ -2432,7 +2455,10 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             if earlier.len() == 1 {
                 let (tlo, thi) = par_target(par);
                 let mid = par_mid(par);
-                Some(if earlier[0] <= mid { (0.5 * (mid + thi), thi) } else { (tlo, 0.5 * (tlo + mid)) })
+                // round 4: on par 5 the short side reaches the legal floor,
+                // not the target band's, so one par 5 can be reachable in two
+                let lo_side = if par == 5 { PAR5_SHORT_FLOOR } else { tlo };
+                Some(if earlier[0] <= mid { (0.5 * (mid + thi), thi) } else { (lo_side, 0.5 * (tlo + mid)) })
             } else {
                 None
             }
@@ -2484,7 +2510,15 @@ pub fn detail_route(t: &Terrain, f: &Fields, rf: &RouteFields, site: &SiteCtx,
             if par == 5 && !lzs.is_empty() {
                 let from = (lzs[0].0, lzs[0].1);
                 let turn1 = turn_at(opt.yx, from, g);
-                if let Some(r2) = place_lz(rf, f, t, site.m, from, g, SECOND_R_M, (120.0, 200.0), &spines,
+                // round 4, item 4: the second leg's radius follows what is
+                // LEFT to the green instead of a fixed annulus. At (160, 220)
+                // against a remainder band asking for 120-200 m the two could
+                // not both be satisfied on a short par 5, and 29 % of our par
+                // 5s left a final leg under 80 m -- not a shot.
+                let d2 = hyp(from, g);
+                let r2lo = clip(d2 - 200.0, SECOND_R_M.0, SECOND_R_M.1);
+                let r2hi = clip(d2 - 90.0, SECOND_R_M.0, SECOND_R_M.1).max(r2lo + 10.0);
+                if let Some(r2) = place_lz(rf, f, t, site.m, from, g, (r2lo, r2hi), (120.0, 200.0), &spines,
                                            &walks, &lz_seen, &other_greens, None, Some(home), Some(turn1), false) {
                     lzs.push(r2.lz);
                     lz_score = 0.5 * (lz_score + r2.score);
