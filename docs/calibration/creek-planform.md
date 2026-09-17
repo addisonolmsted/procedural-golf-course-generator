@@ -2197,3 +2197,102 @@ on all 250. Visibility stays bare earth. Python this round; a Rust port would
 need `n5/sand/canopy/v1` in `rng.rs` REGISTRY plus the row in
 `docs/sandhills/README.md` §7, and a cross-language agreement test on
 `predictors`, none of which is cheaper now than later.
+
+---
+
+## 2026-09-17 — canopy round 3: cut the corridors, finalized canopy
+
+Round 2 grew the natural canopy and left the fluvial seeds correct and
+unplayable: the median fluvial hole ran a corridor 98 % treed. This removes the
+trees a course removes and leaves the ones a course leaves.
+Output `out/canopy250_final/`; `out/canopy250/` stays as the natural layer.
+Viewer: **Cutting The Corridors**.
+
+**Three measurement corrections, each found by a probe that went wrong first.**
+
+1. **Normalise by untouched ground, in the nearest-hole frame.** The obvious
+   method divides each hole by its own cover 120–160 m out along the normals.
+   On a real course that band is the next fairway: it holds **0.64** of truly
+   untouched cover, and on our sparser routes **0.80**, so the two sides are
+   normalised by differently contaminated denominators and every ratio is
+   inflated 1.25–1.6×. The nearest-hole frame has no such band.
+2. **Clearing recovers fully by 80 m and there is no property-wide thinning.**
+   Against ground >500 m from every hole (60.9 % treed), cover runs 0.083 /
+   0.164 / 0.325 / 0.548 / 0.760 / 0.887 / 0.962 over the first 80 m and then
+   sits within 3 % of untouched all the way to 500 m. A golf course is a set of
+   corridors, not an opened-up estate.
+3. **Par 3s are a different animal.** The middle of a par 3 is carry, not a
+   landing zone: keep 0.133 on its centre line against 0.034 for a par 4 and
+   0.020 for a par 5. Every table is keyed by par.
+
+**Measured, from 3,851 holes on 315 wooded courses** (`clearing_profile.py`,
+frozen into `clearing_model.json`). Keep rate against distance to the nearest
+hole line, over untouched ground:
+
+| zone | 0 | 10 | 20 | 30 | 40 | 50 | 60 | 70 |
+|---|---|---|---|---|---|---|---|---|
+| tee | 0.190 | 0.308 | 0.494 | 0.706 | 0.849 | 0.915 | 0.935 | 0.943 |
+| landing | 0.042 | 0.090 | 0.217 | 0.424 | 0.657 | 0.830 | 0.912 | 0.938 |
+| green | 0.020 | 0.058 | 0.191 | 0.434 | 0.700 | 0.867 | 0.935 | 0.962 |
+
+Patches in the corridor 2.53/hole; heavier flank 82 %; all-on-one-side 34 %; no
+corridor tree 20 %. Zone dependence is real and partial: rank correlations 0.64
+/ 0.63 / 0.44, and 22 % of holes bare in all three zones against 39 % if the
+zones moved together and 7 % if independent.
+
+**No strategic placement.** On 720 bent holes, trees left in play show **no
+preference for the inside of the dogleg — 50.9 % against 50**. They are
+residual, not sited. The owner was offered a strategic pass and declined it.
+
+**The generator.** `p = shape(par, zone, distance)`; proportional thinning, so
+the local tree rate cancels and never has to be estimated. Survivors are chosen
+by **ranking a fractal field inside each pool and comparing the rank to the
+cell's own probability** — exactly uniform without assuming a distribution, and
+monotone so it stays clumped. Three earlier constructions and why they failed,
+all measured:
+- Gaussian copula (`field − ndtri(p)` at one threshold): kept 0.083 on the
+  landing line where the profile said 0.041 and 0.343 at the edge against 0.425.
+  The 640 m octave has ~2 independent samples per tile, so `zscore`'s deviation
+  is not trustworthy that far into the tail.
+- Solving in probability bands: fixes the marginal, shreds the clumping —
+  patches 2.54 → 3.18 per hole, one-sided holes 39 % → 23 %.
+- Odds multiplier: concave in the multiplier, so Jensen pulls every level down;
+  cost 0.15 at the corridor edge.
+
+Per-hole variety is a plain multiplier on the profile, drawn by correlated
+stratified inverse-CDF (Gaussian copula on the measured rank correlations, then
+ranked within the cohort so each zone's marginal stays exact).
+
+**Result: 24 of 30 gated rows inside tolerance** (1,314 holes on 146 tiles
+≥25 % treed; 104 bare tiles excluded and reported separately, as the corpus
+excluded its 360 bare courses). All retention rows, all six patch rows and both
+asymmetry rows pass. Landing keeps 0.042 / 0.206 / 0.384 against 0.042 / 0.217 /
+0.424 at 0 / 20 / 40 m.
+
+**The owner's two features, counted rather than built.** A specimen within 15 m
+of the landing-zone line on **7 % of holes**, and one 20–40 m from the green on
+**7 %**. Worth stating plainly: the real wooded corpus scores near zero on this
+exact measure, not because such trees do not exist but because at 60 %
+surrounding cover anything left in a corridor stays joined to the tree line.
+Ours stand clear more often. That is the requested feature and a small
+departure upward, named rather than claimed as a match.
+
+**Tees opened on purpose.** Real tees sit in the trees — 0.190 kept on the tee
+line against 0.020 at a green, with 46 % of tees essentially bare and a quarter
+tight. The owner asked to keep that variety and err open, so tee retention alone
+is drawn at a warped quantile (`TEE_OPEN_EXP = 1.40`), giving 57 % bare against
+a measured 46 %. Those rows are reported as the departure, against both the
+measured value and what the warp predicts.
+
+**Named shortfalls.** The multiplier's tail is capped at 2× its zone mean: the
+measured retention reaches 9× its mean on real holes whose corridor carried more
+tree than the ground around it, and our homogeneous canopy cannot supply that —
+uncapped it saturates and costs 0.1 at the corridor edge. Same cause leaves
+28 % of our holes with a bare corridor against 20 %.
+
+**Guards held, mechanically.** `out/final250_v2` and `out/canopy250` hash
+identically before and after. A second run is byte-identical across all 500
+files. Clearing never plants a tree, never touches water, only ever writes class
+30, and never changes a cell outside a corridor. Canopy density 0.660 after
+clearing against 0.664 natural, the right direction (real course tiles 0.611).
+The 104 sub-25 % tiles lose 0.04 pp of cover on average and 78 are untouched.
