@@ -2091,3 +2091,109 @@ written as a sidecar, never baked into the tiles, so the 250-seed baseline and
 every metric from four routing rounds stay comparable. Visibility stays bare
 earth: our blindness numbers and the corpus's both exclude vegetation, so
 trees must not enter that metric until the real reference includes them.
+
+---
+
+## 2026-09-16 — canopy round 2: the trees, grown on our own tiles
+
+Round 1 fitted the model and stopped. This applies it to the 250 frozen seeds
+and closes "where trees could grow". Clearing is the next round.
+Viewer: **Our Own Canopy** (paired renders, acceptance table, corridor preview).
+
+**Two sidecars per seed**, in `out/canopy250/`, 300×300 at 10 m, exactly 9.00
+km2, the same geometry as a real tile so every per-km2 statistic compares with
+no rescaling. `m_<seed>.canopy.cgrid` carries **WorldCover class codes** — 10
+tree, 80 water, 30 other — which is the whole reason `corridor_width.py` reads
+our output with no change at all, and `m_<seed>.tcc.cgrid` carries percent
+canopy so the savanna signature survives.
+
+**The rule.** `s = a·zscore(lowpassed model logit) + sqrt(1−a²)·fBm`, water set
+to −inf after both z-scores, thresholded at the quantile that hits a per-seed
+coverage drawn from the real per-tile distribution.
+
+**Three findings that changed the design, each from a probe rather than an
+argument.**
+
+1. **One correlation length cannot do it.** Sweeping a single smoothed Gaussian
+   across every width and mix never produced a largest stand above 13 % of the
+   treed area against 40–50 % on real tiles, because clumps of one size give
+   one patch per *n*. A two-Gaussian variant capped at 30 %. The field is an
+   fBm stack over seven octaves, 10 m to 640 m; correlation length L means
+   `sigma = L/(2·cell)`, and each octave is normalised before weighting.
+2. **`np.quantile` interpolates and never returns the largest observation.**
+   On a distribution whose mean lives in its tail that is the whole error: the
+   aeolian cohort came out 6.66 % treed against a real 7.19, p90 21.5 against
+   25.4. `method="inverted_cdf"` gives 7.16 and 25.4, and has the better
+   property anyway — every coverage we generate was actually observed on real
+   ground.
+3. **A majority vote shatters our creeks.** They are 3–4 m wide on a 2 m grid,
+   so no 10 m block is ever half water. Over the 45 river seeds a majority
+   leaves a median **13 fragments whose longest run is 9 cells**, and erases
+   the creek entirely on two; a block fraction of 0.2 leaves **one continuous
+   channel, median 385 cells**. Distance-to-water needs a connected channel in
+   the right place; the area cannot be right either way at 10 m.
+
+**Calibration.** Structure only — coverage is right by construction. Scored on
+the **cohort median** of six patch statistics against every real tile of the
+archetype, because real tiles at the same coverage disagree enormously with
+each other (two 80 %-treed Carolina tiles carry p90 patch sizes of 15.6 and
+154 cells) and demanding tile-by-tile agreement scores us on noise nobody can
+reproduce. The median is also what the acceptance table compares, so the search
+optimises the number it is judged on. Fitted on half our seeds of each cohort,
+chosen on the other half: an earlier 16-tile search returned a setting scoring
+0.138 on its own tiles and **0.248 on tiles it had not seen**, while the
+runner-up scored 0.165 and 0.168. Final errors, fit → holdout: sandhills
+0.161 → 0.066, sandhills_nc 0.221 → 0.236, sandhills_river 0.204 → 0.108.
+
+**Fit versus target are allowed to differ.** The 29 aeolian river seeds are
+PLACED by the `sandhills` coefficients and SCORED against the `sandhills_river`
+tiles. The `sandhills_river` fit has the opposite sign on distance to water
+(−0.61 against +1.12) on ~2,850 positive cells across 18 tiles, and a
+"trees hug the water" rule applied to a 4 m synthetic creek paints a one-cell
+green ribbon down the tile. Coverage and structure are the parts of that
+corpus that are well measured, and those are the parts used.
+
+**Result: 32 of 33 acceptance rows inside tolerance.**
+
+| | sandhills (87) | sandhills_nc (134) | sandhills_river (29) |
+|---|---|---|---|
+| treed % ours / real | 7.16 / 7.19 | 75.69 / 75.66 | 4.19 / 3.94 |
+| canopy % | 2.34 / 2.36 | 50.25 / 50.23 | 1.17 / 1.10 |
+| density | 0.328 / 0.328 | 0.664 / 0.664 | 0.279 / 0.279 |
+| patches/km2 | 1.78 / 1.78 | 4.00 / 5.33 | 1.44 / 1.89 |
+| lone/km2 | 0.44 / 0.61 | 2.22 / 2.22 | 0.33 / 0.22 |
+| largest patch % | 53.9 / 50.0 | 99.1 / 98.5 | 47.0 / 40.1 |
+| edge density | 0.452 / 0.505 | **0.039 / 0.076** | 0.357 / 0.529 |
+
+**Named shortfall: Carolina wood edges are too clean,** 0.51× real. The dial
+exists (`grain`, extra weight on the 10 m octave) and turning it to 0.30 drives
+the miss to nothing — while multiplying the patch count fourfold and the
+lone-tree rate eightfold, taking the cohort error from 0.22 to 1.07. At 76 %
+cover the real edge density is largely classification speckle in a 10 m
+satellite product rather than the geometry of a wood. Left at zero in all three
+cohorts and recorded.
+
+**The lone tree, delivered by measurement rather than by a rule.** Nothing
+places specimens. Counted inside the routed play window: **66 % of aeolian
+seeds carry none, 16 % carry one or two, 17 % carry three or more**, mean 1.33
+over a 1.38 km2 window = 0.96 per km2, against a real dune-country median of
+0.61 with quartiles 0.2–1.1. An explicit specimen pass was designed and
+dropped: it would have stacked trees on a process already delivering them at
+the measured rate. 7 of 250 seeds are genuinely treeless and 66 of 116 aeolian
+seeds sit under 1 % cover, which is the archetype, not a bug.
+
+**The corridor that is not cut yet.** Our holes were routed on bare earth, so
+the centre line carries the same cover as the country around it: centre/far
+ratio **0.90 aeolian and 0.99 fluvial, against 0.21 on real courses**. Mean
+cover inside the tapered corridor is 6 % aeolian and **76 % fluvial (median
+98 %)**. That is the size of the clearing round, and
+`corridor_width.profile_for_hole` measures it on our sidecar unchanged.
+
+**Guards held, mechanically checked.** The 250 frozen heightfields hash
+identically before and after (`cb62563b…`). A second run of the generator is
+byte-identical across all 500 files. No tree on water, coverage exact to
+2/90000, canopy percent positive exactly where trees are and never above 100,
+on all 250. Visibility stays bare earth. Python this round; a Rust port would
+need `n5/sand/canopy/v1` in `rng.rs` REGISTRY plus the row in
+`docs/sandhills/README.md` §7, and a cross-language agreement test on
+`predictors`, none of which is cheaper now than later.
