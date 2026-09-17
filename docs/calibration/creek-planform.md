@@ -2296,3 +2296,52 @@ files. Clearing never plants a tree, never touches water, only ever writes class
 30, and never changes a cell outside a corridor. Canopy density 0.660 after
 clearing against 0.664 natural, the right direction (real course tiles 0.611).
 The 104 sub-25 % tiles lose 0.04 pp of cover on average and 78 are untouched.
+
+### 2026-09-17, later — two adjustments after the width audit
+
+**Corridor widths by position, against the 24 Carolina courses** (Pinehurst 1,
+2, 4, 7, 8, Mid Pines, Southern Pines, Dormie, Tobacco Road among them; 175
+holes). Full width at half of untouched cover, interpolated:
+
+| position | Carolina | all wooded | ours |
+|---|---|---|---|
+| drive landing zone | 71.7 m | 90.4 | 75.7 |
+| between landing zones | 68.1 | 86.8 | 77.6 |
+| approach | 69.8 | 86.8 | 80.1 |
+| dogleg corner, each half | 40 | 45 | 40 |
+| green surround, radius | 50 | 60 | 50 |
+
+Carolina longleaf corridors are genuinely tighter than the corpus average, and
+ours sit at Carolina plus roughly ten yards through the fairway — the owner's
+target — with doglegs and greens matching exactly. The first reading of the
+approach as "+15 m" was the instrument's 5 m step; interpolated it is +10.3 m,
+so `APPROACH_NARROW_M` was built and **left at zero**, with the reason recorded
+beside it.
+
+**Bare corridors 28 % → 22 %** (corpus 20.3 %). Diagnosis: 6.5 % of our holes
+were routed over ground with no natural corridor tree at all — legitimately
+bare — and still drew from a retention distribution whose zero atom already
+holds the corpus's own such holes. Fix (`OPEN_GROUND_FILLS_ATOM`): those holes
+take their share of the atom up front, and for the holes that do have trees
+the share of the atom to skip is **solved** so the drawn-bare rate lands on the
+corpus rate net of them. The lifted draws sit just above the atom, on the
+smallest non-zero retentions, so no upper quantile moves — sliding the whole
+range had lifted the green p75 from 0.34 to 0.41. Also a corridor-wide floor:
+a hole drawn with any retention keeps at least one tree (3.7 % of holes had
+rounded a positive draw to nothing in a 25-cell tee pool). Two failed
+attempts recorded: counting open-ground holes on the bare prairie tiles too
+emptied the atom for everyone (bare 7 %, retention doubled); compressing
+draws *within* the atom left them on zero.
+
+Now **25 of 30** gated rows; the four tee rows are the deliberate opening and
+the green-at-32 m row sits 0.001 over tolerance. All invariants hold, 500/500
+files byte-identical on re-run, frozen inputs unchanged.
+
+**Assessment before returning to routing.** A genuinely solitary tree within
+10 m of the line with nothing treed within 25 m stands on 1 hole in 121, four
+of the ten on fairways 95 m clear; par-3 carries keep 0.113 on the line
+against 0.023 for a par-4 landing zone. The real wooded corpus scores near
+zero on the solitary measure because at 60 % cover anything left stays joined
+to the tree line, so ours is the requested feature and a small excess. A 10 m
+tree cell is a canopy footprint: when trunks are placed, a solitary cell is one
+mature specimen with an 8–12 m crown.

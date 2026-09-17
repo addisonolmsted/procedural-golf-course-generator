@@ -146,9 +146,16 @@ def hole_keep(hole, shape, model, cell=CELL):
     seg = seg_index(frac)
     par = int(hole["par"])
     keep = np.ones(shape, float)
+    L = float(arc_cum(p)[-1])
+    # the approach is read a little further out than it is, which pulls the
+    # corridor in; the green surround (last 15 m and the cap past the green) is
+    # not shifted, it already matched
+    narrow = getattr(model, "APPROACH_NARROW_M", 0.0)
+    approach = (seg == 2) & (frac * L < L - getattr(model, "APPROACH_KEEP_END_M", 15.0))
+    d_eff = np.where(approach, d + narrow, d)
     for zi, z in enumerate(("tee", "landing", "green")):
         curve = model.shape_for(par, z)
         if curve is None:
             continue
-        keep = np.where(seg == zi, ramp(model.SHAPE_X, curve, d), keep)
+        keep = np.where(seg == zi, ramp(model.SHAPE_X, curve, d_eff), keep)
     return keep, d, side, frac

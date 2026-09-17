@@ -61,7 +61,7 @@ def read_routes(path):
     return out
 
 
-def retention_draw(recs, params):
+def retention_draw(recs, params, open_ground=frozenset(), treed_seeds=frozenset()):
     """(seed, hole, zone) -> retention, by correlated stratified inverse-CDF.
 
     Two properties have to hold at once and neither is free.
@@ -87,22 +87,74 @@ def retention_draw(recs, params):
     """
     L = np.linalg.cholesky(np.asarray(model.ZONE_CORR, float)
                            + 1e-9 * np.eye(len(ZONES)))
-    cohorts = {}
+    cohorts, n_open = {}, {}
     for seed, r in recs.items():
         for i, h in enumerate(r.get("holes", [])):
-            cohorts.setdefault(int(h["par"]), []).append((seed, i))
-    out = {}
+            par = int(h["par"])
+            if (seed, i) in open_ground:
+                # a corridor with no natural tree is bare whatever it draws:
+                # it fills one of the distribution's bare slots rather than
+                # drawing again on top of them
+                n_open[par] = n_open.get(par, 0) + 1
+                for zone in ZONES:
+                    out_open = (seed, i, zone)
+                    cohorts.setdefault("_open", []).append(out_open)
+                continue
+            cohorts.setdefault(par, []).append((seed, i))
+    out = {k: 0.0 for k in cohorts.pop("_open", [])}
     for par, members in cohorts.items():
         z = np.array([L @ np.random.default_rng(
             [int(s), int(i), model.TAG_ZONE]).standard_normal(len(ZONES))
             for s, i in members])
         n = len(members)
+        # The open-ground holes have already spent part of the corpus's bare
+        # share, so the holes that DO have trees must draw bare less often:
+        # solve for the share of each zone's zero atom to skip so that the
+        # cohort's drawn-bare rate lands where the corpus's realised rate says,
+        # net of the open-ground holes. Only the atom is compressed -- sliding
+        # the whole range lifted every quantile (green p75 0.34 -> 0.41).
+        n_treed = sum(1 for s, i in members if s in treed_seeds)
+        n_o = n_open.get(par, 0)
+        open_share = n_o / max(n_treed + n_o, 1)
+        want = max((model.SIDE.get("no_tree", 0.2) - open_share) / max(1 - open_share, 1e-9), 0.0) \
+            if getattr(model, "OPEN_GROUND_FILLS_ATOM", False) and n_treed else None
+        samples = {zone: np.asarray(model.retention_for(par, zone), float) for zone in ZONES}
+        base_u = {}
         for zi, zone in enumerate(ZONES):
-            sample = np.asarray(model.retention_for(par, zone), float)
             e = params["TEE_OPEN_EXP"] if zone == "tee" else 1.0
             order = np.argsort(np.argsort(z[:, zi], kind="stable"), kind="stable")
-            u = ((order + 0.5) / n) ** e
-            r = np.quantile(sample, u, method="inverted_cdf")
+            base_u[zone] = ((order + 0.5) / n) ** e
+        treed_mask = np.array([s in treed_seeds for s, i in members])
+
+        def draw(u0):
+            rr = {}
+            for zone in ZONES:
+                sample, u = samples[zone], base_u[zone]
+                atom = float(np.mean(sample < 0.02))
+                if 0.0 < u0 < atom:
+                    # the bottom u0 of the atom is lifted to sit JUST ABOVE it,
+                    # on the smallest non-zero retentions; the rest of the atom
+                    # stays bare and nothing above it moves. Compressing within
+                    # the atom, the first attempt, left those holes on zero.
+                    u = np.where(u < u0, atom + u, u)
+                rr[zone] = np.quantile(sample, np.clip(u, 0, 1), method="inverted_cdf")
+            return rr
+
+        u0 = 0.0
+        if want is not None:
+            lo, hi = 0.0, 0.6
+            for _ in range(30):
+                mid = 0.5 * (lo + hi)
+                rr = draw(mid)
+                bare = np.mean(np.all([rr[zn][treed_mask] < 0.02 for zn in ZONES], axis=0))
+                if bare > want:
+                    lo = mid
+                else:
+                    hi = mid
+            u0 = 0.5 * (lo + hi)
+        drawn = draw(u0)
+        for zone in ZONES:
+            r = drawn[zone]
             # Bound the tail, then restore the mean. The measured distribution
             # runs to nine times its own mean, and those holes are real: their
             # corridor carried more tree than the ground around it. Our canopy
@@ -233,6 +285,7 @@ def solve(ctx, params, ret):
                 [int(ctx["seed"]), int(i), model.TAG_SIDE]
             ).normal(0.0, params["SIDE_SIGMA"]))
             S = base + b * side          # side is +-1: one flank thins harder
+        hole_pool, hole_drawn = np.zeros((n, n), bool), 0.0
         for z in ZONES:
             m = zm[z]
             pool = m & tree
@@ -248,6 +301,14 @@ def solve(ctx, params, ret):
             mult = r / model.mean_retention(pars[i], z)
             keep = keep_by_rank(S, pool, scaled_prob(P, pool, mult))
             cleared |= pool & ~keep
+            hole_pool |= pool
+            hole_drawn = max(hole_drawn, r)
+        if hole_drawn > 0.02 and hole_pool.any() and not (hole_pool & ~cleared).any():
+            # drawn with some retention: at least one tree stands somewhere in
+            # the corridor. Small pools (a tee zone is ~25 cells) otherwise
+            # round a positive draw away to nothing on 3.7 % of holes
+            v = np.where(hole_pool, S, np.inf)
+            cleared[np.unravel_index(int(np.argmin(v)), v.shape)] = False
             kept.append((i, z, r, int(keep.sum()), int(m.sum())))
     # everything the profile reaches that the instrument's +-35 m stamp does
     # not: the 35-80 m flanks and the caps past the green and behind the tee.
@@ -296,7 +357,22 @@ def run(dump, natural_dir, out_dir, routes="out/route_rs/rs.jsonl", only=None):
     nat_rows = {r["seed"]: r for r in json.loads(
         (natural_dir / "index_canopy.json").read_text())["rows"]}
     params = dict(model.PARAMS)
-    ret = retention_draw(recs, params)
+    # only holes on tiles that are wooded enough to be in the acceptance
+    # cohort take a bare slot: a hole on bare prairie has nothing to clear and
+    # nothing to draw, and counting it here emptied the atom for everyone
+    # else -- bare corridors fell to 7 % and retention doubled
+    open_ground = set()
+    for s, r in recs.items():
+        if nat_rows[s]["tree_frac"] < 0.25:
+            continue
+        g, _ = cgrid.read_u8(natural_dir / f"m_{s}.canopy.cgrid")
+        tree = g == CLASS_TREE
+        for i, h in enumerate(r.get("holes", [])):
+            zm = G.corridor_zone_masks(h["spine"], tree.shape)
+            if not (tree & (zm["tee"] | zm["landing"] | zm["green"])).any():
+                open_ground.add((s, i))
+    treed = frozenset(s for s in recs if nat_rows[s]["tree_frac"] >= 0.25)
+    ret = retention_draw(recs, params, frozenset(open_ground), treed)
     out_dir.mkdir(parents=True, exist_ok=True)
     seeds = sorted(recs) if not only else [s for s in sorted(recs) if s in set(only)]
     rows = []

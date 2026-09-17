@@ -323,10 +323,21 @@ it. Our canopy is statistically homogeneous, so a corridor has about what
 surrounds it and a multiplier of nine saturates against certainty, taking 0.1
 out of the corridor edge with it. Capping and rescaling keeps the mean exact
 and the spread as wide as the ground can carry.</p>""")
-    P.append("""<p><strong>More of our holes end with a bare corridor</strong>
-&mdash; 28 % against 20 %. Same cause: a real hole whose corridor was dense
-keeps something even when thinned hard, and ours, sitting on even cover, does
-not.</p>""")
+    P.append("""<p><strong>Bare corridors, fixed.</strong> A first pass left
+28 % of holes with no corridor tree against 20 % real. The cause was
+double-counting: 6.5 % of our holes were routed over ground with no natural
+tree in the corridor at all, and those holes still drew from a distribution
+whose zero atom already includes the corpus's own open-ground holes. They now
+take their share of that atom up front, and the draw for the holes that do
+have trees is solved so the cohort lands on the corpus rate net of them:
+22 % against 20.3 %.</p>""")
+    P.append("""<p><strong>Corridor widths against the Carolina courses.</strong>
+Read by interpolating the half-cover crossing rather than the instrument's
+5 m step, the drive landing zone is 75.7 m wide against 71.7 on the 24 Carolina
+courses, the stretch between landing zones 77.6 against 68.1, and the approach
+80.1 against 69.8 &mdash; Carolina plus about ten yards throughout, which is
+where the owner asked to be. Dogleg corners and the green surround match
+Carolina exactly. An approach-narrowing dial exists and is left at zero.</p>""")
     P.append("""<p><strong>Nothing is placed for strategy.</strong> The corpus
 gave no licence for it: trees left in play show no preference for the inside of
 a dogleg. A deliberate strategic pass was offered and declined.</p>""")

@@ -68,6 +68,24 @@ META = _D.get("meta", {})
 # by itself.
 PARAMS = dict(H_CLEAR=0.5, SIDE_SIGMA=1.0, TEE_OPEN_EXP=1.40)
 
+# APPROACH_NARROW_M  reads the approach corridor (the green segment short of
+#     the last 15 m) this much further out, pulling each flank in by as much.
+#     Left at ZERO, with the reason recorded: the approach first read 90 m wide
+#     against 75 m on the 24 Carolina courses, but that instrument steps by
+#     5 m a side. Interpolating the crossing, the approach is 80.1 m against
+#     Carolina's 69.8, the drive landing zone 75.7 against 71.7, and the
+#     stretch between 77.6 against 68.1 -- already the owner's "Carolina plus
+#     about ten yards" without any shift. The dial stays for the day that
+#     changes.
+APPROACH_NARROW_M = 0.0
+APPROACH_KEEP_END_M = 15.0
+# OPEN_GROUND_FILLS_ATOM  a hole whose corridor holds no natural tree at all
+#     takes one of the distribution's "bare" slots instead of drawing its own.
+#     The corpus's 20 % of bare corridors includes holes routed over open
+#     ground; on our tiles those are known before the draw (6.5 % of holes),
+#     and letting them draw again double-counted them: 28 % bare.
+OPEN_GROUND_FILLS_ATOM = True
+
 # one stream, one purpose -- the rule crates/course-sandhills/src/rng.rs
 # enforces for the generator proper. TAG_CLEAR must NOT be canopy_gen.TAG_NOISE:
 # sharing it would correlate retention with placement and leave trees standing
