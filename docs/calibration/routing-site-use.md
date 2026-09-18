@@ -311,3 +311,27 @@ max ≤ 1.0. Final build passes all of them.
 | 30, VIS 1.5 | 61 m | 19 % | 4.6 | 93 % |
 | 30, VIS 1.2 | 62 m | 20 % | 3.5 | 91 % |
 | 30, VIS 1.0 — shipped | 62 m | 21 % | 3.7 | 93 % |
+
+
+---
+
+## 2026-09-17 — what a routing change costs downstream
+
+The canopy is now finalized on top of these routes. `out/canopy250_final/` is
+derived from `out/route_rs/rs.jsonl`, so **any change to routing invalidates
+it** and it must be regenerated:
+
+```
+python3 tools/golf/canopy_clear.py out/final250_v2 out/canopy250 out/canopy250_final
+```
+
+21 s for 250 tiles, deterministic. The natural canopy layer `out/canopy250/`
+is independent of routing and is never regenerated.
+
+Clearing widths are calibrated against the 24 Carolina sandhills courses and
+currently sit at Carolina plus about ten yards through the fairway, which is
+the owner's stated target. A routing change that alters hole length or bend
+distribution will move those widths, so re-read them after
+(`clearing_profile.py` for the corpus side, `clearing_sheet.py` for ours).
+Full record: `creek-planform.md`, the three canopy sections and the handoff
+note at the end.

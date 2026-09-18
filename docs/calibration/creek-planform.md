@@ -2064,6 +2064,14 @@ fetched, 0 failures). Clearing a fixed rectangle would be wrong
 by nearly a factor of two end to end. The profile is symmetric, which is the
 check that the hole geometry and the raster are aligned.
 
+> **Superseded by canopy round 3 (2026-09-17).** These figures normalise each
+> hole by its own cover 120–160 m out along the normals, and that band is the
+> next fairway: it holds only 0.64 of untouched cover. The centre-line rate,
+> the far-field rate and the half-widths here are all inflated by roughly
+> 1.6×. Use the nearest-hole frame and the >500 m untouched reference from
+> round 3 instead. The half-widths themselves survive re-measurement to within
+> one instrument step; the RATES do not.
+
 **The placement model.** A logistic fit per archetype on the router's own
 `Fields` predictors, so it can be evaluated on our tiles with no new terrain
 machinery. Fluvial anchor: relative elevation −0.51, roughness +0.36,
@@ -2098,7 +2106,8 @@ trees must not enter that metric until the real reference includes them.
 
 Round 1 fitted the model and stopped. This applies it to the 250 frozen seeds
 and closes "where trees could grow". Clearing is the next round.
-Viewer: **Our Own Canopy** (paired renders, acceptance table, corridor preview).
+Viewer: **Our Own Canopy**, https://claude.ai/code/artifact/c1912565-49b9-4644-a334-8123f2441dd5
+(paired renders, acceptance table, corridor preview).
 
 **Two sidecars per seed**, in `out/canopy250/`, 300×300 at 10 m, exactly 9.00
 km2, the same geometry as a real tile so every per-km2 statistic compares with
@@ -2206,7 +2215,7 @@ Round 2 grew the natural canopy and left the fluvial seeds correct and
 unplayable: the median fluvial hole ran a corridor 98 % treed. This removes the
 trees a course removes and leaves the ones a course leaves.
 Output `out/canopy250_final/`; `out/canopy250/` stays as the natural layer.
-Viewer: **Cutting The Corridors**.
+Viewer: **Cutting The Corridors**, https://claude.ai/code/artifact/e151315b-3415-403a-b67d-98b1aa648c92
 
 **Three measurement corrections, each found by a probe that went wrong first.**
 
@@ -2345,3 +2354,32 @@ zero on the solitary measure because at 60 % cover anything left stays joined
 to the tree line, so ours is the requested feature and a small excess. A 10 m
 tree cell is a canopy footprint: when trunks are placed, a solitary cell is one
 mature specimen with an 8–12 m crown.
+
+
+---
+
+## Handoff note for the next routing round — canopy depends on the routes
+
+`out/canopy250_final/` is **derived from `out/route_rs/rs.jsonl`**. The corridor
+geometry, the per-hole retention draw and every acceptance number come from the
+hole spines in that file. Any routing change — a new beam weight, a re-run of
+`route_batch`, a different seed set — makes the finalized canopy stale.
+
+Re-running it is cheap and deterministic:
+
+```
+python3 tools/golf/canopy_clear.py out/final250_v2 out/canopy250 out/canopy250_final
+python3 tools/golf/clearing_sheet.py out/final250_v2 out/canopy250 out/canopy250_final <out.html>
+```
+
+21 s for all 250 tiles, byte-identical on repeat. `out/canopy250/` (the natural
+layer) does **not** depend on routing and never needs regenerating; it is the
+denominator for every clearing statistic and must stay on disk.
+
+Two standing guards for a routing round:
+
+- **Blindness stays bare earth.** Our line-of-sight numbers and the corpus's
+  both exclude vegetation. Do not let the router read the canopy into the
+  visibility metric until the real reference includes it.
+- **The terrain is frozen.** `out/final250_v2` hashes `cb62563b…` and
+  `out/canopy250` hashes `144df81e…`; check them before and after.
